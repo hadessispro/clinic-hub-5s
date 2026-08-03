@@ -1,0 +1,30 @@
+# 5S Clinic Hub
+
+Web app quản lý và chấm công GPS cho chi nhánh 5S Lê Văn Thọ.
+
+## Chạy cục bộ
+
+```bash
+npm install
+copy .env.example .env
+npm run dev
+```
+
+Cập nhật các biến Supabase trong `.env` trước khi chạy. Không commit `.env` hoặc secret key lên Git.
+
+## Các lệnh chính
+
+```bash
+npm run dev
+npm run build
+npm run provision:pvc
+npm run location:update
+```
+
+## Hạ tầng
+
+- Frontend/API: Vercel (`clinic-hub-5s`)
+- Database/Auth/Storage: Supabase
+- Production: https://clinic-hub-5s.vercel.app
+
+Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md) để thiết lập database, tài khoản nhân viên và biến môi trường.

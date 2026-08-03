@@ -1,0 +1,15 @@
+export const PVC_STAFF = [
+  { code: 'PVC001', name: 'Trần Văn Nguyên', title: 'Bác sĩ Fulltime', department: 'bs', phone: '0837983650', email: 'vannguyen10a3@gmail.com' },
+  { code: 'PVC002', name: 'Nguyễn Tuấn Ngọc', title: 'Bác sĩ Fulltime', department: 'bs', phone: '0984048715', email: 'tn01638827382@gmail.com' },
+  { code: 'PVC003', name: 'Nguyễn Thị Như Huỳnh', title: 'Phụ tá', department: 'phuta', phone: '0911548525', email: 'nguyenthinhuhuynh2909@gmail.com' },
+  { code: 'PVC004', name: 'Võ Thị Hậu', title: 'Lễ tân - Tư vấn', department: 'dvkh', phone: '0987805971', email: 'hauvothi3@gmail.com' },
+  { code: 'PVC005', name: 'Nguyễn Thị Thanh Trúc', title: 'Lễ tân - Tư vấn', department: 'dvkh', phone: '0979291901', email: 'trucnguyen12121995@gmail.com' },
+  { code: 'PVC006', name: 'Lê Kha Thy', title: 'Lễ tân - Tư vấn', department: 'dvkh', phone: '0772554048', email: 'lekhathyc14@gmail.com' },
+  { code: 'PVC007', name: 'Trần Xuân Nhân', title: 'Phụ tá', department: 'phuta', phone: '0368370076', email: 'tranxuannhan1705@gmail.com' },
+  { code: 'PVC008', name: 'Lâm Hưng Long', title: 'Bác sĩ Fulltime', department: 'bs', phone: '0939133669', email: 'thienthay123@gmail.com' },
+  { code: 'PVC009', name: 'Trần Hoàng My', title: 'Bác sĩ Part-time', department: 'bs', phone: '0971345046', email: 'mytranvt3@gmail.com' },
+  { code: 'PVC010', name: 'Nguyễn Thị Thu Hà', title: 'Phụ tá', department: 'phuta', phone: '0901223693', email: 'ha.nguyenthu0203@gmail.com' },
+  { code: 'PVC011', name: 'Nguyễn Kim Quỳnh Quyên', title: 'Phụ tá', department: 'phuta', phone: '0369973426', email: 'quynhquyenkg2018@gmail.com' },
+  { code: 'PVC012', name: 'Võ Đăng Khang', title: 'Phụ tá', department: 'phuta', phone: '0392095618', email: 'khangnlcltv@gmail.com' },
+  { code: 'PVC013', name: 'Trần Mỹ Phụng', title: 'Phụ tá', department: 'phuta', phone: '0388742734', email: 'myphung190605@gmail.com' },
+];

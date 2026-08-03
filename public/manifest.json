@@ -1,0 +1,21 @@
+{
+  "name": "5S Clinic Hub",
+  "short_name": "5S Hub",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "vi",
+  "description": "Chấm công GPS chi nhánh 60 Lê Văn Thọ",
+  "background_color": "#f4f8f5",
+  "theme_color": "#087f7b",
+  "icons": [
+    {
+      "src": "/images/nino-clinic-room.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

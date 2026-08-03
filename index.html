@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Ứng dụng chấm công GPS trực tuyến và ngoại tuyến cho Nha Khoa 5S - 60 Lê Văn Thọ, Phường Thông Tây Hội, TP.HCM."
+    />
+    <meta name="theme-color" content="#087f7b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="5S Clinic Hub" />
+    <title>5S Clinic Hub</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dieu huong chinh">
+        <div class="brand-block">
+          <img src="/images/nino-clinic-room.jpg" alt="Phòng khám Nha Khoa 5S" class="brand-photo" />
+          <div>
+            <p class="eyebrow">Nha Khoa 5S</p>
+            <h1>Clinic Hub</h1>
+          </div>
+        </div>
+
+        <nav class="nav-list" id="mainNav">
+          <div class="nav-group">
+            <p class="nav-group-title">Điều hành</p>
+            <button class="nav-item active" type="button" data-view="dashboard">
+              <span class="nav-icon">⌂</span>
+              <span>Tổng quan</span>
+            </button>
+            <button class="nav-item" type="button" data-view="tasks">
+              <span class="nav-icon">✓</span>
+              <span>Công việc</span>
+            </button>
+            <button class="nav-item" type="button" data-view="chat">
+              <span class="nav-icon">☰</span>
+              <span>Tin nhắn</span>
+            </button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-title">Nhân sự</p>
+            <button class="nav-item" type="button" data-view="recruitment">
+              <span class="nav-icon">◌</span>
+              <span>Tuyển dụng</span>
+            </button>
+            <button class="nav-item" type="button" data-view="people">
+              <span class="nav-icon">◎</span>
+              <span>Hồ sơ</span>
+            </button>
+            <button class="nav-item" type="button" data-view="onboarding">
+              <span class="nav-icon">▱</span>
+              <span>Hội nhập</span>
+            </button>
+            <button class="nav-item" type="button" data-view="uniforms">
+              <span class="nav-icon">▥</span>
+              <span>Đồng phục</span>
+            </button>
+            <button class="nav-item" type="button" data-view="incidents">
+              <span class="nav-icon">!</span>
+              <span>Sự vụ</span>
+            </button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-title">Công & lịch</p>
+            <button class="nav-item" type="button" data-view="attendance">
+              <span class="nav-icon">⌖</span>
+              <span>Chấm công</span>
+            </button>
+            <button class="nav-item" type="button" data-view="schedule">
+              <span class="nav-icon">▦</span>
+              <span>Lịch làm</span>
+            </button>
+            <button class="nav-item" type="button" data-view="leave">
+              <span class="nav-icon">◇</span>
+              <span>Đơn từ</span>
+            </button>
+            <button class="nav-item" type="button" data-view="payroll">
+              <span class="nav-icon">₫</span>
+              <span>Lương</span>
+            </button>
+          </div>
+
+          <div class="nav-group">
+            <p class="nav-group-title">Tài chính & kho</p>
+            <button class="nav-item" type="button" data-view="proposals">
+              <span class="nav-icon">⇧</span>
+              <span>Đề xuất</span>
+            </button>
+            <button class="nav-item" type="button" data-view="supplies">
+              <span class="nav-icon">⊞</span>
+              <span>Cung ứng</span>
+            </button>
+            <button class="nav-item" type="button" data-view="assets">
+              <span class="nav-icon">▤</span>
+              <span>Tài sản</span>
+            </button>
+            <button class="nav-item" type="button" data-view="reports">
+              <span class="nav-icon">▣</span>
+              <span>Báo cáo</span>
+            </button>
+            <button class="nav-item" type="button" data-view="integrations">
+              <span class="nav-icon">∞</span>
+              <span>Tích hợp</span>
+            </button>
+          </div>
+        </nav>
+
+        <div class="sidebar-note">
+          <span class="note-dot"></span>
+          <p>Check-in cần bật định vị và xác nhận bán kính phòng khám.</p>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="currentDateLabel">Hôm nay</p>
+            <h2 id="viewTitle">Tổng quan vận hành</h2>
+          </div>
+          <div class="top-actions">
+            <label class="search-box" for="globalSearch">
+              <span>⌕</span>
+              <input id="globalSearch" type="search" placeholder="Tìm nhân sự, task, phòng ban" autocomplete="off" />
+            </label>
+            <div id="authArea" class="auth-area"></div>
+            <button class="ghost-button" type="button" id="resetDemoBtn" title="Nạp lại dữ liệu mẫu">
+              <span>↻</span>
+              <span class="button-text">Reset demo</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="manager-strip" aria-labelledby="managerNotesTitle">
+          <div>
+            <p class="eyebrow">Ghi chú cho quản lý</p>
+            <h3 id="managerNotesTitle">Chấm công tại 60 Lê Văn Thọ bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.</h3>
+          </div>
+          <button class="primary-button" type="button" data-view-jump="attendance">
+            <span>⌖</span>
+            Chấm công ngay
+          </button>
+        </section>
+
+        <section id="appView" class="view-stack" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <template id="emptyStateTemplate">
+      <div class="empty-state">
+        <strong>Chưa có dữ liệu</strong>
+        <span>Thêm mới để bắt đầu theo dõi.</span>
+      </div>
+    </template>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
