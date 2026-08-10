@@ -5,8 +5,9 @@
 {$APP_DOMAIN:localhost} {
   encode zstd gzip
 
-  @health path /healthz
-  respond @health 200
+  handle /healthz {
+    respond "ok" 200
+  }
 
   handle /api/* {
     reverse_proxy api:3000
