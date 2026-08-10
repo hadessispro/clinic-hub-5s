@@ -16,12 +16,12 @@ export function evaluateAttendanceLocation({
     && measuredAccuracy > 0
     && measuredAccuracy <= accuracyLimit;
 
-  // Indoor GPS often reports 50-100 m accuracy. In that range only accept a
-  // reading whose measured centre stays inside the radius after subtracting
-  // its uncertainty. This preserves a small 20 m core for real on-site users.
+  // Indoor GPS often reports 50-100 m accuracy. Subtract only the uncertainty
+  // above the normal 50 m baseline, keeping distance + accuracy no less strict
+  // than the former 100 m radius / 50 m accuracy policy.
   const effectiveRadius = measuredAccuracy <= preferredLimit
     ? radius
-    : Math.max(20, radius - measuredAccuracy);
+    : Math.max(20, radius - (measuredAccuracy - preferredLimit));
 
   return {
     accurate,
@@ -30,4 +30,3 @@ export function evaluateAttendanceLocation({
     indoorMode: measuredAccuracy > preferredLimit,
   };
 }
-

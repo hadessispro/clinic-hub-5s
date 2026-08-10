@@ -6,11 +6,11 @@ assert.deepEqual(
   { accurate: true, inside: true, effectiveRadius: 100, indoorMode: false },
 );
 assert.deepEqual(
-  evaluateAttendanceLocation({ distance: 20, accuracy: 78, allowedRadius: 100, maxAccuracy: 100 }),
-  { accurate: true, inside: true, effectiveRadius: 22, indoorMode: true },
+  evaluateAttendanceLocation({ distance: 72, accuracy: 78, allowedRadius: 100, maxAccuracy: 100 }),
+  { accurate: true, inside: true, effectiveRadius: 72, indoorMode: true },
 );
 assert.equal(
-  evaluateAttendanceLocation({ distance: 23, accuracy: 78, allowedRadius: 100, maxAccuracy: 100 }).inside,
+  evaluateAttendanceLocation({ distance: 73, accuracy: 78, allowedRadius: 100, maxAccuracy: 100 }).inside,
   false,
 );
 assert.equal(
