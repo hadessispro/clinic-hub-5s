@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
+    "migrate": "node dist/migrate.js",
     "import:supabase": "node dist/import.js"
   },
   "dependencies": {

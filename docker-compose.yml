@@ -61,6 +61,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     expose:
       - "4000"
     networks:
@@ -70,6 +72,24 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env.vps
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["node", "apps/backend/dist/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: "no"
+    networks:
+      - clinic_internal
 
   shadow-sync:
     build:
