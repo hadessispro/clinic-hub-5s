@@ -10,3 +10,4 @@ Thumbs.db
 
 .vercel
 .env*
+.env.vps
