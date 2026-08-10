@@ -23,6 +23,12 @@ Lần chạy đầu tạo `/opt/clinic-hub-5s/.env.vps` và dừng lại. Điề
 sudo sh /opt/clinic-hub-5s/deploy/deploy.sh
 ```
 
+Nếu đã tải biến production từ Vercel về một file cục bộ, có thể tạo file VPS đã lọc và sinh khóa còn thiếu bằng:
+
+```sh
+node scripts/prepare-vps-env.mjs .env.production.local .env.vps srv1892344.hstgr.cloud
+```
+
 ## Kiểm tra và rollback
 
 ```sh
