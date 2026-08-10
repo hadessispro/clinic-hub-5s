@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { getEffectiveBranchId, loginEmailFor, setActiveBranch } from './branch.js';
 
 let currentUser = null;
 let currentProfile = null;
@@ -89,6 +90,10 @@ async function loadProfile(userId) {
       currentProfile = data;
       cacheProfile(data);
     }
+    if (currentProfile) {
+      const effectiveBranch = getEffectiveBranchId(currentProfile);
+      setActiveBranch(effectiveBranch);
+    }
   } catch (err) {
     if (canUseOfflineProfile(err)) {
       currentProfile = readCachedProfile(userId);
@@ -96,6 +101,10 @@ async function loadProfile(userId) {
     } else {
       console.error('[Auth] Failed to load user profile:', err);
       currentProfile = null;
+    }
+    if (currentProfile) {
+      const effectiveBranch = getEffectiveBranchId(currentProfile);
+      setActiveBranch(effectiveBranch);
     }
   }
 }
@@ -120,20 +129,38 @@ function notifyListeners() {
   }
 }
 
-export async function signIn(email, password) {
+export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
+  const normalized = String(identifier || '').trim().toLowerCase();
+  let email = normalized.includes('@') ? normalized : loginEmailFor(branchId, normalized);
+  const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
+    p_branch_id: branchId,
+    p_identifier: normalized,
+  });
+  if (!resolveError && resolvedEmail) email = resolvedEmail;
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   currentUser = data.user;
   await loadProfile(data.user.id);
   
-  if (!currentProfile) {
+  if (!currentProfile || currentProfile.active === false) {
     // If auth succeeds but database profile is missing, clear session and throw error
     await supabase.auth.signOut();
     currentUser = null;
     currentProfile = null;
     notifyListeners();
-    throw new Error('Tài khoản đã đăng ký nhưng chưa có hồ sơ (Profile) phân quyền trong Database. Vui lòng chạy lệnh SQL Editor để gán quyền Admin.');
+    throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
   }
+  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it'].includes(currentProfile.role);
+  if (!normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
+    await supabase.auth.signOut();
+    currentUser = null;
+    currentProfile = null;
+    throw new Error('Mã nhân viên không thuộc chi nhánh đã chọn.');
+  }
+  const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
+  setActiveBranch(effectiveBranch);
+  localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
+  localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
   
   notifyListeners();
   return data;

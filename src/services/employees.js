@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { defaultShiftForDepartment } from '../constants.js';
 
 /**
  * Maps database employee representation to UI model
@@ -7,10 +8,12 @@ export function mapEmployeeToUI(db) {
   if (!db) return null;
   return {
     id: db.code,
+    employeeNumber: db.employee_number || '',
+    branchId: db.branch_id || 'pham-van-chieu',
     name: db.full_name,
     department: db.department,
     role: db.title,
-    shift: db.shift_code || 'clinic-0800',
+    shift: db.shift_code || defaultShiftForDepartment(db.department),
     phone: db.phone || '',
     email: db.email || '',
     status: db.status || 'onboarding',
@@ -31,12 +34,14 @@ export function mapEmployeeToUI(db) {
 export function mapEmployeeToDB(ui) {
   return {
     code: ui.id,
+    employee_number: ui.employeeNumber || undefined,
+    branch_id: ui.branchId || undefined,
     full_name: ui.name,
     department: ui.department,
     title: ui.role,
     phone: ui.phone,
     email: ui.email === undefined ? undefined : (ui.email || null),
-    shift_code: ui.shift === undefined ? undefined : (ui.shift || 'clinic-0800'),
+    shift_code: ui.shift === undefined ? undefined : (ui.shift || defaultShiftForDepartment(ui.department)),
     status: ui.status,
     manager_code: ui.manager,
     hire_date: ui.hireDate || null,

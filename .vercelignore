@@ -9,3 +9,5 @@ fonts/
 js/
 images/*
 !images/nino-clinic-room.jpg
+.codex-vercel-cli/
+.vercel-deploy.*

@@ -28,3 +28,5 @@ npm run location:update
 - Production: https://clinic-hub-5s.vercel.app
 
 Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md) để thiết lập database, tài khoản nhân viên và biến môi trường.
+
+Khi nâng cấp database đang chạy, áp dụng `supabase-working-hours-migration.sql` để đồng bộ đầy đủ ca làm, lịch theo ngày và cách tính chấm công theo tài liệu 5S.

@@ -4,6 +4,9 @@ import { ROLE_PROFILES } from '../constants.js';
 import { escapeHTML } from '../utils.js';
 import { markAsRead, markAllAsRead } from '../services/notifications.js';
 import { navigateTo } from '../router.js';
+import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js';
+import { loadClinicLocation } from '../services/clinic.js';
+import { showToast } from './toast.js';
 
 let isDropdownOpen = false;
 
@@ -14,6 +17,14 @@ document.addEventListener('click', (e) => {
     isDropdownOpen = false;
     const dropdown = document.getElementById('notifDropdown');
     if (dropdown) dropdown.style.display = 'none';
+  }
+
+  const branchSwitcher = document.getElementById('topbarBranchSwitcher');
+  if (branchSwitcher && !branchSwitcher.contains(e.target)) {
+    const branchMenu = document.getElementById('topbarBranchMenu');
+    const branchButton = document.getElementById('topbarBranchButton');
+    if (branchMenu) branchMenu.hidden = true;
+    if (branchButton) branchButton.setAttribute('aria-expanded', 'false');
   }
 });
 
@@ -40,6 +51,12 @@ function formatShortDateTime(isoString) {
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function positionMobileNotification(dropdown, bellButton) {
+  if (!dropdown || !bellButton || !window.matchMedia('(max-width: 760px)').matches) return;
+  const bellRect = bellButton.getBoundingClientRect();
+  dropdown.style.setProperty('--notif-mobile-top', `${Math.round(bellRect.bottom + 8)}px`);
+}
+
 /**
  * Updates the topbar elements: date label and auth chip area.
  * @param {Object} state - The current application state
@@ -62,9 +79,24 @@ export function renderTopbar(state) {
     const roleLabel = ROLE_PROFILES[role]?.label || role || 'Nhân viên';
     const listNotifs = notifications || [];
     const unreadCount = listNotifs.filter(n => !n.read).length;
+    const isManager = ['admin', 'hr', 'leader', 'admin_it'].includes(role);
 
     authArea.innerHTML = `
       <div class="topbar-right-container">
+        ${isManager ? `
+          <!-- Branch Switcher for Managers -->
+          <div class="topbar-branch-switcher" id="topbarBranchSwitcher">
+            <button id="topbarBranchButton" class="topbar-branch-button" type="button" aria-haspopup="listbox" aria-expanded="false" title="Chuyển chi nhánh chấm công và GPS">
+              <span class="branch-switcher-icon" aria-hidden="true">📍</span>
+              <span class="topbar-branch-label">${escapeHTML(BRANCH.shortName)}</span>
+              <svg class="topbar-branch-chevron" aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" /></svg>
+            </button>
+            <div id="topbarBranchMenu" class="topbar-branch-menu" role="listbox" aria-label="Đổi chi nhánh" hidden>
+              ${Object.values(BRANCHES).map(b => `<button type="button" role="option" data-branch-id="${b.id}" aria-selected="${b.id === BRANCH.id}" class="topbar-branch-option ${b.id === BRANCH.id ? 'is-active' : ''}"><span aria-hidden="true">${b.id === BRANCH.id ? '✓' : ''}</span><span>${escapeHTML(b.shortName)}</span></button>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
         <!-- Notification Bell -->
         <div class="notif-container" id="notifContainer">
           <button class="notif-bell-btn" id="notifBellBtn" type="button" title="Thông báo">
@@ -117,13 +149,59 @@ export function renderTopbar(state) {
       dropdown.style.display = isDropdownOpen ? 'block' : 'none';
     }
 
+    // Bind Topbar Branch Switcher for Managers
+    const branchButton = document.getElementById('topbarBranchButton');
+    const branchMenu = document.getElementById('topbarBranchMenu');
+    if (branchButton && branchMenu) {
+      branchButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const willOpen = branchMenu.hidden;
+        branchMenu.hidden = !willOpen;
+        branchButton.setAttribute('aria-expanded', String(willOpen));
+      });
+
+      branchMenu.querySelectorAll('[data-branch-id]').forEach((option) => {
+        option.addEventListener('click', async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const newBranchId = option.dataset.branchId;
+          branchMenu.hidden = true;
+          branchButton.setAttribute('aria-expanded', 'false');
+          if (!newBranchId || newBranchId === BRANCH.id) return;
+        setActiveBranch(newBranchId);
+        localStorage.setItem('5s_clinic_active_branch', newBranchId);
+        localStorage.setItem('5s_clinic_last_branch', newBranchId);
+        // Update GPS coordinates immediately. Previously the label changed but
+        // state.settings still pointed to the old branch.
+        store.updateSettings(branchSettings());
+        showToast(`📍 Đã chuyển chi nhánh chấm công sang ${BRANCHES[newBranchId].shortName}`);
+        
+        const managerNotesTitle = document.getElementById('managerNotesTitle');
+        if (managerNotesTitle) {
+          managerNotesTitle.textContent = `Chấm công tại ${BRANCH.address} bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.`;
+        }
+        try {
+          const cloudLocation = await loadClinicLocation(newBranchId);
+          if (cloudLocation && BRANCH.id === newBranchId) store.updateSettings(cloudLocation);
+        } catch (error) {
+          console.warn('[Topbar] Could not load cloud branch location; using verified local coordinates.', error);
+        }
+        });
+      });
+    }
+
     // 4. Bind Dropdown Toggle
     const bellBtn = document.getElementById('notifBellBtn');
     if (bellBtn && dropdown) {
+      if (isDropdownOpen) {
+        window.requestAnimationFrame(() => positionMobileNotification(dropdown, bellBtn));
+      }
       bellBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         isDropdownOpen = !isDropdownOpen;
+        if (isDropdownOpen) positionMobileNotification(dropdown, bellBtn);
         dropdown.style.display = isDropdownOpen ? 'block' : 'none';
       });
     }

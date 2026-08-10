@@ -178,6 +178,8 @@ export async function renderView(state) {
                 <option value="leader" ${selectedProfile && selectedProfile.role === 'leader' ? 'selected' : ''}>Trưởng nhóm (leader)</option>
                 <option value="finance" ${selectedProfile && selectedProfile.role === 'finance' ? 'selected' : ''}>Kế toán (finance)</option>
                 <option value="admin" ${selectedProfile && selectedProfile.role === 'admin' ? 'selected' : ''}>Quản trị (admin)</option>
+                <option value="admin_it" ${selectedProfile && selectedProfile.role === 'admin_it' ? 'selected' : ''}>Quản trị kỹ thuật (admin_it)</option>
+                <option value="superadmin" disabled>Superadmin (chưa kích hoạt)</option>
               </select>
             </div>
 

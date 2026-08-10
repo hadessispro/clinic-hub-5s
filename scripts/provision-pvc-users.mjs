@@ -30,10 +30,22 @@ const { data: listed, error: listError } = await admin.auth.admin.listUsers({ pa
 if (listError) throw listError;
 const usersByEmail = new Map((listed.users || []).map((user) => [user.email?.toLowerCase(), user]));
 
+function defaultShiftForDepartment(department) {
+  if (department === 'bs') return 'doctor-office';
+  if (department === 'dvkh' || department === 'phuta') return 'front-office';
+  if (department === 'baove') return 'security-weekday';
+  if (department === 'laocong') return 'cleaning-weekday';
+  return 'clinic-0800';
+}
+
 let created = 0;
 let updated = 0;
 
+const protectedLvtCodes = new Set(['PVC001','PVC002','PVC003','PVC004','PVC005','PVC006','PVC007','PVC008','PVC009','PVC010','PVC011','PVC013']);
+
 for (const staff of PVC_STAFF) {
+  // Danh sách LVT đã được người dùng xác nhận; tuyệt đối không ghi đè về PVC.
+  if (protectedLvtCodes.has(staff.code)) continue;
   const email = staff.email.trim().toLowerCase();
   let authUser = usersByEmail.get(email);
 
@@ -67,7 +79,7 @@ for (const staff of PVC_STAFF) {
     phone: staff.phone,
     email,
     status: 'active',
-    shift_code: 'clinic-0800',
+    shift_code: defaultShiftForDepartment(staff.department),
   }, { onConflict: 'code' });
   if (employeeError) throw new Error(`${staff.code} employee: ${employeeError.message}`);
 

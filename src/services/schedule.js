@@ -128,12 +128,36 @@ export async function getScheduleAssignments(date = null) {
   }
 }
 
+export async function getShiftConfiguration() {
+  const [shiftResult, allowedResult] = await Promise.all([
+    supabase.from('work_shifts').select('*').eq('active', true).order('start_time'),
+    supabase.from('employee_allowed_shifts').select('employee_code,shift_code'),
+  ]);
+  if (shiftResult.error) throw shiftResult.error;
+  if (allowedResult.error) throw allowedResult.error;
+  return { shifts: shiftResult.data || [], allowed: allowedResult.data || [] };
+}
+
+export async function getEmployeeAllowedShifts(employeeCode) {
+  if (!employeeCode) return [];
+  const { data, error } = await supabase
+    .from('employee_allowed_shifts')
+    .select('shift_code, work_shifts!inner(code,name,start_time,end_time,break_minutes,active)')
+    .eq('employee_code', employeeCode)
+    .eq('work_shifts.active', true);
+  if (error) throw error;
+  return (data || [])
+    .map((row) => row.work_shifts)
+    .filter(Boolean)
+    .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+}
+
 export async function createScheduleAssignment(assignment) {
   try {
     const dbData = mapAssignmentToDB(assignment);
     const { data, error } = await supabase
       .from('schedule_assignments')
-      .insert(dbData)
+      .upsert(dbData, { onConflict: 'employee_code,work_date' })
       .select()
       .single();
       
@@ -165,4 +189,11 @@ export async function updateScheduleAssignment(id, updates) {
     console.error(`[Schedule Service] updateScheduleAssignment (${id}) error:`, error);
     throw error;
   }
+}
+
+export async function deleteScheduleAssignment(id) {
+  if (!id) return false;
+  const { error } = await supabase.from('schedule_assignments').delete().eq('id', id);
+  if (error) throw error;
+  return true;
 }

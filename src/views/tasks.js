@@ -139,7 +139,7 @@ export async function renderView(state) {
       </form>
     </section>
 
-    <section class="kanban" style="margin-top:14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+    <section class="kanban">
       ${Object.keys(TASK_STATUS).map((status) => renderTaskColumn(status)).join('')}
     </section>
   `;

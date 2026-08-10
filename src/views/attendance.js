@@ -1,5 +1,6 @@
 import { clockIn, clockOut, getAttendance, getOfflineQueue, syncOfflineAttendance } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
+import { getEmployeeAllowedShifts } from '../services/schedule.js';
 import {
   acquireCurrentPosition,
   acquirePrecisePosition,
@@ -9,12 +10,12 @@ import {
 } from '../services/geolocation.js';
 import { captureWorkplacePhoto, startWorkplaceCamera, stopWorkplaceCamera } from '../services/camera.js';
 import { listPendingProofs, movePendingProof, removePendingProof, savePendingProof, syncPendingProofs, uploadAttendanceProof } from '../services/attendance-proofs.js';
-import { BRANCH, clinicDateISO, clinicTimeLabel } from '../branch.js';
-import { SHIFTS } from '../constants.js';
+import { BRANCH, branchSettings, clinicDateISO, clinicTimeLabel } from '../branch.js';
+import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 import { isOpsRole } from '../permissions.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
-import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime } from '../utils.js';
+import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 
@@ -26,6 +27,14 @@ let capturedPhoto = null;
 let capturedPhotoUrl = '';
 let currentEventId = null;
 let cameraStarting = false;
+let attendanceSearch = '';
+let attendanceSearchMode = 'near';
+let attendanceDepartmentFilter = 'all';
+let attendanceBranchFilter = 'all';
+let attendanceTypeFilter = 'all';
+let attendanceStatusFilter = 'all';
+let attendanceDateFilter = '';
+const REQUIRE_CHECKIN_PHOTO = false;
 
 function makeEventId() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -47,7 +56,7 @@ function currentEmployeeFallback(state) {
     name: state.profile?.full_name || 'Nhân viên',
     department: state.department || '',
     role: 'Nhân viên',
-    shift: 'clinic-0800',
+    shift: defaultShiftForDepartment(state.department),
   };
 }
 
@@ -55,12 +64,14 @@ function attendanceTone(record) {
   if (record?.isOfflinePending) return 'warn';
   if (record?.status === 'valid') return 'good';
   if (record?.status === 'late') return 'warn';
+  if (record?.status === 'early_leave') return 'warn';
   return 'bad';
 }
 
 function attendanceLabel(record) {
   if (record?.isOfflinePending) return 'Chờ đồng bộ';
   if (record?.status === 'late') return 'Đi muộn';
+  if (record?.status === 'early_leave') return 'Về sớm';
   if (record?.status === 'valid') return 'Đã ghi nhận';
   return 'Cần kiểm tra';
 }
@@ -148,8 +159,11 @@ function renderHistory(records, employees, ops) {
         <thead><tr><th>Nhân sự</th><th>Loại</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead>
         <tbody>${records.map((record) => {
           const employee = employees.find((item) => item.id === record.employee);
+          const employeeMeta = employee
+            ? `${departmentName(employee.department)} · ${employee.role || 'Nhân viên'}`
+            : 'Chưa liên kết hồ sơ nhân sự';
           return `<tr>
-            <td><strong>${escapeHTML(employee?.name || record.employee)}</strong><br><span class="subtle">${escapeHTML(departmentName(employee?.department))}</span></td>
+            <td><strong>${escapeHTML(employee?.name || record.employee)}</strong><br><span class="subtle">${escapeHTML(employeeMeta)}</span></td>
             <td><strong>${recordTypeLabel(record)}</strong></td>
             <td>${formatDateTime(record.time)}</td>
             <td>${record.distance} m</td>
@@ -162,7 +176,9 @@ function renderHistory(records, employees, ops) {
   `;
 }
 
-function renderCheckinDialog(employee, shift, settings) {
+function renderCheckinDialog(employee, shift, settings, allowedShifts) {
+  const shiftChoices = allowedShifts.length ? allowedShifts : [shift].filter(Boolean);
+  const requiresChoice = shiftChoices.length > 1;
   return `
     <div class="checkin-dialog" id="checkinDialog" hidden>
       <button class="checkin-dialog-backdrop" type="button" data-action="close-checkin" aria-label="Đóng"></button>
@@ -178,9 +194,22 @@ function renderCheckinDialog(employee, shift, settings) {
 
         <div class="checkin-summary-grid">
           <div><span>Nhân viên</span><strong>${escapeHTML(employee.name)}</strong></div>
-          <div><span>Ca làm</span><strong>${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</strong></div>
+          <div><span>Ca làm</span><strong id="selectedShiftSummary">${requiresChoice ? 'Chọn ca bên dưới' : `${escapeHTML(shiftChoices[0]?.start || '08:00')}–${escapeHTML(shiftChoices[0]?.end || '17:00')}`}</strong></div>
           <div class="full"><span>Địa điểm</span><strong>${escapeHTML(settings.clinicAddress)}</strong></div>
         </div>
+
+        <fieldset class="attendance-shift-picker">
+          <legend>Chọn đúng ca làm việc hôm nay</legend>
+          <p>Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.</p>
+          <div class="attendance-shift-options">
+            ${shiftChoices.map((item, index) => `
+              <label class="attendance-shift-option">
+                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${!requiresChoice && index === 0 ? 'checked' : ''}>
+                <span><strong>${escapeHTML(item.name || 'Ca làm')}</strong><small>${escapeHTML(item.start)}–${escapeHTML(item.end)}</small></span>
+              </label>
+            `).join('')}
+          </div>
+        </fieldset>
 
         <div class="gps-confirm-state is-loading" id="gpsConfirmState" aria-live="polite">
           <div class="gps-radar" aria-hidden="true">
@@ -232,7 +261,7 @@ function renderCheckinDialog(employee, shift, settings) {
           <span>✓ Sai số GPS tối đa ${Number(settings.maxGpsAccuracy)} m</span>
           <span>✓ Trong bán kính ${Number(settings.allowedRadius)} m</span>
           <span>✓ Không hỗ trợ nhập tọa độ thủ công</span>
-          <span>✓ Ảnh phải chụp trực tiếp tại nơi làm việc</span>
+          <span>✓ Xác minh bằng ảnh đang tạm tắt</span>
         </div>
 
         <div class="checkin-dialog-actions">
@@ -250,21 +279,36 @@ function renderCheckinDialog(employee, shift, settings) {
 export async function renderView(state) {
   if (clockTimer) clearTimeout(clockTimer);
   stopWorkplaceCamera();
-  const settings = { ...BRANCH, ...state.settings };
+  const localBranchSettings = branchSettings();
+  const settings = state.settings?.branchId === BRANCH.id
+    ? { ...localBranchSettings, ...state.settings }
+    : localBranchSettings;
   const workDate = clinicDateISO(new Date(), settings.timeZone);
   const offlineQueue = getOfflineQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
-  const [employees, remoteRecords, pendingProofs] = await Promise.all([
+  const [employees, remoteRecords, pendingProofs, allowedShiftRows] = await Promise.all([
     navigator.onLine ? getEmployees().catch(() => (state.employeeCode ? [employeeFallback] : [])) : Promise.resolve(state.employeeCode ? [employeeFallback] : []),
     state.employeeCode && navigator.onLine
       ? getAttendance({ employee: isOpsRole(state.role) ? undefined : state.employeeCode, limit: isOpsRole(state.role) ? 200 : 31 }).catch(() => [])
       : Promise.resolve([]),
     state.user?.id ? listPendingProofs(state.user.id).catch(() => []) : Promise.resolve([]),
+    navigator.onLine && state.employeeCode ? getEmployeeAllowedShifts(state.employeeCode).catch(() => []) : Promise.resolve([]),
   ]);
 
   const employee = employees.find((item) => item.id === state.employeeCode) || employeeFallback;
-  const shift = SHIFTS.find((item) => item.id === (employee.shift || 'clinic-0800')) || SHIFTS.find((item) => item.id === 'clinic-0800');
+  const shiftId = effectiveShiftId({
+    assignedShift: null,
+    defaultShift: employee.shift,
+    department: employee.department,
+    workDate,
+  });
+  const shift = SHIFTS.find((item) => item.id === shiftId)
+    || SHIFTS.find((item) => item.id === defaultShiftForDepartment(employee.department));
+  const configuredAllowedShifts = allowedShiftRows
+    .map((row) => SHIFTS.find((item) => item.id === row.code))
+    .filter(Boolean);
+  const allowedShifts = configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean);
   const records = mergeRecords(offlineQueue, remoteRecords);
   const todayRecords = mergeRecords(
     offlineQueue.filter((item) => item.employee === state.employeeCode && item.date === workDate),
@@ -273,8 +317,37 @@ export async function renderView(state) {
   const todayCheckin = todayRecords.find((record) => record.type === 'checkin');
   const todayCheckout = todayRecords.find((record) => record.type === 'checkout');
   const ops = isOpsRole(state.role);
+  const scopedEmployees = state.role === 'leader'
+    ? employees.filter((item) => item.department === state.department)
+    : employees;
+  const scopedEmployeeCodes = new Set(scopedEmployees.map((item) => item.id));
+  const scopedRecords = state.role === 'leader'
+    ? records.filter((record) => scopedEmployeeCodes.has(record.employee))
+    : records;
+  const filteredRecords = ops ? scopedRecords.filter((record) => {
+    const recordEmployee = scopedEmployees.find((item) => item.id === record.employee);
+    if (attendanceDepartmentFilter !== 'all' && recordEmployee?.department !== attendanceDepartmentFilter) return false;
+    if (attendanceBranchFilter !== 'all' && recordEmployee?.branchId !== attendanceBranchFilter) return false;
+    if (attendanceTypeFilter !== 'all' && record.type !== attendanceTypeFilter) return false;
+    if (attendanceStatusFilter !== 'all' && record.status !== attendanceStatusFilter) return false;
+    if (attendanceDateFilter && String(record.date || record.time || '').slice(0, 10) !== attendanceDateFilter) return false;
+    return !attendanceSearch || smartMatch([
+      recordEmployee?.name,
+      recordEmployee?.id,
+      recordEmployee?.role,
+      departmentName(recordEmployee?.department),
+      record.type,
+      record.status,
+    ].join(' '), attendanceSearch, attendanceSearchMode);
+  }) : scopedRecords;
+  const historyTitle = state.role === 'leader'
+    ? `Chấm công bộ phận ${departmentName(state.department)}`
+    : (ops ? 'Chấm công toàn hệ thống' : 'Chấm công của tôi');
 
-  context = { state, settings, employee, employees, shift, records, workDate, todayCheckin, todayCheckout, ops };
+  context = {
+    state, settings, employee, employees: scopedEmployees, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops,
+    selectedShift: allowedShifts.length === 1 ? allowedShifts[0] : null,
+  };
   lastLocation = null;
   capturedPhoto = null;
   currentEventId = null;
@@ -322,20 +395,30 @@ export async function renderView(state) {
           <span class="attendance-radius">${Number(settings.allowedRadius)} m</span>
         </section>
         <section class="attendance-rule-card">
-          <div class="attendance-card-icon" aria-hidden="true">08</div>
-          <div><p class="eyebrow">Quy định hôm nay</p><h3>Check-in lúc ${escapeHTML(settings.checkinTime)}</h3><p>Check-in và check-out đều phải xác minh GPS tại văn phòng; thời gian OT sẽ được xử lý ở bước quản lý sau.</p></div>
+          <div class="attendance-card-icon" aria-hidden="true">⏱</div>
+          <div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</h3><p>Check-in trước giờ bắt đầu ít nhất 5 phút. Check-in và check-out đều phải xác minh GPS tại phòng khám.</p></div>
         </section>
       </div>
 
       <section class="attendance-history-panel">
         <div class="section-title">
-          <div><p class="eyebrow">Lịch sử</p><h3>${ops ? 'Chấm công chi nhánh' : 'Chấm công của tôi'}</h3></div>
-          <span class="subtle">${records.length} bản ghi</span>
+          <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
+          <span class="subtle">${filteredRecords.length}/${scopedRecords.length} bản ghi</span>
         </div>
-        ${renderHistory(records, employees, ops)}
+        ${ops ? `<div class="operation-filterbar attendance-filterbar">
+          <label class="is-search">Tìm thông minh<input type="search" id="attendanceSearchFilter" value="${escapeHTML(attendanceSearch)}" placeholder="Gõ gần đúng tên, MNV hoặc chức danh" autocomplete="off"></label>
+          <label>Kiểu dò<select id="attendanceSearchMode"><option value="near" ${attendanceSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${attendanceSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
+          <label>Chi nhánh<select id="attendanceBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${attendanceBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${attendanceBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
+          <label>Phòng ban<select id="attendanceDepartmentFilter"><option value="all">Tất cả phòng ban được xem</option>${[...new Set(scopedEmployees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${attendanceDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
+          <label>Loại<select id="attendanceTypeFilter"><option value="all">Vào và ra</option><option value="checkin" ${attendanceTypeFilter === 'checkin' ? 'selected' : ''}>Check-in</option><option value="checkout" ${attendanceTypeFilter === 'checkout' ? 'selected' : ''}>Check-out</option></select></label>
+          <label>Trạng thái<select id="attendanceStatusFilter"><option value="all">Tất cả trạng thái</option><option value="valid" ${attendanceStatusFilter === 'valid' ? 'selected' : ''}>Đã ghi nhận</option><option value="late" ${attendanceStatusFilter === 'late' ? 'selected' : ''}>Đi muộn</option><option value="early_leave" ${attendanceStatusFilter === 'early_leave' ? 'selected' : ''}>Về sớm</option></select></label>
+          <label>Ngày<input type="date" id="attendanceDateFilter" value="${escapeHTML(attendanceDateFilter)}"></label>
+          <button class="secondary-button" type="button" id="clearAttendanceFilters">Xóa bộ lọc</button>
+        </div>` : ''}
+        ${renderHistory(filteredRecords, scopedEmployees, ops)}
       </section>
     </div>
-    ${renderCheckinDialog(employee, shift, settings)}
+    ${renderCheckinDialog(employee, shift, settings, allowedShifts)}
   `;
 }
 
@@ -396,7 +479,7 @@ function updateConfirmAvailability() {
     && lastLocation.accurate
     && lastLocation.inside
     && lastLocation.fresh;
-  button.disabled = !(validLocation && capturedPhoto?.blob);
+  button.disabled = !(validLocation && (!REQUIRE_CHECKIN_PHOTO || capturedPhoto?.blob) && context?.selectedShift);
 }
 
 function updateCameraState(mode, message) {
@@ -559,7 +642,7 @@ async function captureLocation() {
 
     updateGpsState('is-success', 'Vị trí hợp lệ', `Cách phòng khám ${lastLocation.distance} m · GPS ±${lastLocation.accuracy} m.`);
     setLocationActionState('Làm mới vị trí');
-    await startCameraFlow();
+    if (REQUIRE_CHECKIN_PHOTO) await startCameraFlow();
     updateConfirmAvailability();
   } catch (error) {
     if (requestId !== locationRequestId) return;
@@ -597,7 +680,7 @@ function closeDialog() {
 }
 
 async function confirmCheckin(button) {
-  if (!lastLocation || !capturedPhoto?.blob || !currentEventId) return;
+  if (!lastLocation || (REQUIRE_CHECKIN_PHOTO && !capturedPhoto?.blob) || !currentEventId) return;
   lastLocation = evaluateLocation(lastLocation);
   if (!lastLocation.accurate || !lastLocation.inside || !lastLocation.fresh) {
     showToast('Vị trí không còn hợp lệ. Vui lòng lấy lại GPS.', true);
@@ -606,14 +689,14 @@ async function confirmCheckin(button) {
   }
 
   button.disabled = true;
-  button.textContent = 'Đang lưu chấm công và ảnh…';
+  button.textContent = 'Đang lưu chấm công GPS…';
   const now = new Date();
   const eventId = currentEventId;
   const proof = capturedPhoto;
   const userId = context.state.user?.id;
   let proofQueued = false;
   try {
-    try {
+    if (proof) try {
       await savePendingProof({ clientEventId: eventId, userId, blob: proof.blob, capturedAt: proof.capturedAt });
       proofQueued = true;
     } catch (storageError) {
@@ -624,7 +707,8 @@ async function confirmCheckin(button) {
     const result = await clockIn({
       clientEventId: eventId,
       employee: context.employee.id,
-      shift: context.shift?.id || 'clinic-0800',
+      branchId: context.settings.branchId,
+      shift: context.selectedShift?.id,
       type: 'checkin',
       date: clinicDateISO(now, context.settings.timeZone),
       time: now.toISOString(),
@@ -637,12 +721,12 @@ async function confirmCheckin(button) {
     }, userId);
 
     const proofEventId = result.clientEventId || eventId;
-    if (proofQueued && proofEventId !== eventId) {
+    if (proof && proofQueued && proofEventId !== eventId) {
       await movePendingProof(eventId, proofEventId);
     }
 
     let proofPending = !!result.isOfflinePending;
-    if (!proofPending && navigator.onLine) {
+    if (proof && !proofPending && navigator.onLine) {
       try {
         await uploadAttendanceProof({ clientEventId: proofEventId, blob: proof.blob, capturedAt: proof.capturedAt });
         if (proofQueued) await removePendingProof(proofEventId);
@@ -655,14 +739,14 @@ async function confirmCheckin(button) {
 
     closeDialog();
     showToast(proofPending
-      ? 'Đã ghi nhận chấm công. Ảnh đang được giữ an toàn trên điện thoại và sẽ tự đồng bộ khi có mạng.'
-      : 'Check-in và ảnh nơi làm việc đã được lưu thành công!');
+      ? 'Đã ghi nhận chấm công. Dữ liệu đang được giữ an toàn và sẽ tự đồng bộ khi có mạng.'
+      : 'Check-in GPS đã được lưu thành công!');
     navigateTo('attendance');
   } catch (error) {
     console.error('[Attendance] Check-in failed:', error);
     if (proofQueued) await removePendingProof(eventId).catch(() => undefined);
     const message = String(error?.message || 'Không thể ghi nhận chấm công.');
-    showToast(message.includes('GPS') || message.includes('bán kính') || message.includes('ảnh') ? message : 'Không thể ghi nhận. Vui lòng kiểm tra GPS, camera và thử lại.', true);
+    showToast(message.includes('GPS') || message.includes('bán kính') ? message : 'Không thể ghi nhận. Vui lòng kiểm tra GPS và thử lại.', true);
     button.disabled = false;
     button.textContent = 'Hoàn tất chấm công';
   }
@@ -703,6 +787,7 @@ async function confirmCheckout(button) {
     const result = await clockOut({
       clientEventId: makeEventId(),
       employee: context.employee.id,
+      branchId: context.settings.branchId,
       shift: context.shift?.id || 'clinic-0800',
       type: 'checkout',
       date: clinicDateISO(now, context.settings.timeZone),
@@ -758,6 +843,29 @@ export function initView() {
   const page = document.querySelector('.attendance-page');
   if (!page) return;
 
+  const refreshAttendanceFilters = () => store.notify();
+  document.getElementById('attendanceSearchFilter')?.addEventListener('input', (event) => {
+    attendanceSearch = event.target.value;
+    window.clearTimeout(event.target._attendanceFilterTimer);
+    event.target._attendanceFilterTimer = window.setTimeout(refreshAttendanceFilters, 180);
+  });
+  document.getElementById('attendanceDepartmentFilter')?.addEventListener('change', (event) => { attendanceDepartmentFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceSearchMode')?.addEventListener('change', (event) => { attendanceSearchMode = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceBranchFilter')?.addEventListener('change', (event) => { attendanceBranchFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceTypeFilter')?.addEventListener('change', (event) => { attendanceTypeFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceStatusFilter')?.addEventListener('change', (event) => { attendanceStatusFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceDateFilter')?.addEventListener('change', (event) => { attendanceDateFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('clearAttendanceFilters')?.addEventListener('click', () => {
+    attendanceSearch = '';
+    attendanceSearchMode = 'near';
+    attendanceDepartmentFilter = 'all';
+    attendanceBranchFilter = 'all';
+    attendanceTypeFilter = 'all';
+    attendanceStatusFilter = 'all';
+    attendanceDateFilter = '';
+    refreshAttendanceFilters();
+  });
+
   const updateClock = () => {
     const node = document.getElementById('attendanceLiveClock');
     if (!node) {
@@ -799,6 +907,13 @@ export function initView() {
     if (action === 'capture-photo') takeWorkplacePhoto(event.target.closest('button'));
     if (action === 'retake-photo' || action === 'retry-camera') retakeWorkplacePhoto();
     if (action === 'confirm-checkin') confirmCheckin(event.target.closest('button'));
+  });
+  dialog?.addEventListener('change', (event) => {
+    if (event.target.name !== 'attendanceShift') return;
+    context.selectedShift = context.allowedShifts.find((item) => item.id === event.target.value) || null;
+    const summary = document.getElementById('selectedShiftSummary');
+    if (summary && context.selectedShift) summary.textContent = `${context.selectedShift.start}–${context.selectedShift.end}`;
+    updateConfirmAvailability();
   });
   dialog?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeDialog();

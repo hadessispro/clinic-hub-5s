@@ -1,14 +1,66 @@
-import { getScheduleRequests, createScheduleRequest, updateScheduleRequest, getScheduleAssignments, createScheduleAssignment, updateScheduleAssignment } from '../services/schedule.js';
+import { getScheduleRequests, createScheduleRequest, updateScheduleRequest, getScheduleAssignments, createScheduleAssignment, updateScheduleAssignment, getShiftConfiguration } from '../services/schedule.js';
 import { getEmployees } from '../services/employees.js';
 import { DEPARTMENTS, SHIFTS, LEAVE_STATUS } from '../constants.js';
 import { todayISO, escapeHTML, formatShortDate, formatDateTime, smartMatch, departmentName } from '../utils.js';
 import { pill, statusPill, option, emptyState, statusTone } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
+import { initAdminItPilot, renderAdminItPilot } from './pilot-schedule.js';
+import { initMonthlySchedule, renderMonthlySchedule } from './monthly-schedule.js';
 
 let cachedEmployees = [];
 let cachedRequests = [];
 let cachedAssignments = [];
+
+function paidHours(shift) {
+  const [sh, sm] = String(shift.start_time || '00:00').split(':').map(Number);
+  const [eh, em] = String(shift.end_time || '00:00').split(':').map(Number);
+  const configuredBreak = Number(shift.break_minutes || 0);
+  const breakMinutes = ['front-morning', 'front-afternoon'].includes(shift.code) ? Math.max(60, configuredBreak) : configuredBreak;
+  return (((eh * 60 + em) - (sh * 60 + sm) - breakMinutes) / 60);
+}
+
+function hourLabel(hours) {
+  return Number.isInteger(hours) ? `${hours} giờ` : `${hours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giờ`;
+}
+
+function renderShiftOverview(employees, config) {
+  const shiftByCode = new Map(config.shifts.map((shift) => [shift.code, shift]));
+  const allowedByEmployee = new Map();
+  config.allowed.forEach(({ employee_code, shift_code }) => {
+    if (!allowedByEmployee.has(employee_code)) allowedByEmployee.set(employee_code, []);
+    allowedByEmployee.get(employee_code).push(shift_code);
+  });
+  const rows = new Map();
+  employees.filter((employee) => employee.status === 'active').forEach((employee) => {
+    const allowedCodes = allowedByEmployee.get(employee.id) || [];
+    const codes = allowedCodes.length ? allowedCodes : [employee.shift];
+    const key = `${employee.branchId}|${employee.role}|${allowedCodes.length ? codes.slice().sort().join(',') : `missing:${employee.shift}`}`;
+    if (!rows.has(key)) rows.set(key, { branch: employee.branchId, title: employee.role, names: [], codes, missing: !allowedCodes.length });
+    rows.get(key).names.push(employee.name);
+  });
+  const list = [...rows.values()].sort((a, b) => `${a.branch}${a.title}`.localeCompare(`${b.branch}${b.title}`, 'vi'));
+  const exact10 = config.shifts.filter((shift) => paidHours(shift) === 10);
+  const exact8 = config.shifts.filter((shift) => paidHours(shift) === 8);
+  const missing = employees.filter((employee) => employee.status === 'active' && !allowedByEmployee.has(employee.id)).length;
+  const cards = list.map((row) => {
+    const shifts = row.codes.map((code) => shiftByCode.get(code)).filter(Boolean);
+    const hours = shifts.map(paidHours);
+    const category = row.missing ? 'missing' : hours.includes(10) ? '10' : hours.includes(8) ? '8' : 'other';
+    const searchable = `${row.title} ${row.names.join(' ')}`.toLocaleLowerCase('vi');
+    return `<article class="shift-role-card" data-shift-row data-branch="${escapeHTML(row.branch)}" data-hours="${category}" data-search="${escapeHTML(searchable)}">
+      <div class="shift-role-head"><div><strong>${escapeHTML(row.title)}</strong><span>${row.branch === 'le-van-tho' ? 'Lê Văn Thọ' : 'Phạm Văn Chiêu'} · ${row.names.length} người</span></div>${row.missing ? '<span class="status-pill bad">Thiếu cấu hình</span>' : '<span class="status-pill good">Đã phân ca</span>'}</div>
+      <p>${escapeHTML(row.names.join(', '))}</p>
+      <div class="shift-chip-list">${shifts.map((shift) => `<span class="shift-time-chip ${paidHours(shift) === 10 ? 'is-ten-hour' : ''}"><b>${escapeHTML(shift.name)}</b>${String(shift.start_time).slice(0,5)}–${String(shift.end_time).slice(0,5)} · ${hourLabel(paidHours(shift))}</span>`).join('')}</div>
+    </article>`;
+  }).join('');
+  return `<section class="panel shift-overview-panel">
+    <div class="section-title"><div><p class="eyebrow">TỔNG QUAN CA THEO CHỨC DANH</p><h3>Phân loại nhân sự theo số giờ và ca được phép</h3></div><span class="subtle" id="shiftOverviewCount">${list.length} nhóm chức danh</span></div>
+    <div class="shift-overview-metrics"><article><span>Ca đúng 10 giờ</span><strong>${exact10.length}</strong><small>${exact10.map((x) => x.name).join(', ')}</small></article><article><span>Ca đúng 8 giờ</span><strong>${exact8.length}</strong><small>${exact8.map((x) => x.name).join(', ') || 'Chưa có'}</small></article><article class="${missing ? 'has-warning' : ''}"><span>Nhân sự thiếu phân ca</span><strong>${missing}</strong><small>Cần bổ sung ca được phép</small></article></div>
+    <div class="shift-overview-filters"><label>Tìm chức danh hoặc nhân viên<input type="search" id="shiftOverviewSearch" placeholder="VD: Bác sĩ, phụ tá, Trần Văn Nguyên"></label><label>Chi nhánh<select id="shiftBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho">Lê Văn Thọ</option><option value="pham-van-chieu">Phạm Văn Chiêu</option></select></label><label>Nhóm giờ<select id="shiftHoursFilter"><option value="all">Tất cả nhóm giờ</option><option value="10">Có ca đúng 10 giờ</option><option value="8">Có ca đúng 8 giờ</option><option value="other">Ca khác</option><option value="missing">Thiếu cấu hình ca</option></select></label></div>
+    <div class="shift-role-grid" id="shiftRoleGrid">${cards}</div><div class="shift-overview-empty" id="shiftOverviewEmpty" hidden>Không có chức danh phù hợp bộ lọc.</div>
+  </section>`;
+}
 
 function renderScheduleAssignmentCard(item) {
   const employee = cachedEmployees.find(e => e.id === item.employee);
@@ -68,13 +120,16 @@ function renderScheduleRequestCard(item) {
 }
 
 export async function renderView(state) {
+  return renderMonthlySchedule(state);
+  /* Legacy schedule dashboard is kept below for data compatibility during rollout. */
   const { searchTerm } = state;
   const monthKey = todayISO().slice(0, 7);
 
-  const [requests, assignments, employees] = await Promise.all([
+  const [requests, assignments, employees, shiftConfig] = await Promise.all([
     getScheduleRequests(),
     getScheduleAssignments(),
-    getEmployees()
+    getEmployees(),
+    getShiftConfiguration().catch(() => ({ shifts: [], allowed: [] }))
   ]);
 
   cachedEmployees = employees;
@@ -121,6 +176,8 @@ export async function renderView(state) {
         ${statusPill("Hạn đăng ký ngày 25", Number(todayISO().slice(-2)) <= 25 ? "good" : "warn")}
       </div>
     </div>
+
+    ${renderShiftOverview(employees, shiftConfig)}
 
     <div class="grid cols-2">
       <section class="panel">
@@ -244,6 +301,24 @@ export async function renderView(state) {
 }
 
 export function initView() {
+  initMonthlySchedule();
+  return;
+  const applyShiftOverviewFilters = () => {
+    const branch = document.getElementById('shiftBranchFilter')?.value || 'all';
+    const hours = document.getElementById('shiftHoursFilter')?.value || 'all';
+    const search = (document.getElementById('shiftOverviewSearch')?.value || '').trim().toLocaleLowerCase('vi');
+    let visible = 0;
+    document.querySelectorAll('[data-shift-row]').forEach((row) => {
+      const show = (branch === 'all' || row.dataset.branch === branch) && (hours === 'all' || row.dataset.hours === hours) && (!search || row.dataset.search.includes(search));
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    const count = document.getElementById('shiftOverviewCount');
+    const empty = document.getElementById('shiftOverviewEmpty');
+    if (count) count.textContent = `${visible} nhóm chức danh`;
+    if (empty) empty.hidden = visible !== 0;
+  };
+  ['shiftBranchFilter','shiftHoursFilter','shiftOverviewSearch'].forEach((id) => document.getElementById(id)?.addEventListener('input', applyShiftOverviewFilters));
   const requestForm = document.getElementById("requestForm");
   if (requestForm) {
     requestForm.addEventListener("submit", async (e) => {

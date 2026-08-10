@@ -11,10 +11,18 @@ import { syncPendingProofs } from './services/attendance-proofs.js';
 import { showToast } from './components/toast.js';
 import { getDefaultView, isOpsRole } from './permissions.js';
 import { loadClinicLocation } from './services/clinic.js';
+import { BRANCH, branchSettings, getEffectiveBranchId, setActiveBranch } from './branch.js';
+import { subscribeToLeaveRequests } from './services/leave.js';
+import { initSmartChat, destroySmartChat } from './components/smart-chat.js';
+import { initErrorMonitoring } from './services/error-monitor.js';
+import { initPushNotifications, destroyPushNotifications } from './services/push-notifications.js';
 
 let notifSub = null;
+let leaveSub = null;
 let hasEnteredApp = false;
 let pendingAttendanceSync = null;
+
+initErrorMonitoring();
 
 async function syncAllPendingAttendance(userId) {
   if (!userId || !navigator.onLine) return { attendance: 0, proofs: 0 };
@@ -84,6 +92,16 @@ async function bootstrap() {
       // User is authenticated
       hideLogin();
       document.body.dataset.role = authInfo.profile.role || 'staff';
+      const activeBranchId = getEffectiveBranchId(authInfo.profile);
+      setActiveBranch(activeBranchId);
+      store.updateSettings(branchSettings());
+      
+      const managerNotesTitle = document.getElementById('managerNotesTitle');
+      if (managerNotesTitle) {
+        managerNotesTitle.textContent = `Chấm công tại ${BRANCH.address} bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.`;
+      }
+      initSmartChat(authInfo).catch((error) => console.warn('[Clinic Hub] Smart chat unavailable:', error));
+      initPushNotifications(authInfo).catch((error) => console.warn('[Clinic Hub] Push notification unavailable:', error));
 
       if (navigator.onLine) {
         syncAllPendingAttendance(authInfo.user.id).then((synced) => {
@@ -106,7 +124,7 @@ async function bootstrap() {
 
         // Public-to-authenticated branch configuration is authoritative for GPS.
         try {
-          const locationSettings = await loadClinicLocation();
+          const locationSettings = await loadClinicLocation(activeBranchId);
           if (locationSettings) store.updateSettings(locationSettings);
         } catch (err) {
           console.warn('[Clinic Hub] Failed to load branch location:', err);
@@ -126,6 +144,15 @@ async function bootstrap() {
           store.addNotification(newNotif);
           showToast(`🔔 ${newNotif.title}: ${newNotif.body}`);
         });
+
+        if (leaveSub) leaveSub.unsubscribe();
+        leaveSub = subscribeToLeaveRequests((payload) => {
+          const currentState = store.getState();
+          if (payload.eventType === 'INSERT' && ['admin', 'hr', 'leader', 'admin_it'].includes(currentState.role)) {
+            showToast('Có đơn mới cần kiểm tra.');
+          }
+          if (currentState.currentView === 'leave') store.notify();
+        });
       }
       
       // Render the sidebar menu dynamically based on their role permissions
@@ -142,11 +169,17 @@ async function bootstrap() {
       showLogin();
       hasEnteredApp = false;
       delete document.body.dataset.role;
+      destroySmartChat();
+      destroyPushNotifications();
       
       // Clean up notifications subscription
       if (notifSub) {
         notifSub.unsubscribe();
         notifSub = null;
+      }
+      if (leaveSub) {
+        leaveSub.unsubscribe();
+        leaveSub = null;
       }
       store.setNotifications([]);
     }
@@ -159,12 +192,36 @@ async function bootstrap() {
   const mainNav = document.getElementById('mainNav');
   if (mainNav) {
     mainNav.addEventListener('click', (event) => {
+      const toggle = event.target.closest('[data-mobile-nav-toggle]');
+      const popover = mainNav.querySelector('#mobileNavPopover');
+      if (toggle && popover) {
+        const willOpen = popover.hidden;
+        popover.hidden = !willOpen;
+        toggle.setAttribute('aria-expanded', String(willOpen));
+        toggle.classList.toggle('is-open', willOpen);
+        document.body.classList.toggle('mobile-nav-open', willOpen);
+        return;
+      }
+
+      if (event.target.closest('[data-mobile-nav-close]')) {
+        closeMobileNavigation();
+        return;
+      }
+
       const button = event.target.closest('[data-view]');
       if (button) {
+        closeMobileNavigation();
         navigateTo(button.dataset.view);
       }
     });
   }
+
+  document.addEventListener('click', (event) => {
+    if (mainNav && !mainNav.contains(event.target)) closeMobileNavigation();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeMobileNavigation();
+  });
 
   document.body.addEventListener('click', (event) => {
     const jump = event.target.closest('[data-view-jump]');
@@ -188,15 +245,31 @@ async function bootstrap() {
   }
 }
 
+function closeMobileNavigation() {
+  const popover = document.getElementById('mobileNavPopover');
+  const toggle = document.querySelector('[data-mobile-nav-toggle]');
+  if (popover) popover.hidden = true;
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.classList.remove('is-open');
+  }
+  document.body.classList.remove('mobile-nav-open');
+}
+
 // Start application
 bootstrap();
 
 // Cache the app shell after the first successful online visit so an existing
 // signed-in employee can reopen the check-in screen without a network signal.
 if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'clinic:open-view' && event.data.view) navigateTo(event.data.view);
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
-      console.warn('[Clinic Hub] Service worker registration failed:', error);
-    });
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch((error) => {
+        console.warn('[Clinic Hub] Service worker registration failed:', error);
+      });
   });
 }

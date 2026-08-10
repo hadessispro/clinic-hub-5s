@@ -100,11 +100,41 @@ export function normalizeText(str) {
     .trim();
 }
 
-export function smartMatch(haystack, query) {
+function editDistance(left, right) {
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = previous[j];
+      previous[j] = Math.min(
+        previous[j] + 1,
+        previous[j - 1] + 1,
+        diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+}
+
+export function smartMatch(haystack, query, mode = 'near') {
   if (!query) return true;
   const normalized = normalizeText(haystack);
-  const terms = normalizeText(query).split(/\s+/).filter(Boolean);
-  return terms.every((term) => normalized.includes(term));
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return true;
+  if (mode === 'exact') return normalized.includes(normalizedQuery);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  return terms.every((term) => {
+    if (normalized.includes(term)) return true;
+    if (term.length < 2) return false;
+    const tolerance = term.length === 2 && terms.length > 1 ? 2 : (term.length >= 8 ? 2 : 1);
+    return words.some((word) => Math.abs(word.length - term.length) <= tolerance && editDistance(word, term) <= tolerance);
+  });
 }
 
 /* ── ID Generation ── */

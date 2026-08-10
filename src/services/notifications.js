@@ -1,5 +1,7 @@
 import { supabase } from '../supabase.js';
 import { store } from '../store.js';
+import { pollingSubscription } from './realtime-fallback.js';
+import { dispatchNotificationPush } from './push-notifications.js';
 
 /**
  * Fetch all notifications for the current authenticated user.
@@ -107,6 +109,7 @@ export async function sendNotification(employeeCode, title, body, type = 'genera
       .single();
 
     if (error) throw error;
+    dispatchNotificationPush(data.id);
     return data;
   } catch (error) {
     console.error('[Notifications Service] sendNotification error:', error);
@@ -122,16 +125,14 @@ export async function sendNotification(employeeCode, title, body, type = 'genera
  */
 export function subscribeToNotifications(userId, callback) {
   if (!userId) return null;
-  
-  return supabase
-    .channel(`public:notifications:user:${userId}`)
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'notifications',
-      filter: `user_id=eq.${userId}`
-    }, (payload) => {
-      callback(payload.new);
-    })
-    .subscribe();
+  const known = new Set((store.getState().notifications || []).map((item) => item.id));
+  return pollingSubscription(async () => {
+    const rows = await getNotifications();
+    rows.slice().reverse().forEach((row) => {
+      if (!known.has(row.id)) {
+        known.add(row.id);
+        callback(row);
+      }
+    });
+  }, 5000);
 }

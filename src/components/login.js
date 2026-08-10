@@ -1,8 +1,9 @@
 import { signIn } from '../auth.js';
-import { BRANCH } from '../branch.js';
+import { BRANCHES } from '../branch.js';
 import { showToast } from './toast.js';
 
-const LAST_EMAIL_KEY = '5s_clinic_last_email';
+const LAST_LOGIN_KEY = '5s_clinic_last_identifier';
+const LAST_BRANCH_KEY = '5s_clinic_last_branch';
 let loginContainer = null;
 
 function updateNetworkLabel() {
@@ -23,11 +24,11 @@ export function showLogin() {
     loginContainer.innerHTML = `
       <section class="login-card" aria-labelledby="loginTitle">
         <div class="login-brand">
-          <img src="/images/nino-clinic-room.jpg" alt="Không gian Nha Khoa 5S" class="login-photo" />
+          <img src="/images/nha-khoa-5s-wall.jpg" alt="Không gian Nha Khoa 5S" class="login-photo" />
           <div class="login-brand-overlay">
-            <span class="login-branch-badge">Chi nhánh Lê Văn Thọ</span>
+            <span class="login-branch-badge">Hai chi nhánh PVC & LVT</span>
             <h1 id="loginTitle">Chấm công 5S</h1>
-            <p>${BRANCH.address}</p>
+            <p>Chọn đúng chi nhánh trước khi đăng nhập</p>
           </div>
         </div>
 
@@ -42,8 +43,14 @@ export function showLogin() {
 
           <form class="login-form" id="loginForm">
             <div class="input-group">
-              <label for="loginEmail">Email</label>
-              <input type="email" id="loginEmail" placeholder="tennhanvien@gmail.com" required autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" />
+              <label for="loginBranch">Chi nhánh</label>
+              <select id="loginBranch" required>
+                ${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}">${branch.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="loginIdentifier">Mã nhân viên hoặc email</label>
+              <input type="text" id="loginIdentifier" placeholder="Ví dụ: 10241" required autocomplete="username" autocapitalize="none" spellcheck="false" />
             </div>
             <div class="input-group">
               <label for="loginPassword">Mật khẩu</label>
@@ -77,12 +84,14 @@ export function showLogin() {
     loginContainer.style.display = 'grid';
   }
 
-  const emailInput = loginContainer.querySelector('#loginEmail');
-  if (emailInput && !emailInput.value) {
-    emailInput.value = localStorage.getItem(LAST_EMAIL_KEY) || '';
+  const identifierInput = loginContainer.querySelector('#loginIdentifier');
+  const branchInput = loginContainer.querySelector('#loginBranch');
+  if (identifierInput && !identifierInput.value) {
+    identifierInput.value = localStorage.getItem(LAST_LOGIN_KEY) || '';
   }
+  if (branchInput) branchInput.value = localStorage.getItem(LAST_BRANCH_KEY) || 'pham-van-chieu';
   updateNetworkLabel();
-  requestAnimationFrame(() => (emailInput?.value ? loginContainer.querySelector('#loginPassword') : emailInput)?.focus());
+  requestAnimationFrame(() => (identifierInput?.value ? loginContainer.querySelector('#loginPassword') : identifierInput)?.focus());
 }
 
 export function hideLogin() {
@@ -102,29 +111,31 @@ function togglePassword(event) {
 
 async function handleLoginSubmit(event) {
   event.preventDefault();
-  const emailInput = loginContainer?.querySelector('#loginEmail');
+  const identifierInput = loginContainer?.querySelector('#loginIdentifier');
+  const branchInput = loginContainer?.querySelector('#loginBranch');
   const passwordInput = loginContainer?.querySelector('#loginPassword');
   const submitBtn = loginContainer?.querySelector('#loginSubmitBtn');
-  if (!emailInput || !passwordInput || !submitBtn) return;
+  if (!identifierInput || !branchInput || !passwordInput || !submitBtn) return;
 
   if (!navigator.onLine) {
     showToast('Lần đăng nhập đầu tiên cần có Internet. Nếu đã đăng nhập trước đó, hãy mở lại ứng dụng.', true);
     return;
   }
 
-  const email = emailInput.value.trim().toLowerCase();
+  const identifier = identifierInput.value.trim();
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Đang xác thực...</span>';
 
   try {
-    await signIn(email, passwordInput.value);
-    localStorage.setItem(LAST_EMAIL_KEY, email);
+    await signIn(identifier, passwordInput.value, branchInput.value);
+    localStorage.setItem(LAST_LOGIN_KEY, identifier);
+    localStorage.setItem(LAST_BRANCH_KEY, branchInput.value);
     passwordInput.value = '';
     showToast('Đăng nhập thành công.');
     hideLogin();
   } catch (error) {
     console.error('[Login] Auth error:', error);
-    showToast('Email hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.', true);
+    showToast(error?.message || 'Mã nhân viên/email, chi nhánh hoặc mật khẩu chưa đúng.', true);
   } finally {
     submitBtn.disabled = false;
     submitBtn.innerHTML = '<span>Đăng nhập và chấm công</span>';

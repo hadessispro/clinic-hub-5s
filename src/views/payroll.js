@@ -206,7 +206,7 @@ export async function renderView(state) {
           <div class="form-field">
             <label for="advanceType">Loại yêu cầu</label>
             <select id="advanceType" name="type">
-              <option>Ứng lương</option>
+              <option>Tạm ứng lương</option>
               <option>Duyệt tiền mặt</option>
             </select>
           </div>

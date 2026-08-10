@@ -15,11 +15,11 @@ export const SHIFTS = [
   { id: 'clinic-0800', group: 'Chi nhánh Lê Văn Thọ', name: 'Ca 08:00', start: '08:00', end: '17:00', breakText: 'Theo lịch phân công', checkinRule: 'Check-in khi có mặt tại phòng khám lúc 08:00' },
   { id: 'front-office', group: 'Lễ tân, Phụ tá', name: 'Ca hành chính', start: '07:30', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'front-full', group: 'Lễ tân, Phụ tá', name: 'Ca full', start: '07:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'front-afternoon', group: 'Lễ tân, Phụ tá', name: 'Ca chiều', start: '09:30', end: '20:00', breakText: 'Theo điều phối phòng khám', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'front-morning', group: 'Lễ tân, Phụ tá', name: 'Ca sáng', start: '07:30', end: '18:00', breakText: 'Theo điều phối phòng khám', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-office', group: 'Bác sĩ', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Theo lịch khám', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-morning', group: 'Bác sĩ', name: 'Ca sáng', start: '08:00', end: '18:00', breakText: 'Theo lịch khám', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-afternoon', group: 'Bác sĩ', name: 'Ca chiều', start: '10:00', end: '20:00', breakText: 'Theo lịch khám', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'front-afternoon', group: 'Lễ tân, Phụ tá', name: 'Ca chiều', start: '09:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'front-morning', group: 'Lễ tân, Phụ tá', name: 'Ca sáng', start: '07:30', end: '18:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'doctor-office', group: 'Bác sĩ', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'doctor-morning', group: 'Bác sĩ', name: 'Ca sáng', start: '08:00', end: '18:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'doctor-afternoon', group: 'Bác sĩ', name: 'Ca chiều', start: '10:00', end: '20:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'doctor-full', group: 'Bác sĩ', name: 'Ca full', start: '08:00', end: '20:00', breakText: 'Nghỉ 60 phút', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'security-weekday', group: 'Bảo vệ', name: 'Ngày thường', start: '07:00', end: '20:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'security-sunday', group: 'Bảo vệ', name: 'Chủ nhật', start: '07:00', end: '17:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
@@ -27,9 +27,27 @@ export const SHIFTS = [
   { id: 'cleaning-sunday', group: 'Tạp vụ', name: 'Chủ nhật', start: '06:00', end: '15:00', breakText: 'Nghỉ trưa 11h-12h', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
 ];
 
+export function defaultShiftForDepartment(department) {
+  if (department === 'bs') return 'doctor-office';
+  if (department === 'dvkh' || department === 'phuta') return 'front-office';
+  if (department === 'baove') return 'security-weekday';
+  if (department === 'laocong') return 'cleaning-weekday';
+  return 'clinic-0800';
+}
+
+export function effectiveShiftId({ assignedShift, defaultShift, department, workDate }) {
+  let shiftId = assignedShift || defaultShift || defaultShiftForDepartment(department);
+  const day = workDate ? new Date(`${workDate}T12:00:00+07:00`).getUTCDay() : null;
+  if (day === 0 && shiftId === 'security-weekday') shiftId = 'security-sunday';
+  if (day === 0 && shiftId === 'cleaning-weekday') shiftId = 'cleaning-sunday';
+  return shiftId;
+}
+
 /* ── Role profiles ── */
 export const ROLE_PROFILES = {
   admin: { label: 'Admin', scope: 'Toàn quyền vận hành, phân luồng tài khoản, duyệt cuối.' },
+  admin_it: { label: 'Admin IT', scope: 'Quản trị kỹ thuật, cấu hình hệ thống, theo dõi lỗi/bug log và gửi/quản lý đơn từ nhân sự.' },
+  superadmin: { label: 'Superadmin', scope: 'Role dự phòng; chưa kích hoạt chức năng hoặc tài khoản.' },
   hr: { label: 'Nhân sự', scope: 'Tuyển dụng, hồ sơ, hội nhập, đơn từ, lịch làm, công lương.' },
   leader: { label: 'Trưởng bộ phận', scope: 'Giao việc, duyệt đơn cấp 1, xác nhận lịch và hiệu suất đội nhóm.' },
   finance: { label: 'Kế toán', scope: 'Duyệt chi, hóa đơn, ứng lương, account chính và phản hồi lương.' },

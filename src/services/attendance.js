@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { requestSheetSync } from './sheet-sync.js';
 
 const QUEUE_PREFIX = '5s_attendance_queue_v2';
 
@@ -76,37 +77,34 @@ function saveToOfflineQueue(record, userId) {
   return localRecord;
 }
 
-async function submitCheckIn(record) {
-  const { data, error } = await supabase.rpc('record_attendance_checkin', {
-    p_client_event_id: record.clientEventId,
-    p_recorded_at: record.time,
-    p_lat: record.lat,
-    p_lng: record.lng,
-    p_accuracy_m: Math.round(record.accuracy),
-    p_device_id: record.deviceId || null,
-    p_offline: !!record.capturedOffline,
+async function submitToAttendanceApi(record) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  const response = await fetch('/api/attendance-record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(record),
   });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận chấm công.');
+  if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
+  return payload.data;
+}
 
-  if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('Máy chủ không trả về bản ghi chấm công.');
+async function submitCheckIn(record) {
+  const row = await submitToAttendanceApi(record);
+  await requestSheetSync().catch((syncError) => {
+    console.warn('[Attendance] Check-in saved; Google Sheet sync will retry:', syncError);
+  });
   return mapAttendanceToUI(row);
 }
 
 async function submitCheckOut(record) {
-  const { data, error } = await supabase.rpc('record_attendance_checkout', {
-    p_client_event_id: record.clientEventId,
-    p_recorded_at: record.time,
-    p_lat: record.lat,
-    p_lng: record.lng,
-    p_accuracy_m: Math.round(record.accuracy),
-    p_device_id: record.deviceId || null,
-    p_offline: !!record.capturedOffline,
+  const row = await submitToAttendanceApi(record);
+  await requestSheetSync().catch((syncError) => {
+    console.warn('[Attendance] Check-out saved; Google Sheet sync will retry:', syncError);
   });
-
-  if (error) throw error;
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) throw new Error('Máy chủ không trả về giờ kết ca.');
   return mapAttendanceToUI(row);
 }
 

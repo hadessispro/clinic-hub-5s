@@ -20,6 +20,7 @@ const viewImports = {
   assets: () => import('./views/assets.js'),
   reports: () => import('./views/reports.js'),
   integrations: () => import('./views/integrations.js'),
+  'system-admin': () => import('./views/system-admin.js'),
 };
 
 const viewTitles = {
@@ -40,6 +41,7 @@ const viewTitles = {
   assets: 'Quản lý tài sản',
   reports: 'Báo cáo hiệu suất',
   integrations: 'Cấu hình tích hợp',
+  'system-admin': 'Quản trị hệ thống',
 };
 
 let renderRequestId = 0;
@@ -55,7 +57,7 @@ export async function navigateTo(viewName) {
   
   if (!canAccessView(role, targetView)) {
     console.warn(`[Router] Access denied for view "${targetView}" under role "${role}". Redirecting to dashboard.`);
-    targetView = 'dashboard';
+    targetView = getDefaultView(role);
   }
 
   // 2. Update store state
@@ -81,6 +83,12 @@ store.subscribe(async (state) => {
   document.querySelectorAll('.nav-item').forEach((button) => {
     button.classList.toggle('active', button.dataset.view === currentView);
   });
+  document.querySelectorAll('.mobile-nav-item[data-view], .mobile-nav-menu-item[data-view]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.view === currentView);
+  });
+  const mobileMore = document.querySelector('[data-mobile-nav-toggle]');
+  const activeOverflowItem = document.querySelector(`.mobile-nav-menu-item[data-view="${currentView}"]`);
+  mobileMore?.classList.toggle('active', Boolean(activeOverflowItem));
 
   // Load the view and render it
   try {

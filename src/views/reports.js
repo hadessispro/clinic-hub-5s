@@ -6,6 +6,7 @@ import { escapeHTML, formatCurrency, downloadText, countBy, clamp, departmentNam
 import { pill, statusPill, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
+import { exportRichAnalyticsReport } from '../services/rich-export.js';
 
 let cachedMetrics = [];
 let cachedAttendance = [];
@@ -84,9 +85,14 @@ export async function renderView(state) {
             <label for="revenueTarget">Mục tiêu doanh thu</label>
             <input id="revenueTarget" name="revenueTarget" type="number" min="0" value="${escapeHTML(String(settings.revenueTarget || 0))}" />
           </div>
-          <div class="form-field">
-            <label for="reportExport">Xuất dữ liệu</label>
-            <button class="secondary-button" id="reportExportBtn" type="button"><span>•</span>Xuất JSON</button>
+          <div class="form-field full">
+            <label for="reportExport">Xuất báo cáo phân tích</label>
+            <div class="pill-row">
+              <button class="primary-button" id="exportRichAnalyticsBtn" type="button" style="background:#087f7b;">
+                <span>📊</span>Xuất Báo Cáo Phân Tích (Ảnh & Số liệu nổi bật)
+              </button>
+              <button class="secondary-button" id="reportExportBtn" type="button"><span>•</span>Xuất JSON</button>
+            </div>
           </div>
           <div class="form-field full">
             <button class="primary-button" type="submit"><span>✓</span>Lưu cấu hình</button>
@@ -219,6 +225,20 @@ export function initView() {
       } catch (err) {
         console.error('[Reports View] saveSettings (note) failed:', err);
         showToast("Lỗi khi lưu ghi chú.", true);
+      }
+    });
+  }
+
+  const richExportBtn = document.getElementById("exportRichAnalyticsBtn");
+  if (richExportBtn) {
+    richExportBtn.addEventListener("click", async () => {
+      try {
+        showToast("Đang kết xuất báo cáo phân tích & hình ảnh...");
+        await exportRichAnalyticsReport();
+        showToast("Đã tải xuống Báo cáo Phân tích Excel & HTML nổi bật!");
+      } catch (err) {
+        console.error('[Reports View] exportRichAnalyticsReport failed:', err);
+        showToast("Lỗi khi kết xuất báo cáo: " + (err.message || err), true);
       }
     });
   }

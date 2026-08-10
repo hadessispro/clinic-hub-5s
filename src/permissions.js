@@ -7,32 +7,29 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations'],
-  hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations'],
-  leader: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'attendance', 'schedule', 'leave', 'proposals', 'supplies', 'assets'],
-  finance: ['dashboard', 'tasks', 'chat', 'attendance', 'leave', 'payroll', 'proposals', 'reports'],
-  staff: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave', 'people'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin'],
+  admin_it: ['system-admin', 'attendance', 'schedule', 'leave', 'reports', 'integrations'],
+  superadmin: [],
+  hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
+  leader: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
+  finance: ['dashboard', 'tasks', 'chat', 'attendance', 'leave', 'payroll'],
+  staff: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
 };
 
 /* ── Actions allowed per role ── */
 const ROLE_ACTIONS = {
   admin: ['*'],
+  admin_it: ['system.read', 'system.configure', 'buglog.read', 'buglog.update', 'attendance.read_all', 'attendance.verify', 'schedule.manage', 'employee.read_all', 'leave.create', 'leave.read_self', 'leave.read_all', 'leave.approve'],
+  superadmin: [],
   hr: [
     'employee.read_all', 'employee.write',
     'attendance.read_all', 'attendance.verify',
     'task.create', 'task.read_all', 'task.update_any',
     'leave.read_all', 'leave.approve',
-    'recruitment.crud',
-    'onboarding.manage',
     'uniform.issue',
     'incident.crud',
     'schedule.manage',
     'payroll.read_all', 'payroll.manage',
-    'proposal.create', 'proposal.read_all',
-    'supply.write',
-    'asset.write',
-    'report.read',
-    'settings.manage',
   ],
   leader: [
     'employee.read_department',
@@ -41,19 +38,14 @@ const ROLE_ACTIONS = {
     'leave.read_department', 'leave.approve_l1',
     'recruitment.crud',
     'onboarding.manage',
-    'proposal.create', 'proposal.read_department', 'proposal.approve_l1',
-    'supply.write',
-    'asset.write',
     'incident.crud',
-    'schedule.read_department',
+    'schedule.read_department', 'schedule.approve_department',
   ],
   finance: [
     'attendance.read_all',
     'task.create', 'task.update_self',
     'leave.read_all',
     'payroll.read_all', 'payroll.manage',
-    'proposal.create', 'proposal.read_all', 'proposal.approve_finance',
-    'report.read',
   ],
   staff: [
     'attendance.self',
@@ -62,7 +54,6 @@ const ROLE_ACTIONS = {
     'schedule.read_self', 'schedule.register',
     'onboarding.read_self', 'onboarding.update_self',
     'payroll.read_self', 'payroll.feedback',
-    'proposal.create', 'proposal.read_self',
     'employee.read_self',
     'message.send',
   ],
@@ -74,6 +65,7 @@ const NAV_ITEMS = [
     { view: 'dashboard', label: 'Tổng quan', icon: '⌂' },
     { view: 'tasks', label: 'Công việc', icon: '✓' },
     { view: 'chat', label: 'Tin nhắn', icon: '☰' },
+    { view: 'system-admin', label: 'Quản trị hệ thống', icon: '⚙' },
   ]},
   { group: 'Nhân sự', items: [
     { view: 'recruitment', label: 'Tuyển dụng', icon: '◌' },
@@ -115,7 +107,7 @@ export function canPerform(role, action) {
 
 /** Check if role is an ops role (admin/hr/leader/finance) */
 export function isOpsRole(role) {
-  return ['admin', 'hr', 'leader', 'finance'].includes(role);
+  return ['admin', 'hr', 'leader', 'finance', 'admin_it'].includes(role);
 }
 
 /** Get nav items filtered by role */
@@ -132,6 +124,7 @@ export function getNavForRole(role) {
 
 /** Get the default/fallback view for a role */
 export function getDefaultView(role) {
+  if (role === 'admin_it') return 'system-admin';
   return role === 'staff' ? 'attendance' : 'dashboard';
 }
 

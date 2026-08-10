@@ -89,6 +89,9 @@ create table if not exists public.leave_requests (
   to_date date not null,
   amount numeric(14, 0) default 0,
   bank_account text,
+  request_start_time time,
+  request_end_time time,
+  overtime_minutes integer not null default 0 check (overtime_minutes >= 0),
   reason text not null,
   status text not null default 'pending',
   leader_status text not null default 'pending',
@@ -756,7 +759,11 @@ with check (public.current_clinic_role() in ('admin', 'hr'));
 
 drop policy if exists "employees_select" on public.employees;
 create policy "employees_select" on public.employees for select to authenticated
-using (public.is_ops_role() or code = public.current_employee_code());
+using (
+  code = public.current_employee_code()
+  or public.current_clinic_role() = 'admin'
+  or (public.is_ops_role() and branch_id = public.current_branch_id())
+);
 
 drop policy if exists "employees_ops_write" on public.employees;
 create policy "employees_ops_write" on public.employees for all to authenticated
@@ -1017,19 +1024,19 @@ on conflict (id) do update set
 
 insert into public.employees (code, full_name, department, title, phone, email, status, shift_code)
 values
-  ('PVC001', 'Trần Văn Nguyên', 'bs', 'Bác sĩ Fulltime', '0837983650', 'vannguyen10a3@gmail.com', 'active', 'clinic-0800'),
-  ('PVC002', 'Nguyễn Tuấn Ngọc', 'bs', 'Bác sĩ Fulltime', '0984048715', 'tn01638827382@gmail.com', 'active', 'clinic-0800'),
-  ('PVC003', 'Nguyễn Thị Như Huỳnh', 'phuta', 'Phụ tá', '0911548525', 'nguyenthinhuhuynh2909@gmail.com', 'active', 'clinic-0800'),
-  ('PVC004', 'Võ Thị Hậu', 'dvkh', 'Lễ tân - Tư vấn', '0987805971', 'hauvothi3@gmail.com', 'active', 'clinic-0800'),
-  ('PVC005', 'Nguyễn Thị Thanh Trúc', 'dvkh', 'Lễ tân - Tư vấn', '0979291901', 'trucnguyen12121995@gmail.com', 'active', 'clinic-0800'),
-  ('PVC006', 'Lê Kha Thy', 'dvkh', 'Lễ tân - Tư vấn', '0772554048', 'lekhathyc14@gmail.com', 'active', 'clinic-0800'),
-  ('PVC007', 'Trần Xuân Nhân', 'phuta', 'Phụ tá', '0368370076', 'tranxuannhan1705@gmail.com', 'active', 'clinic-0800'),
-  ('PVC008', 'Lâm Hưng Long', 'bs', 'Bác sĩ Fulltime', '0939133669', 'thienthay123@gmail.com', 'active', 'clinic-0800'),
-  ('PVC009', 'Trần Hoàng My', 'bs', 'Bác sĩ Part-time', '0971345046', 'mytranvt3@gmail.com', 'active', 'clinic-0800'),
-  ('PVC010', 'Nguyễn Thị Thu Hà', 'phuta', 'Phụ tá', '0901223693', 'ha.nguyenthu0203@gmail.com', 'active', 'clinic-0800'),
-  ('PVC011', 'Nguyễn Kim Quỳnh Quyên', 'phuta', 'Phụ tá', '0369973426', 'quynhquyenkg2018@gmail.com', 'active', 'clinic-0800'),
-  ('PVC012', 'Võ Đăng Khang', 'phuta', 'Phụ tá', '0392095618', 'khangnlcltv@gmail.com', 'active', 'clinic-0800'),
-  ('PVC013', 'Trần Mỹ Phụng', 'phuta', 'Phụ tá', '0388742734', 'myphung190605@gmail.com', 'active', 'clinic-0800')
+  ('PVC001', 'Trần Văn Nguyên', 'bs', 'Bác sĩ Fulltime', '0837983650', 'vannguyen10a3@gmail.com', 'active', 'doctor-office'),
+  ('PVC002', 'Nguyễn Tuấn Ngọc', 'bs', 'Bác sĩ Fulltime', '0984048715', 'tn01638827382@gmail.com', 'active', 'doctor-office'),
+  ('PVC003', 'Nguyễn Thị Như Huỳnh', 'phuta', 'Phụ tá', '0911548525', 'nguyenthinhuhuynh2909@gmail.com', 'active', 'front-office'),
+  ('PVC004', 'Võ Thị Hậu', 'dvkh', 'Lễ tân - Tư vấn', '0987805971', 'hauvothi3@gmail.com', 'active', 'front-office'),
+  ('PVC005', 'Nguyễn Thị Thanh Trúc', 'dvkh', 'Lễ tân - Tư vấn', '0979291901', 'trucnguyen12121995@gmail.com', 'active', 'front-office'),
+  ('PVC006', 'Lê Kha Thy', 'dvkh', 'Lễ tân - Tư vấn', '0772554048', 'lekhathyc14@gmail.com', 'active', 'front-office'),
+  ('PVC007', 'Trần Xuân Nhân', 'phuta', 'Phụ tá', '0368370076', 'tranxuannhan1705@gmail.com', 'active', 'front-office'),
+  ('PVC008', 'Lâm Hưng Long', 'bs', 'Bác sĩ Fulltime', '0939133669', 'thienthay123@gmail.com', 'active', 'doctor-office'),
+  ('PVC009', 'Trần Hoàng My', 'bs', 'Bác sĩ Part-time', '0971345046', 'mytranvt3@gmail.com', 'active', 'doctor-office'),
+  ('PVC010', 'Nguyễn Thị Thu Hà', 'phuta', 'Phụ tá', '0901223693', 'ha.nguyenthu0203@gmail.com', 'active', 'front-office'),
+  ('PVC011', 'Nguyễn Kim Quỳnh Quyên', 'phuta', 'Phụ tá', '0369973426', 'quynhquyenkg2018@gmail.com', 'active', 'front-office'),
+  ('PVC012', 'Võ Đăng Khang', 'phuta', 'Phụ tá', '0392095618', 'khangnlcltv@gmail.com', 'active', 'front-office'),
+  ('PVC013', 'Trần Mỹ Phụng', 'phuta', 'Phụ tá', '0388742734', 'myphung190605@gmail.com', 'active', 'front-office')
 on conflict (code) do update set
   full_name = excluded.full_name,
   department = excluded.department,
@@ -1078,6 +1085,20 @@ begin
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notifications'
     ) then
       execute 'alter publication supabase_realtime add table public.notifications';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'schedule_assignments'
+    ) then
+      execute 'alter publication supabase_realtime add table public.schedule_assignments';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'schedule_requests'
+    ) then
+      execute 'alter publication supabase_realtime add table public.schedule_requests';
     end if;
   end if;
 end

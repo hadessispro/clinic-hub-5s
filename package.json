@@ -11,7 +11,8 @@
     "provision:pvc": "node scripts/provision-pvc-users.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.0"
+    "@supabase/supabase-js": "^2.49.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "vite": "^6.3.0"

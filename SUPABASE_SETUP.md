@@ -16,6 +16,21 @@
 
 Schema tạo dữ liệu nhân viên, bảng chấm công, RLS, hàm check-in phía server, thông báo Realtime và bucket file. Hàm server tự tính lại khoảng cách; frontend không được tự quyết định một vị trí có hợp lệ hay không.
 
+Sau schema ban đầu, chạy tiếp `supabase-working-hours-migration.sql`. Migration này:
+
+- lưu đầy đủ tất cả ca trong tài liệu 5S;
+- cho phép một nhân viên được làm nhiều loại ca;
+- dùng `schedule_assignments` để chọn đúng một ca cho từng ngày;
+- chỉ dùng ca mặc định khi ngày đó chưa được phân lịch;
+- tự chuyển Bảo vệ/Tạp vụ sang ca Chủ nhật;
+- tính đi muộn theo giờ bắt đầu của chính ca đó, với yêu cầu check-in trước 5 phút;
+- đánh dấu check-out trước giờ kết ca là `early_leave`;
+- hiệu chỉnh lại ca và trạng thái của dữ liệu chấm công cũ mà trước đây bị lưu chung `clinic-0800`.
+
+Không xóa các lịch ngày đã có. Bác sĩ vẫn giữ đủ các ca 08:00 và 10:00; Lễ tân/Phụ tá cũng giữ đủ bốn ca theo tài liệu.
+
+Chạy thêm `supabase-request-forms-migration.sql` để bổ sung trường giờ bắt đầu/kết thúc cho đơn tăng ca và thông tin số tiền/tài khoản cho đơn tạm ứng lương. Migration cũng chuẩn hóa nhãn “Ứng lương” cũ thành “Tạm ứng lương”.
+
 ## 2. Cấu hình Auth
 
 Trong **Authentication → URL Configuration**:

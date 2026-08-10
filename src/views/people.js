@@ -1,11 +1,15 @@
 import { getEmployees, createEmployee } from '../services/employees.js';
-import { DEPARTMENTS, SHIFTS } from '../constants.js';
+import { DEPARTMENTS, SHIFTS, defaultShiftForDepartment } from '../constants.js';
 import { todayISO, addDaysISO, escapeHTML, formatCurrency, formatShortDate, smartMatch, departmentName, splitList, makeId } from '../utils.js';
 import { pill, statusPill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
 
 let selectedDept = "all";
+let selectedPeopleBranch = 'all';
+let selectedPeopleStatus = 'all';
+let selectedPeopleSearch = '';
+let selectedPeopleSearchMode = 'near';
 let cachedEmployees = [];
 
 function renderPersonCard(employee) {
@@ -44,10 +48,14 @@ export async function renderView(state) {
   // Filter employees based on department and search term
   const filteredEmployees = employees.filter((employee) => {
     const deptMatch = selectedDept === "all" || employee.department === selectedDept;
-    if (!searchTerm) return deptMatch;
-    return deptMatch && smartMatch(
-      `${employee.name} ${employee.role} ${employee.phone} ${departmentName(employee.department)} ${employee.certificates?.join(" ") || ""}`,
-      searchTerm
+    const branchMatch = selectedPeopleBranch === 'all' || employee.branchId === selectedPeopleBranch;
+    const statusMatch = selectedPeopleStatus === 'all' || employee.status === selectedPeopleStatus;
+    const activeSearch = selectedPeopleSearch || searchTerm;
+    if (!activeSearch) return deptMatch && branchMatch && statusMatch;
+    return deptMatch && branchMatch && statusMatch && smartMatch(
+      `${employee.id} ${employee.name} ${employee.role} ${employee.phone} ${employee.email} ${departmentName(employee.department)} ${employee.certificates?.join(" ") || ""}`,
+      activeSearch,
+      selectedPeopleSearchMode
     );
   });
 
@@ -151,11 +159,16 @@ export async function renderView(state) {
         <h3>Danh bạ</h3>
         <span class="subtle">${filteredEmployees.length} nhân sự</span>
       </div>
-      <div class="people-controls">
-        <select data-action="people-filter" id="peopleFilter">
+      <div class="operation-filterbar people-controls">
+        <label class="is-search">Tìm thông minh<input type="search" id="peopleSearchFilter" value="${escapeHTML(selectedPeopleSearch)}" placeholder="Gõ gần đúng tên, MNV, email hoặc số điện thoại" autocomplete="off"></label>
+        <label>Kiểu dò<select id="peopleSearchMode"><option value="near" ${selectedPeopleSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${selectedPeopleSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
+        <label>Phòng ban<select data-action="people-filter" id="peopleFilter">
           <option value="all"${selectedDept === "all" ? " selected" : ""}>Tất cả phòng ban</option>
           ${DEPARTMENTS.map((dept) => option(dept.id, dept.name, selectedDept === dept.id)).join("")}
-        </select>
+        </select></label>
+        <label>Chi nhánh<select id="peopleBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${selectedPeopleBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedPeopleBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
+        <label>Trạng thái<select id="peopleStatusFilter"><option value="all">Tất cả trạng thái</option><option value="active" ${selectedPeopleStatus === 'active' ? 'selected' : ''}>Đang làm</option><option value="onboarding" ${selectedPeopleStatus === 'onboarding' ? 'selected' : ''}>Đang onboard</option><option value="inactive" ${selectedPeopleStatus === 'inactive' ? 'selected' : ''}>Đã nghỉ</option></select></label>
+        <button class="secondary-button" type="button" id="clearPeopleFilters">Xóa bộ lọc</button>
       </div>
       <div class="grid cols-4">
         ${filteredEmployees.map(renderPersonCard).join("")}
@@ -186,6 +199,32 @@ export async function renderView(state) {
 }
 
 export function initView() {
+  document.getElementById('peopleSearchFilter')?.addEventListener('input', (event) => {
+    selectedPeopleSearch = event.target.value;
+    window.clearTimeout(event.target._peopleFilterTimer);
+    event.target._peopleFilterTimer = window.setTimeout(() => store.notify(), 180);
+  });
+  document.getElementById('peopleBranchFilter')?.addEventListener('change', (event) => { selectedPeopleBranch = event.target.value; store.notify(); });
+  document.getElementById('peopleSearchMode')?.addEventListener('change', (event) => { selectedPeopleSearchMode = event.target.value; store.notify(); });
+  document.getElementById('peopleStatusFilter')?.addEventListener('change', (event) => { selectedPeopleStatus = event.target.value; store.notify(); });
+  document.getElementById('clearPeopleFilters')?.addEventListener('click', () => {
+    selectedDept = 'all';
+    selectedPeopleBranch = 'all';
+    selectedPeopleStatus = 'all';
+    selectedPeopleSearch = '';
+    selectedPeopleSearchMode = 'near';
+    store.notify();
+  });
+  const departmentSelect = document.getElementById('employeeDepartment');
+  const shiftSelect = document.getElementById('employeeShift');
+  if (departmentSelect && shiftSelect) {
+    const applyDepartmentDefault = () => {
+      shiftSelect.value = defaultShiftForDepartment(departmentSelect.value);
+    };
+    applyDepartmentDefault();
+    departmentSelect.addEventListener('change', applyDepartmentDefault);
+  }
+
   // 1. Employee Form Submission Handler
   const form = document.getElementById("employeeForm");
   if (form) {
