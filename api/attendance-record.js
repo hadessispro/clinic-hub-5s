@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { classifyAttendance } from '../server/attendance-rules.mjs';
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const MANAGER_ROLES = new Set(['admin', 'hr', 'leader', 'admin_it']);
@@ -45,11 +46,6 @@ function clinicParts(value) {
   return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}:${get('second')}` };
 }
 
-function seconds(time) {
-  const [hour = 0, minute = 0, second = 0] = String(time || '').split(':').map(Number);
-  return hour * 3600 + minute * 60 + second;
-}
-
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const radians = (number) => number * Math.PI / 180;
   const dLat = radians(lat2 - lat1);
@@ -66,16 +62,16 @@ async function loadBranch(db, branchId) {
 }
 
 async function resolveShift(db, employee, workDate, requestedShift) {
-  const { data: assignment } = await db.admin.from('schedule_assignments')
-    .select('shift_code').eq('employee_code', employee.code).eq('work_date', workDate).maybeSingle();
-  if (assignment?.shift_code) return assignment.shift_code;
-
   if (requestedShift) {
     const { data: allowed } = await db.admin.from('employee_allowed_shifts')
       .select('shift_code').eq('employee_code', employee.code).eq('shift_code', requestedShift).maybeSingle();
     if (!allowed) throw new Error('Ca làm đã chọn không được cấp cho tài khoản này.');
     return requestedShift;
   }
+
+  const { data: assignment } = await db.admin.from('schedule_assignments')
+    .select('shift_code').eq('employee_code', employee.code).eq('work_date', workDate).maybeSingle();
+  if (assignment?.shift_code) return assignment.shift_code;
   return employee.shift_code || 'clinic-0800';
 }
 
@@ -150,10 +146,13 @@ export default async function handler(req, res) {
     shift = shiftData;
     if (!shift) throw new Error('Ca làm chưa được cấu hình trong hệ thống.');
 
-    const localSeconds = seconds(local.time);
-    const status = type === 'checkin'
-      ? (localSeconds > seconds(shift.start_time) - Number(shift.checkin_advance_minutes || 0) * 60 ? 'late' : 'valid')
-      : (localSeconds < seconds(shift.end_time) ? 'early_leave' : 'valid');
+    const status = classifyAttendance({
+      type,
+      recordedTime: local.time,
+      startTime: shift.start_time,
+      endTime: shift.end_time,
+      graceMinutes: Number(process.env.ATTENDANCE_GRACE_MINUTES || 5),
+    });
     const payload = {
       client_event_id: eventId,
       employee_code: employee.code,
