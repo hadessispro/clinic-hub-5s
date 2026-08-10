@@ -12,6 +12,13 @@ docker compose --env-file .env.vps ps
 docker compose --env-file .env.vps exec -T backend wget -qO- http://127.0.0.1:4000/healthz
 ```
 
+After the first reconciliation is clean, enable the private 15-minute sync
+worker:
+
+```sh
+docker compose --env-file .env.vps up -d --build shadow-sync
+```
+
 ## Import and reconcile
 
 The importer reads Supabase with the server-side key and writes a lossless

@@ -40,6 +40,7 @@ const output = new Map([
   ['REDIS_PASSWORD', value('REDIS_PASSWORD', secret())],
   ['JWT_SECRET', value('JWT_SECRET', secret())],
   ['MIGRATION_SECRET', value('MIGRATION_SECRET', secret())],
+  ['SYNC_INTERVAL_SECONDS', value('SYNC_INTERVAL_SECONDS', '900')],
 ]);
 
 const required = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY'];

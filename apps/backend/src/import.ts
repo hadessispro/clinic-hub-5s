@@ -78,6 +78,10 @@ async function importTable(table: string) {
     offset += rows.length;
     if (rows.length < pageSize) break;
   }
+  await postgres.query(
+    'delete from migration.raw_records where table_name = $1 and import_run_id is distinct from $2',
+    [table, runId],
+  );
   const shadowResult = await postgres.query<{ count: string }>(
     'select count(*)::text as count from migration.raw_records where table_name = $1',
     [table],
