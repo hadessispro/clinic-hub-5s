@@ -123,6 +123,15 @@ async function main() {
     'update migration.import_runs set status=$2, finished_at=now(), stats=$3::jsonb where id=$1',
     [runId, runStatus, JSON.stringify(stats)],
   );
+  // During the zero-downtime transition, refresh only records that still
+  // originate from the Supabase bootstrap. VPS-owned records are never
+  // overwritten by the compatibility import.
+  if (successful > 0) {
+    const functionExists = await postgres.query<{ available: boolean }>(
+      `select to_regprocedure('app.bootstrap_from_shadow()') is not null as available`,
+    );
+    if (functionExists.rows[0]?.available) await postgres.query('select app.bootstrap_from_shadow()');
+  }
   console.log(JSON.stringify({ runId, status: runStatus, stats }));
   if (runStatus === 'failed') process.exitCode = 1;
 }
