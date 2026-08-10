@@ -30,7 +30,7 @@ const output = new Map([
   ['GOOGLE_SHEETS_WEBHOOK_URL', value('GOOGLE_SHEETS_WEBHOOK_URL')],
   ['GOOGLE_SHEETS_SYNC_SECRET', value('GOOGLE_SHEETS_SYNC_SECRET')],
   ['CRON_SECRET', value('CRON_SECRET', secret())],
-  ['ADMIN_SETUP_SECRET', secret()],
+  ['ADMIN_SETUP_SECRET', value('ADMIN_SETUP_SECRET', secret())],
   ['VAPID_PUBLIC_KEY', value('VAPID_PUBLIC_KEY', vapid.publicKey)],
   ['VAPID_PRIVATE_KEY', value('VAPID_PRIVATE_KEY', vapid.privateKey)],
   ['VAPID_SUBJECT', value('VAPID_SUBJECT', 'mailto:admin@nhakhoa5s.vn')],
