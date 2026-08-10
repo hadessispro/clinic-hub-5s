@@ -30,6 +30,16 @@ function recordKey(row: Record<string, unknown>) {
   return createHash('sha256').update(JSON.stringify(row)).digest('hex');
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 async function importTable(table: string) {
   const { count: sourceCount, error: countError } = await supabase
     .from(table)
@@ -97,16 +107,20 @@ async function main() {
       stats[table] = { status: result.matchesSource ? 'matched' : 'mismatch', ...result };
       console.log(`${table}: source=${result.sourceCount} shadow=${result.shadowCount} matched=${result.matchesSource}`);
     } catch (error) {
-      const message = String((error as Error)?.message || error).slice(0, 500);
+      const message = errorMessage(error).slice(0, 500);
       stats[table] = { status: 'skipped', error: message };
       console.warn(`${table}: skipped (${message})`);
     }
   }
+  const successful = Object.values(stats).filter((entry) => entry.status === 'matched' || entry.status === 'mismatch').length;
+  const skipped = Object.values(stats).filter((entry) => entry.status === 'skipped').length;
+  const runStatus = successful === 0 ? 'failed' : skipped > 0 ? 'completed_with_errors' : 'completed';
   await postgres.query(
     'update migration.import_runs set status=$2, finished_at=now(), stats=$3::jsonb where id=$1',
-    [runId, 'completed', JSON.stringify(stats)],
+    [runId, runStatus, JSON.stringify(stats)],
   );
-  console.log(JSON.stringify({ runId, stats }));
+  console.log(JSON.stringify({ runId, status: runStatus, stats }));
+  if (runStatus === 'failed') process.exitCode = 1;
 }
 
 main().finally(() => postgres.end());
