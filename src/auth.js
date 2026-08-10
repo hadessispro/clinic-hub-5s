@@ -131,6 +131,24 @@ function notifyListeners() {
 
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
   const normalized = String(identifier || '').trim().toLowerCase();
+  if (supabase.isLocal) {
+    const { data, error } = await supabase.auth.signInWithIdentifier({ identifier: normalized, password, branchId });
+    if (error) throw error;
+    currentUser = data.user;
+    await loadProfile(data.user.id);
+    if (!currentProfile || currentProfile.active === false) {
+      await supabase.auth.signOut();
+      currentUser = null;
+      currentProfile = null;
+      throw new Error('Tài khoản chưa có hồ sơ hoạt động trên hệ thống VPS.');
+    }
+    const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
+    setActiveBranch(effectiveBranch);
+    localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
+    localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
+    notifyListeners();
+    return data;
+  }
   let email = normalized.includes('@') ? normalized : loginEmailFor(branchId, normalized);
   const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
     p_branch_id: branchId,

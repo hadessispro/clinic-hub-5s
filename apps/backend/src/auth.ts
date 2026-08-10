@@ -175,6 +175,36 @@ export class AuthService {
       profile: row.profile,
     };
   }
+
+  async refresh(refreshToken: string) {
+    if (!refreshToken) throw new UnauthorizedException('Phiên làm việc không hợp lệ.');
+    const tokenHash = createHmac('sha256', jwtSecret()).update(refreshToken).digest('hex');
+    const result = await this.infrastructure.postgres.query<{ profile_key: string; user_id: string }>(
+      `select a.profile_key,a.user_id::text from app.refresh_sessions s
+       join app.local_accounts a on a.user_id=s.user_id
+       where s.token_hash=$1 and s.revoked_at is null and s.expires_at>now() and a.active=true limit 1`, [tokenHash],
+    );
+    const account = result.rows[0];
+    if (!account) throw new UnauthorizedException('Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.');
+    const user = await this.userFromProfileKey(account.profile_key);
+    const accessToken = signJwt({ sub: user.id, profileKey: account.profile_key, role: user.role }, accessTtlSeconds);
+    await this.infrastructure.postgres.query('update app.refresh_sessions set last_used_at=now() where token_hash=$1', [tokenHash]);
+    return { user, session: { accessToken, refreshToken, expiresIn: accessTtlSeconds } };
+  }
+
+  private async userFromProfileKey(profileKey: string): Promise<AuthUser> {
+    const result = await this.infrastructure.postgres.query<{ profile: JsonMap; employee: JsonMap | null }>(
+      `select p.payload profile, e.payload employee from app.records p
+       left join app.records e on e.entity_type='employees'
+         and lower(e.payload->>'code')=lower(p.payload->>'employee_code') and e.deleted_at is null
+       where p.entity_type='profiles' and p.record_key=$1 and p.deleted_at is null limit 1`, [profileKey],
+    );
+    const row = result.rows[0];
+    if (!row || row.profile.active === false) throw new UnauthorizedException('Tài khoản không còn hoạt động.');
+    return { id: String(row.profile.id || ''), email: row.employee?.email ? String(row.employee.email) : null,
+      employeeCode: String(row.profile.employee_code || ''), branchId: String(row.profile.branch_id || ''),
+      role: String(row.profile.role || 'staff'), department: String(row.profile.department || row.employee?.department || ''), profile: row.profile };
+  }
 }
 
 @Injectable()
@@ -196,6 +226,11 @@ export class AuthController {
   @Post('/login')
   login(@Body() body: { identifier?: string; password?: string; branchId?: string }) {
     return this.auth.login(body.identifier || '', body.password || '', body.branchId);
+  }
+
+  @Post('/refresh')
+  refresh(@Body() body: { refreshToken?: string }) {
+    return this.auth.refresh(body.refreshToken || '');
   }
 
   @Get('/me')

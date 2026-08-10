@@ -13,6 +13,10 @@
     reverse_proxy backend:4000
   }
 
+  handle /api/attendance-record {
+    reverse_proxy backend:4000
+  }
+
   handle /api/* {
     reverse_proxy api:3000
   }
