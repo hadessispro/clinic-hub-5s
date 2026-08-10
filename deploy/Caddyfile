@@ -9,6 +9,10 @@
     respond "ok" 200
   }
 
+  handle /api/v2/* {
+    reverse_proxy backend:4000
+  }
+
   handle /api/* {
     reverse_proxy api:3000
   }
