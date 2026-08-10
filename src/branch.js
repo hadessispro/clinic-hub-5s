@@ -2,12 +2,12 @@ export const BRANCHES = Object.freeze({
   'pham-van-chieu': Object.freeze({
     id: 'pham-van-chieu', code: 'PVC', name: 'Nha Khoa 5S - Phạm Văn Chiêu', shortName: '5S Phạm Văn Chiêu',
     address: '248 Phạm Văn Chiêu, Phường Thông Tây Hội, TP.HCM', latitude: 10.848632, longitude: 106.649181,
-    allowedRadius: 100, maxGpsAccuracy: 50, checkinTime: '08:00', checkinGraceMinutes: 0, timeZone: 'Asia/Ho_Chi_Minh',
+    allowedRadius: 100, maxGpsAccuracy: 100, checkinTime: '08:00', checkinGraceMinutes: 0, timeZone: 'Asia/Ho_Chi_Minh',
   }),
   'le-van-tho': Object.freeze({
     id: 'le-van-tho', code: 'LVT', name: 'Nha Khoa 5S - Lê Văn Thọ', shortName: '5S Lê Văn Thọ',
     address: '60 Lê Văn Thọ, Phường Thông Tây Hội, TP.HCM', latitude: 10.8381574, longitude: 106.6579553,
-    allowedRadius: 100, maxGpsAccuracy: 50, checkinTime: '08:00', checkinGraceMinutes: 0, timeZone: 'Asia/Ho_Chi_Minh',
+    allowedRadius: 100, maxGpsAccuracy: 100, checkinTime: '08:00', checkinGraceMinutes: 0, timeZone: 'Asia/Ho_Chi_Minh',
   }),
 });
 

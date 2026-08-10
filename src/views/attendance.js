@@ -18,6 +18,7 @@ import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { evaluateAttendanceLocation } from '../../server/location-policy.mjs';
 
 let context = null;
 let lastLocation = null;
@@ -438,11 +439,19 @@ function evaluateLocation(reading) {
   const distance = Math.round(distanceMeters(reading.lat, reading.lng, Number(settings.latitude), Number(settings.longitude)));
   const accuracy = Math.round(reading.accuracy);
   const ageMs = Date.now() - new Date(reading.capturedAt).getTime();
+  const policy = evaluateAttendanceLocation({
+    distance,
+    accuracy,
+    allowedRadius: Number(settings.allowedRadius),
+    maxAccuracy: Number(settings.maxGpsAccuracy),
+  });
   return {
     ...reading,
     distance,
-    accurate: accuracy <= Number(settings.maxGpsAccuracy),
-    inside: distance <= Number(settings.allowedRadius),
+    accurate: policy.accurate,
+    inside: policy.inside,
+    effectiveRadius: policy.effectiveRadius,
+    indoorMode: policy.indoorMode,
     fresh: ageMs >= -5000 && ageMs <= 120000,
   };
 }

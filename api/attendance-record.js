@@ -1,16 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyAttendance } from '../server/attendance-rules.mjs';
+import { evaluateAttendanceLocation } from '../server/location-policy.mjs';
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const MANAGER_ROLES = new Set(['admin', 'hr', 'leader', 'admin_it']);
 const FALLBACK_BRANCHES = {
   'pham-van-chieu': {
     id: 'pham-van-chieu', latitude: 10.848632, longitude: 106.649181,
-    allowed_radius_m: 100, max_gps_accuracy_m: 50,
+    allowed_radius_m: 100, max_gps_accuracy_m: 100,
   },
   'le-van-tho': {
     id: 'le-van-tho', latitude: 10.8381574, longitude: 106.6579553,
-    allowed_radius_m: 100, max_gps_accuracy_m: 50,
+    allowed_radius_m: 100, max_gps_accuracy_m: 100,
   },
 };
 
@@ -118,10 +119,14 @@ export default async function handler(req, res) {
 
     const branch = await loadBranch(db, branchId);
     if (!branch) throw new Error('Chi nhánh chưa cấu hình vị trí chấm công.');
-    const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 50)));
+    const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 100)));
     const radius = Math.max(20, Math.min(300, Number(branch.allowed_radius_m || 100)));
     if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > maxAccuracy) throw new Error(`Sai số GPS ±${accuracy || 0} m vượt mức cho phép ${maxAccuracy} m.`);
     const distance = distanceMeters(lat, lng, Number(branch.latitude), Number(branch.longitude));
+    const locationPolicy = evaluateAttendanceLocation({ distance, accuracy, allowedRadius: radius, maxAccuracy });
+    if (!locationPolicy.inside) {
+      throw new Error(`Vị trí GPS chưa đủ tin cậy để chấm công. Điểm đo cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${locationPolicy.effectiveRadius} m.`);
+    }
     if (distance > radius) throw new Error(`Bạn đang cách ${branchId === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : 'Lê Văn Thọ'} ${distance} m; bán kính cho phép ${radius} m.`);
 
     const effectiveAt = body.capturedOffline ? recordedAt : new Date();
