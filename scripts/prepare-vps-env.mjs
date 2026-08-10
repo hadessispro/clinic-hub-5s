@@ -34,6 +34,12 @@ const output = new Map([
   ['VAPID_PUBLIC_KEY', value('VAPID_PUBLIC_KEY', vapid.publicKey)],
   ['VAPID_PRIVATE_KEY', value('VAPID_PRIVATE_KEY', vapid.privateKey)],
   ['VAPID_SUBJECT', value('VAPID_SUBJECT', 'mailto:admin@nhakhoa5s.vn')],
+  ['POSTGRES_DB', value('POSTGRES_DB', 'clinic_hub')],
+  ['POSTGRES_USER', value('POSTGRES_USER', 'clinic_app')],
+  ['POSTGRES_PASSWORD', value('POSTGRES_PASSWORD', secret())],
+  ['REDIS_PASSWORD', value('REDIS_PASSWORD', secret())],
+  ['JWT_SECRET', value('JWT_SECRET', secret())],
+  ['MIGRATION_SECRET', value('MIGRATION_SECRET', secret())],
 ]);
 
 const required = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY'];
