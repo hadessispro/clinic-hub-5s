@@ -765,8 +765,8 @@ async function confirmCheckin(button) {
   } catch (error) {
     console.error('[Attendance] Check-in failed:', error);
     if (proofQueued) await removePendingProof(eventId).catch(() => undefined);
-    const message = String(error?.message || 'Không thể ghi nhận chấm công.');
-    showToast(message.includes('GPS') || message.includes('bán kính') ? message : 'Không thể ghi nhận. Vui lòng kiểm tra GPS và thử lại.', true);
+    const message = String(error?.message || 'Không thể ghi nhận chấm công. Vui lòng thử lại.');
+    showToast(message, true);
     button.disabled = false;
     button.textContent = 'Hoàn tất chấm công';
   }

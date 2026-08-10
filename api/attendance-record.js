@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { classifyAttendance } from '../server/attendance-rules.mjs';
 import { evaluateAttendanceLocation } from '../server/location-policy.mjs';
+import { canUseRequestedShift } from '../server/shift-policy.mjs';
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const MANAGER_ROLES = new Set(['admin', 'hr', 'leader', 'admin_it']);
@@ -63,15 +64,22 @@ async function loadBranch(db, branchId) {
 }
 
 async function resolveShift(db, employee, workDate, requestedShift) {
+  const { data: assignment } = await db.admin.from('schedule_assignments')
+    .select('shift_code').eq('employee_code', employee.code).eq('work_date', workDate).maybeSingle();
+
   if (requestedShift) {
-    const { data: allowed } = await db.admin.from('employee_allowed_shifts')
-      .select('shift_code').eq('employee_code', employee.code).eq('shift_code', requestedShift).maybeSingle();
-    if (!allowed) throw new Error('Ca làm đã chọn không được cấp cho tài khoản này.');
+    const { data: allowedRows } = await db.admin.from('employee_allowed_shifts')
+      .select('shift_code').eq('employee_code', employee.code);
+    const allowed = canUseRequestedShift({
+      requestedShift,
+      defaultShift: employee.shift_code,
+      assignedShift: assignment?.shift_code,
+      allowedShifts: (allowedRows || []).map((row) => row.shift_code),
+    });
+    if (!allowed) throw new Error('Ca làm đã chọn không được cấp cho tài khoản này. Vui lòng chọn lại ca đã được phân công.');
     return requestedShift;
   }
 
-  const { data: assignment } = await db.admin.from('schedule_assignments')
-    .select('shift_code').eq('employee_code', employee.code).eq('work_date', workDate).maybeSingle();
   if (assignment?.shift_code) return assignment.shift_code;
   return employee.shift_code || 'clinic-0800';
 }
