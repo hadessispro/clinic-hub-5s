@@ -4,7 +4,7 @@ import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 
 type JsonMap = Record<string, unknown>;
-type Filter = { field: string; op: 'eq' | 'neq' | 'in' | 'gte' | 'lte' | 'gt' | 'lt' | 'is'; value: unknown };
+type Filter = { field: string; op: 'eq' | 'neq' | 'in' | 'gte' | 'lte' | 'gt' | 'lt' | 'is' | 'ilike'; value: unknown };
 type QueryRequest = {
   table: string;
   operation?: 'select' | 'insert' | 'upsert' | 'update' | 'delete';
@@ -59,6 +59,10 @@ function matches(row: JsonMap, filter: Filter) {
     case 'gt': return actual != null && expected != null && actual > expected;
     case 'lt': return actual != null && expected != null && actual < expected;
     case 'is': return expected === null ? actual == null : actual === expected;
+    case 'ilike': {
+      const needle = String(expected || '').replace(/^%|%$/g, '').toLocaleLowerCase('vi');
+      return String(actual || '').toLocaleLowerCase('vi').includes(needle);
+    }
     default: return false;
   }
 }

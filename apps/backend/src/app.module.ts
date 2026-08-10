@@ -3,6 +3,8 @@ import { InfrastructureService } from './infrastructure';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { DataController, DataService } from './data';
 import { AttendanceController } from './attendance';
+import { RpcController, RpcService } from './rpc';
+import { FilesController } from './files';
 
 @Controller()
 class HealthController {
@@ -15,7 +17,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, DataController, AttendanceController],
-  providers: [InfrastructureService, AuthService, AuthGuard, DataService],
+  controllers: [HealthController, AuthController, DataController, AttendanceController, RpcController, FilesController],
+  providers: [InfrastructureService, AuthService, AuthGuard, DataService, RpcService],
 })
 export class AppModule {}

@@ -67,6 +67,7 @@ class LocalQuery {
   gt(field, value) { return this.filter(field, 'gt', value); }
   lt(field, value) { return this.filter(field, 'lt', value); }
   is(field, value) { return this.filter(field, 'is', value); }
+  ilike(field, value) { return this.filter(field, 'ilike', value); }
   order(field, options = {}) { this.request.order.push({ field, ascending: options.ascending !== false }); return this; }
   limit(value) { this.request.limit = Number(value); return this; }
   range(from, to) { this.request.offset = Number(from); this.request.limit = Number(to) - Number(from) + 1; return this; }
@@ -124,8 +125,11 @@ export const localClient = {
       return { data: { subscription: { unsubscribe: () => authListeners.delete(listener) } } };
     },
   },
-  async rpc(name) {
-    return { data: null, error: new Error(`RPC ${name} chưa được ánh xạ sang VPS.`) };
+  async rpc(name, args = {}) {
+    try {
+      const data = await api('/rpc/call', { method: 'POST', body: JSON.stringify({ name, args }) });
+      return { data, error: null };
+    } catch (error) { return { data: null, error }; }
   },
   channel() {
     return { on() { return this; }, subscribe() { return this; }, unsubscribe() {} };
