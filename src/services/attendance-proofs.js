@@ -99,6 +99,15 @@ export async function uploadAttendanceProof({ clientEventId, blob, capturedAt })
   if (!accessToken) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
 
   const imageBase64 = await blobToBase64(blob);
+  if (supabase.isLocal) {
+    const uploaded = await supabase.request('/files/upload', { method: 'POST',
+      body: JSON.stringify({ name: `${clientEventId}.jpg`, type: 'image/jpeg', data: imageBase64 }) });
+    const { error } = await supabase.from('attendance_records')
+      .update({ proof_url: uploaded.publicUrl, proof_captured_at: capturedAt || new Date().toISOString() })
+      .eq('client_event_id', clientEventId);
+    if (error) throw error;
+    return { proofUrl: uploaded.publicUrl };
+  }
   const response = await fetch('/api/attendance-proof', {
     method: 'POST',
     headers: {

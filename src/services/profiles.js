@@ -72,6 +72,9 @@ export async function deleteProfile(id) {
  * Uses a temp client with persistSession: false.
  */
 export async function createSupabaseUser(email, password) {
+  if (supabase.isLocal) {
+    return { id: crypto.randomUUID(), email, local_password: password };
+  }
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Thiếu cấu hình VITE_SUPABASE_URL hoặc VITE_SUPABASE_ANON_KEY.');
   }
@@ -91,4 +94,9 @@ export async function createSupabaseUser(email, password) {
 
   if (error) throw error;
   return data.user;
+}
+
+export async function provisionLocalUser(profileId, email, password) {
+  if (!supabase.isLocal) return null;
+  return supabase.request('/auth/provision', { method: 'POST', body: JSON.stringify({ profileId, email, password }) });
 }

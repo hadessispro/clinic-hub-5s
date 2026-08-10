@@ -6,6 +6,11 @@ export async function triggerArchive2Months() {
   }
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
+  if (supabase.isLocal) {
+    const { data: result, error } = await supabase.rpc('archive_old_records');
+    if (error) throw error;
+    return result;
+  }
   
   const response = await fetch('/api/archive-2months', {
     method: 'POST',

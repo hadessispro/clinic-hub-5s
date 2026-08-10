@@ -48,6 +48,9 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+      web-push:
+        specifier: ^3.6.7
+        version: 3.6.7
     devDependencies:
       '@types/node':
         specifier: ^22.15.0

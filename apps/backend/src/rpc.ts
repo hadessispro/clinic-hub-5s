@@ -31,6 +31,87 @@ export class RpcService {
   }
 
   async call(user: AuthUser, name: string, args: JsonMap) {
+    if (name === 'archive_old_records') {
+      if (!(admins.has(user.role) || user.role === 'hr')) throw new ForbiddenException('Không có quyền lưu trữ dữ liệu.');
+      const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const result = await this.infrastructure.postgres.query<{ entity_type: string; record_key: string; payload: JsonMap }>(
+        `select entity_type,record_key,payload from app.records
+         where entity_type=any($1::text[]) and deleted_at is null
+         and coalesce(payload->>'created_at',payload->>'timestamp','9999-12-31')<$2`,
+        [['leave_requests', 'attendance_records'], cutoff],
+      );
+      const leaves = result.rows.filter((row) => row.entity_type === 'leave_requests');
+      const attendance = result.rows.filter((row) => row.entity_type === 'attendance_records');
+      if (!result.rows.length) return { success: true, archivedLeaves: 0, archivedAttendance: 0, purged: false,
+        message: 'Chưa có dữ liệu quá 60 ngày để lưu trữ.' };
+      await this.put('integration_outbox', { id: randomUUID(), entity_type: 'archive_2months_json',
+        entity_id: `archive_${Date.now()}`, status: 'pending', attempts: 0,
+        payload: { archive_date: new Date().toISOString(), cutoff_date: cutoff,
+          leave_records: leaves.map((row) => row.payload), attendance_records: attendance.map((row) => row.payload) } });
+      await this.infrastructure.postgres.query(
+        `update app.records set deleted_at=now(),origin='vps',version=version+1,updated_at=now()
+         where (entity_type,record_key) in (select * from unnest($1::text[],$2::text[]))`,
+        [result.rows.map((row) => row.entity_type), result.rows.map((row) => row.record_key)],
+      );
+      return { success: true, archivedLeaves: leaves.length, archivedAttendance: attendance.length, purged: true,
+        message: `Đã đóng gói ${leaves.length} đơn và ${attendance.length} bản ghi chấm công quá 60 ngày.` };
+    }
+    if (name === 'monthly_schedule_action') {
+      const month = String(args.month || '');
+      const employeeCode = String(args.employee || '');
+      const action = String(args.action || '');
+      if (!/^\d{4}-\d{2}$/.test(month) || !employeeCode) throw new Error('Tháng hoặc nhân viên không hợp lệ.');
+      const employeeResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='employees' and deleted_at is null and lower(payload->>'code')=lower($1) limit 1`, [employeeCode],
+      );
+      const employee = employeeResult.rows[0]?.payload;
+      if (!employee) throw new Error('Không tìm thấy nhân viên.');
+      const permitted = admins.has(user.role) || user.role === 'hr'
+        || (user.role === 'leader' && String(employee.department || '') === user.department)
+        || (user.role === 'staff' && employeeCode.toLowerCase() === user.employeeCode.toLowerCase());
+      if (!permitted) throw new ForbiddenException('Nhân viên không thuộc phạm vi quản lý.');
+      const requestResult = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key,payload from app.records where entity_type='schedule_requests' and deleted_at is null
+         and lower(payload->>'employee_code')=lower($1) and payload->>'work_month'=$2 order by updated_at desc limit 1`, [employeeCode, month],
+      );
+      const current = requestResult.rows[0];
+      let meta: JsonMap = { workflow: 'monthly_schedule_v1', stage: 'draft' };
+      try { meta = { ...meta, ...JSON.parse(String(current?.payload.preference || '{}')) }; } catch { /* use draft */ }
+      const now = new Date().toISOString(); const note = String(args.note || '').slice(0, 800);
+      if (action === 'submit' || action === 'leader_forward') {
+        const assigned = await this.infrastructure.postgres.query<{ count: string }>(
+          `select count(*)::text count from app.records where entity_type='schedule_assignments' and deleted_at is null
+           and lower(payload->>'employee_code')=lower($1) and payload->>'work_date' like $2`, [employeeCode, `${month}-%`],
+        );
+        if (Number(assigned.rows[0]?.count || 0) < 1) throw new Error('Nhân viên chưa đăng ký ca làm nào trong tháng.');
+      }
+      if (action === 'submit') {
+        if (user.role === 'staff' && user.employeeCode.toLowerCase() !== employeeCode.toLowerCase()) throw new ForbiddenException();
+        meta = { ...meta, stage: 'leader_review', employeeSubmittedAt: now, employeeNote: note };
+      } else if (action === 'leader_forward' && (user.role === 'leader' || admins.has(user.role))) {
+        meta = { ...meta, stage: 'hr_review', leaderReviewedAt: now, leaderNote: note };
+      } else if (action === 'return_to_staff' && (user.role === 'leader' || admins.has(user.role))) {
+        meta = { ...meta, stage: 'returned', returnedBy: 'leader', returnedAt: now, leaderNote: note };
+      } else if (action === 'hr_approve' && (user.role === 'hr' || admins.has(user.role))) {
+        meta = { ...meta, stage: 'approved', hrReviewedAt: now, hrNote: note, finalApprover: user.profile.full_name || user.employeeCode };
+      } else if (action === 'hr_return' && (user.role === 'hr' || admins.has(user.role))) {
+        meta = { ...meta, stage: 'leader_review', returnedBy: 'hr', returnedAt: now, hrNote: note };
+      } else throw new ForbiddenException('Tài khoản không được phép thực hiện bước duyệt này.');
+      const status = meta.stage === 'approved' ? 'approved' : meta.stage === 'returned' ? 'rejected' : 'pending';
+      const value: JsonMap = { ...(current?.payload || {}), id: current?.payload.id || randomUUID(), employee_code: employeeCode,
+        work_month: month, preference: JSON.stringify(meta), status, reviewer_code: user.employeeCode, submitted_at: now };
+      await this.put('schedule_requests', value, current?.record_key || String(value.id));
+      const targetRoles = meta.stage === 'hr_review' ? ['hr', 'admin'] : [];
+      if (targetRoles.length) {
+        const profiles = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and payload->>'role'=any($1::text[])`, [targetRoles],
+        );
+        for (const profile of profiles.rows) await this.put('notifications', { id: randomUUID(), user_id: profile.payload.id,
+          title: 'Lịch làm việc chờ duyệt', body: `${employee.full_name || employeeCode} đã gửi lịch tháng ${month}.`,
+          type: 'schedule', link_view: 'schedule', read: false });
+      }
+      return { stage: meta.stage };
+    }
     if (name === 'list_message_contacts') {
       const result = await this.infrastructure.postgres.query<{ profile: JsonMap; employee: JsonMap | null }>(
         `select p.payload profile,e.payload employee from app.records p left join app.records e

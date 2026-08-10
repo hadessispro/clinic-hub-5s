@@ -78,6 +78,11 @@ function saveToOfflineQueue(record, userId) {
 }
 
 async function submitToAttendanceApi(record) {
+  if (supabase.isLocal) {
+    const payload = await supabase.request('/attendance-record', { method: 'POST', body: JSON.stringify(record) });
+    if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
+    return payload.data;
+  }
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -91,7 +96,7 @@ async function submitToAttendanceApi(record) {
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận chấm công.');
+    if (!response.ok) throw new Error(payload.message || payload.error || 'Không thể ghi nhận chấm công.');
     if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
     return payload.data;
   } catch (error) {

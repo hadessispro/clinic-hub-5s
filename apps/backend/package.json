@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "migrate": "node dist/migrate.js",
-    "import:supabase": "node dist/import.js"
+    "import:supabase": "node dist/import.js",
+    "backup:supabase": "node dist/backup.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -18,7 +19,8 @@
     "ioredis": "^5.7.0",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

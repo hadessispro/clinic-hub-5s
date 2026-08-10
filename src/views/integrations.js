@@ -11,7 +11,8 @@ import {
   createProfile,
   updateProfile,
   deleteProfile,
-  createSupabaseUser
+  createSupabaseUser,
+  provisionLocalUser
 } from '../services/profiles.js';
 
 let cachedEmployees = [];
@@ -404,9 +405,10 @@ export function initView() {
         } else {
           // Create mode
           let uid = '';
+          let newUser = null;
           if (tempAuthMode === 'create') {
             showToast("Đang tạo tài khoản Supabase Auth...");
-            const newUser = await createSupabaseUser(data.email.trim(), data.password);
+            newUser = await createSupabaseUser(data.email.trim(), data.password);
             uid = newUser.id;
           } else {
             uid = data.uid.trim();
@@ -425,6 +427,9 @@ export function initView() {
             role: data.role,
             active: active
           });
+          if (newUser?.local_password) {
+            await provisionLocalUser(uid, data.email.trim(), newUser.local_password);
+          }
           showToast("Tạo tài khoản người dùng thành công!");
           form.reset();
         }

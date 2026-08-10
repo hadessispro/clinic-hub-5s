@@ -91,7 +91,14 @@ class LocalQuery {
 function authUser(payload) {
   const user = payload?.user;
   if (!user) return null;
-  return { id: user.id, email: user.email, user_metadata: { employee_code: user.employeeCode } };
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    branch_id: user.branchId,
+    department: user.department,
+    user_metadata: { employee_code: user.employeeCode },
+  };
 }
 
 const authListeners = new Set();
@@ -101,6 +108,7 @@ function emitAuth(event, session) {
 
 export const localClient = {
   isLocal: true,
+  request(path, options = {}) { return api(path, options); },
   from(table) { return new LocalQuery(table); },
   auth: {
     async getSession() {

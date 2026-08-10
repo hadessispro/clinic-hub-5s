@@ -15,13 +15,14 @@ async function accessToken() {
 }
 
 async function apiRequest(path, options = {}) {
+  if (supabase.isLocal) return supabase.request(path.replace(/^\/api/, ''), options);
   const token = await accessToken();
   const response = await fetch(path, {
     ...options,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Không thể cấu hình thông báo trên thiết bị.');
+  if (!response.ok) throw new Error(payload.message || payload.error || 'Không thể cấu hình thông báo trên thiết bị.');
   return payload;
 }
 
@@ -108,4 +109,3 @@ export async function dispatchNotificationPush(notificationId) {
     console.warn('[Push] Dispatch failed:', error);
   }
 }
-

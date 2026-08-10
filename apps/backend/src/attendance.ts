@@ -41,7 +41,7 @@ function locationResult(distance: number, accuracy: number, radius: number, maxA
   return { inside: accurate && distance <= effectiveRadius, effectiveRadius: Math.round(effectiveRadius) };
 }
 
-@Controller('/api/attendance-record')
+@Controller('/api/v2/attendance-record')
 @UseGuards(AuthGuard)
 export class AttendanceController {
   constructor(private readonly infrastructure: InfrastructureService) {}

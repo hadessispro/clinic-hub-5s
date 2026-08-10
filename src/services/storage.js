@@ -14,14 +14,8 @@ export async function uploadFile(file, folder = 'attachments') {
     for (let offset = 0; offset < bytes.length; offset += 0x8000) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
     }
-    const { data: sessionData } = await supabase.auth.getSession();
-    const response = await fetch('/api/v2/files/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.session?.access_token || ''}` },
-      body: JSON.stringify({ name: file.name, type: file.type, folder, data: btoa(binary) }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.message || 'Không thể tải tệp lên VPS.');
+    const payload = await supabase.request('/files/upload', { method: 'POST',
+      body: JSON.stringify({ name: file.name, type: file.type, folder, data: btoa(binary) }) });
     return { url: payload.publicUrl, name: file.name };
   }
   

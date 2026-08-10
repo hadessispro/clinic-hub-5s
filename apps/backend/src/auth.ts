@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { Body, CanActivate, Controller, ExecutionContext, Get, Injectable, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Injectable, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { InfrastructureService } from './infrastructure';
 
 const scrypt = promisify(scryptCallback);
@@ -113,7 +113,12 @@ export class AuthService {
       valid = stored.active && await passwordMatches(password, stored.password_salt, stored.password_hash);
     } else {
       const initialPhone = normalizePhone(employee.phone);
-      valid = initialPhone.length >= 8 && normalizePhone(password) === initialPhone;
+      const bootstrapAdminIdentifier = String(process.env.VPS_BOOTSTRAP_ADMIN_IDENTIFIER || '').trim().toLowerCase();
+      const bootstrapAdminPassword = String(process.env.VPS_BOOTSTRAP_ADMIN_PASSWORD || '');
+      const bootstrapAdmin = ['admin', 'admin_it', 'superadmin'].includes(String(profile.role || ''))
+        && bootstrapAdminIdentifier === identifier && bootstrapAdminPassword.length >= 10;
+      valid = (initialPhone.length >= 8 && normalizePhone(password) === initialPhone)
+        || (bootstrapAdmin && password === bootstrapAdminPassword);
       if (valid) {
         const credentials = await hashPassword(password);
         await this.infrastructure.postgres.query(
@@ -192,6 +197,37 @@ export class AuthService {
     return { user, session: { accessToken, refreshToken, expiresIn: accessTtlSeconds } };
   }
 
+  async provision(actor: AuthUser, input: { profileId?: string; email?: string; password?: string }) {
+    if (!['admin', 'admin_it', 'superadmin'].includes(actor.role)) {
+      throw new ForbiddenException('Chỉ quản trị viên được tạo hoặc đặt lại tài khoản đăng nhập.');
+    }
+    const profileId = String(input.profileId || '').trim();
+    const email = String(input.email || '').trim().toLowerCase();
+    const password = String(input.password || '');
+    if (!profileId || !email || password.length < 8) {
+      throw new BadRequestException('Thiếu hồ sơ, email hoặc mật khẩu phải có ít nhất 8 ký tự.');
+    }
+    const result = await this.infrastructure.postgres.query<{ profile_key: string; profile: JsonMap }>(
+      `select record_key profile_key,payload profile from app.records
+       where entity_type='profiles' and deleted_at is null
+       and (record_key=$1 or payload->>'id'=$1) limit 1`, [profileId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new BadRequestException('Không tìm thấy hồ sơ cần cấp tài khoản.');
+    const credentials = await hashPassword(password);
+    const userId = String(row.profile.id || row.profile_key);
+    await this.infrastructure.postgres.query(
+      `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash,active)
+       values ($1,$2,$3,$4,$5,$6,$7,true)
+       on conflict (profile_key) do update set email=excluded.email,employee_code=excluded.employee_code,
+         branch_id=excluded.branch_id,password_salt=excluded.password_salt,password_hash=excluded.password_hash,
+         active=true,failed_attempts=0,locked_until=null,updated_at=now()`,
+      [userId, row.profile_key, email, row.profile.employee_code || null, row.profile.branch_id || null,
+        credentials.salt, credentials.hash],
+    );
+    return { id: userId, email, employeeCode: row.profile.employee_code || null };
+  }
+
   private async userFromProfileKey(profileKey: string): Promise<AuthUser> {
     const result = await this.infrastructure.postgres.query<{ profile: JsonMap; employee: JsonMap | null }>(
       `select p.payload profile, e.payload employee from app.records p
@@ -237,5 +273,11 @@ export class AuthController {
   @UseGuards(AuthGuard)
   me(@Req() request: { user: AuthUser }) {
     return { user: request.user };
+  }
+
+  @Post('/provision')
+  @UseGuards(AuthGuard)
+  provision(@Req() request: { user: AuthUser }, @Body() body: { profileId?: string; email?: string; password?: string }) {
+    return this.auth.provision(request.user, body);
   }
 }

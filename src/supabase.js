@@ -9,7 +9,8 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('[5S Clinic Hub] Missing Supabase URL or publishable key in .env');
 }
 
-const cloudClient = createClient(supabaseUrl, supabaseKey, {
+const useVpsBackend = import.meta.env.VITE_DATA_BACKEND === 'vps';
+const cloudClient = useVpsBackend ? null : createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -17,4 +18,4 @@ const cloudClient = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-export const supabase = import.meta.env.VITE_DATA_BACKEND === 'vps' ? localClient : cloudClient;
+export const supabase = useVpsBackend ? localClient : cloudClient;

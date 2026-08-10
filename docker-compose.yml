@@ -99,6 +99,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
+    profiles: ["migration"]
     env_file:
       - .env.vps
     environment:
@@ -130,11 +131,39 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  backup-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - .env.vps
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-30}
+      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-50}
+    command: ["node", "apps/backend/dist/backup.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    networks:
+      - clinic_internal
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     restart: unless-stopped
+    profiles: ["legacy"]
     env_file:
       - .env.vps
     expose:
@@ -155,13 +184,13 @@ services:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
-        VITE_DATA_BACKEND: ${VITE_DATA_BACKEND:-supabase}
+        VITE_DATA_BACKEND: ${VITE_DATA_BACKEND:-vps}
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}
       ACME_EMAIL: ${ACME_EMAIL:-admin@localhost}
     depends_on:
-      api:
+      backend:
         condition: service_healthy
     ports:
       - "80:80"
@@ -184,6 +213,7 @@ services:
       dockerfile: Dockerfile.api
     command: ["node", "server/scheduler.mjs"]
     restart: unless-stopped
+    profiles: ["legacy"]
     env_file:
       - .env.vps
     environment:

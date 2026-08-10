@@ -14,7 +14,7 @@
   }
 
   handle /api/* {
-    reverse_proxy api:3000
+    respond "API cũ đã ngừng hoạt động; vui lòng cập nhật PWA." 410
   }
 
   handle {
