@@ -95,6 +95,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # This service is a recurring worker, not an HTTP server. Disable the
+    # backend image healthcheck so Docker does not report a false failure.
+    healthcheck:
+      disable: true
     networks:
       - clinic_internal
     logging:
