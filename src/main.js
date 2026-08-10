@@ -262,6 +262,12 @@ bootstrap();
 // Cache the app shell after the first successful online visit so an existing
 // signed-in employee can reopen the check-in screen without a network signal.
 if ('serviceWorker' in navigator) {
+  let reloadingForServiceWorkerUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForServiceWorkerUpdate) return;
+    reloadingForServiceWorkerUpdate = true;
+    window.location.reload();
+  });
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.type === 'clinic:open-view' && event.data.view) navigateTo(event.data.view);
   });
