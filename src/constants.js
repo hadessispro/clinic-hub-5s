@@ -1,13 +1,12 @@
 /* ── Departments ── */
 export const DEPARTMENTS = [
-  { id: 'mkt', name: 'MKT', lead: 'Lan Anh' },
-  { id: 'ns', name: 'Nhân sự', lead: 'Minh Hạnh' },
-  { id: 'kt', name: 'Kế toán', lead: 'Hoài Nam' },
-  { id: 'dvkh', name: 'DVKH', lead: 'Thu Ngân' },
-  { id: 'bs', name: 'Bác sĩ', lead: 'BS. Huy' },
-  { id: 'phuta', name: 'Phụ tá', lead: 'Ngọc Mai' },
-  { id: 'baove', name: 'Bảo vệ', lead: 'Anh Dũng' },
-  { id: 'laocong', name: 'Lao công', lead: 'Cô Hoa' },
+  { id: 'bgd', name: 'Ban Giám đốc', lead: 'Trần Đức Mạnh' },
+  { id: 'mkt', name: 'Marketing', lead: 'Phan Ngọc Đức' },
+  { id: 'dvkh', name: 'Dịch vụ khách hàng', lead: 'Nguyễn Thị Vân Anh' },
+  { id: 'bs', name: 'Bác sĩ', lead: 'Hoàng Thị Phương Nam' },
+  { id: 'phuta', name: 'Phụ tá', lead: 'Bùi Thiện Chương' },
+  { id: 'hcth', name: 'Hành chính Tổng hợp', lead: 'Nguyễn Thị Thương' },
+  { id: 'it', name: 'Quản trị IT', lead: 'Admin IT' },
 ];
 
 /* ── Shifts ── */
