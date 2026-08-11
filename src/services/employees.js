@@ -113,7 +113,19 @@ const SEED_EMPLOYEES = [
   { code: '10249', employee_number: '10249', full_name: 'Nguyễn Thị Thương', department: 'hcth', title: 'Trưởng Phòng HCTH', phone: '0909249249', email: 'nguyen.thi.thuong@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
   { code: '10239', employee_number: '10239', full_name: 'Phạm Thị Thu Trang', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909239239', email: 'pham.thu.trang@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
   { code: '10190', employee_number: '10190', full_name: 'Đỗ Thị Cảnh', department: 'hcth', title: 'Nhân viên Tạp vụ / HCTH', phone: '0909190190', email: 'do.thi.canh@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
-  { code: '10253', employee_number: '10253', full_name: 'Ngô Thị Thanh Thuý', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909253253', email: 'ngo.thanh.thuy@nhakhoa5s.vn', branch_id: 'le-van-tho', status: 'active' }
+  { code: '10253', employee_number: '10253', full_name: 'Ngô Thị Thanh Thuý', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909253253', email: 'ngo.thanh.thuy@nhakhoa5s.vn', branch_id: 'le-van-tho', status: 'active' },
+
+  // ── Danh sách Trưởng phòng / Leader Mẫu Cũ (Giữ lại song song) ──
+  { code: 'PVC-HR01', employee_number: 'PVC-HR01', full_name: 'Minh Hạnh', department: 'hcth', title: 'Trưởng Phòng Nhân Sự / HR Leader', phone: '0909999888', email: 'hanh.minh@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-HR02', employee_number: 'PVC-HR02', full_name: 'Emily', department: 'hcth', title: 'HR Specialist / Chuyên viên HR', phone: '0909123888', email: 'emily.hr@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-MKT01', employee_number: 'PVC-MKT01', full_name: 'Lan Anh', department: 'mkt', title: 'Trưởng Phòng Marketing / MKT Lead', phone: '0901234567', email: 'lananh@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-FIN01', employee_number: 'PVC-FIN01', full_name: 'Hoài Nam', department: 'hcth', title: 'Trưởng Phòng Kế Toán / Finance Leader', phone: '0907777666', email: 'nam.hoai@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-CS01', employee_number: 'PVC-CS01', full_name: 'Thu Ngân', department: 'dvkh', title: 'Trưởng Phòng DVKH & Lễ Tân', phone: '0905555444', email: 'ngan.thu@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-DOC00', employee_number: 'PVC-DOC00', full_name: 'BS. Huy', department: 'bs', title: 'Bác sĩ Trưởng Khoa / Chief Doctor', phone: '0903333222', email: 'huy.bs@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-NUR01', employee_number: 'PVC-NUR01', full_name: 'Ngọc Mai', department: 'phuta', title: 'Phụ tá Trưởng', phone: '0905555555', email: 'mai.ngoc@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-SEC01', employee_number: 'PVC-SEC01', full_name: 'Anh Dũng', department: 'hcth', title: 'Trưởng Đội Bảo Vệ', phone: '0908888777', email: 'dung.anh@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PVC-CLN01', employee_number: 'PVC-CLN01', full_name: 'Cô Hoa', department: 'hcth', title: 'Trưởng Bộ Phận Tạp Vụ', phone: '0909999000', email: 'hoa.co@nhakhoa5s.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'LVT-DOC01', employee_number: 'LVT-DOC01', full_name: 'BS. Nguyễn Văn Hùng', department: 'bs', title: 'Bác sĩ Trưởng CN Lê Văn Thọ', phone: '0907777111', email: 'hung.bs@nhakhoa5s.com', branch_id: 'le-van-tho', status: 'active' }
 ];
 
 export async function getEmployees() {
