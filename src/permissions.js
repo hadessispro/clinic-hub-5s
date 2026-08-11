@@ -141,7 +141,13 @@ export function getNavForRole(role) {
 
 /** Get the default/fallback view for a role */
 export function getDefaultView(role) {
-  if (role === 'admin_it') return 'system-admin';
+  const roleDefaults = {
+    admin_it: 'system-admin',
+    pg_staff: 'marketing-leads',
+    telesale_staff: 'telesale-workspace',
+    support_marketing: 'pg-management',
+  };
+  if (roleDefaults[role]) return roleDefaults[role];
   return role === 'staff' ? 'attendance' : 'dashboard';
 }
 
