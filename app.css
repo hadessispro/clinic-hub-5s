@@ -559,6 +559,10 @@ select {
   flex-wrap: wrap;
 }
 
+tr.is-pagination-hidden {
+  display: none !important;
+}
+
 .data-pagination-summary {
   color: #627169;
   font-size: 0.8rem;

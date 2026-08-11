@@ -1,5 +1,6 @@
 import { store } from './store.js';
 import { canAccessView, getDefaultView } from './permissions.js';
+import { destroyAutomaticDataPagination, initAutomaticDataPagination } from './components/data-pagination.js';
 
 // Map of view names to their lazy loaded module import functions
 const viewImports = {
@@ -115,12 +116,14 @@ store.subscribe(async (state) => {
       // by a newer navigation request.
       if (requestId !== renderRequestId || store.getState().currentView !== currentView) return;
 
+      destroyAutomaticDataPagination();
       viewContainer.innerHTML = content;
       
       // Bind event listeners if view exports a post-render init function
       if (typeof module.initView === 'function') {
         module.initView();
       }
+      requestAnimationFrame(() => initAutomaticDataPagination(viewContainer));
     } else {
       viewContainer.innerHTML = `<h3>View "${currentView}" not found</h3>`;
     }
