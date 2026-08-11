@@ -11,6 +11,7 @@ import { navigateTo } from '../router.js';
 let cachedLeads = [];
 let cachedEmployees = [];
 let activeViewMode = 'kanban'; // 'kanban' | 'table'
+let activeDataClassFilter = '';
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
@@ -59,7 +60,7 @@ export async function renderView(state) {
               ${colLeads.length ? colLeads.map(lead => {
                 const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
                 return `
-                  <article class="kanban-card lead-kanban-card is-collapsed" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
+                  <article class="kanban-card lead-kanban-card is-collapsed" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" data-class="${escapeHTML(lead.data_class || 'raw')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
                     <!-- Top Info Section -->
                     <div class="card-header">
                       <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#0f172a; line-height:1.2;">${escapeHTML(lead.full_name)}</h4>
@@ -118,7 +119,7 @@ export async function renderView(state) {
     ? leads.map((lead, idx) => {
         const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
         return `
-          <tr id="table-row-${lead.id}" class="lead-table-row" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-source="${escapeHTML(lead.source)}" data-branch="${escapeHTML(lead.branch_id)}">
+          <tr id="table-row-${lead.id}" class="lead-table-row" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-source="${escapeHTML(lead.source)}" data-branch="${escapeHTML(lead.branch_id)}" data-class="${escapeHTML(lead.data_class || 'raw')}">
             <td style="text-align:center; color:#64748b; font-size:0.82rem;">${idx + 1}</td>
             <td style="font-weight:600; color:#0f172a;">${escapeHTML(lead.full_name)}</td>
             <td style="font-weight:600; color:#0284c7;">${escapeHTML(lead.phone)}</td>
@@ -128,7 +129,7 @@ export async function renderView(state) {
             <td>
               <select class="select-badge" data-assign-lead data-id="${escapeHTML(lead.id)}" ${lead.data_class === 'raw' ? 'disabled title="Data thô được hệ thống chia đều tự động"' : ''}>
                 <option value="">${lead.data_class === 'raw' ? 'Chia tự động' : 'Chưa gán'}</option>
-                ${telesaleEmployees.map(e => option(e.employee_code || e.id, e.name, lead.assigned_telesale_id === e.employee_code || lead.assigned_telesale_id === e.id)).join('')}
+                ${telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.employee_code || e.id} · ${e.name}`, lead.assigned_telesale_id === e.employee_code || lead.assigned_telesale_id === e.id)).join('')}
               </select>
             </td>
             <td>
@@ -262,7 +263,6 @@ export async function renderView(state) {
         </div>
         
         <div class="marketing-pipeline-actions">
-          ${isLeadManager ? `<div class="raw-distribution-control"><label for="rawDistributionQuantity">Số data thô</label><div><input id="rawDistributionQuantity" type="number" min="1" max="5000" value="20" inputmode="numeric" aria-label="Số lượng data thô"><button type="button" id="distributeRawLeads" class="secondary-button"><i class="ri-shuffle-line"></i><span>Chia đều</span></button></div></div>` : ''}
           <!-- View Switcher -->
           <div class="marketing-view-switcher" role="group" aria-label="Chế độ hiển thị">
             <button type="button" id="viewModeKanban" class="view-switch-btn ${activeViewMode === 'kanban' ? 'active' : ''}" style="padding:5px 12px; font-size:0.8rem; font-weight:600; border:0; border-radius:6px; cursor:pointer; background:${activeViewMode === 'kanban' ? '#ffffff' : 'transparent'}; color:${activeViewMode === 'kanban' ? '#0f172a' : '#64748b'}; box-shadow:${activeViewMode === 'kanban' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'};">
@@ -281,6 +281,27 @@ export async function renderView(state) {
           ` : ''}
         </div>
       </div>
+
+      ${isLeadManager ? `
+        <div class="lead-distribution-mode" aria-label="Phân loại và phân bổ Lead">
+          <div class="lead-distribution-tabs">
+            <button type="button" class="lead-data-filter ${activeDataClassFilter === 'net' ? 'is-active' : ''}" data-lead-class-filter="net">
+              <i class="ri-user-star-line"></i><span><strong>Chia Data net</strong><small>${leads.filter((lead) => lead.data_class === 'net').length} Lead · gán trực tiếp</small></span>
+            </button>
+            <button type="button" class="lead-data-filter ${activeDataClassFilter === 'raw' ? 'is-active' : ''}" data-lead-class-filter="raw">
+              <i class="ri-shuffle-line"></i><span><strong>Chia Data thô</strong><small>${leads.filter((lead) => lead.data_class !== 'net').length} Lead · chia ngẫu nhiên đều</small></span>
+            </button>
+            <button type="button" class="lead-data-filter-reset" id="clearLeadClassFilter" ${activeDataClassFilter ? '' : 'hidden'}>Xem tất cả</button>
+          </div>
+          <div class="lead-distribution-guidance" id="netDistributionGuidance" ${activeDataClassFilter === 'net' ? '' : 'hidden'}>
+            <i class="ri-information-line"></i><span>Chọn Telesale tại từng dòng Data net. Mỗi Telesale vẫn có thể nhận đồng thời Data thô.</span>
+          </div>
+          <div class="raw-distribution-control" id="rawDistributionControl" ${activeDataClassFilter === 'raw' ? '' : 'hidden'}>
+            <label for="rawDistributionQuantity">Số Data thô cần chia</label>
+            <div><input id="rawDistributionQuantity" type="number" min="1" max="5000" value="20" inputmode="numeric" aria-label="Số lượng data thô"><button type="button" id="distributeRawLeads" class="secondary-button"><i class="ri-shuffle-line"></i><span>Phân bổ ngẫu nhiên, chia đều</span></button></div>
+          </div>
+        </div>
+      ` : ''}
 
       <!-- Advanced Filter Toolbar -->
       <div class="marketing-filter-toolbar">
@@ -364,6 +385,18 @@ export function initView() {
   const btnTable = document.getElementById('viewModeTable');
   const kanbanContainer = document.getElementById('kanbanContainer');
   const tableContainer = document.getElementById('tableContainer');
+
+  function activateTableView() {
+    activeViewMode = 'table';
+    if (kanbanContainer) kanbanContainer.style.display = 'none';
+    if (tableContainer) tableContainer.style.display = 'block';
+    if (btnTable) {
+      btnTable.style.background = '#ffffff'; btnTable.style.color = '#0f172a'; btnTable.style.boxShadow = '0 1px 2px rgba(0,0,0,0.08)';
+    }
+    if (btnKanban) {
+      btnKanban.style.background = 'transparent'; btnKanban.style.color = '#64748b'; btnKanban.style.boxShadow = 'none';
+    }
+  }
 
   if (btnKanban && btnTable && kanbanContainer && tableContainer) {
     btnKanban.addEventListener('click', () => {
@@ -542,11 +575,15 @@ export function initView() {
   const searchInput = document.getElementById('searchLeadInput');
   const branchSelect = document.getElementById('filterBranchSelect');
   const sourceSelect = document.getElementById('filterSourceSelect');
+  const rawDistributionControl = document.getElementById('rawDistributionControl');
+  const netDistributionGuidance = document.getElementById('netDistributionGuidance');
+  const clearClassFilter = document.getElementById('clearLeadClassFilter');
 
   function applyFilters() {
     const q = (searchInput?.value || '').trim().toLowerCase();
     const branch = branchSelect?.value || '';
     const source = sourceSelect?.value || '';
+    const dataClass = activeDataClassFilter;
 
     // Filter Kanban cards
     document.querySelectorAll('.lead-kanban-card').forEach(card => {
@@ -554,12 +591,14 @@ export function initView() {
       const phone = card.dataset.phone || '';
       const cardSource = card.dataset.source || '';
       const cardBranch = card.dataset.branch || '';
+      const cardClass = card.dataset.class || 'raw';
 
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || cardBranch === branch;
       const matchSource = !source || cardSource === source;
 
-      card.style.display = (matchQ && matchBranch && matchSource) ? 'block' : 'none';
+      const matchClass = !dataClass || cardClass === dataClass;
+      card.style.display = (matchQ && matchBranch && matchSource && matchClass) ? 'block' : 'none';
     });
 
     // Filter Table rows
@@ -568,14 +607,35 @@ export function initView() {
       const phone = row.dataset.phone || '';
       const rowSource = row.dataset.source || '';
       const rowBranch = row.dataset.branch || '';
+      const rowClass = row.dataset.class || 'raw';
 
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || rowBranch === branch;
       const matchSource = !source || rowSource === source;
 
-      row.style.display = (matchQ && matchBranch && matchSource) ? 'table-row' : 'none';
+      const matchClass = !dataClass || rowClass === dataClass;
+      row.style.display = (matchQ && matchBranch && matchSource && matchClass) ? 'table-row' : 'none';
     });
   }
+
+  document.querySelectorAll('[data-lead-class-filter]').forEach((button) => button.addEventListener('click', () => {
+    activeDataClassFilter = button.dataset.leadClassFilter;
+    document.querySelectorAll('[data-lead-class-filter]').forEach((item) => item.classList.toggle('is-active', item === button));
+    if (rawDistributionControl) rawDistributionControl.hidden = activeDataClassFilter !== 'raw';
+    if (netDistributionGuidance) netDistributionGuidance.hidden = activeDataClassFilter !== 'net';
+    if (clearClassFilter) clearClassFilter.hidden = false;
+    activateTableView();
+    applyFilters();
+  }));
+  clearClassFilter?.addEventListener('click', () => {
+    activeDataClassFilter = '';
+    document.querySelectorAll('[data-lead-class-filter]').forEach((item) => item.classList.remove('is-active'));
+    if (rawDistributionControl) rawDistributionControl.hidden = true;
+    if (netDistributionGuidance) netDistributionGuidance.hidden = true;
+    clearClassFilter.hidden = true;
+    applyFilters();
+  });
+  applyFilters();
 
   if (searchInput) searchInput.addEventListener('input', applyFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyFilters);
