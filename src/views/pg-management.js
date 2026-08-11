@@ -1,5 +1,5 @@
 import {
-  createPgAccount, createPgAssignment, deletePgAccount, exportPgAttendanceCsv,
+  createPgAccount, createPgAssignment, deletePgAccount, deletePgAssignment, exportPgAttendanceCsv,
   getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
 } from '../services/marketing.js';
 import { escapeHTML } from '../utils.js';
@@ -63,8 +63,8 @@ export async function renderView() {
         <label class="form-field"><span>Giờ ra</span><input name="endTime" type="time" value="17:00" required></label>
         <button class="primary-button pg-assignment-submit" type="submit"><i class="ri-send-plane-line"></i> Giao cho PG</button>
       </form>
-      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Địa chỉ</th></tr></thead><tbody>
-        ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có phân công hôm nay.</td></tr>'}
+      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Địa chỉ</th><th>Thao tác</th></tr></thead><tbody>
+        ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td><td><button class="danger-button pg-assignment-remove" type="button" data-delete-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button></td></tr>`).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
       </tbody></table></div>
     </section>
 
@@ -258,6 +258,12 @@ export function initView() {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     try { await createPgAssignment(data); await refresh('Đã giao lịch và vị trí cho PG.'); } catch (error) { showToast(error.message, true); }
   });
+  document.querySelectorAll('[data-delete-pg-assignment]').forEach((button) => button.addEventListener('click', async () => {
+    const assignment = assignments.find((row) => String(row.id) === button.dataset.deletePgAssignment);
+    if (!assignment || !confirm(`Hủy phân công ${assignment.pg_code} tại “${assignment.site_name}” ngày ${String(assignment.work_date).slice(0, 10)}?`)) return;
+    button.disabled = true;
+    try { await deletePgAssignment(assignment.id); await refresh('Đã hủy phân công vị trí của PG.'); } catch (error) { button.disabled = false; showToast(error.message, true); }
+  }));
   document.querySelectorAll('[data-toggle-pg]').forEach((button) => button.addEventListener('click', async () => {
     try { await updatePgAccount(button.dataset.togglePg, { active: button.dataset.active !== '1' }); await refresh('Đã cập nhật tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   }));

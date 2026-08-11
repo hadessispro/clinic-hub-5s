@@ -541,6 +541,30 @@ export class MarketingService {
     return { data: result.rows };
   }
 
+  async deleteAssignment(user: AuthUser, id: string) {
+    requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query(
+      `delete from marketing.pg_shift_assignments a
+       where a.id::text=$1
+         and not exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id)
+       returning a.id,a.pg_code,a.work_date`, [id],
+    );
+    if (!result.rows[0]) {
+      const current = await this.infrastructure.postgres.query(
+        `select a.id,exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id) has_attendance
+         from marketing.pg_shift_assignments a where a.id::text=$1`, [id],
+      );
+      if (current.rows[0]?.has_attendance) {
+        throw new BadRequestException('Phân công đã phát sinh chấm công nên phải được giữ lại để đối soát.');
+      }
+      throw new BadRequestException('Phân công không còn tồn tại.');
+    }
+    await this.audit(user, 'pg_assignment.delete', 'marketing.pg_shift_assignment', id, {
+      pgCode: result.rows[0].pg_code, workDate: result.rows[0].work_date,
+    });
+    return { data: result.rows[0] };
+  }
+
   async recordPgAttendance(user: AuthUser, input: JsonMap) {
     if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ tài khoản PG được chấm công tại vị trí được phân công.');
     const type = input.type === 'checkout' ? 'checkout' : 'checkin';
@@ -617,6 +641,7 @@ export class MarketingController {
   @Delete('/pg-sites/:id') deleteSite(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteSite(request.user, id); }
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
+  @Delete('/pg-assignments/:id') deleteAssignment(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteAssignment(request.user, id); }
   @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }
   @Get('/pg-attendance') attendanceList(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string) { return this.service.listPgAttendance(request.user, from, to); }
   @Get('/pg-attendance/export')

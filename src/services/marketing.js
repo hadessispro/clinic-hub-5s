@@ -434,6 +434,11 @@ export async function createPgAssignment(input) {
   return payload.data;
 }
 
+export async function deletePgAssignment(id) {
+  const payload = await vpsRequest(`/pg-assignments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return payload.data;
+}
+
 export async function recordPgAttendance(input) {
   const payload = await vpsRequest('/pg-attendance', { method: 'POST', body: JSON.stringify(input) });
   return payload.data;
