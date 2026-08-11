@@ -469,14 +469,14 @@ export class MarketingService {
 
   async createAssignment(user: AuthUser, input: JsonMap) {
     requireRole(user, supportRoles);
-    const pgCode = String(input.pgCode || '').trim(); const siteId = String(input.siteId || '').trim();
+    const pgCode = String(input.pgCode || '').trim().toUpperCase(); const siteId = String(input.siteId || '').trim();
     const workDate = String(input.workDate || ''); const startTime = String(input.startTime || ''); const endTime = String(input.endTime || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || !/^\d{2}:\d{2}/.test(startTime) || !/^\d{2}:\d{2}/.test(endTime) || seconds(endTime) <= seconds(startTime)) {
       throw new BadRequestException('Ngày hoặc thời gian phân công không hợp lệ.');
     }
     const valid = await this.infrastructure.postgres.query(
       `select exists(select 1 from app.records where entity_type='profiles' and deleted_at is null and payload->>'role'='pg_staff'
-         and lower(payload->>'employee_code')=lower($1) and coalesce((payload->>'active')::boolean,true)=true) pg_valid,
+         and lower(trim(payload->>'employee_code'))=lower(trim($1)) and coalesce((payload->>'active')::boolean,true)=true) pg_valid,
        exists(select 1 from marketing.pg_work_sites where id::text=$2 and active=true) site_valid`, [pgCode, siteId],
     );
     if (!valid.rows[0]?.pg_valid) throw new BadRequestException('Tài khoản PG không tồn tại hoặc đã bị khóa.');
@@ -492,9 +492,15 @@ export class MarketingService {
   }
 
   async listAssignments(user: AuthUser, date?: string) {
-    const params: unknown[] = [date || clinicDate()];
+    // A PG must always receive the assignment for the clinic's current day.
+    // Do not trust a device date here because an incorrect mobile clock/timezone
+    // would make a valid Support assignment appear to be missing.
+    const params: unknown[] = [user.role === 'pg_staff' ? clinicDate() : (date || clinicDate())];
     let owner = '';
-    if (user.role === 'pg_staff') { params.push(user.employeeCode); owner = `and a.pg_code=$${params.length}`; }
+    if (user.role === 'pg_staff') {
+      params.push(user.employeeCode);
+      owner = `and lower(trim(a.pg_code))=lower(trim($${params.length}))`;
+    }
     else requireRole(user, supportRoles);
     const result = await this.infrastructure.postgres.query(
       `select a.*,s.name site_name,s.address,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
@@ -514,7 +520,7 @@ export class MarketingService {
     }>(
       `select a.id,a.start_time::text,a.end_time::text,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
        from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
-       where a.pg_code=$1 and a.work_date=$2 limit 1`, [user.employeeCode, clinicDate()],
+       where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2 limit 1`, [user.employeeCode, clinicDate()],
     );
     const shift = assignment.rows[0];
     if (!shift) throw new BadRequestException('Support chưa phân công vị trí và thời gian làm việc hôm nay.');
@@ -540,7 +546,10 @@ export class MarketingService {
     if (user.role !== 'pg_staff') requireRole(user, supportRoles);
     const values: unknown[] = [from || clinicDate(), to || clinicDate()];
     let owner = '';
-    if (user.role === 'pg_staff') { values.push(user.employeeCode); owner = `and a.pg_code=$${values.length}`; }
+    if (user.role === 'pg_staff') {
+      values.push(user.employeeCode);
+      owner = `and lower(trim(a.pg_code))=lower(trim($${values.length}))`;
+    }
     const result = await this.infrastructure.postgres.query(
       `select a.*,s.work_date,s.start_time,s.end_time,w.name site_name,w.address
        from marketing.pg_attendance a join marketing.pg_shift_assignments s on s.id=a.assignment_id
