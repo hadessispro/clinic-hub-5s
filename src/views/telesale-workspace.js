@@ -20,11 +20,14 @@ export async function renderView(state) {
     ? leads.map((lead) => {
         return `
           <article class="task-card telesale-lead-card" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}" style="border-left: 4px solid var(--teal); background:#ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-radius:12px; padding:16px;">
-            <div class="section-title" style="margin-bottom:8px; gap:8px;">
-              <h4 style="font-size:1.05rem; font-weight:700; color:#1d2421;">${escapeHTML(lead.full_name)}</h4>
-              <div style="display:flex;align-items:center;gap:6px;">
+            <div class="telesale-card-summary">
+              <div class="telesale-card-identity">
+                <h4>${escapeHTML(lead.full_name)}</h4>
+                <span><i class="ri-phone-line"></i>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</span>
+              </div>
+              <div class="telesale-card-actions">
                 ${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}
-                <button type="button" class="btn-card-action" data-toggle-workspace-card="${escapeHTML(lead.id)}" aria-expanded="false" title="Mở nội dung chăm sóc"><i class="ri-arrow-down-s-line"></i></button>
+                <button type="button" class="telesale-card-toggle" data-toggle-workspace-card="${escapeHTML(lead.id)}" aria-expanded="false" title="Mở nội dung chăm sóc" aria-label="Mở nội dung chăm sóc"><i class="ri-arrow-down-s-line"></i></button>
               </div>
             </div>
             <div id="workspace-card-body-${escapeHTML(lead.id)}" hidden>
@@ -113,7 +116,7 @@ export async function renderView(state) {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:12px;">
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:12px; align-items:start;">
         ${leadsListHtml}
       </div>
     </section>

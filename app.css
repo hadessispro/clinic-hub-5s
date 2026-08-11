@@ -472,6 +472,82 @@ select {
   color: #dc2626;
 }
 
+/* Compact Telesale cards: useful summary first, details on demand. */
+.telesale-lead-card {
+  padding: 12px 14px !important;
+}
+
+.telesale-card-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.telesale-card-identity {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.telesale-card-identity h4 {
+  margin: 0;
+  color: #17211d;
+  font-size: 0.98rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telesale-card-identity span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #68766f;
+  font-size: 0.76rem;
+  line-height: 1;
+}
+
+.telesale-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.telesale-card-toggle {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #cfe0da;
+  border-radius: 999px;
+  background: #f4f9f7;
+  color: var(--teal-dark);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.telesale-card-toggle:hover {
+  background: #e3f3ee;
+  border-color: #98cbc0;
+}
+
+.telesale-card-toggle:active {
+  transform: scale(0.94);
+}
+
+.telesale-card-toggle i {
+  font-size: 1.05rem;
+}
+
+.telesale-lead-card [id^="workspace-card-body-"] {
+  margin-top: 12px;
+}
+
 /* Team Roster Schedule Matrix Styles (Image 2 UI) */
 .shift-legend-bar {
   display: flex;
