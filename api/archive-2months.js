@@ -1,14 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (!['POST', 'GET'].includes(req.method)) {
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const cronSecret = process.env.CRON_SECRET;
-  const authorization = String(req.headers.authorization || '');
-  if (!cronSecret || authorization !== `Bearer ${cronSecret}`) {
-    return res.status(403).json({ error: 'Forbidden' });
   }
 
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;

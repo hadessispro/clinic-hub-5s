@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clinic-hub-vps-core-v28';
+const CACHE_NAME = 'clinic-hub-vps-core-v84';
 const APP_SHELL = ['/', '/manifest.json', '/images/nha-khoa-5s-wall.jpg'];
 
 self.addEventListener('install', (event) => {

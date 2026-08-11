@@ -18,7 +18,6 @@ import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
-import { evaluateAttendanceLocation } from '../../server/location-policy.mjs';
 
 let context = null;
 let lastLocation = null;
@@ -81,17 +80,7 @@ function recordTypeLabel(record) {
   return record?.type === 'checkout' ? 'Check-out' : 'Check-in';
 }
 
-function recordShift(record) {
-  return SHIFTS.find((item) => item.id === record?.shift) || null;
-}
-
-function recordShiftLabel(record) {
-  const shift = recordShift(record);
-  return shift ? `${shift.name} ${shift.start}–${shift.end}` : 'Ca chưa xác định';
-}
-
 function renderTodayCard(checkin, checkout, shift, employee) {
-  const effectiveShift = recordShift(checkout || checkin) || shift;
   if (checkout) {
     return `
       <section class="attendance-primary-card is-complete">
@@ -99,7 +88,7 @@ function renderTodayCard(checkin, checkout, shift, employee) {
         <div class="attendance-primary-copy">
           <p class="eyebrow">Ca làm hôm nay</p>
           <h3>${checkout.isOfflinePending ? 'Đã lưu giờ kết ca trên điện thoại' : 'Đã hoàn thành ca'}</h3>
-          <p>${escapeHTML(employee.name)} · ${escapeHTML(effectiveShift?.name || 'Ca làm')} ${escapeHTML(effectiveShift?.start || '')}–${escapeHTML(effectiveShift?.end || '')} · vào ${formatTime(checkin?.time)} · ra ${formatTime(checkout.time)} · GPS ${checkout.distance} m</p>
+          <p>${escapeHTML(employee.name)} · vào ${formatTime(checkin?.time)} · ra ${formatTime(checkout.time)} · GPS ${checkout.distance} m</p>
         </div>
         ${statusPill(attendanceLabel(checkout), attendanceTone(checkout))}
       </section>
@@ -113,7 +102,7 @@ function renderTodayCard(checkin, checkout, shift, employee) {
         <div class="attendance-primary-copy">
           <p class="eyebrow">Đang trong ca làm việc</p>
           <h3>${checkin.isOfflinePending ? 'Đã lưu check-in trên điện thoại' : 'Check-in thành công'}</h3>
-          <p>${escapeHTML(employee.name)} · ${escapeHTML(effectiveShift?.name || 'Ca làm')} ${escapeHTML(effectiveShift?.start || '')}–${escapeHTML(effectiveShift?.end || '')} · ${formatTime(checkin.time)} · cách phòng khám ${checkin.distance} m</p>
+          <p>${escapeHTML(employee.name)} · ${formatTime(checkin.time)} · cách phòng khám ${checkin.distance} m</p>
         </div>
         <button class="attendance-checkout-button" type="button" data-action="checkout">
           <span class="attendance-button-icon" aria-hidden="true">↗</span>
@@ -157,7 +146,7 @@ function renderHistory(records, employees, ops) {
         </div>
         <div>
           <strong>${recordTypeLabel(record)}</strong>
-          <p>${escapeHTML(recordShiftLabel(record))} · ${record.distance} m tới phòng khám · GPS ±${record.accuracy} m</p>
+          <p>${record.distance} m tới phòng khám · GPS ±${record.accuracy} m</p>
         </div>
         ${statusPill(attendanceLabel(record), attendanceTone(record))}
       </article>
@@ -167,7 +156,7 @@ function renderHistory(records, employees, ops) {
   return `
     <div class="table-wrap attendance-admin-table">
       <table>
-        <thead><tr><th>Nhân sự</th><th>Loại</th><th>Ca làm</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead>
+        <thead><tr><th>Nhân sự</th><th>Loại</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead>
         <tbody>${records.map((record) => {
           const employee = employees.find((item) => item.id === record.employee);
           const employeeMeta = employee
@@ -176,7 +165,6 @@ function renderHistory(records, employees, ops) {
           return `<tr>
             <td><strong>${escapeHTML(employee?.name || record.employee)}</strong><br><span class="subtle">${escapeHTML(employeeMeta)}</span></td>
             <td><strong>${recordTypeLabel(record)}</strong></td>
-            <td>${escapeHTML(recordShiftLabel(record))}</td>
             <td>${formatDateTime(record.time)}</td>
             <td>${record.distance} m</td>
             <td>±${record.accuracy} m${record.capturedOffline ? '<br><span class="subtle">Ghi ngoại tuyến</span>' : ''}</td>
@@ -439,19 +427,11 @@ function evaluateLocation(reading) {
   const distance = Math.round(distanceMeters(reading.lat, reading.lng, Number(settings.latitude), Number(settings.longitude)));
   const accuracy = Math.round(reading.accuracy);
   const ageMs = Date.now() - new Date(reading.capturedAt).getTime();
-  const policy = evaluateAttendanceLocation({
-    distance,
-    accuracy,
-    allowedRadius: Number(settings.allowedRadius),
-    maxAccuracy: Number(settings.maxGpsAccuracy),
-  });
   return {
     ...reading,
     distance,
-    accurate: policy.accurate,
-    inside: policy.inside,
-    effectiveRadius: policy.effectiveRadius,
-    indoorMode: policy.indoorMode,
+    accurate: accuracy <= Number(settings.maxGpsAccuracy),
+    inside: distance <= Number(settings.allowedRadius),
     fresh: ageMs >= -5000 && ageMs <= 120000,
   };
 }
@@ -765,8 +745,8 @@ async function confirmCheckin(button) {
   } catch (error) {
     console.error('[Attendance] Check-in failed:', error);
     if (proofQueued) await removePendingProof(eventId).catch(() => undefined);
-    const message = String(error?.message || 'Không thể ghi nhận chấm công. Vui lòng thử lại.');
-    showToast(message, true);
+    const message = String(error?.message || 'Không thể ghi nhận chấm công.');
+    showToast(message.includes('GPS') || message.includes('bán kính') ? message : 'Không thể ghi nhận. Vui lòng kiểm tra GPS và thử lại.', true);
     button.disabled = false;
     button.textContent = 'Hoàn tất chấm công';
   }

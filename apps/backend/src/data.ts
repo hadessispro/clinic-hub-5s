@@ -23,6 +23,7 @@ const tables = new Set([
   'performance_metrics', 'audit_logs', 'clinic_state_snapshots', 'clinic_locations',
   'integration_outbox', 'system_bug_logs', 'system_announcements', 'system_error_logs',
   'work_shifts', 'employee_allowed_shifts', 'leader_scopes', 'push_subscriptions',
+  'marketing_leads', 'telesale_call_logs', 'marketing_campaigns',
 ]);
 
 const adminRoles = new Set(['admin', 'admin_it', 'superadmin']);
@@ -30,10 +31,12 @@ const hrWriteTables = new Set([
   'profiles', 'employees', 'attendance_records', 'leave_requests', 'schedule_requests',
   'schedule_assignments', 'work_shifts', 'employee_allowed_shifts', 'leader_scopes',
   'onboarding_docs', 'onboarding_progress', 'recruitment', 'notifications', 'messages',
+  'marketing_leads', 'telesale_call_logs', 'marketing_campaigns',
 ]);
 const staffWriteTables = new Set([
   'attendance_records', 'leave_requests', 'schedule_requests', 'messages', 'notifications',
   'push_subscriptions', 'payroll_feedback', 'incidents', 'tasks',
+  'marketing_leads', 'telesale_call_logs',
 ]);
 
 function safeField(field: string) {

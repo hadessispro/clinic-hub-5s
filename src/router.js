@@ -21,6 +21,9 @@ const viewImports = {
   reports: () => import('./views/reports.js'),
   integrations: () => import('./views/integrations.js'),
   'system-admin': () => import('./views/system-admin.js'),
+  'marketing-leads': () => import('./views/marketing-leads.js'),
+  'telesale-workspace': () => import('./views/telesale-workspace.js'),
+  'marketing-analytics': () => import('./views/marketing-analytics.js'),
 };
 
 const viewTitles = {
@@ -42,6 +45,9 @@ const viewTitles = {
   reports: 'Báo cáo hiệu suất',
   integrations: 'Cấu hình tích hợp',
   'system-admin': 'Quản trị hệ thống',
+  'marketing-leads': 'Tiếp nhận Lead Marketing',
+  'telesale-workspace': 'Workspace Telesale',
+  'marketing-analytics': 'Báo cáo Marketing & Telesale',
 };
 
 let renderRequestId = 0;

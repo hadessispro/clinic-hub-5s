@@ -41,6 +41,11 @@ function renderPersonCard(employee) {
 }
 
 export async function renderView(state) {
+  const profile = store.getState().profile || {};
+  if (profile.role === 'admin_marketing' && selectedDept === 'all') {
+    selectedDept = 'mkt';
+  }
+
   const { searchTerm } = state;
   const employees = await getEmployees();
   cachedEmployees = employees;

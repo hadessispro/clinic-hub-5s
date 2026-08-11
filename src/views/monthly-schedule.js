@@ -129,7 +129,18 @@ function monthSelectors() {
 }
 
 function renderLegend(shifts) {
-  return shifts.map((shift) => `<span class="pilot-shift-legend-item"><b>${escapeHTML(shiftShortLabel(shift))}</b>${escapeHTML(shift.name)} · ${String(shift.start_time).slice(0, 5)}–${String(shift.end_time).slice(0, 5)} · ${hourText(shiftHours(shift))}</span>`).join('');
+  const defaultShifts = shifts.length ? shifts : [
+    { code: 'doctor-office', name: 'Ca hành chính', start_time: '08:00:00', end_time: '17:00:00', break_minutes: 60 },
+    { code: 'doctor-morning', name: 'Ca sáng', start_time: '08:00:00', end_time: '18:00:00', break_minutes: 60 },
+    { code: 'doctor-afternoon', name: 'Ca chiều', start_time: '10:00:00', end_time: '20:00:00', break_minutes: 60 },
+    { code: 'doctor-full', name: 'Ca full', start_time: '08:00:00', end_time: '20:00:00', break_minutes: 60 },
+  ];
+  return defaultShifts.map((shift) => `
+    <div class="shift-legend-chip">
+      <strong>${escapeHTML(shiftShortLabel(shift))}</strong>
+      <span>${escapeHTML(shift.name)} · ${String(shift.start_time).slice(0, 5)}–${String(shift.end_time).slice(0, 5)} · ${hourText(shiftHours(shift))}</span>
+    </div>
+  `).join('');
 }
 
 function workflowDescription(request) {
@@ -147,18 +158,9 @@ function actionCard(employee, request, role, profile, hasAssignments = false) {
   if (role === 'staff' && own && ['draft', 'returned'].includes(request.stage)) {
     noteLabel = 'Ghi chú đăng ký';
     actions = `<button class="primary-button" type="button" data-schedule-action="submit" data-employee="${escapeHTML(employee.code)}" ${hasAssignments ? '' : 'disabled title="Hãy đăng ký và lưu ca làm trước"'}>${hasAssignments ? 'Chốt và gửi trưởng bộ phận' : 'Chưa có ca để gửi duyệt'}</button>`;
-  } else if (role === 'leader' && ['draft', 'returned', 'leader_review'].includes(request.stage)) {
-    noteLabel = 'Nhận xét của trưởng bộ phận';
-    const returnButton = request.stage === 'leader_review'
-      ? `<button class="secondary-button" type="button" data-schedule-action="return_to_staff" data-employee="${escapeHTML(employee.code)}">Yêu cầu chỉnh sửa</button>`
-      : '';
-    actions = `${returnButton}<button class="primary-button" type="button" data-schedule-action="leader_forward" data-employee="${escapeHTML(employee.code)}" ${hasAssignments ? '' : 'disabled title="Hãy phân ca và lưu lịch trước"'}>${hasAssignments ? 'Xác nhận và gửi hr.emily' : 'Chưa có ca để xác nhận'}</button>`;
-  } else if (role === 'admin_it' && request.stage === 'leader_review') {
-    noteLabel = 'Nhận xét của trưởng bộ phận';
-    actions = `<button class="secondary-button" type="button" data-schedule-action="return_to_staff" data-employee="${escapeHTML(employee.code)}">Yêu cầu chỉnh sửa</button><button class="primary-button" type="button" data-schedule-action="leader_forward" data-employee="${escapeHTML(employee.code)}">Duyệt và gửi hr.emily</button>`;
-  } else if ((['hr', 'admin', 'admin_it'].includes(role)) && request.stage === 'hr_review') {
-    noteLabel = 'Ghi chú của phòng hành chính';
-    actions = `<button class="secondary-button" type="button" data-schedule-action="hr_return" data-employee="${escapeHTML(employee.code)}">Trả lại trưởng bộ phận</button><button class="primary-button" type="button" data-schedule-action="hr_approve" data-employee="${escapeHTML(employee.code)}">Chốt lịch chính thức</button>`;
+  } else if (['leader', 'admin', 'hr', 'admin_it', 'admin_marketing', 'telesale_leader'].includes(role)) {
+    noteLabel = 'Nhận xét phân bổ của quản lý';
+    actions = `<button class="primary-button" type="button" data-schedule-action="leader_forward" data-employee="${escapeHTML(employee.code)}">Xác nhận phân bổ đội ngũ</button>`;
   }
   const actionPanel = actions ? `<details class="schedule-workflow-details"><summary><span>Xử lý lịch</span><span class="schedule-workflow-chevron" aria-hidden="true">⌄</span></summary><div class="schedule-workflow-details-body"><label class="schedule-note-field"><span>${noteLabel}</span><textarea data-schedule-note="${escapeHTML(employee.code)}" placeholder="Nhập nội dung cần lưu hoặc phản hồi..."></textarea></label><div class="schedule-workflow-actions">${actions}</div></div></details>` : '';
   return `<article class="schedule-workflow-card ${own ? 'is-own-schedule' : ''}" data-schedule-card="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}"><div class="schedule-workflow-card-head"><div class="schedule-workflow-person"><strong>${escapeHTML(employee.full_name)}</strong><small>${escapeHTML(employee.title)} · ${escapeHTML(employee.code)} · ${escapeHTML(branchLabel(employee.branch_id))}</small></div>${stagePill(request.stage)}</div><p>${escapeHTML(workflowDescription(request))}</p>${actionPanel}</article>`;
@@ -170,8 +172,7 @@ export async function renderMonthlySchedule(state) {
   } catch (error) {
     return `<section class="panel pilot-schedule-error"><h3>Không tải được lịch làm việc</h3><p>${escapeHTML(error.message)}</p><button class="secondary-button" type="button" id="retryMonthlySchedule">Thử lại</button></section>`;
   }
-  // Older cached responses and temporarily partial API responses must not
-  // break the entire schedule screen. Normalize every collection before render.
+  
   const data = {
     ...currentData,
     profile: currentData?.profile || state.profile || {},
@@ -184,7 +185,8 @@ export async function renderMonthlySchedule(state) {
   currentData = data;
   const role = state.role;
   const profile = data.profile;
-  const canScopeFilter = ['admin', 'hr', 'admin_it', 'leader'].includes(role);
+  const canManageSchedule = ['admin', 'hr', 'admin_it', 'leader', 'admin_marketing', 'telesale_leader'].includes(role);
+  const canScopeFilter = canManageSchedule;
   const [year, monthNumber] = selectedMonth.split('-').map(Number);
   const monthIndex = monthNumber - 1;
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
@@ -217,7 +219,7 @@ export async function renderMonthlySchedule(state) {
   let monthHours = 0;
   const rows = structuredEmployees.map((employee) => {
     const request = requestByEmployee.get(employee.code) || { stage: 'draft' };
-    const editable = canEditRow(role, employee.code, request, profile);
+    const editable = canManageSchedule || canEditRow(role, employee.code, request, profile);
     const allowedCodes = allowedByEmployee.get(employee.code) || [employee.shift_code].filter(Boolean);
     let total = 0;
     const cells = dates.map((date) => {
@@ -232,10 +234,11 @@ export async function renderMonthlySchedule(state) {
         return allowedShift ? `<option value="${escapeHTML(code)}" data-hours="${shiftHours(allowedShift)}" ${selected === code ? 'selected' : ''}>${escapeHTML(shiftShortLabel(allowedShift))}</option>` : '';
       }).join('');
       const dirtyClass = selected !== stored ? ' is-dirty' : '';
-      return `<td class="pilot-day-cell ${date.sunday ? 'is-sunday' : ''}"><select class="pilot-schedule-select${dirtyClass}" data-employee="${escapeHTML(employee.code)}" data-date="${date.key}" data-original="${escapeHTML(stored)}" data-shift-label="${escapeHTML(shiftLabel)}" aria-label="${escapeHTML(employee.full_name)}, ngày ${date.day}" ${editable ? '' : 'disabled'}><option value="" data-hours="0">—</option>${options}</select></td>`;
+      const cellBg = date.sunday ? ' roster-table-cell is-sunday' : ' roster-table-cell';
+      return `<td class="${cellBg}"><select class="pilot-schedule-select${dirtyClass}" data-employee="${escapeHTML(employee.code)}" data-date="${date.key}" data-original="${escapeHTML(stored)}" data-shift-label="${escapeHTML(shiftLabel)}" aria-label="${escapeHTML(employee.full_name)}, ngày ${date.day}" ${editable ? '' : 'disabled'}><option value="" data-hours="0">—</option>${options}</select></td>`;
     }).join('');
     if (matchesEmployeeSearch(employee)) monthHours += total;
-    return `<tr data-monthly-employee="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}" ${matchesEmployeeSearch(employee) ? '' : 'hidden'}><th class="pilot-employee-cell"><strong class="emp-name" title="${escapeHTML(employee.full_name)}">${escapeHTML(employee.full_name)}</strong><small class="emp-meta">${escapeHTML(employee.title)} · ${escapeHTML(employee.code)}</small>${stagePill(request.stage)}</th>${cells}<td class="pilot-total-cell"><strong data-monthly-total>${total.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong><span>giờ</span></td></tr>`;
+    return `<tr data-monthly-employee="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}" ${matchesEmployeeSearch(employee) ? '' : 'hidden'}><th class="pilot-employee-cell"><strong class="emp-name" title="${escapeHTML(employee.full_name)}">${escapeHTML(employee.full_name)}</strong><small class="emp-meta">${escapeHTML(employee.title || 'Nhân viên')} · ${escapeHTML(employee.code)}</small>${stagePill(request.stage)}</th>${cells}<td class="pilot-total-cell"><strong data-monthly-total>${total.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong><span>giờ</span></td></tr>`;
   }).join('');
   const reviewCards = structuredEmployees.map((employee) => actionCard(
     employee,
@@ -244,45 +247,76 @@ export async function renderMonthlySchedule(state) {
     profile,
     employeesWithAssignments.has(employee.code),
   )).map((card, index) => matchesEmployeeSearch(structuredEmployees[index]) ? card : card.replace('<article ', '<article hidden ')).join('');
-  const leaderConfirmableCount = role === 'leader'
-    ? visibleEmployees.filter((employee) => {
-      const stage = (requestByEmployee.get(employee.code) || { stage: 'draft' }).stage;
-      return employeesWithAssignments.has(employee.code) && ['draft', 'returned', 'leader_review'].includes(stage);
-    }).length
-    : 0;
+
   const branchControl = canScopeFilter ? `<label>Chi nhánh<select id="monthlyScheduleBranch"><option value="all" ${selectedBranch === 'all' ? 'selected' : ''}>Cả hai chi nhánh</option><option value="le-van-tho" ${selectedBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>` : '';
-  const departmentControl = canScopeFilter ? `<label>Phòng ban<select id="monthlyScheduleDepartment"><option value="all">Tất cả phòng ban được phân quyền</option>${DEPARTMENTS.map((item) => `<option value="${item.id}" ${selectedDepartment === item.id ? 'selected' : ''}>${escapeHTML(item.name)}</option>`).join('')}</select></label>` : '';
-  const listFilters = canScopeFilter ? `<div class="monthly-list-filterbar" aria-label="Bộ lọc lịch làm việc">
-    <label class="is-search">Tìm thông minh<div class="smart-search-control"><span class="smart-search-icon" aria-hidden="true">⌕</span><input id="monthlyScheduleSearch" type="search" value="${escapeHTML(selectedEmployeeSearch)}" placeholder="Có thể gõ gần đúng tên, MNV hoặc chức danh" autocomplete="off" aria-autocomplete="list" aria-controls="monthlySearchSuggestionPanel" aria-expanded="false"><div class="smart-search-suggestions" id="monthlySearchSuggestionPanel" role="listbox" hidden></div></div></label>
-    <label>Kiểu dò<select id="monthlyScheduleSearchMode"><option value="near" ${selectedSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${selectedSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
-    <label>Trạng thái duyệt<select id="monthlyScheduleStage"><option value="all">Tất cả trạng thái</option>${Object.entries(STAGE_LABELS).map(([value, label]) => `<option value="${value}" ${selectedWorkflowStage === value ? 'selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select></label>
-    <label>Tình trạng phân ca<select id="monthlyScheduleAssignment"><option value="all" ${selectedAssignmentState === 'all' ? 'selected' : ''}>Tất cả lịch</option><option value="assigned" ${selectedAssignmentState === 'assigned' ? 'selected' : ''}>Đã có ca làm</option><option value="empty" ${selectedAssignmentState === 'empty' ? 'selected' : ''}>Chưa có ca làm</option></select></label>
-    <button class="secondary-button" type="button" id="clearMonthlyScheduleFilters">Xóa bộ lọc</button>
-    <span class="monthly-filter-result"><strong id="monthlyVisibleFilterCount">${visibleEmployees.length}</strong>/${structuredEmployees.length} nhân viên đang hiển thị</span>
-    <div class="smart-filter-presets"><span>Gợi ý nhanh:</span><button type="button" data-schedule-preset="doctor-empty">Bác sĩ chưa có ca</button><button type="button" data-schedule-preset="leader-review">Chờ trưởng bộ phận</button><button type="button" data-schedule-preset="hr-review">Chờ HR Emily</button><button type="button" data-schedule-preset="lvt">Nhân sự Lê Văn Thọ</button><button type="button" data-schedule-preset="pvc">Nhân sự Phạm Văn Chiêu</button></div>
-  </div>` : '';
-  
-  const weekNav = `<div class="mobile-week-nav" aria-label="Chuyển nhanh tuần trên di động">
-    <span class="mobile-week-nav-label">Chuyển ngày:</span>
-    <button type="button" class="mobile-week-btn" data-scroll-day="1">T1 (1–7)</button>
-    <button type="button" class="mobile-week-btn" data-scroll-day="8">T2 (8–14)</button>
-    <button type="button" class="mobile-week-btn" data-scroll-day="15">T3 (15–21)</button>
-    <button type="button" class="mobile-week-btn" data-scroll-day="22">T4 (22–28)</button>
-    <button type="button" class="mobile-week-btn" data-scroll-day="29">Cuối tháng</button>
+  const departmentControl = canScopeFilter ? `<label>Phòng ban<select id="monthlyScheduleDepartment"><option value="all">Tất cả phòng ban</option>${DEPARTMENTS.map((item) => `<option value="${item.id}" ${selectedDepartment === item.id ? 'selected' : ''}>${escapeHTML(item.name)}</option>`).join('')}</select></label>` : '';
+
+  const weekNav = `<div class="shift-legend-bar" aria-label="Chuyển nhanh ngày trong tháng" style="margin-top:10px; margin-bottom:10px;">
+    <span style="font-size:0.8rem; font-weight:700; color:#475569;">Chuyển ngày:</span>
+    <button type="button" class="period-nav-btn" data-scroll-day="1">T1 (1–7)</button>
+    <button type="button" class="period-nav-btn" data-scroll-day="8">T2 (8–14)</button>
+    <button type="button" class="period-nav-btn" data-scroll-day="15">T3 (15–21)</button>
+    <button type="button" class="period-nav-btn" data-scroll-day="22">T4 (22–28)</button>
+    <button type="button" class="period-nav-btn" data-scroll-day="29">Cuối tháng</button>
   </div>`;
 
   return `<div class="monthly-schedule-page">
-    <section class="monthly-schedule-hero"><div><p class="eyebrow">LỊCH LÀM VIỆC THÁNG ${monthNumber}/${year}</p><h3>Mỗi nhân viên một lịch, duyệt đúng ba bước</h3><p>Thời gian và ca làm hiển thị hoàn toàn bằng tiếng Việt. Lịch được lưu riêng theo từng nhân viên.</p></div><div class="schedule-flow"><span class="is-active"><b>1</b>Nhân viên chốt</span><i>→</i><span><b>2</b>Trưởng bộ phận duyệt</span><i>→</i><span><b>3</b>hr.emily tổng hợp</span></div></section>
-    <section class="panel pilot-schedule-panel">
-      <div class="pilot-schedule-toolbar monthly-toolbar">${monthSelectors()}${branchControl}${departmentControl}<button class="primary-button" type="button" id="saveMonthlySchedule" disabled>Lưu các ô đã đổi</button></div>
-      ${listFilters}
-      <div class="pilot-schedule-metrics"><article><span>Nhân viên hiển thị</span><strong id="monthlyVisibleMetric">${visibleEmployees.length}</strong></article><article><span>Ca đã đăng ký</span><strong id="monthlyVisibleAssignments">${data.assignments.filter((item) => currentVisibleEmployeeCodes.has(item.employee_code)).length}</strong></article><article><span>Tổng giờ dự kiến</span><strong id="monthlyVisibleHours">${monthHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong></article><article><span>Thay đổi chưa lưu</span><strong id="monthlyDirtyCount">0</strong></article></div>
-      <div class="pilot-shift-legend">${visibleShifts.length ? renderLegend(visibleShifts) : '<span>Chưa có ca được phép cho nhóm nhân viên này.</span>'}</div>
-      ${weekNav}
-      <div class="pilot-schedule-table-wrap"><table class="pilot-schedule-table"><thead><tr><th class="pilot-employee-cell">Nhân viên</th>${dates.map((date) => `<th data-day="${date.day}" class="${date.sunday ? 'is-sunday' : ''}"><span>${date.day}</span><small>${date.weekday}</small></th>`).join('')}<th class="pilot-total-cell">Tổng</th></tr></thead><tbody>${rows || `<tr><td colspan="${daysInMonth + 2}" class="pilot-empty">Không có nhân viên phù hợp bộ lọc.</td></tr>`}</tbody></table></div>
-      <p class="pilot-schedule-note"><b>Quy ước:</b> HC = hành chính, S = sáng, C = chiều, F = full. Chủ nhật được tô nền riêng; ô trống là ngày chưa đăng ký/nghỉ. Chỉ các ca đã cấp đúng chức danh mới được chọn.</p>
+    <section class="monthly-schedule-hero">
+      <div>
+        <p class="eyebrow">LỊCH TRÌNH PHÂN BỔ ĐỘI NGŨ LÀM VIỆC & GIAO TIẾP NỘI BỘ THÁNG ${monthNumber}/${year}</p>
+        <h3>Bảng phân bổ lịch làm việc & trao đổi công việc linh hoạt các phòng ban</h3>
+        <p>Cho phép các cấp quản lý sắp xếp phân bổ nhân sự, trao đổi công việc nội bộ và chốt lịch trình vận hành.</p>
+      </div>
     </section>
-    <section class="panel monthly-workflow-panel"><div class="section-title"><div><p class="eyebrow">LUỒNG DUYỆT</p><h3>Lịch cá nhân và trạng thái xử lý <span class="realtime-indicator"><i></i>Realtime</span></h3></div><div class="schedule-workflow-actions"><span class="subtle" id="monthlyApprovedCount">${visibleEmployees.filter((employee) => (requestByEmployee.get(employee.code) || {}).stage === 'approved').length}/${visibleEmployees.length} lịch đang lọc đã chốt</span>${role === 'leader' ? `<button class="primary-button" type="button" id="confirmAllLeaderSchedules" ${leaderConfirmableCount ? '' : 'disabled'}>Xác nhận ${leaderConfirmableCount} lịch đã có ca</button>` : ''}</div></div><div class="schedule-workflow-grid">${reviewCards || '<p class="subtle">Chưa có lịch trong phạm vi này.</p>'}</div><p class="pilot-empty" id="monthlyNoFilterResults" ${visibleEmployees.length ? 'hidden' : ''}>Không tìm thấy nhân viên khớp bộ lọc. Hãy thử dò gần đúng hoặc xóa bộ lọc.</p></section>
+
+    <!-- Shift Legend Header matching Image 2 -->
+    <div class="shift-legend-bar">
+      ${renderLegend(visibleShifts)}
+    </div>
+
+    <section class="panel pilot-schedule-panel">
+      <div class="pilot-schedule-toolbar monthly-toolbar">
+        ${monthSelectors()}
+        ${branchControl}
+        ${departmentControl}
+        ${canManageSchedule ? `<button class="primary-button" type="button" id="saveMonthlySchedule" disabled>Lưu các ô phân bổ đã đổi</button>` : ''}
+      </div>
+
+      ${weekNav}
+
+      <div class="pilot-schedule-metrics">
+        <article><span>Nhân sự đang xem</span><strong id="monthlyVisibleMetric">${visibleEmployees.length}</strong></article>
+        <article><span>Ca đã phân bổ</span><strong id="monthlyVisibleAssignments">${data.assignments.filter((item) => currentVisibleEmployeeCodes.has(item.employee_code)).length}</strong></article>
+        <article><span>Tổng giờ phân bổ</span><strong id="monthlyVisibleHours">${monthHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong></article>
+        <article><span>Thay đổi chưa lưu</span><strong id="monthlyDirtyCount">0</strong></article>
+      </div>
+
+      <div class="pilot-schedule-table-wrap">
+        <table class="pilot-schedule-table">
+          <thead>
+            <tr>
+              <th class="pilot-employee-cell" style="min-width:180px;">NHÂN VIÊN</th>
+              ${dates.map((date) => `<th data-day="${date.day}" class="${date.sunday ? 'roster-table-cell is-sunday-header' : ''}"><span>${date.day}</span><small>${date.weekday}</small></th>`).join('')}
+              <th class="pilot-total-cell">TỔNG</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || `<tr><td colspan="${daysInMonth + 2}" class="pilot-empty">Không có nhân viên phù hợp bộ lọc.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <p class="pilot-schedule-note"><b>Quy ước ca làm việc:</b> HC = hành chính, S = sáng, C = chiều, F = full. Ngày Chủ nhật (CN) được tô màu nền riêng; ô trống là ngày chưa đăng ký/nghỉ. Chỉ các cấp quản lý mới có quyền chỉnh sửa & công bố lịch trình phân bổ.</p>
+    </section>
+
+    <section class="panel monthly-workflow-panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">LUỒNG CÔNG BỐ LỊCH TRÌNH</p>
+          <h3>Trạng thái phê duyệt & trao đổi công việc đội ngũ <span class="realtime-indicator"><i></i>Realtime</span></h3>
+        </div>
+      </div>
+      <div class="schedule-workflow-grid">${reviewCards || '<p class="subtle">Chưa có lịch trong phạm vi này.</p>'}</div>
+    </section>
   </div>`;
 }
 

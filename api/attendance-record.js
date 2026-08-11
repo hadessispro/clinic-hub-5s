@@ -1,18 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
-import { classifyAttendance } from '../server/attendance-rules.mjs';
-import { evaluateAttendanceLocation } from '../server/location-policy.mjs';
-import { canUseRequestedShift } from '../server/shift-policy.mjs';
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const MANAGER_ROLES = new Set(['admin', 'hr', 'leader', 'admin_it']);
 const FALLBACK_BRANCHES = {
   'pham-van-chieu': {
     id: 'pham-van-chieu', latitude: 10.848632, longitude: 106.649181,
-    allowed_radius_m: 100, max_gps_accuracy_m: 100,
+    allowed_radius_m: 100, max_gps_accuracy_m: 50,
   },
   'le-van-tho': {
     id: 'le-van-tho', latitude: 10.8381574, longitude: 106.6579553,
-    allowed_radius_m: 100, max_gps_accuracy_m: 100,
+    allowed_radius_m: 100, max_gps_accuracy_m: 50,
   },
 };
 
@@ -48,6 +45,11 @@ function clinicParts(value) {
   return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}:${get('second')}` };
 }
 
+function seconds(time) {
+  const [hour = 0, minute = 0, second = 0] = String(time || '').split(':').map(Number);
+  return hour * 3600 + minute * 60 + second;
+}
+
 function distanceMeters(lat1, lng1, lat2, lng2) {
   const radians = (number) => number * Math.PI / 180;
   const dLat = radians(lat2 - lat1);
@@ -66,21 +68,14 @@ async function loadBranch(db, branchId) {
 async function resolveShift(db, employee, workDate, requestedShift) {
   const { data: assignment } = await db.admin.from('schedule_assignments')
     .select('shift_code').eq('employee_code', employee.code).eq('work_date', workDate).maybeSingle();
+  if (assignment?.shift_code) return assignment.shift_code;
 
   if (requestedShift) {
-    const { data: allowedRows } = await db.admin.from('employee_allowed_shifts')
-      .select('shift_code').eq('employee_code', employee.code);
-    const allowed = canUseRequestedShift({
-      requestedShift,
-      defaultShift: employee.shift_code,
-      assignedShift: assignment?.shift_code,
-      allowedShifts: (allowedRows || []).map((row) => row.shift_code),
-    });
-    if (!allowed) throw new Error('Ca làm đã chọn không được cấp cho tài khoản này. Vui lòng chọn lại ca đã được phân công.');
+    const { data: allowed } = await db.admin.from('employee_allowed_shifts')
+      .select('shift_code').eq('employee_code', employee.code).eq('shift_code', requestedShift).maybeSingle();
+    if (!allowed) throw new Error('Ca làm đã chọn không được cấp cho tài khoản này.');
     return requestedShift;
   }
-
-  if (assignment?.shift_code) return assignment.shift_code;
   return employee.shift_code || 'clinic-0800';
 }
 
@@ -127,14 +122,10 @@ export default async function handler(req, res) {
 
     const branch = await loadBranch(db, branchId);
     if (!branch) throw new Error('Chi nhánh chưa cấu hình vị trí chấm công.');
-    const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 100)));
+    const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 50)));
     const radius = Math.max(20, Math.min(300, Number(branch.allowed_radius_m || 100)));
     if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > maxAccuracy) throw new Error(`Sai số GPS ±${accuracy || 0} m vượt mức cho phép ${maxAccuracy} m.`);
     const distance = distanceMeters(lat, lng, Number(branch.latitude), Number(branch.longitude));
-    const locationPolicy = evaluateAttendanceLocation({ distance, accuracy, allowedRadius: radius, maxAccuracy });
-    if (!locationPolicy.inside) {
-      throw new Error(`Vị trí GPS chưa đủ tin cậy để chấm công. Điểm đo cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${locationPolicy.effectiveRadius} m.`);
-    }
     if (distance > radius) throw new Error(`Bạn đang cách ${branchId === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : 'Lê Văn Thọ'} ${distance} m; bán kính cho phép ${radius} m.`);
 
     const effectiveAt = body.capturedOffline ? recordedAt : new Date();
@@ -159,13 +150,10 @@ export default async function handler(req, res) {
     shift = shiftData;
     if (!shift) throw new Error('Ca làm chưa được cấu hình trong hệ thống.');
 
-    const status = classifyAttendance({
-      type,
-      recordedTime: local.time,
-      startTime: shift.start_time,
-      endTime: shift.end_time,
-      graceMinutes: Number(process.env.ATTENDANCE_GRACE_MINUTES || 5),
-    });
+    const localSeconds = seconds(local.time);
+    const status = type === 'checkin'
+      ? (localSeconds > seconds(shift.start_time) - Number(shift.checkin_advance_minutes || 0) * 60 ? 'late' : 'valid')
+      : (localSeconds < seconds(shift.end_time) ? 'early_leave' : 'valid');
     const payload = {
       client_event_id: eventId,
       employee_code: employee.code,
