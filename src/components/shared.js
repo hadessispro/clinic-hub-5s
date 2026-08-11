@@ -1,8 +1,8 @@
 import { escapeHTML } from '../utils.js';
 import { PRIORITY_LABELS } from '../constants.js';
 
-export function pill(text) {
-  return `<span class="pill">${escapeHTML(String(text))}</span>`;
+export function pill(text, isRawHtml = false) {
+  return `<span class="pill">${isRawHtml ? text : escapeHTML(String(text))}</span>`;
 }
 
 export function statusPill(text, tone) {

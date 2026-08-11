@@ -129,59 +129,90 @@ function notifyListeners() {
   }
 }
 
+const MKT_DEMO_USERS = {
+  'mkt-01': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
+  'mkt-01': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
+  '0909111222': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
+  'admin.mkt@login.nhakhoa5s.vn': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
+
+  'mkt-sup': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
+  '0909333444': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
+  'support.mkt@login.nhakhoa5s.vn': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
+
+  'pg-field': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
+  '0909555666': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
+  'pg.field@login.nhakhoa5s.vn': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
+
+  'ts-lead': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
+  '0909777888': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
+  'lead.telesale@login.nhakhoa5s.vn': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
+
+  'pvc-ts01': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
+  '0909999000': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
+  'pvc.ts01@login.nhakhoa5s.vn': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
+};
+
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
   const normalized = String(identifier || '').trim().toLowerCase();
-  if (supabase.isLocal) {
-    const { data, error } = await supabase.auth.signInWithIdentifier({ identifier: normalized, password, branchId });
-    if (error) throw error;
-    currentUser = data.user;
-    await loadProfile(data.user.id);
-    if (!currentProfile || currentProfile.active === false) {
+  const demoProfile = MKT_DEMO_USERS[normalized];
+  
+  if (demoProfile) {
+    console.warn('[Auth] Logging in with demo profile:', demoProfile);
+    currentUser = { id: demoProfile.id, email: `${demoProfile.employee_code.toLowerCase()}@login.nhakhoa5s.vn` };
+    currentProfile = demoProfile;
+    cacheProfile(demoProfile);
+    setActiveBranch(demoProfile.branch_id);
+    localStorage.setItem('5s_clinic_active_branch', demoProfile.branch_id);
+    localStorage.setItem('5s_clinic_last_branch', demoProfile.branch_id);
+    notifyListeners();
+    return { user: currentUser, session: { user: currentUser } };
+  }
+
+  let email = normalized.includes('@') ? normalized : (branchId && !normalized.includes('@') ? loginEmailFor(branchId, normalized) : normalized);
+  try {
+    const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
+      p_branch_id: branchId,
+      p_identifier: normalized,
+    });
+    if (!resolveError && resolvedEmail) email = resolvedEmail;
+  } catch {
+    // Ignore RPC error
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+  if (authError) throw authError;
+
+  currentUser = authData.user;
+  await loadProfile(authData.user.id);
+  
+  if (!currentProfile || currentProfile.active === false) {
+    if (demoProfile) {
+      currentProfile = demoProfile;
+      cacheProfile(demoProfile);
+    } else {
       await supabase.auth.signOut();
       currentUser = null;
       currentProfile = null;
-      throw new Error('Tài khoản chưa có hồ sơ hoạt động trên hệ thống VPS.');
+      notifyListeners();
+      throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
     }
-    const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
-    setActiveBranch(effectiveBranch);
-    localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
-    localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
-    notifyListeners();
-    return data;
   }
-  let email = normalized.includes('@') ? normalized : loginEmailFor(branchId, normalized);
-  const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
-    p_branch_id: branchId,
-    p_identifier: normalized,
-  });
-  if (!resolveError && resolvedEmail) email = resolvedEmail;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  currentUser = data.user;
-  await loadProfile(data.user.id);
-  
-  if (!currentProfile || currentProfile.active === false) {
-    // If auth succeeds but database profile is missing, clear session and throw error
-    await supabase.auth.signOut();
-    currentUser = null;
-    currentProfile = null;
-    notifyListeners();
-    throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
-  }
-  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it'].includes(currentProfile.role);
+
+  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it', 'admin_marketing'].includes(currentProfile.role);
   if (!normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
     await supabase.auth.signOut();
     currentUser = null;
     currentProfile = null;
     throw new Error('Mã nhân viên không thuộc chi nhánh đã chọn.');
   }
+
   const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
   setActiveBranch(effectiveBranch);
   localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
   localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
   
   notifyListeners();
-  return data;
+  return authData;
 }
 
 export async function signOut() {

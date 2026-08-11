@@ -87,7 +87,7 @@ export function renderTopbar(state) {
           <!-- Branch Switcher for Managers -->
           <div class="topbar-branch-switcher" id="topbarBranchSwitcher">
             <button id="topbarBranchButton" class="topbar-branch-button" type="button" aria-haspopup="listbox" aria-expanded="false" title="Chuyển chi nhánh chấm công và GPS">
-              <span class="branch-switcher-icon" aria-hidden="true">📍</span>
+              <span class="branch-switcher-icon" aria-hidden="true" style="display:inline-flex; align-items:center; color:var(--teal-dark);"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
               <span class="topbar-branch-label">${escapeHTML(BRANCH.shortName)}</span>
               <svg class="topbar-branch-chevron" aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" /></svg>
             </button>

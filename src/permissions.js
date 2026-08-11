@@ -7,8 +7,13 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin'],
-  admin_it: ['system-admin', 'attendance', 'schedule', 'leave', 'reports', 'integrations'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-workspace', 'marketing-analytics'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  support_marketing: ['dashboard', 'marketing-leads', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
+  pg_staff: ['dashboard', 'marketing-leads', 'chat', 'attendance', 'schedule', 'leave'],
+  telesale_leader: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   superadmin: [],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
   leader: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
@@ -20,6 +25,11 @@ const ROLE_VIEWS = {
 const ROLE_ACTIONS = {
   admin: ['*'],
   admin_it: ['system.read', 'system.configure', 'buglog.read', 'buglog.update', 'attendance.read_all', 'attendance.verify', 'schedule.manage', 'employee.read_all', 'leave.create', 'leave.read_self', 'leave.read_all', 'leave.approve'],
+  admin_marketing: ['marketing.*', 'telesale.*', 'analytics.marketing', 'data.export', 'employee.read_all', 'message.send', 'task.create'],
+  support_marketing: ['marketing.leads.create', 'marketing.leads.import', 'telesale.assign', 'message.send', 'task.create'],
+  pg_staff: ['marketing.leads.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send'],
+  telesale_leader: ['telesale.team.manage', 'telesale.leads.assign', 'telesale.analytics', 'telesale.calls.create', 'data.export', 'message.send', 'task.create'],
+  telesale_staff: ['telesale.leads.view_own', 'telesale.calls.create', 'telesale.appointment.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send', 'task.create'],
   superadmin: [],
   hr: [
     'employee.read_all', 'employee.write',
@@ -62,30 +72,35 @@ const ROLE_ACTIONS = {
 /* ── Nav items with icons ── */
 const NAV_ITEMS = [
   { group: 'Điều hành', items: [
-    { view: 'dashboard', label: 'Tổng quan', icon: '⌂' },
-    { view: 'tasks', label: 'Công việc', icon: '✓' },
-    { view: 'chat', label: 'Tin nhắn', icon: '☰' },
-    { view: 'system-admin', label: 'Quản trị hệ thống', icon: '⚙' },
+    { view: 'dashboard', label: 'Tổng quan', icon: 'ri-dashboard-3-line' },
+    { view: 'tasks', label: 'Công việc', icon: 'ri-checkbox-circle-line' },
+    { view: 'chat', label: 'Tin nhắn', icon: 'ri-chat-3-line' },
+    { view: 'system-admin', label: 'Quản trị hệ thống', icon: 'ri-shield-keyhole-line' },
   ]},
   { group: 'Nhân sự', items: [
-    { view: 'recruitment', label: 'Tuyển dụng', icon: '◌' },
-    { view: 'people', label: 'Hồ sơ', icon: '◎' },
-    { view: 'onboarding', label: 'Hội nhập', icon: '▱' },
-    { view: 'uniforms', label: 'Đồng phục', icon: '▥' },
-    { view: 'incidents', label: 'Sự vụ', icon: '!' },
+    { view: 'recruitment', label: 'Tuyển dụng', icon: 'ri-user-add-line' },
+    { view: 'people', label: 'Hồ sơ nhân sự', icon: 'ri-team-line' },
+    { view: 'onboarding', label: 'Hội nhập', icon: 'ri-compass-3-line' },
+    { view: 'uniforms', label: 'Đồng phục', icon: 'ri-t-shirt-line' },
+    { view: 'incidents', label: 'Sự vụ', icon: 'ri-alert-line' },
   ]},
   { group: 'Công & lịch', items: [
-    { view: 'attendance', label: 'Chấm công', icon: '⌖' },
-    { view: 'schedule', label: 'Lịch làm', icon: '▦' },
-    { view: 'leave', label: 'Đơn từ', icon: '◇' },
-    { view: 'payroll', label: 'Lương', icon: '₫' },
+    { view: 'attendance', label: 'Chấm công GPS', icon: 'ri-map-pin-time-line' },
+    { view: 'schedule', label: 'Lịch làm việc', icon: 'ri-calendar-event-line' },
+    { view: 'leave', label: 'Đơn từ nghỉ phép', icon: 'ri-file-text-line' },
+    { view: 'payroll', label: 'Công lương', icon: 'ri-money-dollar-circle-line' },
   ]},
   { group: 'Tài chính & kho', items: [
-    { view: 'proposals', label: 'Đề xuất', icon: '⇧' },
-    { view: 'supplies', label: 'Cung ứng', icon: '⊞' },
-    { view: 'assets', label: 'Tài sản', icon: '▤' },
-    { view: 'reports', label: 'Báo cáo', icon: '▣' },
-    { view: 'integrations', label: 'Tích hợp', icon: '∞' },
+    { view: 'proposals', label: 'Phiếu đề xuất', icon: 'ri-file-paper-line' },
+    { view: 'supplies', label: 'Cung ứng vật tư', icon: 'ri-box-3-line' },
+    { view: 'assets', label: 'Tài sản', icon: 'ri-safe-2-line' },
+    { view: 'reports', label: 'Báo cáo quản lý', icon: 'ri-bar-chart-2-line' },
+    { view: 'integrations', label: 'Tích hợp', icon: 'ri-settings-4-line' },
+  ]},
+  { group: 'Marketing & Telesale', items: [
+    { view: 'marketing-leads', label: 'Tiếp nhận Lead', icon: 'ri-megaphone-line' },
+    { view: 'telesale-workspace', label: 'Workspace Telesale', icon: 'ri-headset-line' },
+    { view: 'marketing-analytics', label: 'Báo cáo Marketing', icon: 'ri-line-chart-line' },
   ]},
 ];
 
@@ -131,4 +146,11 @@ export function getDefaultView(role) {
 /** Get all views a role can access */
 export function getAccessibleViews(role) {
   return ROLE_VIEWS[role] || [];
+}
+
+/** Check if a role is allowed to export/download customer data */
+export function canExportData(role) {
+  if (!role) return false;
+  if (['telesale_staff', 'pg_staff', 'support_marketing', 'staff'].includes(role)) return false;
+  return ['admin', 'admin_marketing', 'telesale_leader', 'leader', 'hr', 'finance', 'admin_it'].includes(role);
 }

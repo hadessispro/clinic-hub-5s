@@ -153,6 +153,17 @@ async function bootstrap() {
           }
           if (currentState.currentView === 'leave') store.notify();
         });
+
+        // Setup marketing & lead realtime sync
+        import('./services/marketing.js').then(({ subscribeToRealtime }) => {
+          subscribeToRealtime(() => {
+            const currentState = store.getState();
+            if (['marketing-leads', 'telesale-workspace', 'marketing-analytics', 'dashboard'].includes(currentState.currentView)) {
+              console.log('[Realtime Auto-Refresh] Updating active view:', currentState.currentView);
+              store.notify();
+            }
+          });
+        }).catch(err => console.warn('[Main] Realtime subscription init error:', err));
       }
       
       // Render the sidebar menu dynamically based on their role permissions
@@ -192,6 +203,18 @@ async function bootstrap() {
   const mainNav = document.getElementById('mainNav');
   if (mainNav) {
     mainNav.addEventListener('click', (event) => {
+      const groupTitle = event.target.closest('.nav-group-title');
+      if (groupTitle) {
+        const group = groupTitle.closest('.nav-group');
+        if (group) {
+          const isOpen = group.classList.contains('is-open');
+          group.classList.toggle('is-open', !isOpen);
+          group.classList.toggle('is-collapsed', isOpen);
+          groupTitle.setAttribute('aria-expanded', String(!isOpen));
+        }
+        return;
+      }
+
       const toggle = event.target.closest('[data-mobile-nav-toggle]');
       const popover = mainNav.querySelector('#mobileNavPopover');
       if (toggle && popover) {
@@ -262,12 +285,6 @@ bootstrap();
 // Cache the app shell after the first successful online visit so an existing
 // signed-in employee can reopen the check-in screen without a network signal.
 if ('serviceWorker' in navigator) {
-  let reloadingForServiceWorkerUpdate = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloadingForServiceWorkerUpdate) return;
-    reloadingForServiceWorkerUpdate = true;
-    window.location.reload();
-  });
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.type === 'clinic:open-view' && event.data.view) navigateTo(event.data.view);
   });

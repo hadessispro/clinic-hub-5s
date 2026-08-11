@@ -1,5 +1,6 @@
 import { getNavForRole } from '../permissions.js';
 import { escapeHTML } from '../utils.js';
+import { store } from '../store.js';
 
 const MOBILE_NAV_ICONS = {
   dashboard: '<svg viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8v9.7a.5.5 0 0 1-.5.5H15v-6H9v6H3.5a.5.5 0 0 1-.5-.5z"/></svg>',
@@ -11,6 +12,9 @@ const MOBILE_NAV_ICONS = {
   people: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20v-2a5.5 5.5 0 0 1 11 0v2M16 8.5a3 3 0 0 1 0 5.8M17 15.5a4.5 4.5 0 0 1 3.5 4.5"/></svg>',
   reports: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   'system-admin': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg>',
+  'marketing-leads': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>',
+  'telesale-workspace': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  'marketing-analytics': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
 };
 
 function mobileNavIcon(view) {
@@ -25,6 +29,9 @@ const MOBILE_NAV_LABELS = {
   chat: 'Tin nhắn',
   'system-admin': 'Quản trị',
   reports: 'Báo cáo',
+  'marketing-leads': 'Nạp Lead',
+  'telesale-workspace': 'Telesale',
+  'marketing-analytics': 'Báo cáo MKT',
 };
 
 function mobileNavLabel(item) {
@@ -37,22 +44,34 @@ function mobileNavLabel(item) {
  * @returns {string} - HTML string representing navigation
  */
 export function renderSidebar(role) {
+  const currentView = store.getState()?.currentView || 'dashboard';
   const navGroups = getNavForRole(role);
   const desktopNavigation = navGroups
     .map((group) => {
+      const hasActive = group.items.some((item) => item.view === currentView);
+      const isExpanded = hasActive || group.group === 'Điều hành' || group.group === 'Marketing & Telesale';
+
       const itemsHtml = group.items
         .map((item) => `
-          <button class="nav-item" type="button" data-view="${escapeHTML(item.view)}">
-            <span class="nav-icon">${escapeHTML(item.icon)}</span>
+          <button class="nav-item ${item.view === currentView ? 'active' : ''}" type="button" data-view="${escapeHTML(item.view)}">
+            <span class="nav-icon"><i class="${escapeHTML(item.icon)}"></i></span>
             <span>${escapeHTML(item.label)}</span>
           </button>
         `)
         .join('');
         
       return `
-        <div class="nav-group">
-          <p class="nav-group-title">${escapeHTML(group.group)}</p>
-          ${itemsHtml}
+        <div class="nav-group ${isExpanded ? 'is-open' : 'is-collapsed'}">
+          <button type="button" class="nav-group-title" aria-expanded="${isExpanded}">
+            <div class="nav-group-title-content">
+              <svg class="nav-group-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              <span>${escapeHTML(group.group)}</span>
+            </div>
+            <span class="nav-group-plus" title="Đóng/Mở">+</span>
+          </button>
+          <div class="nav-group-items">
+            ${itemsHtml}
+          </div>
         </div>
       `;
     })

@@ -81,29 +81,15 @@ async function submitToAttendanceApi(record) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 20000);
-  try {
-    const response = await fetch('/api/attendance-record', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(record),
-      signal: controller.signal,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận chấm công.');
-    if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
-    return payload.data;
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      const timeoutError = new Error('Kết nối chấm công quá 20 giây. Dữ liệu sẽ được giữ an toàn và tự đồng bộ lại.');
-      timeoutError.status = 0;
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
+  const response = await fetch('/api/attendance-record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(record),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Không thể ghi nhận chấm công.');
+  if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
+  return payload.data;
 }
 
 async function submitCheckIn(record) {

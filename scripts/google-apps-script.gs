@@ -137,9 +137,6 @@ function upsertAttendance_(sheet,key,p) {
   row[6]=credit.hours;
   row[7]=credit.days;
   sheet.getRange(rowNumber,1,1,row.length).setValues([row]);
-  sheet.getRange(rowNumber,7).setFormula(`=IF(OR(D${rowNumber}="";E${rowNumber}="");0;CLINIC_WORK_CREDIT(D${rowNumber};E${rowNumber};F${rowNumber};"hours"))`);
-  sheet.getRange(rowNumber,8).setFormula(`=IF(OR(D${rowNumber}="";E${rowNumber}="");0;CLINIC_WORK_CREDIT(D${rowNumber};E${rowNumber};F${rowNumber};"days"))`);
-  sheet.getRange(rowNumber,4,1,2).setNumberFormat('HH:mm:ss');
   sheet.getRange(rowNumber,7,1,2).setNumberFormat('0.##');
   SpreadsheetApp.flush();
 }
@@ -147,48 +144,15 @@ function upsertAttendance_(sheet,key,p) {
 function rebuildAttendanceWorktime() {
   const ss=SpreadsheetApp.getActive();
   const sheet=ensureAttendanceSheet_(ss);
-  deduplicateAttendanceDays_(sheet);
   const lastRow=sheet.getLastRow();
   if(lastRow<2)return;
-  sheet.getRange(2,7,lastRow-1,1).setFormulaR1C1('=IF(OR(RC[-3]="";RC[-2]="");0;CLINIC_WORK_CREDIT(RC[-3];RC[-2];RC[-1];"hours"))');
-  sheet.getRange(2,8,lastRow-1,1).setFormulaR1C1('=IF(OR(RC[-4]="";RC[-3]="");0;CLINIC_WORK_CREDIT(RC[-4];RC[-3];RC[-2];"days"))');
-  sheet.getRange(2,4,lastRow-1,2).setNumberFormat('HH:mm:ss');
-  sheet.getRange(2,7,lastRow-1,2).setNumberFormat('0.##');
-  SpreadsheetApp.flush();
-}
-
-function repairAttendanceSheet() {
-  rebuildAttendanceWorktime();
-}
-
-function deduplicateAttendanceDays_(sheet) {
-  const lastRow=sheet.getLastRow();
-  if(lastRow<2)return;
-  const keyColumn=ATTENDANCE_HEADERS.length+1;
-  const rows=sheet.getRange(2,1,lastRow-1,keyColumn).getValues();
-  const merged=new Map();
-  rows.forEach(row=>{
-    const workDate=String(row[0]||'').trim();
-    const employeeCode=String(row[1]||'').trim();
-    if(!workDate||!employeeCode)return;
-    const key=`attendance-day:${workDate}:${employeeCode}`;
-    const existing=merged.get(key);
-    if(!existing){
-      const copy=row.slice(0,keyColumn);
-      copy[keyColumn-1]=key;
-      merged.set(key,copy);
-      return;
-    }
-    if(!existing[2]&&row[2])existing[2]=row[2];
-    if(row[3]&&(!existing[3]||String(row[3])<String(existing[3])))existing[3]=row[3];
-    if(row[4]&&(!existing[4]||String(row[4])>String(existing[4])))existing[4]=row[4];
-    if(!existing[5]&&row[5])existing[5]=row[5];
-    if(normalizeText_(row[8])==='co')existing[8]='Có';
+  const rows=sheet.getRange(2,1,lastRow-1,ATTENDANCE_HEADERS.length).getDisplayValues();
+  const calculated=rows.map(row=>{
+    const credit=calculateWorkCredit_('',row[5],row[3],row[4]);
+    return [credit.hours,credit.days];
   });
-  const output=[...merged.values()];
-  sheet.getRange(2,1,lastRow-1,keyColumn).clearContent();
-  if(output.length)sheet.getRange(2,1,output.length,keyColumn).setValues(output);
-  sheet.hideColumns(keyColumn);
+  sheet.getRange(2,7,calculated.length,2).setValues(calculated).setNumberFormat('0.##');
+  SpreadsheetApp.flush();
 }
 
 function workHoursForShift_(code,label) {
@@ -214,13 +178,21 @@ function workHoursForShift_(code,label) {
 function calculateWorkCredit_(code,label,checkin,checkout) {
   if(!String(checkin||'').trim()||!String(checkout||'').trim())return {hours:0,days:0};
   const standard=workHoursForShift_(code,label);
-  if(!standard)return {hours:0,days:0};
-  return {hours:standard,days:1};
-}
-
-function CLINIC_WORK_CREDIT(checkin,checkout,label,mode) {
-  const credit=calculateWorkCredit_('',label,checkin,checkout);
-  return String(mode||'hours').toLowerCase()==='days'?credit.days:credit.hours;
+  const times=String(label||'').match(/(\d{2}:\d{2}).*?(\d{2}:\d{2})/);
+  if(!standard||!times)return {hours:0,days:0};
+  const start=minutesFromTime_(times[1]);
+  const end=minutesFromTime_(times[2]);
+  const actualStart=minutesFromTime_(checkin);
+  const actualEnd=minutesFromTime_(checkout);
+  if([start,end,actualStart,actualEnd].some(value=>!Number.isFinite(value)))return {hours:0,days:0};
+  let duration=actualEnd-actualStart;
+  if(duration<0)duration+=24*60;
+  const completedScheduledShift=actualStart<=start+60&&actualEnd>=end-15;
+  const hours=completedScheduledShift
+    ? standard
+    : Math.min(standard,Math.max(0,Math.round(duration/30)/2));
+  const days=hours>0?Math.round(Math.min(1,hours/standard)*100)/100:0;
+  return {hours:hours,days:days};
 }
 
 function minutesFromTime_(value) {

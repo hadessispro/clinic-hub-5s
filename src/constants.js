@@ -47,6 +47,11 @@ export function effectiveShiftId({ assignedShift, defaultShift, department, work
 export const ROLE_PROFILES = {
   admin: { label: 'Admin', scope: 'Toàn quyền vận hành, phân luồng tài khoản, duyệt cuối.' },
   admin_it: { label: 'Admin IT', scope: 'Quản trị kỹ thuật, cấu hình hệ thống, theo dõi lỗi/bug log và gửi/quản lý đơn từ nhân sự.' },
+  admin_marketing: { label: 'Admin Marketing', scope: 'Quản trị Marketing, ngân sách Ads, phân tích ROI và KPI đội Telesale.' },
+  support_marketing: { label: 'Support Marketing', scope: 'Tiếp nhận Lead từ các kênh (FB/Google/Zalo), nạp file Excel & hỗ trợ chia lead.' },
+  pg_staff: { label: 'Nhân viên PG', scope: 'Thu thập & cung cấp dữ liệu Lead thị trường trực tiếp cho đội Telesale.' },
+  telesale_leader: { label: 'Quản lý Telesale', scope: 'Trưởng nhóm Telesale, chia chỉ tiêu cuộc gọi/lịch hẹn, quản lý đội ngũ.' },
+  telesale_staff: { label: 'Nhân viên Telesale', scope: 'Giao diện Telesale chuyên dụng: Gọi điện, nhập nhật ký cuộc gọi và chốt lịch hẹn.' },
   superadmin: { label: 'Superadmin', scope: 'Role dự phòng; chưa kích hoạt chức năng hoặc tài khoản.' },
   hr: { label: 'Nhân sự', scope: 'Tuyển dụng, hồ sơ, hội nhập, đơn từ, lịch làm, công lương.' },
   leader: { label: 'Trưởng bộ phận', scope: 'Giao việc, duyệt đơn cấp 1, xác nhận lịch và hiệu suất đội nhóm.' },
@@ -73,7 +78,30 @@ export const VIEW_TITLES = {
   chat: 'Tin nhắn đội nhóm',
   reports: 'Báo cáo quản lý',
   integrations: 'Tích hợp & bảo mật',
+  'marketing-leads': 'Tiếp nhận Lead Marketing',
+  'telesale-workspace': 'Workspace Telesale',
+  'marketing-analytics': 'Báo cáo Marketing & Telesale',
 };
+
+/* ── Marketing & Telesale Statuses ── */
+export const LEAD_STATUS = {
+  new: 'Mới nạp',
+  contacted: 'Đã liên hệ',
+  appointment_booked: 'Đã hẹn khám',
+  visited: 'Đã đến PK',
+  converted: 'Chốt thành công',
+  cancelled: 'Hủy/Không nhu cầu',
+};
+
+export const CALL_STATUS = {
+  interested: 'Quan tâm/Tư vấn',
+  appointment_booked: 'Chốt hẹn khám',
+  busy: 'Máy bận',
+  no_answer: 'Không nghe máy',
+  rejected: 'Từ chối/Hủy',
+};
+
+export const MARKETING_SOURCES = ['Facebook Ads', 'Google Ads', 'TikTok Ads', 'Zalo OA', 'PG Field Intake', 'Referral', 'Website', 'Hotline Direct'];
 
 /* ── Task status labels ── */
 export const TASK_STATUS = { todo: 'Cần làm', doing: 'Đang xử lý', done: 'Hoàn tất' };
