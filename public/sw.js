@@ -1,5 +1,5 @@
-const CACHE_NAME = 'clinic-hub-vps-core-v84';
-const APP_SHELL = ['/', '/manifest.json', '/images/nha-khoa-5s-wall.jpg'];
+const CACHE_NAME = 'clinic-hub-vps-core-v85';
+const APP_SHELL = ['/', '/manifest.json', '/favicon.png', '/apple-touch-icon.png', '/images/app-icon-192.png', '/images/app-icon-512.png', '/images/nha-khoa-5s-wall.jpg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -57,8 +57,8 @@ self.addEventListener('push', (event) => {
   try { payload = event.data?.json() || {}; } catch { payload = { body: event.data?.text() || '' }; }
   event.waitUntil(self.registration.showNotification(payload.title || '5S Clinic Hub', {
     body: payload.body || 'Bạn có thông tin mới cần kiểm tra.',
-    icon: '/images/nino-clinic-room.jpg',
-    badge: '/images/nino-clinic-room.jpg',
+    icon: '/images/app-icon-192.png',
+    badge: '/images/app-icon-192.png',
     tag: payload.id || `clinic-${Date.now()}`,
     renotify: true,
     data: { url: payload.url || '/', view: payload.view || 'dashboard', id: payload.id || '' },
