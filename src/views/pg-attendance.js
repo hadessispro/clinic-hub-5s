@@ -9,6 +9,13 @@ let records = [];
 let reportFrom = '';
 let reportTo = '';
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
+function dateOnly(value) { return String(value || '').slice(0, 10); }
+function dateLabel(value) {
+  const normalized = dateOnly(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  return new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' })
+    .format(new Date(`${normalized}T12:00:00+07:00`));
+}
 
 export async function renderView() {
   const profile = store.getState().profile || {};
@@ -30,15 +37,17 @@ export async function renderView() {
   const shift = assignments[0];
   const hasCheckin = records.some((row) => row.record_type === 'checkin');
   const hasCheckout = records.some((row) => row.record_type === 'checkout');
-  return `<div class="view-header"><div><p class="eyebrow">PG ATTENDANCE</p><h3>Chấm công tại vị trí Support phân công</h3></div></div>
-    <section class="panel pg-attendance-card">
-      ${shift ? `<div class="checkin-summary-grid"><div><span>Ngày làm</span><strong>${escapeHTML(shift.work_date)}</strong></div><div><span>Ca làm</span><strong>${escapeHTML(String(shift.start_time).slice(0,5))}–${escapeHTML(String(shift.end_time).slice(0,5))}</strong></div><div class="full"><span>Vị trí</span><strong>${escapeHTML(shift.site_name)}</strong><small>${escapeHTML(shift.address)}</small></div></div>
-      <div class="checkin-policy-note"><strong>Điều kiện GPS</strong><p>Trong bán kính ${shift.allowed_radius_m} m · sai số tối đa ±${shift.max_accuracy_m} m.</p></div>
-      <div class="button-row"><button class="primary-button" data-pg-clock="checkin" ${hasCheckin ? 'disabled' : ''}>${hasCheckin ? 'Đã check-in' : 'Check-in vào ca'}</button><button class="secondary-button" data-pg-clock="checkout" ${!hasCheckin || hasCheckout ? 'disabled' : ''}>${hasCheckout ? 'Đã check-out' : 'Check-out kết ca'}</button></div>` : '<div class="empty-state"><strong>Chưa được phân công hôm nay</strong><p>Liên hệ Support để được tạo ngày, giờ và vị trí chấm công.</p></div>'}
+  return `<div class="attendance-page">
+    <header class="attendance-page-header"><div><p class="eyebrow">GPS Attendance · PG Marketing</p><h3>Chấm công vào ca</h3><p>${dateLabel(today())}</p></div><div class="attendance-header-actions"><span class="network-status ${navigator.onLine ? 'is-online' : 'is-offline'}"><span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}</span></div></header>
+    ${shift ? `<section class="attendance-primary-card ${hasCheckout ? 'is-complete' : (hasCheckin ? 'is-active' : '')}">
+      <div class="attendance-time-block"><span>Ca Support phân công</span><strong>${escapeHTML(String(shift.start_time).slice(0,5))}</strong><small>Kết thúc ${escapeHTML(String(shift.end_time).slice(0,5))}</small></div>
+      <div class="attendance-primary-copy"><p class="eyebrow">${hasCheckout ? 'Đã hoàn thành' : (hasCheckin ? 'Đang trong ca' : 'Sẵn sàng check-in')}</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div>
+      ${hasCheckin ? `<button class="attendance-checkout-button" data-pg-clock="checkout" ${hasCheckout ? 'disabled' : ''}><span class="attendance-button-icon">↗</span><span><strong>${hasCheckout ? 'Đã check-out' : 'Check-out kết ca'}</strong><small>Xác minh GPS tại điểm làm việc</small></span></button>` : `<button class="attendance-checkin-button" data-pg-clock="checkin"><span class="attendance-button-icon">⌖</span><span><strong>Xác nhận chấm công</strong><small>Ca do Support phân công</small></span></button>`}
     </section>
-    <section class="panel" style="margin-top:14px"><div class="section-title"><h3>Lịch sử hôm nay</h3><span class="pill">${records.length} lượt</span></div>
+    <div class="attendance-info-grid"><section class="attendance-office-card"><div class="attendance-card-icon">⌖</div><div><p class="eyebrow">Điểm chấm công</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div><span class="attendance-radius">${shift.allowed_radius_m} m</span></section><section class="attendance-rule-card"><div class="attendance-card-icon">⏱</div><div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(String(shift.start_time).slice(0,5))}–${escapeHTML(String(shift.end_time).slice(0,5))}</h3><p>Vị trí và thời gian do Support thiết lập · sai số GPS tối đa ±${shift.max_accuracy_m} m.</p></div></section></div>` : '<section class="attendance-primary-card"><div class="attendance-primary-copy"><p class="eyebrow">Chưa có ca hôm nay</p><h3>Support chưa phân công vị trí</h3><p>Sau khi Support giao ngày, giờ và điểm làm việc, ca sẽ tự động xuất hiện tại đây.</p></div></section>'}
+    <section class="attendance-history-panel"><div class="section-title"><div><p class="eyebrow">Lịch sử</p><h3>Chấm công hôm nay</h3></div><span class="pill">${records.length} lượt</span></div>
       <div class="table-wrap"><table><thead><tr><th>Loại</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead><tbody>${records.length ? records.map((row) => `<tr><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${row.distance_m} m</td><td>±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="5">Chưa chấm công.</td></tr>'}</tbody></table></div>
-    </section>`;
+    </section></div>`;
 }
 
 function position() {
@@ -61,7 +70,7 @@ export function initView() {
       const result = await position();
       await recordPgAttendance({ type: button.dataset.pgClock, latitude: result.coords.latitude, longitude: result.coords.longitude, accuracy: result.coords.accuracy });
       showToast(button.dataset.pgClock === 'checkin' ? 'Check-in PG thành công.' : 'Check-out PG thành công.');
-      await navigateTo('pg-attendance');
+      await navigateTo('attendance');
     } catch (error) {
       button.disabled = false;
       showToast(error.message || 'Không lấy được vị trí GPS.', true);

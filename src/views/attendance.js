@@ -18,6 +18,7 @@ import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 
 let context = null;
 let lastLocation = null;
@@ -277,6 +278,9 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
 }
 
 export async function renderView(state) {
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
+    return renderPgAttendance();
+  }
   if (clockTimer) clearTimeout(clockTimer);
   stopWorkplaceCamera();
   const localBranchSettings = branchSettings();
@@ -840,6 +844,11 @@ function exportAttendance() {
 }
 
 export function initView() {
+  const state = store.getState();
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
+    initPgAttendance();
+    return;
+  }
   const page = document.querySelector('.attendance-page');
   if (!page) return;
 
