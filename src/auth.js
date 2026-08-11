@@ -129,32 +129,35 @@ function notifyListeners() {
   }
 }
 
-const MKT_DEMO_USERS = {
-  'mkt-01': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
-  'mkt-01': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
-  '0909111222': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
-  'admin.mkt@login.nhakhoa5s.vn': { id: 'usr-mkt-01', full_name: 'Trần Quốc Bảo (Admin Marketing)', employee_code: 'MKT-01', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909111222', active: true },
+const OFFICIAL_DEMO_USERS = {
+  // Ban Giám Đốc
+  '10096': { id: 'usr-10096', full_name: 'Trần Đức Mạnh', employee_code: '10096', role: 'admin', department: 'bgd', branch_id: 'pham-van-chieu', phone: '0909999100', active: true },
+  
+  // Trưởng phòng Marketing
+  '10162': { id: 'usr-10162', full_name: 'Phan Ngọc Đức', employee_code: '10162', role: 'leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909162162', active: true },
+  
+  // Trưởng phòng DVKH
+  '10196': { id: 'usr-10196', full_name: 'Nguyễn Thị Vân Anh', employee_code: '10196', role: 'leader', department: 'dvkh', branch_id: 'pham-van-chieu', phone: '0909196196', active: true },
+  
+  // Bác sĩ Trưởng Khoa
+  '10179': { id: 'usr-10179', full_name: 'Hoàng Thị Phương Nam', employee_code: '10179', role: 'leader', department: 'bs', branch_id: 'pham-van-chieu', phone: '0909179179', active: true },
+  
+  // Phụ tá Trưởng
+  '10219': { id: 'usr-10219', full_name: 'Bùi Thiện Chương', employee_code: '10219', role: 'leader', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909219219', active: true },
 
-  'mkt-sup': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
-  '0909333444': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
-  'support.mkt@login.nhakhoa5s.vn': { id: 'usr-mkt-sup', full_name: 'Nguyễn Thị Mai (Support Marketing)', employee_code: 'MKT-SUP', role: 'support_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909333444', active: true },
+  // Trưởng phòng HCTH
+  '10249': { id: 'usr-10249', full_name: 'Nguyễn Thị Thương', employee_code: '10249', role: 'leader', department: 'hcth', branch_id: 'pham-van-chieu', phone: '0909249249', active: true },
+  
+  // Admin IT
+  '10001': { id: 'usr-10001', full_name: 'Admin IT', employee_code: '10001', role: 'admin_it', department: 'it', branch_id: 'pham-van-chieu', phone: '0901111111', active: true },
 
-  'pg-field': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
-  '0909555666': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
-  'pg.field@login.nhakhoa5s.vn': { id: 'usr-pg-field', full_name: 'Lê Văn Nam (PG Thị trường)', employee_code: 'PG-FIELD', role: 'pg_staff', department: 'mkt', branch_id: 'le-van-tho', phone: '0909555666', active: true },
-
-  'ts-lead': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
-  '0909777888': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
-  'lead.telesale@login.nhakhoa5s.vn': { id: 'usr-ts-lead', full_name: 'Phạm Thu Hương (Quản lý Telesale)', employee_code: 'TS-LEAD', role: 'telesale_leader', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909777888', active: true },
-
-  'pvc-ts01': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
-  '0909999000': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
-  'pvc.ts01@login.nhakhoa5s.vn': { id: 'usr-pvc-ts01', full_name: 'Hoàng Kim Anh (Telesale Staff 01)', employee_code: 'PVC-TS01', role: 'telesale_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0909999000', active: true },
+  // Bác sĩ Huỳnh Kim Thy (Bác sĩ Nha khoa - Role: Staff/Bác sĩ)
+  '10187': { id: 'usr-10187', full_name: 'Huỳnh Kim Thy', employee_code: '10187', role: 'staff', department: 'bs', branch_id: 'pham-van-chieu', phone: '0909187187', active: true },
 };
 
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
   const normalized = String(identifier || '').trim().toLowerCase();
-  const demoProfile = MKT_DEMO_USERS[normalized];
+  const demoProfile = OFFICIAL_DEMO_USERS[normalized];
   
   if (demoProfile) {
     console.warn('[Auth] Logging in with demo profile:', demoProfile);
