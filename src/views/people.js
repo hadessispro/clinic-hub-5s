@@ -42,7 +42,10 @@ function renderPersonCard(employee) {
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  if (profile.role === 'admin_marketing' && selectedDept === 'all') {
+  const canManageEmployees = ['admin', 'hr', 'superadmin'].includes(profile.role);
+  const marketingScoped = ['admin_marketing', 'support_marketing', 'telesale_leader', 'telesale_staff', 'pg_staff'].includes(profile.role);
+  const availableDepartments = marketingScoped ? DEPARTMENTS.filter((department) => department.id === 'mkt') : DEPARTMENTS;
+  if (marketingScoped && selectedDept === 'all') {
     selectedDept = 'mkt';
   }
 
@@ -85,7 +88,7 @@ export async function renderView(state) {
       </div>
     </div>
 
-    <section class="panel">
+    ${canManageEmployees ? `<section class="panel">
       <div class="section-title">
         <h3>Thêm nhân sự</h3>
         ${pill("Gán ca ngay khi tạo")}
@@ -98,7 +101,7 @@ export async function renderView(state) {
         <div class="form-field">
           <label for="employeeDepartment">Phòng ban</label>
           <select id="employeeDepartment" name="department">
-            ${DEPARTMENTS.map(dept => option(dept.id, dept.name)).join('')}
+            ${availableDepartments.map(dept => option(dept.id, dept.name)).join('')}
           </select>
         </div>
         <div class="form-field">
@@ -157,7 +160,7 @@ export async function renderView(state) {
           <button class="primary-button" type="submit"><span>+</span>Thêm nhân sự</button>
         </div>
       </form>
-    </section>
+    </section>` : ''}
 
     <section class="panel" style="margin-top:14px">
       <div class="section-title">
@@ -169,7 +172,7 @@ export async function renderView(state) {
         <label>Kiểu dò<select id="peopleSearchMode"><option value="near" ${selectedPeopleSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${selectedPeopleSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
         <label>Phòng ban<select data-action="people-filter" id="peopleFilter">
           <option value="all"${selectedDept === "all" ? " selected" : ""}>Tất cả phòng ban</option>
-          ${DEPARTMENTS.map((dept) => option(dept.id, dept.name, selectedDept === dept.id)).join("")}
+          ${availableDepartments.map((dept) => option(dept.id, dept.name, selectedDept === dept.id)).join("")}
         </select></label>
         <label>Chi nhánh<select id="peopleBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${selectedPeopleBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedPeopleBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
         <label>Trạng thái<select id="peopleStatusFilter"><option value="all">Tất cả trạng thái</option><option value="active" ${selectedPeopleStatus === 'active' ? 'selected' : ''}>Đang làm</option><option value="onboarding" ${selectedPeopleStatus === 'onboarding' ? 'selected' : ''}>Đang onboard</option><option value="inactive" ${selectedPeopleStatus === 'inactive' ? 'selected' : ''}>Đã nghỉ</option></select></label>

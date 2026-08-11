@@ -79,7 +79,7 @@ export class DataService {
     if (user.role === 'pg_staff') return false;
     if (adminRoles.has(user.role)) return true;
     if (user.role === 'hr') return hrWriteTables.has(table);
-    if (user.role === 'leader') return hrWriteTables.has(table) || staffWriteTables.has(table);
+    if (user.role === 'leader') return staffWriteTables.has(table);
     return staffWriteTables.has(table);
   }
 
