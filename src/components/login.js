@@ -45,8 +45,10 @@ export function showLogin() {
             <div class="input-group">
               <label for="loginBranch">Chi nhánh</label>
               <select id="loginBranch" required>
+                <option value="all">Chi nhánh tổng / PG linh hoạt</option>
                 ${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}">${branch.name}</option>`).join('')}
               </select>
+              <small>PG có thể chọn Chi nhánh tổng. Điểm chấm công vẫn theo lịch và vị trí Support đã giao.</small>
             </div>
             <div class="input-group">
               <label for="loginIdentifier">Mã nhân viên hoặc email</label>

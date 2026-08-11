@@ -19,12 +19,14 @@ export function setActiveBranch(branchId) {
 }
 
 export function getEffectiveBranchId(profile, candidateBranchId = null) {
+  const requestedBranch = candidateBranchId === 'all' ? null : candidateBranchId;
   const isManager = ['admin', 'hr', 'leader', 'admin_it'].includes(profile?.role);
   if (isManager) {
     const saved = localStorage.getItem('5s_clinic_active_branch');
-    return candidateBranchId || saved || profile?.branch_id || 'pham-van-chieu';
+    const usableSaved = saved === 'all' ? null : saved;
+    return requestedBranch || usableSaved || profile?.branch_id || 'pham-van-chieu';
   }
-  return profile?.branch_id || candidateBranchId || 'pham-van-chieu';
+  return profile?.branch_id || requestedBranch || 'pham-van-chieu';
 }
 
 export function loginEmailFor(branchId, employeeNumber) {

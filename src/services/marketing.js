@@ -402,6 +402,13 @@ export async function getPgSites() {
   return payload.data || [];
 }
 
+export async function searchPgLocations(query) {
+  const value = String(query || '').trim();
+  if (value.length < 3) throw new Error('Nhập ít nhất 3 ký tự để tìm vị trí.');
+  const payload = await vpsRequest(`/pg-location-search?q=${encodeURIComponent(value)}`);
+  return payload.data || [];
+}
+
 export async function createPgSite(input) {
   const payload = await vpsRequest('/pg-sites', { method: 'POST', body: JSON.stringify(input) });
   return payload.data;

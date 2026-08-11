@@ -442,6 +442,31 @@ export class MarketingService {
     return { data: result.rows };
   }
 
+  async searchLocations(user: AuthUser, queryInput: string) {
+    requireRole(user, supportRoles);
+    const query = String(queryInput || '').trim();
+    if (query.length < 3 || query.length > 180) throw new BadRequestException('Vui lòng nhập địa chỉ cần tìm.');
+    const params = new URLSearchParams({
+      q: query, format: 'jsonv2', addressdetails: '1', limit: '6', countrycodes: 'vn', 'accept-language': 'vi',
+    });
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: { 'User-Agent': 'ClinicHub5S/1.0 (location-search)' }, signal: AbortSignal.timeout(8_000),
+      });
+      if (!response.ok) throw new Error(`Geocoder ${response.status}`);
+      const payload = await response.json() as Array<Record<string, unknown>>;
+      return {
+        data: payload.map((row) => ({
+          id: String(row.place_id || ''), name: String(row.name || row.display_name || ''),
+          address: String(row.display_name || ''), latitude: Number(row.lat), longitude: Number(row.lon),
+          type: String(row.type || ''),
+        })).filter((row) => Number.isFinite(row.latitude) && Number.isFinite(row.longitude)),
+      };
+    } catch {
+      throw new BadRequestException('Không tìm được vị trí lúc này. Có thể dùng GPS thiết bị hoặc thử lại sau.');
+    }
+  }
+
   async createAssignment(user: AuthUser, input: JsonMap) {
     requireRole(user, supportRoles);
     const pgCode = String(input.pgCode || '').trim(); const siteId = String(input.siteId || '').trim();
@@ -546,6 +571,7 @@ export class MarketingController {
   @Get('/leads/:id/calls') listCalls(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.listCallLogs(request.user, id); }
   @Get('/reports') reports(@Req() request: ActorRequest) { return this.service.reports(request.user); }
   @Get('/pg-sites') sites(@Req() request: ActorRequest) { return this.service.listSites(request.user); }
+  @Get('/pg-location-search') searchLocations(@Req() request: ActorRequest, @Query('q') query: string) { return this.service.searchLocations(request.user, query); }
   @Post('/pg-sites') createSite(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createSite(request.user, body); }
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }

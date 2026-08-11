@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { getEffectiveBranchId, loginEmailFor, setActiveBranch } from './branch.js';
+import { BRANCHES, getEffectiveBranchId, loginEmailFor, setActiveBranch } from './branch.js';
 
 let currentUser = null;
 let currentProfile = null;
@@ -149,12 +149,16 @@ export async function signIn(identifier, password, branchId = 'pham-van-chieu') 
     notifyListeners();
     return data;
   }
-  let email = normalized.includes('@') ? normalized : loginEmailFor(branchId, normalized);
-  const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
-    p_branch_id: branchId,
-    p_identifier: normalized,
-  });
-  if (!resolveError && resolvedEmail) email = resolvedEmail;
+  let email = normalized.includes('@') ? normalized : null;
+  const branchCandidates = branchId === 'all' ? Object.keys(BRANCHES) : [branchId];
+  for (const candidate of branchCandidates) {
+    const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
+      p_branch_id: candidate,
+      p_identifier: normalized,
+    });
+    if (!resolveError && resolvedEmail) { email = resolvedEmail; break; }
+  }
+  if (!email) email = loginEmailFor(branchCandidates[0], normalized);
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   currentUser = data.user;
@@ -169,7 +173,7 @@ export async function signIn(identifier, password, branchId = 'pham-van-chieu') 
     throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
   }
   const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it'].includes(currentProfile.role);
-  if (!normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
+  if (branchId !== 'all' && !normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
     await supabase.auth.signOut();
     currentUser = null;
     currentProfile = null;

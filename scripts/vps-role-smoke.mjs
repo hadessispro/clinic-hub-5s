@@ -4,7 +4,7 @@ const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:4000/api/v2';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
 
 async function candidate(role) {
-  const result = await pool.query(`select p.payload->>'employee_code' code,e.payload->>'phone' phone
+  const result = await pool.query(`select p.payload->>'employee_code' code,e.payload->>'phone' phone,e.payload->>'email' email
     from app.records p join app.records e on e.entity_type='employees' and e.deleted_at is null
       and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
     where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role'=$1
@@ -18,7 +18,7 @@ async function login(role) {
   if (!account) return { role, skipped: 'no unprovisioned account' };
   const response = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ identifier: account.code, password: account.phone }),
+    body: JSON.stringify({ identifier: account.code, password: account.phone, branchId: role === 'pg_staff' ? 'all' : undefined }),
   });
   if (!response.ok) return { role, login: response.status };
   const payload = await response.json();
@@ -41,6 +41,7 @@ try {
       output.leads = await request(session.token, 'GET', '/marketing/leads');
       output.pgAccounts = await request(session.token, 'GET', '/marketing/pg-accounts');
       output.reports = await request(session.token, 'GET', '/marketing/reports');
+      output.locationSearch = await request(session.token, 'GET', '/marketing/pg-location-search?q=248%20Pham%20Van%20Chieu%20Ho%20Chi%20Minh');
       output.genericMarketingWrite = await request(session.token, 'POST', '/data/query', { table: 'marketing_leads', operation: 'insert', values: { id: 'forbidden-smoke' } });
     }
     console.log(JSON.stringify(output));

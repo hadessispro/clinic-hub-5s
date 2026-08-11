@@ -72,7 +72,10 @@ export class AuthService {
 
   async login(identifierInput: string, password: string, branchIdInput?: string) {
     const identifier = String(identifierInput || '').trim().toLowerCase();
-    const branchId = String(branchIdInput || '').trim().toLowerCase();
+    const requestedBranchId = String(branchIdInput || '').trim().toLowerCase();
+    // "all" is a neutral login scope. The authenticated profile still keeps
+    // its real branch and attendance authorization is evaluated separately.
+    const branchId = requestedBranchId === 'all' ? '' : requestedBranchId;
     if (!identifier || !password) throw new UnauthorizedException('Vui lòng nhập tài khoản và mật khẩu.');
 
     const result = await this.infrastructure.postgres.query<{
