@@ -3,7 +3,7 @@ export const DEPARTMENTS = [
   { id: 'bgd', name: 'Ban Giám đốc', lead: 'Trần Đức Mạnh' },
   { id: 'mkt', name: 'Marketing', lead: 'Phan Ngọc Đức' },
   { id: 'dvkh', name: 'Dịch vụ khách hàng', lead: 'Nguyễn Thị Vân Anh' },
-  { id: 'bs', name: 'Bác sĩ', lead: 'Hoàng Thị Phương Nam' },
+  { id: 'bs', name: 'Bác sĩ', lead: 'Huỳnh Kim Thy' },
   { id: 'phuta', name: 'Phụ tá', lead: 'Bùi Thiện Chương' },
   { id: 'hcth', name: 'Hành chính Tổng hợp', lead: 'Nguyễn Thị Thương' },
   { id: 'it', name: 'Quản trị IT', lead: 'Admin IT' },

@@ -151,8 +151,8 @@ const OFFICIAL_DEMO_USERS = {
   // Admin IT
   '10001': { id: 'usr-10001', full_name: 'Admin IT', employee_code: '10001', role: 'admin_it', department: 'it', branch_id: 'pham-van-chieu', phone: '0901111111', active: true },
 
-  // Bác sĩ Huỳnh Kim Thy (Bác sĩ Nha khoa - Role: Staff/Bác sĩ)
-  '10187': { id: 'usr-10187', full_name: 'Huỳnh Kim Thy', employee_code: '10187', role: 'staff', department: 'bs', branch_id: 'pham-van-chieu', phone: '0909187187', active: true },
+  // Bác sĩ Huỳnh Kim Thy (Bác sĩ Trưởng Khoa / Trưởng bộ phận)
+  '10187': { id: 'usr-10187', full_name: 'Huỳnh Kim Thy', employee_code: '10187', role: 'leader', department: 'bs', branch_id: 'pham-van-chieu', phone: '0909187187', active: true },
 };
 
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
