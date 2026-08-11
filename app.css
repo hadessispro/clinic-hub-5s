@@ -186,12 +186,14 @@
   text-align: left;
   cursor: pointer;
 }
-.pg-location-results button:hover { border-color: #8fd0c4; background: #edf9f6; }
+.pg-location-results button:hover,
+.pg-location-results button.is-active { border-color: #8fd0c4; background: #edf9f6; box-shadow: inset 3px 0 0 var(--teal); }
 .pg-location-results button > i:first-child { color: var(--teal); font-size: 1.1rem; text-align: center; }
 .pg-location-results button span { min-width: 0; }
 .pg-location-results button strong,
 .pg-location-results button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-location-results button small { margin-top: 2px; color: var(--muted); font-size: .72rem; }
+.pg-location-results button em { display: inline-block; margin-top: 4px; color: var(--teal-dark); font-size: .66rem; font-style: normal; font-weight: 800; }
 
 .pg-map-preview {
   position: relative;

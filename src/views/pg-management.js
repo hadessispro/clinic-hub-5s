@@ -24,6 +24,8 @@ function selectPgLocation(form, location) {
   form.elements.longitude.value = String(longitude);
   form.elements.address.value = location.address || `GPS ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
   if (!form.elements.name.value.trim() && location.name) form.elements.name.value = location.name;
+  const query = document.getElementById('pgLocationQuery');
+  if (query) query.value = location.name || location.address || query.value;
   const preview = document.getElementById('pgMapPreview');
   if (preview) {
     const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&output=embed`;
@@ -176,20 +178,73 @@ export function initView() {
   const locationResults = document.getElementById('pgLocationResults');
   const locationQuery = document.getElementById('pgLocationQuery');
   const searchButton = document.getElementById('searchPgLocation');
-  const searchLocation = async () => {
+  let locationSearchTimer = 0;
+  let locationSearchRequest = 0;
+  let activeLocationIndex = -1;
+  let visibleLocationResults = [];
+  const locationCache = new Map();
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const renderLocationResults = (results) => {
+    visibleLocationResults = results;
+    activeLocationIndex = -1;
+    locationResults.hidden = false;
+    locationResults.innerHTML = results.length ? results.map((row, index) => `<button type="button" data-pg-location-result="${index}" role="option" aria-selected="false"><i class="ri-map-pin-line"></i><span><strong>${escapeHTML(row.name || 'Địa điểm')}</strong><small>${escapeHTML(row.address)}</small>${row.saved ? '<em>Điểm đã lưu</em>' : ''}</span><i class="ri-arrow-right-s-line"></i></button>`).join('') : '<p class="subtle">Không có kết quả. Hãy nhập tên địa điểm hoặc địa chỉ chi tiết hơn.</p>';
+    locationResults.querySelectorAll('[data-pg-location-result]').forEach((button) => button.addEventListener('click', () => selectPgLocation(siteForm, visibleLocationResults[Number(button.dataset.pgLocationResult)])));
+  };
+  const setActiveLocation = (nextIndex) => {
+    const buttons = [...locationResults.querySelectorAll('[data-pg-location-result]')];
+    if (!buttons.length) return;
+    activeLocationIndex = (nextIndex + buttons.length) % buttons.length;
+    buttons.forEach((button, index) => {
+      const active = index === activeLocationIndex;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+      if (active) button.scrollIntoView({ block: 'nearest' });
+    });
+  };
+  const searchLocation = async ({ automatic = false } = {}) => {
     if (!locationResults || !searchButton) return;
+    const query = String(locationQuery?.value || '').trim();
+    if (query.length < 3) {
+      if (!automatic) showToast('Nhập ít nhất 3 ký tự để tìm vị trí.', true);
+      locationResults.hidden = true;
+      return;
+    }
+    const requestId = ++locationSearchRequest;
     searchButton.disabled = true;
     locationResults.hidden = false;
-    locationResults.innerHTML = '<p class="subtle">Đang tìm vị trí phù hợp...</p>';
+    locationResults.innerHTML = '<p class="subtle">Đang gợi ý vị trí phù hợp...</p>';
     try {
-      const results = await searchPgLocations(locationQuery?.value);
-      locationResults.innerHTML = results.length ? results.map((row, index) => `<button type="button" data-pg-location-result="${index}"><i class="ri-map-pin-line"></i><span><strong>${escapeHTML(row.name || 'Địa điểm')}</strong><small>${escapeHTML(row.address)}</small></span><i class="ri-arrow-right-s-line"></i></button>`).join('') : '<p class="subtle">Không có kết quả. Hãy nhập địa chỉ chi tiết hơn hoặc dùng GPS hiện tại.</p>';
-      locationResults.querySelectorAll('[data-pg-location-result]').forEach((button) => button.addEventListener('click', () => selectPgLocation(siteForm, results[Number(button.dataset.pgLocationResult)])));
+      const cacheKey = normalize(query);
+      const savedMatches = sites.filter((site) => normalize(`${site.name} ${site.address}`).includes(cacheKey)).map((site) => ({ ...site, saved: true }));
+      const remoteResults = locationCache.has(cacheKey) ? locationCache.get(cacheKey) : await searchPgLocations(query);
+      locationCache.set(cacheKey, remoteResults);
+      if (requestId !== locationSearchRequest) return;
+      const seen = new Set();
+      const results = [...savedMatches, ...remoteResults].filter((row) => {
+        const key = `${Number(row.latitude).toFixed(5)}:${Number(row.longitude).toFixed(5)}`;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      }).slice(0, 8);
+      renderLocationResults(results);
     } catch (error) { locationResults.innerHTML = `<p class="subtle">${escapeHTML(error.message)}</p>`; }
-    finally { searchButton.disabled = false; }
+    finally { if (requestId === locationSearchRequest) searchButton.disabled = false; }
   };
-  searchButton?.addEventListener('click', searchLocation);
-  locationQuery?.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); searchLocation(); } });
+  searchButton?.addEventListener('click', () => searchLocation());
+  locationQuery?.addEventListener('input', () => {
+    window.clearTimeout(locationSearchTimer);
+    if (String(locationQuery.value || '').trim().length < 3) { locationResults.hidden = true; return; }
+    locationSearchTimer = window.setTimeout(() => searchLocation({ automatic: true }), 320);
+  });
+  locationQuery?.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActiveLocation(activeLocationIndex + 1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveLocation(activeLocationIndex - 1); }
+    else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (activeLocationIndex >= 0 && visibleLocationResults[activeLocationIndex]) selectPgLocation(siteForm, visibleLocationResults[activeLocationIndex]);
+      else searchLocation();
+    } else if (event.key === 'Escape') locationResults.hidden = true;
+  });
   document.getElementById('usePgCurrentLocation')?.addEventListener('click', () => {
     if (!navigator.geolocation) return showToast('Thiết bị không hỗ trợ định vị.', true);
     const button = document.getElementById('usePgCurrentLocation');
