@@ -25,6 +25,7 @@ const viewImports = {
   'telesale-workspace': () => import('./views/telesale-workspace.js'),
   'marketing-analytics': () => import('./views/marketing-analytics.js'),
   'pg-management': () => import('./views/pg-management.js'),
+  'pg-locations': () => import('./views/pg-locations.js'),
   'pg-attendance': () => import('./views/pg-attendance.js'),
 };
 
@@ -51,6 +52,7 @@ const viewTitles = {
   'telesale-workspace': 'Workspace Telesale',
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
   'pg-management': 'Quản lý PG',
+  'pg-locations': 'Địa điểm chấm công PG',
   'pg-attendance': 'Chấm công PG',
 };
 

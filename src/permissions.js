@@ -7,10 +7,10 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
-  support_marketing: ['dashboard', 'pg-management', 'marketing-analytics', 'chat', 'tasks'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  support_marketing: ['dashboard', 'pg-management', 'pg-locations', 'marketing-analytics', 'chat', 'tasks'],
   pg_staff: ['marketing-leads', 'attendance'],
   telesale_leader: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
@@ -102,6 +102,7 @@ const NAV_ITEMS = [
     { view: 'telesale-workspace', label: 'Workspace Telesale', icon: 'ri-headset-line' },
     { view: 'marketing-analytics', label: 'Báo cáo Marketing', icon: 'ri-line-chart-line' },
     { view: 'pg-management', label: 'Quản lý PG', icon: 'ri-user-location-line' },
+    { view: 'pg-locations', label: 'Địa điểm PG', icon: 'ri-map-pin-2-line' },
   ]},
 ];
 

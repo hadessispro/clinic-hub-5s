@@ -1,6 +1,6 @@
 import {
-  createPgAccount, createPgAssignment, createPgSite, deletePgAccount, deletePgSite, exportPgAttendanceCsv,
-  getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, searchPgLocations, updatePgAccount, updatePgSite,
+  createPgAccount, createPgAssignment, deletePgAccount, exportPgAttendanceCsv,
+  getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
 } from '../services/marketing.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -15,26 +15,6 @@ let attendanceFrom = '';
 let attendanceTo = '';
 
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
-
-function selectPgLocation(form, location) {
-  const latitude = Number(location.latitude);
-  const longitude = Number(location.longitude);
-  if (!form || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-  form.elements.latitude.value = String(latitude);
-  form.elements.longitude.value = String(longitude);
-  form.elements.address.value = location.address || `GPS ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-  if (!form.elements.name.value.trim() && location.name) form.elements.name.value = location.name;
-  const query = document.getElementById('pgLocationQuery');
-  if (query) query.value = location.name || location.address || query.value;
-  const preview = document.getElementById('pgMapPreview');
-  if (preview) {
-    const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=17&output=embed`;
-    const openUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
-    preview.classList.remove('is-empty');
-    preview.innerHTML = `<iframe title="Bản đồ điểm chấm công PG" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="${mapUrl}"></iframe><a href="${openUrl}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> Mở trên Google Maps</a>`;
-  }
-  document.getElementById('pgLocationResults')?.setAttribute('hidden', '');
-}
 
 export async function renderView() {
   attendanceFrom ||= today();
@@ -57,7 +37,7 @@ export async function renderView() {
       <article><span>PG ít data nhất</span><strong>${minCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === minCount)?.pg_code || 'Chưa có')}</small></article>
     </div>
 
-    <div class="grid cols-2">
+    <div class="grid">
       <section class="panel">
         <div class="section-title"><h3>Tạo tài khoản PG</h3><span class="pill">Chỉ nhập data và chấm công</span></div>
         <form id="pgAccountForm" class="form-grid two pg-compact-form" autocomplete="off">
@@ -71,36 +51,6 @@ export async function renderView() {
         </form>
       </section>
 
-      <section class="panel">
-        <div class="section-title"><div><h3>Tạo điểm chấm công PG</h3><p class="subtle">Tìm địa chỉ hoặc lấy GPS, không cần nhập tọa độ</p></div><span class="pill">Support quản lý</span></div>
-        <form id="pgSiteForm" class="pg-site-form">
-          <input name="editingSiteId" type="hidden">
-          <div class="pg-location-search-row">
-            <label class="form-field"><span>Tìm địa điểm</span><input id="pgLocationQuery" placeholder="VD: Emart Phan Văn Trị, Gò Vấp" autocomplete="off"></label>
-            <button id="searchPgLocation" class="secondary-button" type="button"><i class="ri-search-line"></i> Tìm</button>
-            <button id="usePgCurrentLocation" class="secondary-button" type="button"><i class="ri-map-pin-user-line"></i> GPS hiện tại</button>
-          </div>
-          <div id="pgLocationResults" class="pg-location-results" hidden></div>
-          <div id="pgMapPreview" class="pg-map-preview is-empty">
-            <div><i class="ri-map-2-line"></i><strong>Chưa chọn vị trí</strong><span>Tìm địa chỉ hoặc dùng GPS thiết bị để xem bản đồ.</span></div>
-          </div>
-          <div class="form-grid two pg-compact-form">
-            <label class="form-field"><span>Tên điểm làm việc</span><input name="name" required placeholder="Booth PG Gò Vấp"></label>
-            <label class="form-field"><span>Địa chỉ đã chọn</span><input name="address" required readonly></label>
-            <input name="latitude" type="hidden" required>
-            <input name="longitude" type="hidden" required>
-            <details class="pg-location-advanced full"><summary>Thiết lập GPS nâng cao</summary><div class="form-grid two">
-              <label class="form-field"><span>Bán kính hợp lệ (m)</span><input name="allowedRadiusM" type="number" value="100" min="20" max="500"></label>
-              <label class="form-field"><span>Sai số GPS tối đa (m)</span><input name="maxAccuracyM" type="number" value="100" min="10" max="200"></label>
-            </div></details>
-          </div>
-          <div class="pg-site-form-actions"><button class="secondary-button" id="cancelPgSiteEdit" type="button" hidden>Hủy chỉnh sửa</button><button class="primary-button pg-save-site-button" type="submit"><i class="ri-map-pin-add-line"></i> <span>Lưu điểm chấm công</span></button></div>
-        </form>
-        <div class="pg-saved-sites">
-          <div class="section-title"><div><h4>Địa điểm đã lưu</h4><p class="subtle">Dùng lại, chỉnh sửa hoặc ngừng sử dụng địa điểm</p></div><span class="pill">${sites.length} điểm</span></div>
-          <div class="pg-saved-site-list">${sites.length ? sites.map((site) => `<article><div><strong>${escapeHTML(site.name)}</strong><p>${escapeHTML(site.address)}</p><small>Bán kính ${site.allowed_radius_m} m · GPS ±${site.max_accuracy_m} m</small></div><div class="pg-saved-site-actions"><button class="secondary-button" type="button" data-use-pg-site="${site.id}">Dùng</button><button class="secondary-button" type="button" data-edit-pg-site="${site.id}">Sửa</button><button class="danger-button" type="button" data-delete-pg-site="${site.id}">Xóa</button></div></article>`).join('') : '<div class="empty-state"><strong>Chưa có địa điểm đã lưu</strong><p>Địa điểm mới sẽ xuất hiện tại đây sau khi lưu.</p></div>'}</div>
-        </div>
-      </section>
     </div>
 
     <section class="panel" style="margin-top:14px">
