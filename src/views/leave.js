@@ -15,6 +15,8 @@ let requestTypeFilter = 'all';
 let requestStatusFilter = 'all';
 let requestDepartmentFilter = 'all';
 let requestBranchFilter = 'all';
+let requestPage = 1;
+let requestPageSize = 9;
 
 function renderLeaveCard(request) {
   const employee = cachedEmployees.find(e => e.id === request.employee) || {
@@ -148,6 +150,13 @@ export async function renderView(state) {
     ].join(" ");
     return smartMatch(textToMatch, activeSearch, requestSearchMode);
   });
+  const requestTotalPages = Math.max(1, Math.ceil(filteredRequests.length / requestPageSize));
+  requestPage = Math.min(Math.max(1, requestPage), requestTotalPages);
+  const requestPageStart = (requestPage - 1) * requestPageSize;
+  const pagedRequests = filteredRequests.slice(requestPageStart, requestPageStart + requestPageSize);
+  const requestPageCandidates = Array.from(new Set([1, requestPage - 1, requestPage, requestPage + 1, requestTotalPages]))
+    .filter((page) => page >= 1 && page <= requestTotalPages)
+    .sort((a, b) => a - b);
 
   return `
     <div class="view-header">
@@ -254,14 +263,31 @@ export async function renderView(state) {
         <button class="secondary-button" type="button" id="clearLeaveRequestFilters">Xóa bộ lọc</button>
       </div>
       <div class="grid cols-3 animate-fade">
-        ${filteredRequests.length ? filteredRequests.map(renderLeaveCard).join("") : emptyState()}
+        ${pagedRequests.length ? pagedRequests.map(renderLeaveCard).join("") : emptyState()}
+      </div>
+      <div class="data-pagination" ${filteredRequests.length <= requestPageSize ? 'hidden' : ''}>
+        <div class="data-pagination-summary">${filteredRequests.length ? `Hiển thị ${requestPageStart + 1}–${Math.min(requestPageStart + requestPageSize, filteredRequests.length)} trong ${filteredRequests.length} đơn` : 'Không có đơn phù hợp'}</div>
+        <div class="data-pagination-actions">
+          <label class="data-page-size">Hiển thị
+            <select id="leaveRequestPageSize">${[9, 18, 36].map((size) => option(size, `${size} đơn`, requestPageSize === size)).join('')}</select>
+          </label>
+          <button type="button" class="data-page-nav" id="leaveRequestPrevPage" ${requestPage <= 1 ? 'disabled' : ''}><i class="ri-arrow-left-s-line"></i><span>Trước</span></button>
+          <div class="data-page-numbers">
+            ${requestPageCandidates.map((page, index) => {
+              const previousPage = requestPageCandidates[index - 1];
+              const gap = previousPage && page - previousPage > 1 ? '<span class="data-page-gap">…</span>' : '';
+              return `${gap}<button type="button" class="data-page-number${page === requestPage ? ' is-active' : ''}" data-leave-page="${page}" ${page === requestPage ? 'aria-current="page"' : ''}>${page}</button>`;
+            }).join('')}
+          </div>
+          <button type="button" class="data-page-nav" id="leaveRequestNextPage" ${requestPage >= requestTotalPages ? 'disabled' : ''}><span>Sau</span><i class="ri-arrow-right-s-line"></i></button>
+        </div>
       </div>
     </section>
   `;
 }
 
 export function initView() {
-  const refreshLeaveFilters = () => store.notify();
+  const refreshLeaveFilters = () => { requestPage = 1; store.notify(); };
   document.getElementById('leaveRequestSearch')?.addEventListener('input', (event) => {
     requestSearch = event.target.value;
     window.clearTimeout(event.target._leaveFilterTimer);
@@ -281,6 +307,23 @@ export function initView() {
     requestBranchFilter = 'all';
     refreshLeaveFilters();
   });
+  document.getElementById('leaveRequestPageSize')?.addEventListener('change', (event) => {
+    requestPageSize = Number(event.target.value) || 9;
+    requestPage = 1;
+    store.notify();
+  });
+  document.getElementById('leaveRequestPrevPage')?.addEventListener('click', () => {
+    requestPage = Math.max(1, requestPage - 1);
+    store.notify();
+  });
+  document.getElementById('leaveRequestNextPage')?.addEventListener('click', () => {
+    requestPage += 1;
+    store.notify();
+  });
+  document.querySelectorAll('[data-leave-page]').forEach((button) => button.addEventListener('click', () => {
+    requestPage = Number(button.dataset.leavePage) || 1;
+    store.notify();
+  }));
   const leaveForm = document.getElementById("leaveForm");
   if (leaveForm) {
     const typeSelect = document.getElementById('leaveType');
