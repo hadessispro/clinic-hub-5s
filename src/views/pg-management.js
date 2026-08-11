@@ -40,12 +40,12 @@ export async function renderView() {
     <div class="grid cols-2">
       <section class="panel">
         <div class="section-title"><h3>Tạo tài khoản PG</h3><span class="pill">Chỉ nhập data và chấm công</span></div>
-        <form id="pgAccountForm" class="form-grid two">
+        <form id="pgAccountForm" class="form-grid two" autocomplete="off">
           <label class="form-field"><span>Họ tên</span><input name="fullName" required placeholder="Nguyễn Văn A"></label>
           <label class="form-field"><span>Mã PG</span><input name="employeeCode" placeholder="PG-001"></label>
-          <label class="form-field"><span>Email đăng nhập</span><input name="email" type="email" required></label>
-          <label class="form-field"><span>Số điện thoại</span><input name="phone" required inputmode="numeric"></label>
-          <label class="form-field"><span>Mật khẩu ban đầu</span><input name="password" type="password" minlength="8" placeholder="Mặc định dùng SĐT"></label>
+          <label class="form-field"><span>Email đăng nhập</span><input name="pgEmail" type="email" autocomplete="off" data-1p-ignore required></label>
+          <label class="form-field"><span>Số điện thoại</span><input name="pgPhone" autocomplete="off" data-1p-ignore required inputmode="numeric"></label>
+          <label class="form-field"><span>Mật khẩu ban đầu</span><input name="pgPassword" type="password" autocomplete="new-password" data-1p-ignore minlength="8" placeholder="Mặc định dùng SĐT"></label>
           <label class="form-field"><span>Chi nhánh quản lý</span><select name="branchId"><option value="pham-van-chieu">Phạm Văn Chiêu</option><option value="le-van-tho">Lê Văn Thọ</option></select></label>
           <button class="primary-button full" type="submit">Tạo tài khoản PG</button>
         </form>
@@ -136,6 +136,8 @@ async function refresh(message) {
 export function initView() {
   document.getElementById('pgAccountForm')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    data.email = data.pgEmail; data.phone = data.pgPhone; data.password = data.pgPassword;
+    delete data.pgEmail; delete data.pgPhone; delete data.pgPassword;
     if (!data.password) data.password = data.phone;
     try { await createPgAccount(data); await refresh('Đã tạo tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   });
