@@ -20,10 +20,14 @@ export async function renderView(state) {
     ? leads.map((lead) => {
         return `
           <article class="task-card telesale-lead-card" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}" style="border-left: 4px solid var(--teal); background:#ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-radius:12px; padding:16px;">
-            <div class="section-title" style="margin-bottom:8px;">
+            <div class="section-title" style="margin-bottom:8px; gap:8px;">
               <h4 style="font-size:1.05rem; font-weight:700; color:#1d2421;">${escapeHTML(lead.full_name)}</h4>
-              ${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}
+              <div style="display:flex;align-items:center;gap:6px;">
+                ${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}
+                <button type="button" class="btn-card-action" data-toggle-workspace-card="${escapeHTML(lead.id)}" aria-expanded="false" title="Mở nội dung chăm sóc"><i class="ri-arrow-down-s-line"></i></button>
+              </div>
             </div>
+            <div id="workspace-card-body-${escapeHTML(lead.id)}" hidden>
             <div class="task-meta" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
               ${pill(`<i class="ri-phone-line" style="color:var(--teal-dark); margin-right:4px;"></i>${escapeHTML(lead.phone)}`, true)}
               ${pill(lead.source)}
@@ -57,6 +61,7 @@ export async function renderView(state) {
                   Lưu cuộc gọi & Đặt hẹn
                 </button>
               </form>
+            </div>
             </div>
           </article>
         `;
@@ -118,6 +123,19 @@ export async function renderView(state) {
 
 export function initView() {
   const profile = store.getState().profile || {};
+
+  document.querySelectorAll('[data-toggle-workspace-card]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const body = document.getElementById(`workspace-card-body-${button.dataset.toggleWorkspaceCard}`);
+      if (!body) return;
+      const willOpen = body.hidden;
+      body.hidden = !willOpen;
+      button.setAttribute('aria-expanded', String(willOpen));
+      button.title = willOpen ? 'Thu gọn nội dung chăm sóc' : 'Mở nội dung chăm sóc';
+      const icon = button.querySelector('i');
+      if (icon) icon.className = willOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line';
+    });
+  });
 
   const btnExport = document.getElementById('btnExportTelesaleCSV');
   if (btnExport) {

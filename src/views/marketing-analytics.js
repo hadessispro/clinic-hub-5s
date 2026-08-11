@@ -1,4 +1,4 @@
-import { getMarketingLeads, getMarketingReports } from '../services/marketing.js';
+import { getMarketingLeads, getMarketingReports, getTelesaleAccounts } from '../services/marketing.js';
 import { getEmployees } from '../services/employees.js';
 import { escapeHTML, formatCurrency } from '../utils.js';
 import { pill, statusPill } from '../components/shared.js';
@@ -17,10 +17,11 @@ function clinicDateKey(date) {
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  const [loadedLeads, employees, operationalReport] = await Promise.all([
+  const [loadedLeads, employees, operationalReport, telesaleAccounts] = await Promise.all([
     getMarketingLeads(),
     getEmployees(),
     getMarketingReports(),
+    getTelesaleAccounts(),
   ]);
   const now = new Date();
   const periodStart = analyticsPeriod === 'this_week'
@@ -36,6 +37,14 @@ export async function renderView(state) {
 
   cachedLeads = leads;
   cachedEmployees = employees;
+
+  const formatTelesaleIdentity = (staffCode) => {
+    if (!staffCode || staffCode === 'Chưa gán') return 'Chưa gán Telesale';
+    const staff = telesaleAccounts.find((item) => item.id === staffCode || item.employee_code === staffCode)
+      || employees.find((item) => item.id === staffCode || item.employeeNumber === staffCode);
+    const staffName = staff?.name || staff?.full_name || '';
+    return staffName ? `${staffCode} · ${staffName}` : staffCode;
+  };
 
   const totalLeads = leads.length;
   const contactedLeads = leads.filter(l => l.status !== 'new').length;
@@ -110,8 +119,7 @@ export async function renderView(state) {
       <div style="display:flex; flex-direction:column; gap:14px;">
         ${Object.keys(staffCounts).map((staffCode, i) => {
           const cnt = staffCounts[staffCode];
-          const staffObj = employees.find(e => e.id === staffCode || e.employeeNumber === staffCode);
-          const name = staffObj ? staffObj.name : (staffCode === 'Chưa gán' ? 'Chưa gán Telesale' : staffCode);
+          const name = formatTelesaleIdentity(staffCode);
           const pct = Math.round((cnt / Math.max(totalLeads, 1)) * 100);
           const barColor = staffColors[i % staffColors.length];
           const initial = name.trim().charAt(0).toUpperCase();
@@ -261,7 +269,7 @@ export async function renderView(state) {
       <section class="panel">
         <div class="section-title"><h3>Hiệu suất theo tài khoản Telesale</h3>${pill(`${operationalReport.telesale?.length || 0} tài khoản`)}</div>
         <div class="table-wrap"><table><thead><tr><th>Telesale</th><th>Được giao</th><th>Đã gọi</th><th>Hẹn khám</th><th>Chốt</th></tr></thead><tbody>
-          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(row.telesale_code)}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có dữ liệu Telesale.</td></tr>'}
+          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(formatTelesaleIdentity(row.telesale_code))}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có dữ liệu Telesale.</td></tr>'}
         </tbody></table></div>
       </section>
     </div>

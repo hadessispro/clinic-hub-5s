@@ -59,13 +59,13 @@ export async function renderView(state) {
               ${colLeads.length ? colLeads.map(lead => {
                 const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
                 return `
-                  <article class="kanban-card lead-kanban-card" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
+                  <article class="kanban-card lead-kanban-card is-collapsed" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
                     <!-- Top Info Section -->
                     <div class="card-header">
                       <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#0f172a; line-height:1.2;">${escapeHTML(lead.full_name)}</h4>
                       <div class="card-header-actions">
                         <button type="button" class="btn-card-action" data-toggle-card="${lead.id}" title="Thu gọn / Mở rộng">
-                          <i class="ri-arrow-up-s-line" id="toggle-icon-${lead.id}"></i>
+                          <i class="ri-arrow-down-s-line" id="toggle-icon-${lead.id}"></i>
                         </button>
                         <button type="button" class="btn-card-action btn-delete" data-delete-lead="${lead.id}" title="Xóa Lead">
                           <i class="ri-delete-bin-line"></i>
@@ -74,7 +74,7 @@ export async function renderView(state) {
                     </div>
 
                     <!-- Collapsible Card Body -->
-                    <div id="card-body-${lead.id}">
+                    <div id="card-body-${lead.id}" style="display:none">
                       <p style="font-size:0.85rem; font-weight:700; color:#0284c7; margin:0 0 6px; display:flex; align-items:center; gap:4px;">
                         <i class="ri-phone-fill" style="font-size:0.9rem;"></i> ${escapeHTML(lead.phone)}
                       </p>
