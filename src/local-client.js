@@ -18,7 +18,7 @@ async function api(path, options = {}) {
       ...options,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
+        ...(options.body !== undefined && options.body !== null ? { 'Content-Type': 'application/json' } : {}),
         ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
         ...(options.headers || {}),
       },
