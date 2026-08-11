@@ -63,7 +63,7 @@ try {
     });
     const validNet = await validNetResponse.json();
     const assigned = created.data?.id
-      ? await request(managerSession.token, 'PATCH', `/marketing/leads/${created.data.id}/assign`, { telesaleCode: telesaleSession.code })
+      ? await request(managerSession.token, 'POST', `/marketing/leads/${created.data.id}/assign-net`, { telesaleCode: telesaleSession.code })
       : 0;
     const invalidAppointmentCall = created.data?.id
       ? await request(telesaleSession.token, 'POST', `/marketing/leads/${created.data.id}/calls`, { status: 'appointment_booked', note: 'missing appointment timestamp' })
