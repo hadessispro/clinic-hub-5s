@@ -11,12 +11,16 @@ let sites = [];
 let assignments = [];
 let report = { totals: {}, pg: [], telesale: [] };
 let attendance = [];
+let attendanceFrom = '';
+let attendanceTo = '';
 
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
 
 export async function renderView() {
+  attendanceFrom ||= today();
+  attendanceTo ||= today();
   [accounts, sites, assignments, report, attendance] = await Promise.all([
-    getPgAccounts(), getPgSites(), getPgAssignments(today()), getMarketingReports(), getPgAttendance(today(), today()),
+    getPgAccounts(), getPgSites(), getPgAssignments(today()), getMarketingReports(), getPgAttendance(attendanceFrom, attendanceTo),
   ]);
   const totals = report.totals || {};
   const pgRows = report.pg || [];
@@ -84,7 +88,7 @@ export async function renderView() {
           <td>${escapeHTML(row.employee?.email || '')}<br><span class="subtle">${escapeHTML(row.employee?.phone || '')}</span></td>
           <td>${escapeHTML(row.profile?.branch_id || '')}</td><td>${row.last_login_at ? new Date(row.last_login_at).toLocaleString('vi-VN') : 'Chưa đăng nhập'}</td>
           <td><span class="pill">${row.login_active ? 'Đang hoạt động' : 'Đã khóa'}</span></td>
-          <td><div class="button-row"><button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}">${row.login_active ? 'Khóa' : 'Mở khóa'}</button><button class="danger-button" data-delete-pg="${escapeHTML(code)}">Xóa</button></div></td>
+          <td><div class="button-row"><button class="secondary-button" data-edit-pg="${escapeHTML(code)}">Sửa</button><button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}">${row.login_active ? 'Khóa' : 'Mở khóa'}</button><button class="danger-button" data-delete-pg="${escapeHTML(code)}">Xóa</button></div></td>
         </tr>`; }).join('') : '<tr><td colspan="6">Chưa có tài khoản PG.</td></tr>'}
       </tbody></table></div>
     </section>
@@ -97,11 +101,31 @@ export async function renderView() {
     </section>
 
     <section class="panel" style="margin-top:14px">
-      <div class="section-title"><h3>Chấm công PG hôm nay</h3><button id="exportPgAttendance" class="secondary-button">Xuất Excel/CSV</button></div>
+      <div class="section-title"><div><h3>Báo cáo chấm công PG</h3><p class="subtle">Lọc theo khoảng ngày và xuất dữ liệu đang hiển thị</p></div><span class="pill">${attendance.length} lượt</span></div>
+      <form id="pgAttendanceFilter" class="pg-attendance-filter">
+        <label class="form-field"><span>Từ ngày</span><input name="from" type="date" value="${attendanceFrom}" required></label>
+        <label class="form-field"><span>Đến ngày</span><input name="to" type="date" value="${attendanceTo}" required></label>
+        <button class="secondary-button" type="submit">Lọc dữ liệu</button>
+        <button id="exportPgAttendance" class="primary-button" type="button">Xuất Excel/CSV</button>
+      </form>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Loại</th><th>Thời gian</th><th>Vị trí</th><th>GPS</th><th>Trạng thái</th></tr></thead><tbody>
         ${attendance.length ? attendance.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${escapeHTML(row.site_name)}</td><td>${row.distance_m} m · ±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="6">Chưa có lượt chấm công hôm nay.</td></tr>'}
       </tbody></table></div>
-    </section>`;
+    </section>
+
+    <dialog id="editPgDialog" class="app-dialog">
+      <form id="editPgForm" method="dialog" class="dialog-card">
+        <div class="section-title"><div><p class="eyebrow">TÀI KHOẢN PG</p><h3>Chỉnh sửa tài khoản</h3></div><button type="button" class="icon-button" data-close-pg-dialog aria-label="Đóng">×</button></div>
+        <input name="employeeCode" type="hidden">
+        <div class="form-grid two">
+          <label class="form-field"><span>Họ tên</span><input name="fullName" required></label>
+          <label class="form-field"><span>Email</span><input name="email" type="email" required></label>
+          <label class="form-field"><span>Số điện thoại</span><input name="phone" inputmode="numeric" required></label>
+          <label class="form-field"><span>Mật khẩu mới</span><input name="password" type="password" minlength="8" placeholder="Để trống nếu không đổi"></label>
+        </div>
+        <div class="button-row"><button type="button" class="secondary-button" data-close-pg-dialog>Hủy</button><button type="submit" class="primary-button">Lưu thay đổi</button></div>
+      </form>
+    </dialog>`;
 }
 
 async function refresh(message) {
@@ -130,8 +154,35 @@ export function initView() {
     if (!confirm(`Xóa tài khoản ${button.dataset.deletePg}?`)) return;
     try { await deletePgAccount(button.dataset.deletePg); await refresh('Đã xóa tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   }));
+  const editDialog = document.getElementById('editPgDialog');
+  const editForm = document.getElementById('editPgForm');
+  document.querySelectorAll('[data-edit-pg]').forEach((button) => button.addEventListener('click', () => {
+    const code = button.dataset.editPg;
+    const row = accounts.find((item) => (item.profile?.employee_code || '') === code);
+    if (!row || !editForm || !editDialog) return;
+    editForm.elements.employeeCode.value = code;
+    editForm.elements.fullName.value = row.employee?.full_name || row.profile?.full_name || '';
+    editForm.elements.email.value = row.employee?.email || '';
+    editForm.elements.phone.value = row.employee?.phone || '';
+    editForm.elements.password.value = '';
+    editDialog.showModal();
+  }));
+  document.querySelectorAll('[data-close-pg-dialog]').forEach((button) => button.addEventListener('click', () => editDialog?.close()));
+  editForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(editForm).entries());
+    const code = data.employeeCode; delete data.employeeCode;
+    if (!data.password) delete data.password;
+    try { await updatePgAccount(code, data); editDialog?.close(); await refresh('Đã cập nhật thông tin tài khoản PG.'); } catch (error) { showToast(error.message, true); }
+  });
+  document.getElementById('pgAttendanceFilter')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (data.from > data.to) return showToast('Ngày bắt đầu không được lớn hơn ngày kết thúc.', true);
+    attendanceFrom = data.from; attendanceTo = data.to;
+    await navigateTo('pg-management');
+  });
   document.getElementById('exportPgAttendance')?.addEventListener('click', async () => {
-    try { const count = await exportPgAttendanceCsv(today(), today()); showToast(`Đã xuất ${count} lượt chấm công PG.`); } catch (error) { showToast(error.message, true); }
+    try { const count = await exportPgAttendanceCsv(attendanceFrom, attendanceTo); showToast(`Đã xuất ${count} lượt chấm công PG.`); } catch (error) { showToast(error.message, true); }
   });
 }
-

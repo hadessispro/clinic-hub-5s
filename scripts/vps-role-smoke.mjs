@@ -22,7 +22,7 @@ async function login(role) {
   });
   if (!response.ok) return { role, login: response.status };
   const payload = await response.json();
-  return { role, login: response.status, token: payload.session.accessToken };
+  return { role, code: account.code, login: response.status, token: payload.session.accessToken };
 }
 
 async function request(token, method, path, body) {
@@ -48,7 +48,8 @@ try {
 
   const pgSession = await login('pg_staff');
   const managerSession = await login('telesale_leader');
-  if (pgSession.token && managerSession.token) {
+  const telesaleSession = await login('telesale_staff');
+  if (pgSession.token && managerSession.token && telesaleSession.token) {
     const marker = `SMOKE-${Date.now()}`;
     const create = await fetch(`${baseUrl}/marketing/leads`, {
       method: 'POST', headers: { authorization: `Bearer ${pgSession.token}`, 'content-type': 'application/json' },
@@ -56,13 +57,33 @@ try {
     });
     const created = await create.json();
     const invalidNet = await request(pgSession.token, 'POST', '/marketing/leads', { customerName: marker, phone: '0900000000', dataClass: 'net', netLevel: 'advanced' });
-    const distributed = await request(managerSession.token, 'POST', '/marketing/leads/distribute-raw', { quantity: 1 });
+    const validNetResponse = await fetch(`${baseUrl}/marketing/leads`, {
+      method: 'POST', headers: { authorization: `Bearer ${pgSession.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ customerName: `${marker}-NET`, phone: '0900000001', dataClass: 'net', netLevel: 'advanced', appointmentAt: new Date(Date.now() + 86_400_000).toISOString(), source: 'smoke-test' }),
+    });
+    const validNet = await validNetResponse.json();
+    const assigned = created.data?.id
+      ? await request(managerSession.token, 'PATCH', `/marketing/leads/${created.data.id}/assign`, { telesaleCode: telesaleSession.code })
+      : 0;
+    const invalidAppointmentCall = created.data?.id
+      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${created.data.id}/calls`, { status: 'appointment_booked', note: 'missing appointment timestamp' })
+      : 0;
+    const callCreated = created.data?.id
+      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${created.data.id}/calls`, { status: 'appointment_booked', note: 'smoke call', appointmentAt: new Date(Date.now() + 172_800_000).toISOString() })
+      : 0;
+    const callHistory = created.data?.id
+      ? await request(telesaleSession.token, 'GET', `/marketing/leads/${created.data.id}/calls`)
+      : 0;
+    const reports = await request(managerSession.token, 'GET', '/marketing/reports');
     let removed = { status: 0, body: '' };
     if (created.data?.id) {
       const removeResponse = await fetch(`${baseUrl}/marketing/leads/${created.data.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${managerSession.token}` } });
       removed = { status: removeResponse.status, body: await removeResponse.text() };
     }
-    console.log(JSON.stringify({ workflow: 'raw-distribution', create: create.status, invalidNet, distributed, removed }));
+    if (validNet.data?.id) {
+      await fetch(`${baseUrl}/marketing/leads/${validNet.data.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${managerSession.token}` } });
+    }
+    console.log(JSON.stringify({ workflow: 'pg-to-telesale', create: create.status, invalidNet, validNet: validNetResponse.status, assigned, invalidAppointmentCall, callCreated, callHistory, reports, removed }));
   }
   await pool.query("delete from marketing.leads where source='smoke-test'");
 } finally {

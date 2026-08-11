@@ -107,6 +107,7 @@ export async function createMarketingLead(leadData) {
         notes: leadData.notes,
       }),
     });
+    notifyDataChange('marketing_leads');
     return mapVpsLead(payload.data);
   }
   const newLead = {
@@ -147,11 +148,13 @@ export async function updateMarketingLead(id, updates) {
       const payload = await vpsRequest(`/leads/${encodeURIComponent(id)}/assign-net`, {
         method: 'POST', body: JSON.stringify({ telesaleCode: updates.assigned_telesale_id }),
       });
+      notifyDataChange('marketing_leads');
       return mapVpsLead(payload.data);
     }
     const payload = await vpsRequest(`/leads/${encodeURIComponent(id)}`, {
       method: 'PATCH', body: JSON.stringify({ status: updates.status, notes: updates.notes }),
     });
+    notifyDataChange('marketing_leads');
     return mapVpsLead(payload.data);
   }
   try {
@@ -181,6 +184,7 @@ export async function addTelesaleCallLog(logData) {
         callStatus: logData.call_status, note: logData.note, appointmentAt: logData.appointment_date,
       }),
     });
+    notifyDataChange('marketing_leads');
     return payload.data;
   }
   const newLog = {
@@ -221,6 +225,10 @@ export async function addTelesaleCallLog(logData) {
 
 /** Fetch Call Logs for a Lead */
 export async function getLeadCallLogs(leadId) {
+  if (useVps) {
+    const payload = await vpsRequest(`/leads/${encodeURIComponent(leadId)}/calls`);
+    return payload.data || [];
+  }
   try {
     const { data, error } = await supabase.from('telesale_call_logs').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
     if (error || !data) throw error;
@@ -233,6 +241,7 @@ export async function getLeadCallLogs(leadId) {
 
 /** Fetch Marketing Campaigns */
 export async function getMarketingCampaigns() {
+  if (useVps) return [];
   try {
     const { data, error } = await supabase.from('marketing_campaigns').select('*').order('created_at', { ascending: false });
     if (error || !data || data.length === 0) return getLocalData(CAMPAIGNS_STORAGE_KEY, SEED_CAMPAIGNS);
@@ -244,6 +253,7 @@ export async function getMarketingCampaigns() {
 
 /** Create Marketing Campaign */
 export async function createMarketingCampaign(campData) {
+  if (useVps) throw new Error('Quản lý chiến dịch chưa được bật trên VPS.');
   const newCamp = {
     id: `camp-${Date.now()}`,
     name: campData.name,
@@ -327,6 +337,7 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
 export async function deleteMarketingLead(leadId) {
   if (useVps) {
     const payload = await vpsRequest(`/leads/${encodeURIComponent(leadId)}`, { method: 'DELETE' });
+    notifyDataChange('marketing_leads');
     return Boolean(payload.data?.deleted);
   }
   try {
@@ -347,6 +358,7 @@ export async function distributeRawLeads(quantity) {
   const payload = await vpsRequest('/leads/distribute-raw', {
     method: 'POST', body: JSON.stringify({ quantity: Number(quantity || 0) }),
   });
+  notifyDataChange('marketing_leads');
   return payload.data;
 }
 
@@ -454,6 +466,34 @@ export function notifyDataChange(type = 'marketing_leads') {
 }
 
 export function subscribeToRealtime(callback) {
+  if (useVps) {
+    let stopped = false;
+    let fingerprint = '';
+    let timer = null;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const leads = await getMarketingLeads();
+        const next = leads.map((lead) => `${lead.id}:${lead.updated_at || lead.created_at}:${lead.status}:${lead.assigned_telesale_id || ''}`).join('|');
+        if (fingerprint && next !== fingerprint && callback) callback({ type: 'marketing_leads', source: 'vps-poll' });
+        fingerprint = next;
+      } catch (error) {
+        console.warn('[Marketing Realtime] VPS polling error:', error?.message || error);
+      } finally {
+        if (!stopped) timer = window.setTimeout(poll, document.hidden ? 15000 : 5000);
+      }
+    };
+    const handleUpdate = (event) => callback?.(event.detail);
+    const handleVisibility = () => { if (!document.hidden && !stopped) { clearTimeout(timer); poll(); } };
+    window.addEventListener('clinic_data_updated', handleUpdate);
+    document.addEventListener('visibilitychange', handleVisibility);
+    poll();
+    return () => {
+      stopped = true; clearTimeout(timer);
+      window.removeEventListener('clinic_data_updated', handleUpdate);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }
   const channel = supabase
     .channel('public_realtime_leads')
     .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {

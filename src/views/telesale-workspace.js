@@ -32,6 +32,7 @@ export async function renderView(state) {
               ${pill(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}
             </div>
             <p class="subtle" style="margin:8px 0; font-size:0.86rem; color:#49544e;"><strong>Ghi chú nhu cầu:</strong> ${escapeHTML(lead.notes || 'Không có')}</p>
+            <button type="button" class="secondary-button" data-view-call-logs="${escapeHTML(lead.id)}" data-lead-name="${escapeHTML(lead.full_name)}" style="width:100%;justify-content:center;margin-top:4px"><i class="ri-history-line"></i> Xem lịch sử chăm sóc</button>
             <div style="margin-top:12px; padding:12px; background:#f2f7f5; border-radius:10px; border:1px solid #d8e6e1; width:100%; box-sizing:border-box;">
               <strong style="font-size:0.84rem; color:var(--teal-dark); display:block; margin-bottom:8px;">+ Nhập Nhật ký cuộc gọi mới:</strong>
               <form class="call-log-form" data-lead-id="${escapeHTML(lead.id)}" style="display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box;">
@@ -111,6 +112,7 @@ export async function renderView(state) {
         ${leadsListHtml}
       </div>
     </section>
+    <dialog id="callHistoryDialog" class="app-dialog"><div class="dialog-card"><div class="section-title"><div><p class="eyebrow">LỊCH SỬ CHĂM SÓC</p><h3 id="callHistoryTitle">Khách hàng</h3></div><button type="button" class="icon-button" id="closeCallHistory" aria-label="Đóng">×</button></div><div id="callHistoryContent" class="call-history-list"></div></div></dialog>
   `;
 }
 
@@ -157,7 +159,28 @@ export function initView() {
   if (statusSelect) statusSelect.addEventListener('change', applyTelesaleFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyTelesaleFilters);
 
+  const historyDialog = document.getElementById('callHistoryDialog');
+  const historyContent = document.getElementById('callHistoryContent');
+  document.getElementById('closeCallHistory')?.addEventListener('click', () => historyDialog?.close());
+  document.querySelectorAll('[data-view-call-logs]').forEach((button) => button.addEventListener('click', async () => {
+    if (!historyDialog || !historyContent) return;
+    document.getElementById('callHistoryTitle').textContent = button.dataset.leadName || 'Khách hàng';
+    historyContent.innerHTML = '<p class="subtle">Đang tải lịch sử...</p>'; historyDialog.showModal();
+    try {
+      const logs = await getLeadCallLogs(button.dataset.viewCallLogs);
+      historyContent.innerHTML = logs.length ? logs.map((log) => `<article><div><strong>${escapeHTML(CALL_STATUS[log.call_status] || log.call_status)}</strong><time>${formatDateTime(log.created_at)}</time></div><p>${escapeHTML(log.note || 'Không có ghi chú')}</p>${log.appointment_at ? `<small>Lịch hẹn: ${formatDateTime(log.appointment_at)}</small>` : ''}</article>`).join('') : '<div class="empty-state"><strong>Chưa có lịch sử gọi</strong><p>Nhật ký sẽ xuất hiện sau lần chăm sóc đầu tiên.</p></div>';
+    } catch (error) { historyContent.innerHTML = `<p class="subtle">${escapeHTML(error.message || 'Không tải được lịch sử.')}</p>`; }
+  }));
+
   document.querySelectorAll('.call-log-form').forEach(form => {
+    const callStatus = form.elements.call_status;
+    const appointment = form.elements.appointment_date;
+    const syncAppointmentRequirement = () => {
+      const required = callStatus?.value === 'appointment_booked';
+      if (appointment) appointment.required = required;
+    };
+    callStatus?.addEventListener('change', syncAppointmentRequirement);
+    syncAppointmentRequirement();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const lead_id = form.dataset.leadId;

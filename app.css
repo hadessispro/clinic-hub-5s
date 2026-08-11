@@ -18,6 +18,178 @@
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* ── Marketing / Telesale workspace ── */
+.marketing-pipeline-header {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.marketing-pipeline-heading { min-width: 0; }
+.marketing-pipeline-heading h3 { line-height: 1.35; }
+
+.marketing-pipeline-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.raw-distribution-control {
+  display: grid;
+  gap: 4px;
+}
+
+.raw-distribution-control > label {
+  color: #52615b;
+  font-size: .7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.raw-distribution-control > div {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #bdd7cf;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.raw-distribution-control input {
+  width: 68px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid #d8e6e1;
+  border-radius: 0;
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+}
+
+.raw-distribution-control .secondary-button {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.marketing-view-switcher {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 3px;
+  border: 1px solid #d8e2de;
+  border-radius: 9px;
+  background: #eef3f1;
+}
+
+.marketing-view-switcher .view-switch-btn {
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+.marketing-export-button {
+  min-height: 36px !important;
+  padding: 0 13px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: #107c41 !important;
+  color: #fff !important;
+  font-size: .8rem !important;
+  white-space: nowrap;
+}
+
+.marketing-filter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 190px) minmax(150px, 190px);
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid #dde8e4;
+  border-radius: 11px;
+  background: #f3f7f5;
+}
+
+.marketing-filter-toolbar > div {
+  min-width: 0 !important;
+}
+
+.marketing-filter-toolbar input,
+.marketing-filter-toolbar select {
+  width: 100% !important;
+}
+
+.lead-kanban-card[style*="display: none"] { margin: 0 !important; }
+
+.pg-attendance-filter {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) minmax(150px, 210px) auto auto;
+  gap: 10px;
+  align-items: end;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #dce8e3;
+  border-radius: 11px;
+  background: #f5f8f7;
+}
+
+.app-dialog {
+  width: min(620px, calc(100vw - 28px));
+  max-width: 620px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 22px 70px rgba(15, 45, 39, .24);
+}
+
+.app-dialog::backdrop { background: rgba(12, 31, 28, .52); backdrop-filter: blur(3px); }
+.dialog-card { display: grid; gap: 16px; padding: 20px; }
+.dialog-card > .button-row { justify-content: flex-end; }
+.call-history-list { display: grid; gap: 10px; max-height: min(60vh, 520px); overflow-y: auto; }
+.call-history-list article { padding: 12px; border: 1px solid #dce8e3; border-radius: 11px; background: #f7faf8; }
+.call-history-list article > div { display: flex; justify-content: space-between; gap: 12px; }
+.call-history-list time, .call-history-list small { color: var(--muted); font-size: .75rem; }
+.call-history-list p { margin: 7px 0 0; line-height: 1.45; }
+
+@media (max-width: 1180px) {
+  .marketing-pipeline-header { grid-template-columns: 1fr; }
+  .marketing-pipeline-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 760px) {
+  .marketing-pipeline-header { gap: 12px; }
+  .marketing-pipeline-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .raw-distribution-control > div { width: 100%; }
+  .raw-distribution-control input { flex: 0 0 72px; }
+  .raw-distribution-control .secondary-button { flex: 1; justify-content: center; }
+  .marketing-view-switcher { display: grid; grid-template-columns: 1fr 1fr; }
+  .marketing-view-switcher .view-switch-btn { padding: 7px 8px !important; }
+  .marketing-export-button { width: 100%; justify-content: center; }
+  .marketing-filter-toolbar { grid-template-columns: 1fr; padding: 9px; }
+  .pg-attendance-filter { grid-template-columns: 1fr 1fr; }
+  .pg-attendance-filter button { width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .marketing-pipeline-heading h3 { font-size: 1rem !important; }
+  .marketing-pipeline-heading span { display: block; margin-top: 4px; line-height: 1.4; }
+  .marketing-view-switcher .view-switch-btn { font-size: .72rem !important; }
+  .marketing-export-button { font-size: .76rem !important; }
+  .pg-attendance-filter { grid-template-columns: 1fr; }
+  .dialog-card { padding: 16px; }
+}
+
 * {
   box-sizing: border-box;
 }

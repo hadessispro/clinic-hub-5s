@@ -355,6 +355,11 @@ export class MarketingService {
     if (user.role !== 'telesale_staff' && !managerRoles.has(user.role)) throw new ForbiddenException();
     const status = String(input.callStatus || input.call_status || '');
     if (!callStatuses.has(status)) throw new BadRequestException('Kết quả cuộc gọi không hợp lệ.');
+    const appointmentValue = input.appointmentAt || input.appointment_at;
+    const appointmentAt = appointmentValue ? new Date(String(appointmentValue)) : null;
+    if (status === 'appointment_booked' && (!appointmentAt || !Number.isFinite(appointmentAt.getTime()))) {
+      throw new BadRequestException('Kết quả đã hẹn khám bắt buộc phải có ngày giờ hẹn.');
+    }
     const lead = await this.infrastructure.postgres.query<{ assigned_telesale_code: string }>(
       'select assigned_telesale_code from marketing.leads where id=$1', [leadId],
     );
@@ -364,11 +369,26 @@ export class MarketingService {
     const result = await this.infrastructure.postgres.query(
       `insert into marketing.call_logs(lead_id,telesale_code,call_status,note,appointment_at)
        values ($1,$2,$3,$4,$5) returning *`,
-      [leadId, user.employeeCode, status, input.note || null, input.appointmentAt || input.appointment_at || null],
+      [leadId, user.employeeCode, status, input.note || null, appointmentAt?.toISOString() || null],
     );
     const leadStatus = status === 'appointment_booked' ? 'appointment_booked' : status === 'rejected' ? 'cancelled' : 'contacted';
     await this.infrastructure.postgres.query('update marketing.leads set status=$2,updated_at=now() where id=$1', [leadId, leadStatus]);
     return { data: result.rows[0] };
+  }
+
+  async listCallLogs(user: AuthUser, leadId: string) {
+    const lead = await this.infrastructure.postgres.query<{ created_by_pg_code: string; assigned_telesale_code: string }>(
+      'select created_by_pg_code,assigned_telesale_code from marketing.leads where id=$1', [leadId],
+    );
+    const row = lead.rows[0];
+    if (!row) throw new BadRequestException('Không tìm thấy Lead.');
+    if (user.role === 'pg_staff' && row.created_by_pg_code !== user.employeeCode) throw new ForbiddenException();
+    if (user.role === 'telesale_staff' && row.assigned_telesale_code !== user.employeeCode) throw new ForbiddenException();
+    if (!['pg_staff', 'telesale_staff'].includes(user.role) && !reportRoles.has(user.role)) throw new ForbiddenException();
+    const result = await this.infrastructure.postgres.query(
+      'select * from marketing.call_logs where lead_id=$1 order by created_at desc limit 200', [leadId],
+    );
+    return { data: result.rows };
   }
 
   async reports(user: AuthUser) {
@@ -382,12 +402,14 @@ export class MarketingService {
        from marketing.leads group by created_by_pg_code order by total desc`,
     );
     const telesale = await this.infrastructure.postgres.query(
-      `select assigned_telesale_code telesale_code,count(*)::int assigned,
-       count(*) filter (where status='contacted')::int contacted,
-       count(*) filter (where status='appointment_booked')::int appointments,
-       count(*) filter (where status='converted')::int converted,
-       count(*) filter (where status='cancelled')::int cancelled
-       from marketing.leads where assigned_telesale_code is not null group by assigned_telesale_code order by assigned desc`,
+      `select l.assigned_telesale_code telesale_code,count(distinct l.id)::int assigned,
+       count(distinct c.lead_id)::int contacted,
+       count(distinct c.lead_id) filter (where c.call_status='appointment_booked')::int appointments,
+       count(distinct l.id) filter (where l.status='converted')::int converted,
+       count(distinct l.id) filter (where l.status='cancelled')::int cancelled,
+       count(c.id)::int total_calls
+       from marketing.leads l left join marketing.call_logs c on c.lead_id=l.id
+       where l.assigned_telesale_code is not null group by l.assigned_telesale_code order by assigned desc`,
     );
     const totals = await this.infrastructure.postgres.query(
       `select count(*)::int total,count(*) filter(where data_class='raw')::int raw_count,
@@ -400,13 +422,16 @@ export class MarketingService {
   async createSite(user: AuthUser, input: JsonMap) {
     requireRole(user, supportRoles);
     const latitude = Number(input.latitude); const longitude = Number(input.longitude);
-    if (!String(input.name || '').trim() || !String(input.address || '').trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    const radius = Number(input.allowedRadiusM || 100); const accuracy = Number(input.maxAccuracyM || 100);
+    if (!String(input.name || '').trim() || !String(input.address || '').trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+      || radius < 20 || radius > 500 || accuracy < 10 || accuracy > 200) {
       throw new BadRequestException('Thông tin vị trí chấm công chưa đầy đủ.');
     }
     const result = await this.infrastructure.postgres.query(
       `insert into marketing.pg_work_sites(name,address,latitude,longitude,allowed_radius_m,max_accuracy_m,created_by_code)
        values ($1,$2,$3,$4,$5,$6,$7) returning *`,
-      [input.name, input.address, latitude, longitude, Number(input.allowedRadiusM || 100), Number(input.maxAccuracyM || 100), user.employeeCode],
+      [input.name, input.address, latitude, longitude, radius, accuracy, user.employeeCode],
     );
     return { data: result.rows[0] };
   }
@@ -419,12 +444,24 @@ export class MarketingService {
 
   async createAssignment(user: AuthUser, input: JsonMap) {
     requireRole(user, supportRoles);
+    const pgCode = String(input.pgCode || '').trim(); const siteId = String(input.siteId || '').trim();
+    const workDate = String(input.workDate || ''); const startTime = String(input.startTime || ''); const endTime = String(input.endTime || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || !/^\d{2}:\d{2}/.test(startTime) || !/^\d{2}:\d{2}/.test(endTime) || seconds(endTime) <= seconds(startTime)) {
+      throw new BadRequestException('Ngày hoặc thời gian phân công không hợp lệ.');
+    }
+    const valid = await this.infrastructure.postgres.query(
+      `select exists(select 1 from app.records where entity_type='profiles' and deleted_at is null and payload->>'role'='pg_staff'
+         and lower(payload->>'employee_code')=lower($1) and coalesce((payload->>'active')::boolean,true)=true) pg_valid,
+       exists(select 1 from marketing.pg_work_sites where id::text=$2 and active=true) site_valid`, [pgCode, siteId],
+    );
+    if (!valid.rows[0]?.pg_valid) throw new BadRequestException('Tài khoản PG không tồn tại hoặc đã bị khóa.');
+    if (!valid.rows[0]?.site_valid) throw new BadRequestException('Vị trí chấm công không tồn tại hoặc đã ngừng hoạt động.');
     const result = await this.infrastructure.postgres.query(
       `insert into marketing.pg_shift_assignments(pg_code,site_id,work_date,start_time,end_time,created_by_code)
        values ($1,$2,$3,$4,$5,$6)
        on conflict(pg_code,work_date) do update set site_id=excluded.site_id,start_time=excluded.start_time,
        end_time=excluded.end_time,created_by_code=excluded.created_by_code,updated_at=now() returning *`,
-      [input.pgCode, input.siteId, input.workDate, input.startTime, input.endTime, user.employeeCode],
+      [pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
     );
     return { data: result.rows[0] };
   }
@@ -506,6 +543,7 @@ export class MarketingController {
   @Post('/leads/:id/assign-net') assignNet(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.assignNetLead(request.user, id, String(body.telesaleCode || '')); }
   @Post('/leads/distribute-raw') distributeRaw(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.distributeRaw(request.user, Number(body.quantity || 0)); }
   @Post('/leads/:id/calls') addCall(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.addCallLog(request.user, id, body); }
+  @Get('/leads/:id/calls') listCalls(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.listCallLogs(request.user, id); }
   @Get('/reports') reports(@Req() request: ActorRequest) { return this.service.reports(request.user); }
   @Get('/pg-sites') sites(@Req() request: ActorRequest) { return this.service.listSites(request.user); }
   @Post('/pg-sites') createSite(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createSite(request.user, body); }

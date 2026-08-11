@@ -11,6 +11,10 @@ let analyticsSearch = '';
 let analyticsBranch = '';
 let analyticsPeriod = 'all';
 
+function clinicDateKey(date) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
 export async function renderView(state) {
   const profile = store.getState().profile || {};
   const [loadedLeads, employees, operationalReport] = await Promise.all([
@@ -323,7 +327,7 @@ export function initView() {
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = clinicDateKey(d);
     const dayLabel = dayNames[d.getDay()];
     const dateLabel = `${d.getDate()}/${d.getMonth() + 1}`;
     const count = leads.filter(l => {
@@ -430,7 +434,7 @@ export function initView() {
       <path d="${linePath}" fill="none" stroke="url(#lineGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#lineShadow)"/>
       ${dots}
     </svg>
-    ${!hasData ? '<div style="text-align:center; margin-top:8px; font-size:0.75rem; color:#94a3b8; font-style:italic;">📊 Dữ liệu mô phỏng — Lead thật sẽ hiển thị khi có dữ liệu trong CSDL</div>' : ''}
+    ${!hasData ? '<div style="text-align:center; margin-top:8px; font-size:0.75rem; color:#94a3b8;">Chưa có Lead trong 7 ngày gần nhất.</div>' : ''}
     <style>
       .chart-hover-dot:hover circle:nth-child(2) { r: 7; stroke-width: 3; stroke: #06b6d4; }
       .chart-hover-dot:hover .chart-tooltip { opacity: 1 !important; }

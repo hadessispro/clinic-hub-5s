@@ -6,6 +6,7 @@ import { pill, statusPill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { canExportData } from '../permissions.js';
 import { store } from '../store.js';
+import { navigateTo } from '../router.js';
 
 let cachedLeads = [];
 let cachedEmployees = [];
@@ -21,7 +22,7 @@ export async function renderView(state) {
 
   const [leads, employees, telesaleAccounts] = await Promise.all([
     getMarketingLeads(),
-    getEmployees(),
+    isLeadManager ? getEmployees() : Promise.resolve([]),
     isLeadManager ? getTelesaleAccounts() : Promise.resolve([]),
   ]);
 
@@ -35,7 +36,9 @@ export async function renderView(state) {
     { key: 'new', title: 'Mới nạp', icon: 'ri-user-add-line', badgeBg: '#e0f2fe', badgeColor: '#0369a1' },
     { key: 'contacted', title: 'Đã liên hệ', icon: 'ri-phone-line', badgeBg: '#fef3c7', badgeColor: '#b45309' },
     { key: 'appointment_booked', title: 'Đã hẹn khám', icon: 'ri-calendar-check-line', badgeBg: '#dcfce7', badgeColor: '#15803d' },
-    { key: 'converted', title: 'Chốt thành công', icon: 'ri-award-line', badgeBg: '#f3e8ff', badgeColor: '#6b21a8' }
+    { key: 'visited', title: 'Đã đến khám', icon: 'ri-hospital-line', badgeBg: '#ccfbf1', badgeColor: '#0f766e' },
+    { key: 'converted', title: 'Chốt thành công', icon: 'ri-award-line', badgeBg: '#f3e8ff', badgeColor: '#6b21a8' },
+    { key: 'cancelled', title: 'Hủy / Thất bại', icon: 'ri-close-circle-line', badgeBg: '#fee2e2', badgeColor: '#b91c1c' },
   ];
 
   const kanbanHtml = `
@@ -56,7 +59,7 @@ export async function renderView(state) {
               ${colLeads.length ? colLeads.map(lead => {
                 const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
                 return `
-                  <article class="kanban-card lead-kanban-card" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
+                  <article class="kanban-card lead-kanban-card" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
                     <!-- Top Info Section -->
                     <div class="card-header">
                       <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#0f172a; line-height:1.2;">${escapeHTML(lead.full_name)}</h4>
@@ -175,6 +178,16 @@ export async function renderView(state) {
   const sourceOptionsHtml = MARKETING_SOURCES.map(s => option(s, s, s === defaultSource)).join('');
   const telesaleOptionsHtml = telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`)).join('');
 
+  const pgSubmissionRows = leads.length
+    ? leads.slice(0, 50).map((lead) => `<tr>
+        <td><strong>${escapeHTML(lead.full_name)}</strong><br><span class="subtle">${escapeHTML(lead.phone || 'Không có SĐT')}</span></td>
+        <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
+        <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
+        <td>${lead.appointment_at ? formatDateTime(lead.appointment_at) : 'Chưa có lịch hẹn'}</td>
+        <td>${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'cancelled' ? 'rejected' : lead.status === 'converted' ? 'approved' : 'pending')}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5">Bạn chưa nhập dữ liệu khách hàng nào.</td></tr>';
+
   return `
     <div class="view-header">
       <div>
@@ -234,20 +247,24 @@ export async function renderView(state) {
           </div>
         </form>
       </section>
+      <section class="panel" style="margin-top:14px">
+        <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Tối đa 50 bản ghi gần nhất · chỉ hiển thị dữ liệu của tài khoản hiện tại</p></div><span class="pill">${leads.length} bản ghi</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Lịch hẹn</th><th>Trạng thái</th></tr></thead><tbody>${pgSubmissionRows}</tbody></table></div>
+      </section>
     ` : ''}
 
     <!-- Lead Pipeline & Spreadsheet Management Section -->
     <section class="panel" style="margin-top:14px;${isPgStaff ? 'display:none;' : ''}">
-      <div class="section-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-        <div>
+      <div class="marketing-pipeline-header">
+        <div class="marketing-pipeline-heading">
           <h3 style="margin:0; font-size:1.1rem; font-weight:700;">Tổng quan Lead Marketing & Tiến độ Telesale (${leads.length})</h3>
           <span style="font-size:0.8rem; color:#64748b;">Kéo thả thẻ Kanban hoặc chuyển chế độ Bảng tính Google Sheets</span>
         </div>
         
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          ${isLeadManager ? `<label style="display:flex;align-items:center;gap:6px"><input id="rawDistributionQuantity" type="number" min="1" value="20" style="width:84px" aria-label="Số lượng data thô"><button type="button" id="distributeRawLeads" class="secondary-button">Chia đều data thô</button></label>` : ''}
+        <div class="marketing-pipeline-actions">
+          ${isLeadManager ? `<div class="raw-distribution-control"><label for="rawDistributionQuantity">Số data thô</label><div><input id="rawDistributionQuantity" type="number" min="1" max="5000" value="20" inputmode="numeric" aria-label="Số lượng data thô"><button type="button" id="distributeRawLeads" class="secondary-button"><i class="ri-shuffle-line"></i><span>Chia đều</span></button></div></div>` : ''}
           <!-- View Switcher -->
-          <div style="display:inline-flex; background:#e2e8f0; padding:3px; border-radius:8px;">
+          <div class="marketing-view-switcher" role="group" aria-label="Chế độ hiển thị">
             <button type="button" id="viewModeKanban" class="view-switch-btn ${activeViewMode === 'kanban' ? 'active' : ''}" style="padding:5px 12px; font-size:0.8rem; font-weight:600; border:0; border-radius:6px; cursor:pointer; background:${activeViewMode === 'kanban' ? '#ffffff' : 'transparent'}; color:${activeViewMode === 'kanban' ? '#0f172a' : '#64748b'}; box-shadow:${activeViewMode === 'kanban' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'};">
               <i class="ri-layout-column-line"></i> Pipeline Kanban
             </button>
@@ -258,7 +275,7 @@ export async function renderView(state) {
 
           <!-- Export Excel CSV Button for Admin/Leaders -->
           ${allowExport ? `
-            <button type="button" id="btnExportCSV" class="primary-button" style="background:#107c41; color:#ffffff; border:0; font-size:0.82rem; padding:6px 14px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; min-height:34px; cursor:pointer; font-weight:600;">
+            <button type="button" id="btnExportCSV" class="primary-button marketing-export-button">
               <i class="ri-file-excel-2-line" style="font-size:1.05rem;"></i> Xuất Data Excel (CSV)
             </button>
           ` : ''}
@@ -266,7 +283,7 @@ export async function renderView(state) {
       </div>
 
       <!-- Advanced Filter Toolbar -->
-      <div style="margin-top:12px; padding:10px 14px; background:#f1f5f9; border-radius:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <div class="marketing-filter-toolbar">
         <div style="flex:1; min-width:220px; display:flex; align-items:center;">
           <input id="searchLeadInput" placeholder="🔍 Tìm theo Tên hoặc Số điện thoại..." style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none;" />
         </div>
@@ -318,6 +335,7 @@ export function initView() {
       const quantity = Number(document.getElementById('rawDistributionQuantity')?.value || 0);
       const result = await distributeRawLeads(quantity);
       showToast(`Đã chia đều ${result.distributed} data thô.`);
+      await navigateTo('marketing-leads');
     } catch (error) { showToast(error.message, true); }
   });
 
@@ -531,7 +549,7 @@ export function initView() {
     const source = sourceSelect?.value || '';
 
     // Filter Kanban cards
-    document.querySelectorAll('.lead-item-card').forEach(card => {
+    document.querySelectorAll('.lead-kanban-card').forEach(card => {
       const name = card.dataset.name || '';
       const phone = card.dataset.phone || '';
       const cardSource = card.dataset.source || '';
