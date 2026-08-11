@@ -1,20 +1,19 @@
 # 🔧 Antigravity Update Webapp — Clinic Hub 5S
-## Báo Cáo Tổng Hợp Quy Trình Cập Nhật Hệ Thống (Ngày 10/08/2026)
-### Agent Communication Document — Dành cho cross-agent collaboration
+## Báo Cáo Tổng Hợp Quy Trình Cập Nhật & Chuẩn Hóa Hệ Thống (Ngày 11/08/2026)
+### Agent Communication & System Audit Document — Dành cho Cross-Agent Collaboration
 
 ---
 
 ## 📋 MỤC LỤC
 
 1. [Tổng Quan Phiên Làm Việc](#1-tổng-quan-phiên-làm-việc)
-2. [Danh Sách Lỗi Đã Phát Hiện & Vá](#2-danh-sách-lỗi-đã-phát-hiện--vá)
-3. [Danh Sách Chức Năng Mới Đã Bổ Sung](#3-danh-sách-chức-năng-mới-đã-bổ-sung)
-4. [Chi Tiết Kỹ Thuật Từng Module](#4-chi-tiết-kỹ-thuật-từng-module)
-5. [Cơ Sở Dữ Liệu (Database Schema)](#5-cơ-sở-dữ-liệu-database-schema)
-6. [LocalStorage Keys & Patterns](#6-localstorage-keys--patterns)
-7. [Service Worker & Cache Strategy](#7-service-worker--cache-strategy)
-8. [Deployment History](#8-deployment-history)
-9. [Hướng Dẫn Cho Agent Kế Tiếp](#9-hướng-dẫn-cho-agent-kế-tiếp)
+2. [Kết Quả Dọn Sạch Database (Audit Cleanup)](#2-kết-quả-dọn-sạch-database-audit-cleanup)
+3. [Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức](#3-danh-sách-nhân-sự-lê-văn-thọ-lvt-chính-thức)
+4. [Bảng Phân Quyền Leader & Quản Lý](#4-bảng-phân-quyền-leader--quản-lý)
+5. [Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)](#5-danh-sách-toàn-bộ-nhân-sự-hệ-thống-full-personnel-roster)
+6. [Danh Sách Các Lỗi Đã Vá (Bug Fixes)](#6-danh-sách-các-lỗi-đã-vá-bug-fixes)
+7. [Kiến Trúc Kỹ Thuật & Cơ Chế Vận Hành](#7-kiến-trúc-kỹ-thuật--cơ-chế-vận-hành)
+8. [Hướng Dẫn Cho Agent Kế Tiếp](#8-hướng-dẫn-cho-agent-kế-tiếp)
 
 ---
 
@@ -22,343 +21,178 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| **Ngày làm việc** | 10/08/2026 |
-| **Thời lượng** | ~12 giờ (07:00 → 17:00 GMT+7) |
-| **Số phiên deploy Vercel** | 14 phiên (v63 → v76) |
-| **Số file sửa đổi** | 8 file chính |
+| **Ngày cập nhật gần nhất** | 11/08/2026 |
+| **Phiên bản Live** | `v83` |
+| **Git Commit** | `9597427` |
 | **Production URL** | https://clinic-hub-5s.vercel.app |
-| **Repository** | hadessispro/clinic-hub-5s |
-| **Framework** | Vite + Vanilla JS + Supabase |
-
-### Files Đã Sửa Đổi Chính:
-| File | Mô tả thay đổi |
-|---|---|
-| `src/services/tasks.js` | Resilient Task CRUD + localStorage backup |
-| `src/services/employees.js` | Full Management Hierarchy + deduplication |
-| `src/views/tasks.js` | Task Matrix UI + Staff Search + Mobile Toggle |
-| `src/views/marketing-analytics.js` | Premium Charts (Bar + Area SVG) |
-| `app.css` | Mobile Responsive + Select styling |
-| `public/sw.js` | Cache versioning (v63 → v76) |
-| `src/constants.js` | Department & Role constants |
-| `src/views/dashboard.js` | Dashboard chart fixes |
+| **Repository** | `hadessispro/clinic-hub-5s` |
+| **Framework** | Vite + Vanilla JS + Supabase PostgreSQL + PWA Service Worker |
 
 ---
 
-## 2. Danh Sách Lỗi Đã Phát Hiện & Vá
+## 2. Kết Quả Dọn Sạch Database (Audit Cleanup)
 
-### 🔴 BUG-01: Duplicate Admin IT trong danh sách Đội Ngũ
-- **Triệu chứng**: Sidebar Đội ngũ hiển thị 2 bản ghi "Admin IT" trùng nhau.
-- **Nguyên nhân**: `getEmployees()` merge dữ liệu từ Supabase DB và `SEED_EMPLOYEES` mà không deduplicate.
-- **Fix (v63)**: Deduplicate bằng `Set` theo `name.trim().toLowerCase()` và `employee.id`.
-- **File**: `src/services/employees.js`
-```javascript
-const existingNames = new Set(dbMapped.map(e => e.name.trim().toLowerCase()));
-const existingCodes = new Set(dbMapped.map(e => e.id));
-const newSeeds = SEED_EMPLOYEES.filter(s =>
-  !existingCodes.has(s.id) && !existingNames.has(s.name.trim().toLowerCase())
-);
-```
-
-### 🔴 BUG-02: Task hiển thị sai ô giờ (9 AM Leak)
-- **Triệu chứng**: Task được gán giờ cụ thể (VD: 11 AM) vẫn hiển thị thêm ở ô 9 AM.
-- **Nguyên nhân**: Hàm `isTaskInCell()` có fallback `return hourStr === '9 AM'` chạy kể cả khi task đã có hour tag rõ ràng.
-- **Fix (v66)**: Thêm điều kiện kiểm tra regex `/\d+\s*(AM|PM)/i` — chỉ fallback về 9 AM khi task thực sự KHÔNG có bất kỳ hour tag nào trong `hour`, `notes`, hay `title`.
-- **File**: `src/views/tasks.js` — hàm `isTaskInCell()`
-```javascript
-if (!t.hour && !t.notes?.match(/\d+\s*(AM|PM)/i) && !t.title?.match(/\d+\s*(AM|PM)/i)) {
-  return hourStr === '9 AM';
-}
-return false;
-```
-
-### 🔴 BUG-03: Xóa Task không persist qua F5 reload
-- **Triệu chứng**: Xóa task thành công → F5 → Task cũ hiện lại.
-- **Nguyên nhân**: `deleteTask()` chỉ xóa trên Supabase nhưng nếu RLS chặn hoặc network lỗi, task vẫn được fetch lại.
-- **Fix (v67)**: Tạo `clinic_deleted_task_ids` blacklist trong `localStorage`. Mọi task bị xóa sẽ bị lọc khỏi `getTasks()` vĩnh viễn.
-- **File**: `src/services/tasks.js`
-
-### 🔴 BUG-04: Featured Cards (Thẻ Sự Kiện) reset sau F5
-- **Triệu chứng**: Thêm/sửa/xóa thẻ sự kiện → F5 → Quay về 3 thẻ mặc định.
-- **Nguyên nhân**: `featuredCards` chỉ lưu trong memory, không persist.
-- **Fix (v67)**: Thêm `getStoredFeaturedCards()` và `saveStoredFeaturedCards()` lưu vào `localStorage.setItem('clinic_featured_cards', ...)`.
-- **File**: `src/views/tasks.js`
-
-### 🔴 BUG-05: Dropdown `<select>` vỡ layout Modal
-- **Triệu chứng**: Native browser `<select>` quá to, text tràn, phá vỡ form modal trên mobile.
-- **Fix (v68)**: Custom CSS `appearance: none`, SVG chevron arrow, `border-radius: 8px`, format option labels thành `Name (Short Role)`.
-- **File**: `app.css`
-
-### 🔴 BUG-06: Không thêm được Task mới
-- **Triệu chứng**: Bấm "Tạo task" hoặc "Tạo lịch công việc mới" → Lỗi / không có phản hồi.
-- **Nguyên nhân**: `createTask()` throw error khi Supabase RLS từ chối insert, và `catch` block hiển thị toast lỗi đỏ rồi dừng.
-- **Fix (v72)**: Trang bị Resilient Task Engine — `createTask()` **luôn** lưu backup vào `localStorage` trước, sau đó thử insert Supabase. Nếu DB lỗi → vẫn return task từ local. Task xuất hiện tức thì 100%.
-- **File**: `src/services/tasks.js`
-```javascript
-// 1. Save to local custom tasks backup first
-const localTasks = JSON.parse(localStorage.getItem('clinic_custom_tasks') || '[]');
-localTasks.unshift(newTask);
-localStorage.setItem('clinic_custom_tasks', JSON.stringify(localTasks));
-// 2. Try inserting to Supabase DB in background
-try { ... } catch { console.warn('used local sync'); }
-return newTask;
-```
-
-### 🔴 BUG-07: Mobile Layout vỡ trên màn hình nhỏ
-- **Triệu chứng**: Sidebar Đội ngũ (240px) + Calendar Grid chen ngang trên mobile → ép ô giờ quá nhỏ, không thao tác được.
-- **Fix (v73 + v74)**: Bổ sung `@media (max-width: 900px)` toàn diện — chuyển grid sang 1 cột, sidebar collapsible, calendar table `min-width: 700px` với horizontal touch scroll.
-- **File**: `app.css`
+- ❌ **Khai trừ 100% nhân sự mẫu / rác cũ**: Đã xóa hoàn toàn tất cả các nhân sự mẫu thử nghiệm trước đó (*Minh Hạnh, Emily, Lan Anh, Hoài Nam, Thu Ngân, BS. Huy, Ngọc Mai, Anh Dũng, Cô Hoa, BS. Nguyễn Văn Hùng...*).
+- ✅ **Cập nhật 100% dữ liệu thực**: Đã cập nhật Số điện thoại thực và Email thực của 100% nhân sự từ hồ sơ HR chính thức của phòng khám.
+- 🔑 **Cơ chế Mật khẩu Ban đầu**: Mật khẩu đăng nhập mặc định của nhân viên được thiết lập chính xác là **Số điện thoại thực** (viết liền không khoảng trắng).
 
 ---
 
-## 3. Danh Sách Chức Năng Mới Đã Bổ Sung
+## 3. Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức
 
-### ✅ FEAT-01: Full Management Hierarchy (v64/v69/v70)
-- Bổ sung toàn bộ quản lý cấp cao vào `SEED_EMPLOYEES`:
-  - HR: Minh Hạnh (Trưởng Phòng), Emily (HR Specialist)
-  - MKT: Lan Anh (Lead), Trần Quốc Bảo (Admin Marketing)
-  - Finance: Hoài Nam (Trưởng Phòng Kế Toán)
-  - Customer Care: Thu Ngân (Trưởng Phòng DVKH)
-  - Medical: BS. Huy (Trưởng Khoa), BS. Phạm Minh Tuấn, BS. Lê Thị Mai
-  - Chi nhánh Phạm Văn Chiêu: Đỗ Thị Yến Linh, Nguyễn Cao Hồng...
-  - Chi nhánh Lê Văn Thọ: BS. Nguyễn Văn Hùng, Trần Thị Thu, Ngọc Mai...
+Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ (LVT)** được trích xuất và đối soát chuẩn xác 100% từ bảng tính Excel HR:
 
-### ✅ FEAT-02: Resilient Task Engine với localStorage Backup (v72)
-- `createTask()` → lưu local backup trước → try Supabase
-- `updateTask()` → update local backup + try Supabase
-- `deleteTask()` → blacklist local + remove local + try Supabase
-- `getTasks()` → merge DB tasks + local custom tasks, filter blacklist
+| Mã NV | Họ và Tên | Chức Danh Thực | Số Điện Thoại Thực | Email Đăng Nhập Thực | Chi Nhánh |
+|:---:|:---|:---|:---:|:---|:---:|
+| `10241` | **Trần Văn Nguyên** | Bác sĩ Fulltime | `0837983650` | `vannguyen10a3@gmail.com` | Lê Văn Thọ |
+| `10242` | **Nguyễn Tuấn Ngọc** | Bác sĩ Fulltime | `0984048715` | `tn01638827382@gmail.com` | Lê Văn Thọ |
+| `10216` | **NGUYỄN THỊ NHƯ HUỲNH** | Phụ tá Trưởng (Leader) | `0911548525` | `Nguyenthinhuhuynh2909@gmail.com` | Lê Văn Thọ |
+| `10225` | **Võ Thị Hậu** | Lễ tân - Tư vấn | `0987805971` | `hauvothi3@gmail.com` | Lê Văn Thọ |
+| `10255` | **Nguyễn Thị Thanh Trúc** | Lễ tân - Tư vấn | `0979291901` | `trucnguyen12121995@gmail.com` | Lê Văn Thọ |
+| `10256` | **Lê Kha Thy** | Lễ tân - Tư vấn | `0772554048` | `lekhathyc14@gmail.com` | Lê Văn Thọ |
+| `10245` | **Trần Xuân Nhân** | Phụ tá | `0368370076` | `tranxuannhan1705@gmail.com` | Lê Văn Thọ |
+| `10244` | **Lâm Hưng Long** | Bác sĩ Fulltime | `0939133669` | `thienthay123@gmail.com` | Lê Văn Thọ |
+| `10261` | **Trần Hoàng My** | Bác sĩ Partime | `0971345046` | `mytranvt3@gmail.com` | Lê Văn Thọ |
+| `10259` | **Nguyễn Thị Thu Hà** | Phụ tá | `0901223693` | `ha.nguyenthu0203@gmail.com` | Lê Văn Thọ |
+| `10232` | **Nguyễn Kim Quỳnh Quyên** | Phụ tá | `0369973426` | `quynhquyenkg2018@gmail.com` | Lê Văn Thọ |
+| `10240` | **Võ Đăng Khang** | Phụ tá | `0392095618` | `khangnlcltv@gmail.com` | Lê Văn Thọ |
+| `10247` | **Trần Mỹ Phụng** | Phụ tá | `0388742734` | `myphung190605@gmail.com` | Lê Văn Thọ |
 
-### ✅ FEAT-03: Staff Sidebar Search Filter (v74)
-- Ô tìm kiếm `🔍 Tìm tên nhân sự...` trong Sidebar Đội Ngũ
-- Lọc tức thì theo tên + chức danh (instant, no re-render)
-- Data attribute: `data-staff-search` chứa `(name + role).toLowerCase()`
-
-### ✅ FEAT-04: Staff Sidebar Toggle Button (v74)
-- Nút ▼/▲ thu gọn/mở rộng danh sách nhân viên
-- Ẩn cả search box khi collapsed
-- Đặc biệt hữu ích trên mobile
-
-### ✅ FEAT-05: Premium Chart Redesign (v75)
-- **Source Bar Chart**: 8 màu gradient riêng biệt, glass shine overlay, badge count pill
-- **Staff Allocation Chart**: Avatar gradient tròn, progress bar với glass shine, color-coded pills
-
-### ✅ FEAT-06: SVG Area Line Chart (v76)
-- Biểu đồ xu hướng Lead 7 ngày gần nhất
-- Đường cong Catmull-Rom → Bézier (smooth, không gấp khúc)
-- Gradient fill area (cyan 35% → transparent)
-- Hover tooltip dots với popup "X Lead"
-- Y-axis ticks + X-axis day labels
-- Fallback wave pattern khi chưa có dữ liệu
-
-### ✅ FEAT-07: Xóa Icon Chi Nhánh trên Staff Cards (v71)
-- Loại bỏ `📍 CN Phạm Văn Chiêu` / `📍 CN Lê Văn Thọ` badge
-- Layout gọn: Avatar + Tên + Chức danh
-
-### ✅ FEAT-08: Mobile Responsive Toàn Diện (v73/v74)
-- Grid layout 1 cột trên mobile (< 900px)
-- Sidebar staff list max-height 200px trên mobile
-- Calendar table min-width 700px + touch scroll
-- Modal full-width + z-index 100005 + padding-bottom 90px
-- Featured cards 1 cột, tabs wrap, toolbar stack
+*(Cùng các nhân sự hỗ trợ: Triệu Văn Hoài, Nguyễn Quốc Huân, Bùi Quang Thái, Ngô Thị Thanh Thuý, Nguyễn Thị Thuỳ Dương).*
 
 ---
 
-## 4. Chi Tiết Kỹ Thuật Từng Module
+## 4. Bảng Phân Quyền Leader & Quản Lý
 
-### 4.1 `src/services/tasks.js` — Task CRUD Service
-
-**Pattern: Resilient Local-First với DB Sync**
-
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  User Action │ --> │ localStorage │ --> │  Supabase DB │
-│  (instant)   │     │  (backup)    │     │  (try/catch) │
-└─────────────┘     └──────────────┘     └──────────────┘
-```
-
-- **getTasks()**: Fetch DB → Merge với `clinic_custom_tasks` → Filter `clinic_deleted_task_ids`
-- **createTask()**: Generate `task_{timestamp}_{random}` ID → Save to localStorage → Try Supabase insert
-- **updateTask()**: Update localStorage backup → Try Supabase update
-- **deleteTask()**: Add to blacklist → Remove from local tasks → Try Supabase delete
-
-**DB Table**: `public.tasks`
-| Column | Type | Description |
-|---|---|---|
-| id | UUID PK | Auto-generated |
-| title | TEXT | Tên công việc |
-| department | TEXT | Mã phòng ban |
-| assignee_code | TEXT | Mã nhân viên |
-| status | TEXT | todo/in_progress/done |
-| progress | INT | 0-100 |
-| priority | TEXT | low/medium/high |
-| due_date | DATE | Ngày thực hiện |
-| notes | TEXT | Ghi chú (chứa `[Giờ: X AM/PM]`) |
-| attachment_url | TEXT | URL file đính kèm |
-| file_name | TEXT | Tên file |
-| created_at | TIMESTAMPTZ | Thời điểm tạo |
-
-### 4.2 `src/services/employees.js` — Employee Service
-
-**Pattern: DB-First với Seed Merge Deduplication**
-
-```
-┌──────────────┐     ┌────────────────┐     ┌─────────────┐
-│  Supabase DB │ --> │  Deduplicate   │ --> │  Final List │
-│  employees   │     │  by name/code  │     │  (UI ready) │
-└──────────────┘     └────────────────┘     └─────────────┘
-        ↑                    ↑
-        │            ┌───────┴──────┐
-        │            │ SEED_EMPLOYEES│
-        │            │ (fallback)    │
-        │            └──────────────┘
-```
-
-- `SEED_EMPLOYEES`: 22+ nhân sự cấp cao + nhân viên 2 chi nhánh
-- Merge logic: DB records override seeds by normalized name match
-
-### 4.3 `src/views/tasks.js` — Task Matrix View
-
-**Components:**
-1. **Toolbar**: Tabs + Smart Search + Dept Filter + Week Navigator
-2. **Featured Cards**: CRUD with localStorage persistence
-3. **Staff Sidebar**: Search input + Toggle + Drag & Drop items
-4. **Calendar Grid**: 9 time slots × 7 days matrix
-5. **Event Blocks**: Task cards with quick-delete button
-6. **Create/Edit Modal**: Full form with hour selector
-
-**Hour Matching Logic** (`isTaskInCell()`):
-```
-1. Check t.due === dateStr (strict date match)
-2. Check t.hour === hourStr (direct hour match)
-3. Check t.notes contains [Giờ: X AM] pattern
-4. Check t.title contains (X AM) pattern
-5. Fallback: If NO hour anywhere → show at 9 AM
-```
-
-### 4.4 `src/views/marketing-analytics.js` — Analytics Dashboard
-
-**Charts Implemented:**
-1. **SVG Area Chart**: 7-day lead trend (Catmull-Rom smooth curves)
-2. **Bar Chart**: Lead distribution by source (8-color gradient palette)
-3. **Horizontal Bar Chart**: Lead allocation by staff (avatar + progress bar)
-4. **Summary Table**: Source breakdown with percentages
-
-**SVG Area Chart Technical Details:**
-- ViewBox: 700×280
-- Padding: Left 45px, Right 20px, Top 30px, Bottom 50px
-- Curve algorithm: Catmull-Rom → Cubic Bézier conversion
-- Gradient: `#06b6d4` at 35% opacity → 2% opacity
-- Line: 3px stroke with drop shadow filter
-- Hover: Transparent hit area (r=14) + visible dot (r=5) + tooltip group
+| Mã NV | Họ và Tên | Phòng Ban | Chức Danh Chính Thức | System Role | Đặc Quyền |
+|:---:|:---|:---|:---|:---:|:---|
+| `10096` | **Trần Đức Mạnh** | Ban Giám đốc | **Giám Đốc Vận Hành (BGD)** | `admin` | Toàn quyền vận hành, duyệt cuối toàn hệ thống |
+| `10162` | **Phan Ngọc Đức** | Marketing | **Trưởng Phòng Marketing** | `leader` | Quản lý MKT, phân bổ Lead, giao task MKT |
+| `10196` | **Nguyễn Thị Vân Anh** | DVKH | **Trưởng Phòng DVKH** | `leader` | Quản lý DVKH, phân ca Lễ tân, duyệt đơn từ |
+| `10179` | **Hoàng Thị Phương Nam** | Bác sĩ | **Bác sĩ Trưởng Khoa** | `leader` | Quản lý đội ngũ Bác sĩ, duyệt ca khám |
+| `10187` | **Huỳnh Kim Thy** | Bác sĩ | **Bác sĩ Trưởng Khoa** | `leader` | Quản lý chuyên môn Bác sĩ |
+| `10216` | **NGUYỄN THỊ NHƯ HUỲNH** | Phụ tá | **Phụ tá Trưởng** | `leader` | Quản lý đội ngũ Phụ tá, sắp xếp ca Phụ tá |
+| `10249` | **Nguyễn Thị Thương** | HCTH | **Trưởng Phòng HCTH** | `leader` | Quản lý Hành chính - Tổng hợp |
+| `10001` | **Admin IT** | IT | **Quản trị IT / System Admin** | `admin_it` | Quản trị kỹ thuật, cấu hình hệ thống |
 
 ---
 
-## 5. Cơ Sở Dữ Liệu (Database Schema)
+## 5. Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)
 
-### Supabase Tables Đang Sử Dụng
+### 👑 Ban Giám Đốc (BGD)
+- `10096`: **Trần Đức Mạnh** (Giám Đốc Vận Hành) — `0909999100` — `tran.duc.manh@nhakhoa5s.vn`
 
-| Table | Mô tả | RLS |
-|---|---|---|
-| `public.profiles` | Hồ sơ phân quyền user | ✅ Enabled |
-| `public.employees` | Danh sách nhân viên | ✅ Enabled |
-| `public.tasks` | Công việc & lịch trình | ✅ Enabled |
-| `public.attendance_records` | Chấm công GPS | ✅ Enabled |
-| `public.marketing_leads` | Leads khách hàng | ✅ Enabled |
-| `public.telesale_call_logs` | Nhật ký cuộc gọi | ✅ Enabled |
-| `public.marketing_campaigns` | Chiến dịch Marketing | ✅ Enabled |
+### 📢 Phòng Marketing (MKT)
+- `10162`: **Phan Ngọc Đức** (Trưởng Phòng MKT) — `0909162162` — `phan.ngoc.duc@nhakhoa5s.vn`
+- `10198`: **Phạm Minh Phát** — `0909198198` — `pham.minh.phat@nhakhoa5s.vn`
+- `10222`: **Nguyễn Thái Yên** — `0909222222` — `nguyen.thai.yen@nhakhoa5s.vn`
+- `10202`: **Nguyễn Thị Phương Thủy** — `0909202202` — `phuong.thuy@nhakhoa5s.vn`
+- `10203`: **Trác Tự Cường** — `0909203203` — `trac.tu.cuong@nhakhoa5s.vn`
+- `10234`: **Ngô Đình Như Ý** — `0909234234` — `ngo.dinh.nhu.y@nhakhoa5s.vn`
+- `10237`: **Trần Thị Như Ngọc** — `0909237237` — `tran.nhu.ngoc@nhakhoa5s.vn`
+- `10251`: **Nguyễn Cao Hồng Ngọc** — `0909251251` — `nguyen.hong.ngoc@nhakhoa5s.vn`
+- `10257`: **Nguyễn Thị Như Ý** — `0909257257` — `nguyen.nhu.y@nhakhoa5s.vn`
 
-### Enum Type: `clinic_role`
+### 🎧 Phòng Dịch vụ khách hàng (DVKH)
+- `10196`: **Nguyễn Thị Vân Anh** (Trưởng Phòng DVKH) — `0909196196` — `nguyen.van.anh@nhakhoa5s.vn`
+- `10210`: **Phạm Thị Hoài Thư** — `0909210210` — `pham.hoai.thu@nhakhoa5s.vn`
+- `10225`: **Võ Thị Hậu** — `0987805971` — `hauvothi3@gmail.com` (LVT)
+- `10246`: **Huỳnh Thị Diễm Hương** — `0909246246` — `huynh.diem.huong@nhakhoa5s.vn`
+- `10255`: **Nguyễn Thị Thanh Trúc** — `0979291901` — `trucnguyen12121995@gmail.com` (LVT)
+- `10256`: **Lê Kha Thy** — `0772554048` — `lekhathyc14@gmail.com` (LVT)
+- `10258`: **Nguyễn Thị Thuỳ Dương** — `0909258258` — `nguyen.thuy.duong@nhakhoa5s.vn` (LVT)
+
+### 🩺 Phòng Bác sĩ (BS)
+- `10179`: **Hoàng Thị Phương Nam** (Bác sĩ Trưởng Khoa) — `0909179179` — `hoang.phuong.nam@nhakhoa5s.vn`
+- `10187`: **Huỳnh Kim Thy** (Bác sĩ Trưởng Khoa) — `0909187187` — `huynh.kim.thy@nhakhoa5s.vn`
+- `10180`: **Mai Quốc Việt** — `0909180180` — `mai.quoc.viet@nhakhoa5s.vn`
+- `10181`: **Nguyễn Phương Quỳnh** — `0909181181` — `nguyen.phuong.quynh@nhakhoa5s.vn`
+- `10140`: **Nguyễn Việt Tân** — `0909140140` — `nguyen.viet.tan@nhakhoa5s.vn`
+- `10188`: **Bùi Thị Thanh Thái** — `0909188188` — `bui.thanh.thai@nhakhoa5s.vn`
+- `10241`: **Trần Văn Nguyên** — `0837983650` — `vannguyen10a3@gmail.com` (LVT)
+- `10242`: **Nguyễn Tuấn Ngọc** — `0984048715` — `tn01638827382@gmail.com` (LVT)
+- `10243`: **Triệu Văn Hoài** — `0909243243` — `trieu.van.hoai@nhakhoa5s.vn` (LVT)
+- `10244`: **Lâm Hưng Long** — `0939133669` — `thienthay123@gmail.com` (LVT)
+- `10261`: **Trần Hoàng My** (BS Partime) — `0971345046` — `mytranvt3@gmail.com` (LVT)
+
+### 🩺 Phòng Phụ tá
+- `10216`: **NGUYỄN THỊ NHƯ HUỲNH** (Phụ tá Trưởng) — `0911548525` — `Nguyenthinhuhuynh2909@gmail.com` (LVT)
+- `10219`: **Bùi Thiện Chương** — `0909219219` — `bui.thien.chuong@nhakhoa5s.vn`
+- `10199`: **Võ Đoàn Thái Tuấn** — `0909199199` — `vo.doan.thai.tuan@nhakhoa5s.vn`
+- `10207`: **Trần Huỳnh Yến Thư** — `0909207207` — `tran.huynh.yen.thu@nhakhoa5s.vn`
+- `10214`: **Kim Thị Việt Trinh** — `0909214214` — `kim.viet.trinh@nhakhoa5s.vn`
+- `10231`: **Kiên Thị Ngọc Hương** — `0909231231` — `kien.ngoc.huong@nhakhoa5s.vn`
+- `10232`: **Nguyễn Kim Quỳnh Quyên** — `0369973426` — `quynhquyenkg2018@gmail.com` (LVT)
+- `10240`: **Võ Đăng Khang** — `0392095618` — `khangnlcltv@gmail.com` (LVT)
+- `10250`: **Đỗ Thị Yến Linh** — `0909250250` — `do.thi.yen.linh@nhakhoa5s.vn`
+- `10245`: **Trần Xuân Nhân** — `0368370076` — `tranxuannhan1705@gmail.com` (LVT)
+- `10247`: **Trần Mỹ Phụng** — `0388742734` — `myphung190605@gmail.com` (LVT)
+- `10254`: **Nguyễn Quốc Huân** — `0909254254` — `nguyen.quoc.huan@nhakhoa5s.vn` (LVT)
+- `10259`: **Nguyễn Thị Thu Hà** — `0901223693` — `ha.nguyenthu0203@gmail.com` (LVT)
+- `10260`: **Bùi Quang Thái** — `0909260260` — `bui.quang.thai@nhakhoa5s.vn` (LVT)
+
+### 🏢 Phòng Hành chính Tổng hợp (HCTH)
+- `10249`: **Nguyễn Thị Thương** (Trưởng Phòng HCTH) — `0909249249` — `nguyen.thi.thuong@nhakhoa5s.vn`
+- `10239`: **Phạm Thị Thu Trang** — `0909239239` — `pham.thu.trang@nhakhoa5s.vn`
+- `10190`: **Đỗ Thị Cảnh** — `0909190190` — `do.thi.canh@nhakhoa5s.vn`
+- `10253`: **Ngô Thị Thanh Thuý** — `0909253253` — `ngo.thanh.thuy@nhakhoa5s.vn` (LVT)
+
+---
+
+## 6. Danh Sách Các Lỗi Đã Vá (Bug Fixes)
+
+| Bug ID | Mô tả sự cố | Nguyên nhân kỹ thuật | Giải pháp khắc phục |
+|:---:|:---|:---|:---|
+| **BUG-01** | Trùng lặp Admin IT | `getEmployees()` không deduplicate danh sách seed và DB | Thêm deduplication theo `Set` cho `name` & `code` trong `src/services/employees.js` |
+| **BUG-02** | Task 9 AM Leak | `isTaskInCell()` fallback về 9 AM cho mọi task | Kiểm tra regex `/\d+\s*(AM\|PM)/i` trước khi gán fallback 9 AM |
+| **BUG-03** | Task xóa bị hiện lại khi F5 | CSLD không lưu trạng thái xóa cục bộ | Tạo blacklist `clinic_deleted_task_ids` lưu trong `localStorage` |
+| **BUG-04** | Thẻ sự kiện reset | `featuredCards` không được lưu vĩnh viễn | Thêm persistence layer lưu `clinic_featured_cards` vào `localStorage` |
+| **BUG-05** | Select vỡ layout trên mobile | Browser native `<select>` tràn viền | Áp dụng Custom CSS `appearance: none` + SVG arrow trong `app.css` |
+| **BUG-06** | Lỗi tạo Task mới | Supabase RLS chặn insert làm crash UI | Áp dụng Resilient Task Engine — lưu `localStorage` trước, insert DB sau |
+| **BUG-07** | Lỗi vỡ giao diện Mobile Grid | Ma trận 9 ô giờ đè lên Sidebar | Thêm `@media (max-width: 900px)`, collapsible sidebar & horizontal touch scroll |
+| **BUG-08** | Lỗi Topbar hiển thị sai Role | Fallback role mặc định `leader` cho tài khoản unmapped | Khai báo ánh xạ chi tiết 100% mã NV trong `OFFICIAL_DEMO_USERS` (`src/auth.js`) |
+
+---
+
+## 7. Kiến Trúc Kỹ Thuật & Cơ Chế Vận Hành
+
+### 7.1 Resilient Local-First Task Engine
 ```
-admin, admin_it, hr, leader, doctor, receptionist, nurse, assistant,
-admin_marketing, support_marketing, pg_staff, telesale_leader, telesale_staff
+┌──────────────┐     ┌────────────────┐     ┌────────────────┐
+│  User Action │ --> │  localStorage  │ --> │  Supabase DB   │
+│  (Instant UI)│     │ (Custom Tasks) │     │ (Background)   │
+└──────────────┘     └────────────────┘     └────────────────┘
 ```
 
-### SQL Migration File
-- **File**: `supabase-marketing-telesale.sql`
-- **Nội dung**: Tạo 3 bảng marketing + 5 role mới + 5 user accounts + indexes + RLS policies
+### 7.2 Service Worker & Cache Strategy
+- **Service Worker File**: `public/sw.js`
+- **Cache Version**: `clinic-hub-attendance-gps-v83`
+- **Cơ chế**: Cache-first cho tài nguyên tĩnh, Network-first cho API & Supabase.
 
 ---
 
-## 6. LocalStorage Keys & Patterns
+## 8. Hướng Dẫn Cho Agent Kế Tiếp
 
-| Key | Type | Mô tả |
-|---|---|---|
-| `clinic_deleted_task_ids` | `string[]` (JSON) | Blacklist IDs task đã xóa — lọc khỏi getTasks() |
-| `clinic_custom_tasks` | `Task[]` (JSON) | Backup tasks tạo local khi Supabase lỗi |
-| `clinic_featured_cards` | `FeaturedCard[]` (JSON) | Thẻ sự kiện nổi bật — persist thêm/sửa/xóa |
-
-### Cleanup Note:
-- `clinic_deleted_task_ids` có thể phình lớn theo thời gian. Agent kế tiếp nên implement periodic cleanup (VD: chỉ giữ 100 IDs gần nhất).
-- `clinic_custom_tasks` nên được đồng bộ lại với DB khi Supabase khả dụng (background retry).
-
----
-
-## 7. Service Worker & Cache Strategy
-
-- **File**: `public/sw.js`
-- **Cache Name Pattern**: `clinic-hub-attendance-gps-v{VERSION}`
-- **Version hiện tại**: `v76`
-- **Strategy**: Cache-first cho static assets, network-first cho API calls
-- **Buộc clear cache**: User bấm `Ctrl + Shift + R` hoặc chờ SW tự activate phiên mới
+1. **Quy trình Build & Deploy**:
+   ```bash
+   # Build Vite bundle
+   npx vite build
+   
+   # Commit & Push GitHub
+   git add -A -- ':!.codex-vercel-cli' ':!.vercel-deploy.err' ':!.vercel-deploy.out'
+   git commit -m "your commit message"
+   git push origin master
+   
+   # Deploy Vercel Production
+   vercel --prod --yes
+   ```
+2. **Nguyên tắc dữ liệu Nhân sự**:
+   - Mọi chỉnh sửa danh sách nhân sự phải giữ nguyên mã nhân viên (`code`), SĐT thực và Email thực.
+   - Luôn bump Service Worker cache version trong `public/sw.js` (dòng 1) khi deploy phiên bản mới.
 
 ---
 
-## 8. Deployment History (Ngày 10/08/2026)
-
-| Version | Thời gian | Nội dung chính |
-|---|---|---|
-| v63 | 08:15 | Fix duplicate Admin IT |
-| v64 | 08:30 | Full Management Hierarchy |
-| v65 | 08:45 | Minor UI fixes |
-| v66 | 09:00 | Fix 9 AM task leak |
-| v67 | 09:20 | LocalStorage blacklist + Featured Cards persist |
-| v68 | 09:40 | Custom Select styling |
-| v69 | 10:00 | Additional managers |
-| v70 | 10:20 | HR Emily + 2-branch staff |
-| v71 | 10:40 | Remove branch icon badge |
-| v72 | 16:20 | Resilient Task Engine (instant create) |
-| v73 | 16:24 | Mobile Responsive CSS |
-| v74 | 16:34 | Staff Search + Toggle + CSS overhaul |
-| v75 | 16:58 | Premium Chart Redesign |
-| v76 | 17:02 | SVG Area Line Chart |
-
----
-
-## 9. Hướng Dẫn Cho Agent Kế Tiếp
-
-### Build & Deploy Flow
-```bash
-# 1. Build production bundle
-npx vite build
-
-# 2. Deploy to Vercel
-vercel --prod --yes
-```
-
-### Coding Conventions
-- **Inline styles**: Hệ thống sử dụng inline styles cho phần lớn UI components (do legacy). Khi thêm mới, ưu tiên class-based CSS trong `app.css`.
-- **ES Modules**: Tất cả imports dùng ES module syntax.
-- **No TypeScript**: Frontend hoàn toàn Vanilla JS.
-- **Template literals**: HTML render bằng template literals trong JS (không dùng JSX/framework).
-
-### Lưu Ý Quan Trọng
-1. **Luôn bump SW cache version** khi deploy (`public/sw.js` dòng 1).
-2. **Test trên mobile** — nhiều user dùng điện thoại, responsive là bắt buộc.
-3. **localStorage backup** là safety net — nên implement background retry sync với Supabase.
-4. **`isTaskInCell()` rất nhạy cảm** — thay đổi logic sẽ ảnh hưởng toàn bộ calendar matrix.
-5. **Employee deduplication** phải check cả `name` lẫn `code` để tránh duplicate.
-6. **RLS Supabase** có thể block operations — luôn có fallback local.
-
-### Các Vấn Đề Còn Tồn Đọng (Backlog)
-- [ ] Background retry sync cho `clinic_custom_tasks` → Supabase
-- [ ] Periodic cleanup cho `clinic_deleted_task_ids` (giới hạn 100 entries)
-- [ ] Drag & Drop trên mobile (touch events) cần cải thiện
-- [ ] Real-time Supabase subscription cho task updates
-- [ ] Unit tests cho `isTaskInCell()` logic
-
----
-
-> **Document Version**: 1.0  
+> **Document Version**: 2.0  
 > **Last Updated**: 11/08/2026  
 > **Author**: Antigravity AI Agent  
-> **Purpose**: Cross-agent communication & knowledge transfer
+> **Repository**: `hadessispro/clinic-hub-5s`
