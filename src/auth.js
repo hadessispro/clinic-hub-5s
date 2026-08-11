@@ -172,7 +172,7 @@ export async function signIn(identifier, password, branchId = 'pham-van-chieu') 
     notifyListeners();
     throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
   }
-  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it'].includes(currentProfile.role);
+  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it', 'pg_staff'].includes(currentProfile.role);
   if (branchId !== 'all' && !normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
     await supabase.auth.signOut();
     currentUser = null;

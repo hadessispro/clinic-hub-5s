@@ -93,10 +93,13 @@ export class AuthService {
        order by case when lower(coalesce(e.payload->>'email',''))=$1 then 0 else 1 end
        limit 5`, [identifier]);
 
-    const privileged = new Set(['admin', 'hr', 'leader', 'admin_it', 'superadmin']);
+    // PG works at temporary Support-assigned sites, so the clinic selected on
+    // the login screen must never block authentication. GPS/shift validation
+    // remains enforced by the dedicated PG attendance workflow.
+    const branchFlexible = new Set(['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'pg_staff']);
     const candidate = result.rows.find((row) => {
       const role = String(row.profile.role || 'staff');
-      return !branchId || privileged.has(role) || String(row.profile.branch_id || '') === branchId;
+      return !branchId || branchFlexible.has(role) || String(row.profile.branch_id || '') === branchId;
     });
     if (!candidate) throw new UnauthorizedException('Sai tài khoản, chi nhánh hoặc mật khẩu.');
 
