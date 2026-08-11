@@ -6,6 +6,8 @@ import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
 
 let cachedLeads = [];
+let telesalePage = 1;
+let telesalePageSize = 12;
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
@@ -119,6 +121,19 @@ export async function renderView(state) {
       <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:12px; align-items:start;">
         ${leadsListHtml}
       </div>
+      <div class="data-pagination" id="telesalePagination" aria-label="Phân trang danh sách Lead">
+        <div class="data-pagination-summary" id="telesalePaginationSummary"></div>
+        <div class="data-pagination-actions">
+          <label class="data-page-size">Hiển thị
+            <select id="telesalePageSize">
+              ${[6, 12, 24, 48].map((size) => option(size, `${size} Lead`, telesalePageSize === size)).join('')}
+            </select>
+          </label>
+          <button type="button" class="data-page-nav" id="telesalePrevPage" aria-label="Trang trước"><i class="ri-arrow-left-s-line"></i><span>Trước</span></button>
+          <div class="data-page-numbers" id="telesalePageNumbers"></div>
+          <button type="button" class="data-page-nav" id="telesaleNextPage" aria-label="Trang sau"><span>Sau</span><i class="ri-arrow-right-s-line"></i></button>
+        </div>
+      </div>
     </section>
     <dialog id="callHistoryDialog" class="app-dialog"><div class="dialog-card"><div class="section-title"><div><p class="eyebrow">LỊCH SỬ CHĂM SÓC</p><h3 id="callHistoryTitle">Khách hàng</h3></div><button type="button" class="icon-button" id="closeCallHistory" aria-label="Đóng">×</button></div><div id="callHistoryContent" class="call-history-list"></div></div></dialog>
   `;
@@ -156,12 +171,54 @@ export function initView() {
   const searchInput = document.getElementById('searchTelesaleInput');
   const statusSelect = document.getElementById('filterTelesaleStatus');
   const branchSelect = document.getElementById('filterTelesaleBranch');
+  const pageSizeSelect = document.getElementById('telesalePageSize');
+  const previousPageButton = document.getElementById('telesalePrevPage');
+  const nextPageButton = document.getElementById('telesaleNextPage');
+  const pageNumbers = document.getElementById('telesalePageNumbers');
+  const paginationSummary = document.getElementById('telesalePaginationSummary');
 
-  function applyTelesaleFilters() {
+  function renderTelesalePagination(matchedCards) {
+    const total = matchedCards.length;
+    const totalPages = Math.max(1, Math.ceil(total / telesalePageSize));
+    telesalePage = Math.min(Math.max(1, telesalePage), totalPages);
+    const start = total ? (telesalePage - 1) * telesalePageSize : 0;
+    const end = Math.min(start + telesalePageSize, total);
+
+    matchedCards.forEach((card, index) => {
+      card.style.display = index >= start && index < end ? 'block' : 'none';
+    });
+    if (paginationSummary) {
+      paginationSummary.textContent = total
+        ? `Hiển thị ${start + 1}–${end} trong ${total} Lead`
+        : 'Không có Lead phù hợp';
+    }
+    if (previousPageButton) previousPageButton.disabled = telesalePage <= 1;
+    if (nextPageButton) nextPageButton.disabled = telesalePage >= totalPages;
+    if (pageNumbers) {
+      const candidates = Array.from(new Set([1, telesalePage - 1, telesalePage, telesalePage + 1, totalPages]))
+        .filter((page) => page >= 1 && page <= totalPages)
+        .sort((a, b) => a - b);
+      pageNumbers.innerHTML = candidates.map((page, index) => {
+        const previous = candidates[index - 1];
+        const gap = previous && page - previous > 1 ? '<span class="data-page-gap">…</span>' : '';
+        return `${gap}<button type="button" class="data-page-number${page === telesalePage ? ' is-active' : ''}" data-telesale-page="${page}" aria-label="Trang ${page}" ${page === telesalePage ? 'aria-current="page"' : ''}>${page}</button>`;
+      }).join('');
+      pageNumbers.querySelectorAll('[data-telesale-page]').forEach((button) => {
+        button.addEventListener('click', () => {
+          telesalePage = Number(button.dataset.telesalePage) || 1;
+          applyTelesaleFilters();
+        });
+      });
+    }
+  }
+
+  function applyTelesaleFilters(resetPage = false) {
+    if (resetPage) telesalePage = 1;
     const q = (searchInput?.value || '').trim().toLowerCase();
     const st = statusSelect?.value || '';
     const br = branchSelect?.value || '';
 
+    const matchedCards = [];
     document.querySelectorAll('.telesale-lead-card').forEach(card => {
       const name = card.dataset.name || '';
       const phone = card.dataset.phone || '';
@@ -172,13 +229,29 @@ export function initView() {
       const matchSt = !st || cardStatus === st;
       const matchBr = !br || cardBranch === br;
 
-      card.style.display = (matchQ && matchSt && matchBr) ? 'block' : 'none';
+      const matches = matchQ && matchSt && matchBr;
+      card.style.display = 'none';
+      if (matches) matchedCards.push(card);
     });
+    renderTelesalePagination(matchedCards);
   }
 
-  if (searchInput) searchInput.addEventListener('input', applyTelesaleFilters);
-  if (statusSelect) statusSelect.addEventListener('change', applyTelesaleFilters);
-  if (branchSelect) branchSelect.addEventListener('change', applyTelesaleFilters);
+  if (searchInput) searchInput.addEventListener('input', () => applyTelesaleFilters(true));
+  if (statusSelect) statusSelect.addEventListener('change', () => applyTelesaleFilters(true));
+  if (branchSelect) branchSelect.addEventListener('change', () => applyTelesaleFilters(true));
+  pageSizeSelect?.addEventListener('change', () => {
+    telesalePageSize = Number(pageSizeSelect.value) || 12;
+    applyTelesaleFilters(true);
+  });
+  previousPageButton?.addEventListener('click', () => {
+    telesalePage = Math.max(1, telesalePage - 1);
+    applyTelesaleFilters();
+  });
+  nextPageButton?.addEventListener('click', () => {
+    telesalePage += 1;
+    applyTelesaleFilters();
+  });
+  applyTelesaleFilters();
 
   const historyDialog = document.getElementById('callHistoryDialog');
   const historyContent = document.getElementById('callHistoryContent');

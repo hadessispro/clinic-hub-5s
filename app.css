@@ -548,6 +548,103 @@ select {
   margin-top: 12px;
 }
 
+.data-pagination {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #dde9e4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.data-pagination-summary {
+  color: #627169;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.data-pagination-actions,
+.data-page-numbers,
+.data-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-page-size {
+  color: #627169;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.data-page-size select {
+  width: auto !important;
+  min-width: 92px;
+  height: 34px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #cfe0da;
+  border-radius: 9px;
+  background-color: #fff;
+  color: #27332e;
+  font: inherit;
+}
+
+.data-page-nav,
+.data-page-number {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cfe0da;
+  border-radius: 9px;
+  background: #fff;
+  color: #315249;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.data-page-number.is-active {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
+.data-page-nav:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.data-page-gap {
+  color: #8a9791;
+  padding: 0 2px;
+}
+
+@media (max-width: 640px) {
+  .data-pagination,
+  .data-pagination-actions {
+    width: 100%;
+  }
+
+  .data-pagination-actions {
+    justify-content: space-between;
+  }
+
+  .data-page-size {
+    margin-right: auto;
+  }
+
+  .data-page-nav span {
+    display: none;
+  }
+}
+
 /* Team Roster Schedule Matrix Styles (Image 2 UI) */
 .shift-legend-bar {
   display: flex;
