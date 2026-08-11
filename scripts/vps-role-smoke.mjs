@@ -62,17 +62,18 @@ try {
       body: JSON.stringify({ customerName: `${marker}-NET`, phone: '0900000001', dataClass: 'net', netLevel: 'advanced', appointmentAt: new Date(Date.now() + 86_400_000).toISOString(), source: 'smoke-test' }),
     });
     const validNet = await validNetResponse.json();
-    const assigned = created.data?.id
-      ? await request(managerSession.token, 'POST', `/marketing/leads/${created.data.id}/assign-net`, { telesaleCode: telesaleSession.code })
+    const distributed = await request(managerSession.token, 'POST', '/marketing/leads/distribute-raw', { quantity: 1 });
+    const assigned = validNet.data?.id
+      ? await request(managerSession.token, 'POST', `/marketing/leads/${validNet.data.id}/assign-net`, { telesaleCode: telesaleSession.code })
       : 0;
-    const invalidAppointmentCall = created.data?.id
-      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${created.data.id}/calls`, { status: 'appointment_booked', note: 'missing appointment timestamp' })
+    const invalidAppointmentCall = validNet.data?.id
+      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${validNet.data.id}/calls`, { callStatus: 'appointment_booked', note: 'missing appointment timestamp' })
       : 0;
-    const callCreated = created.data?.id
-      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${created.data.id}/calls`, { status: 'appointment_booked', note: 'smoke call', appointmentAt: new Date(Date.now() + 172_800_000).toISOString() })
+    const callCreated = validNet.data?.id
+      ? await request(telesaleSession.token, 'POST', `/marketing/leads/${validNet.data.id}/calls`, { callStatus: 'appointment_booked', note: 'smoke call', appointmentAt: new Date(Date.now() + 172_800_000).toISOString() })
       : 0;
-    const callHistory = created.data?.id
-      ? await request(telesaleSession.token, 'GET', `/marketing/leads/${created.data.id}/calls`)
+    const callHistory = validNet.data?.id
+      ? await request(telesaleSession.token, 'GET', `/marketing/leads/${validNet.data.id}/calls`)
       : 0;
     const reports = await request(managerSession.token, 'GET', '/marketing/reports');
     let removed = { status: 0, body: '' };
@@ -83,7 +84,7 @@ try {
     if (validNet.data?.id) {
       await fetch(`${baseUrl}/marketing/leads/${validNet.data.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${managerSession.token}` } });
     }
-    console.log(JSON.stringify({ workflow: 'pg-to-telesale', create: create.status, invalidNet, validNet: validNetResponse.status, assigned, invalidAppointmentCall, callCreated, callHistory, reports, removed }));
+    console.log(JSON.stringify({ workflow: 'pg-to-telesale', create: create.status, invalidNet, validNet: validNetResponse.status, distributed, assigned, invalidAppointmentCall, callCreated, callHistory, reports, removed }));
   }
   await pool.query("delete from marketing.leads where source='smoke-test'");
 } finally {
