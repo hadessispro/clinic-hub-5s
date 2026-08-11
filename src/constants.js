@@ -4,7 +4,7 @@ export const DEPARTMENTS = [
   { id: 'mkt', name: 'Marketing', lead: 'Phan Ngọc Đức' },
   { id: 'dvkh', name: 'Dịch vụ khách hàng', lead: 'Nguyễn Thị Vân Anh' },
   { id: 'bs', name: 'Bác sĩ', lead: 'Huỳnh Kim Thy' },
-  { id: 'phuta', name: 'Phụ tá', lead: 'Bùi Thiện Chương' },
+  { id: 'phuta', name: 'Phụ tá', lead: 'Nguyễn Thị Như Huỳnh' },
   { id: 'hcth', name: 'Hành chính Tổng hợp', lead: 'Nguyễn Thị Thương' },
   { id: 'it', name: 'Quản trị IT', lead: 'Admin IT' },
 ];

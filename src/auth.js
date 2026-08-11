@@ -174,7 +174,7 @@ const OFFICIAL_DEMO_USERS = {
   '10199': { id: 'usr-10199', full_name: 'Võ Đoàn Thái Tuấn', employee_code: '10199', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909199199', active: true },
   '10207': { id: 'usr-10207', full_name: 'Trần Huỳnh Yến Thư', employee_code: '10207', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909207207', active: true },
   '10214': { id: 'usr-10214', full_name: 'Kim Thị Việt Trinh', employee_code: '10214', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909214214', active: true },
-  '10216': { id: 'usr-10216', full_name: 'Nguyễn Thị Như Huỳnh', employee_code: '10216', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909216216', active: true },
+  '10216': { id: 'usr-10216', full_name: 'Nguyễn Thị Như Huỳnh', employee_code: '10216', role: 'leader', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909216216', active: true },
   '10231': { id: 'usr-10231', full_name: 'Kiên Thị Ngọc Hương', employee_code: '10231', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909231231', active: true },
   '10232': { id: 'usr-10232', full_name: 'Nguyễn Kim Quỳnh Quyên', employee_code: '10232', role: 'staff', department: 'phuta', branch_id: 'pham-van-chieu', phone: '0909232232', active: true },
   '10240': { id: 'usr-10240', full_name: 'Võ Đăng Khang', employee_code: '10240', role: 'staff', department: 'phuta', branch_id: 'le-van-tho', phone: '0909240240', active: true },
