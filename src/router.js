@@ -24,6 +24,8 @@ const viewImports = {
   'marketing-leads': () => import('./views/marketing-leads.js'),
   'telesale-workspace': () => import('./views/telesale-workspace.js'),
   'marketing-analytics': () => import('./views/marketing-analytics.js'),
+  'pg-management': () => import('./views/pg-management.js'),
+  'pg-attendance': () => import('./views/pg-attendance.js'),
 };
 
 const viewTitles = {
@@ -48,6 +50,8 @@ const viewTitles = {
   'marketing-leads': 'Tiếp nhận Lead Marketing',
   'telesale-workspace': 'Workspace Telesale',
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
+  'pg-management': 'Quản lý PG',
+  'pg-attendance': 'Chấm công PG',
 };
 
 let renderRequestId = 0;

@@ -80,6 +80,8 @@ export const VIEW_TITLES = {
   'marketing-leads': 'Tiếp nhận Lead Marketing',
   'telesale-workspace': 'Workspace Telesale',
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
+  'pg-management': 'Quản lý PG',
+  'pg-attendance': 'Chấm công PG',
 };
 
 /* ── Marketing & Telesale Statuses ── */

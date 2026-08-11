@@ -1,18 +1,34 @@
-import { getMarketingLeads } from '../services/marketing.js';
+import { getMarketingLeads, getMarketingReports } from '../services/marketing.js';
 import { getEmployees } from '../services/employees.js';
 import { escapeHTML, formatCurrency } from '../utils.js';
 import { pill, statusPill } from '../components/shared.js';
 import { store } from '../store.js';
+import { navigateTo } from '../router.js';
 
 let cachedLeads = [];
 let cachedEmployees = [];
+let analyticsSearch = '';
+let analyticsBranch = '';
+let analyticsPeriod = 'all';
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  const [leads, employees] = await Promise.all([
+  const [loadedLeads, employees, operationalReport] = await Promise.all([
     getMarketingLeads(),
-    getEmployees()
+    getEmployees(),
+    getMarketingReports(),
   ]);
+  const now = new Date();
+  const periodStart = analyticsPeriod === 'this_week'
+    ? new Date(now.getTime() - 7 * 86400000)
+    : analyticsPeriod === 'this_month' ? new Date(now.getFullYear(), now.getMonth(), 1) : null;
+  const needle = analyticsSearch.trim().toLocaleLowerCase('vi');
+  const leads = loadedLeads.filter((lead) => {
+    if (analyticsBranch && lead.branch_id !== analyticsBranch) return false;
+    if (periodStart && new Date(lead.created_at) < periodStart) return false;
+    if (needle && !`${lead.full_name || ''} ${lead.phone || ''}`.toLocaleLowerCase('vi').includes(needle)) return false;
+    return true;
+  });
 
   cachedLeads = leads;
   cachedEmployees = employees;
@@ -37,7 +53,7 @@ export async function renderView(state) {
   // Group leads by Assigned Staff (Telesale / PG)
   const staffCounts = {};
   leads.forEach(l => {
-    const staff = l.assigned_telesale || 'Chưa gán';
+    const staff = l.assigned_telesale_id || l.assigned_telesale_code || 'Chưa gán';
     staffCounts[staff] = (staffCounts[staff] || 0) + 1;
   });
 
@@ -139,20 +155,20 @@ export async function renderView(state) {
     <!-- Filter Toolbar for Marketing Analytics -->
     <div style="margin-bottom:14px; padding:10px 14px; background:#f1f5f9; border-radius:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
       <div style="flex:1; min-width:200px; display:flex; align-items:center;">
-        <input id="searchAnalyticsInput" placeholder="🔍 Tìm theo Tên hoặc SĐT Lead..." style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; outline:none;" />
+        <input id="searchAnalyticsInput" value="${escapeHTML(analyticsSearch)}" placeholder="🔍 Tìm theo Tên hoặc SĐT Lead..." style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; outline:none;" />
       </div>
       <div style="min-width:150px; display:flex; align-items:center;">
         <select id="filterAnalyticsBranch" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:600;">
-          <option value="">Tất cả Chi nhánh</option>
-          <option value="le-van-tho">5S Lê Văn Thọ</option>
-          <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
+          <option value="" ${!analyticsBranch ? 'selected' : ''}>Tất cả Chi nhánh</option>
+          <option value="le-van-tho" ${analyticsBranch === 'le-van-tho' ? 'selected' : ''}>5S Lê Văn Thọ</option>
+          <option value="pham-van-chieu" ${analyticsBranch === 'pham-van-chieu' ? 'selected' : ''}>5S Phạm Văn Chiêu</option>
         </select>
       </div>
       <div style="min-width:150px; display:flex; align-items:center;">
         <select id="filterAnalyticsPeriod" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:600;">
-          <option value="all">Tất cả thời gian</option>
-          <option value="this_week">Tuần này</option>
-          <option value="this_month">Tháng này</option>
+          <option value="all" ${analyticsPeriod === 'all' ? 'selected' : ''}>Tất cả thời gian</option>
+          <option value="this_week" ${analyticsPeriod === 'this_week' ? 'selected' : ''}>Tuần này</option>
+          <option value="this_month" ${analyticsPeriod === 'this_month' ? 'selected' : ''}>Tháng này</option>
         </select>
       </div>
     </div>
@@ -231,6 +247,21 @@ export async function renderView(state) {
       </section>
     </div>
 
+    <div class="grid cols-2" style="margin-bottom:14px;">
+      <section class="panel">
+        <div class="section-title"><h3>Hiệu suất nhập data theo PG</h3>${pill(`${operationalReport.pg?.length || 0} tài khoản`)}</div>
+        <div class="table-wrap"><table><thead><tr><th>PG</th><th>Tổng</th><th>Thô</th><th>Net cơ bản</th><th>Net chuyên sâu</th></tr></thead><tbody>
+          ${operationalReport.pg?.length ? operationalReport.pg.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.total}</td><td>${row.raw_count}</td><td>${row.net_basic_count}</td><td>${row.net_advanced_count}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có dữ liệu PG.</td></tr>'}
+        </tbody></table></div>
+      </section>
+      <section class="panel">
+        <div class="section-title"><h3>Hiệu suất theo tài khoản Telesale</h3>${pill(`${operationalReport.telesale?.length || 0} tài khoản`)}</div>
+        <div class="table-wrap"><table><thead><tr><th>Telesale</th><th>Được giao</th><th>Đã gọi</th><th>Hẹn khám</th><th>Chốt</th></tr></thead><tbody>
+          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(row.telesale_code)}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có dữ liệu Telesale.</td></tr>'}
+        </tbody></table></div>
+      </section>
+    </div>
+
     <!-- Detailed Source Table -->
     <section class="panel">
       <div class="section-title">
@@ -266,6 +297,19 @@ export async function renderView(state) {
 }
 
 export function initView() {
+  let searchTimer = null;
+  document.getElementById('searchAnalyticsInput')?.addEventListener('input', (event) => {
+    analyticsSearch = event.target.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => navigateTo('marketing-analytics'), 220);
+  });
+  document.getElementById('filterAnalyticsBranch')?.addEventListener('change', (event) => {
+    analyticsBranch = event.target.value; navigateTo('marketing-analytics');
+  });
+  document.getElementById('filterAnalyticsPeriod')?.addEventListener('change', (event) => {
+    analyticsPeriod = event.target.value; navigateTo('marketing-analytics');
+  });
+
   // Render SVG Area Line Chart
   const container = document.getElementById('areaChartContainer');
   if (!container || !cachedLeads) return;
@@ -289,13 +333,8 @@ export function initView() {
     days.push({ dateStr, dayLabel, dateLabel, count });
   }
 
-  // If all zero, add some visual interest with simulated trend
+  // Never fabricate operational figures when there is no production data.
   const hasData = days.some(d => d.count > 0);
-  if (!hasData) {
-    // Show gentle wave pattern when no data
-    const pattern = [2, 5, 3, 8, 6, 4, 7];
-    days.forEach((d, i) => { d.count = pattern[i]; });
-  }
 
   const maxVal = Math.max(...days.map(d => d.count), 1);
   const W = 700, H = 280;

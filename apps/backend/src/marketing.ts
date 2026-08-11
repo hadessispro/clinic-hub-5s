@@ -1,0 +1,528 @@
+import { randomUUID } from 'node:crypto';
+import {
+  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Injectable,
+  Param, Patch, Post, Query, Req, Res, UseGuards,
+} from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
+import { AuthGuard, AuthUser, hashPassword } from './auth';
+import { InfrastructureService } from './infrastructure';
+
+type JsonMap = Record<string, unknown>;
+type ActorRequest = { user: AuthUser };
+
+const adminRoles = new Set(['admin', 'admin_it', 'superadmin', 'admin_marketing']);
+const supportRoles = new Set([...adminRoles, 'support_marketing']);
+const managerRoles = new Set([...adminRoles, 'telesale_leader']);
+const reportRoles = new Set([...managerRoles, 'support_marketing']);
+const dataClasses = new Set(['raw', 'net']);
+const netLevels = new Set(['basic', 'advanced']);
+const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'cancelled']);
+const callStatuses = new Set(['interested', 'appointment_booked', 'busy', 'no_answer', 'rejected']);
+
+function requireRole(user: AuthUser, roles: Set<string>) {
+  if (!roles.has(user.role)) throw new ForbiddenException('Tài khoản không có quyền thực hiện thao tác này.');
+}
+
+function cleanPhone(value: unknown) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function clinicDate(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
+}
+
+function clinicTime(date = new Date()) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).format(date);
+}
+
+function seconds(value: unknown) {
+  const [hour = 0, minute = 0, second = 0] = String(value || '').split(':').map(Number);
+  return hour * 3600 + minute * 60 + second;
+}
+
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const radians = (value: number) => value * Math.PI / 180;
+  const dLat = radians(lat2 - lat1);
+  const dLng = radians(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function csvCell(value: unknown) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+@Injectable()
+export class MarketingService {
+  constructor(private readonly infrastructure: InfrastructureService) {}
+
+  private async audit(user: AuthUser, action: string, entityType: string, entityId?: string, detail: JsonMap = {}) {
+    await this.infrastructure.postgres.query(
+      `insert into marketing.audit_log(actor_code,action,entity_type,entity_id,detail)
+       values ($1,$2,$3,$4,$5::jsonb)`,
+      [user.employeeCode, action, entityType, entityId || null, JSON.stringify(detail)],
+    );
+  }
+
+  async listPgAccounts(user: AuthUser) {
+    requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query(
+      `select p.record_key profile_key,p.payload profile,e.payload employee,
+              coalesce(a.active,false) login_active,a.last_login_at
+       from app.records p
+       left join app.records e on e.entity_type='employees' and e.deleted_at is null
+         and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+       left join app.local_accounts a on a.profile_key=p.record_key
+       where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role'='pg_staff'
+       order by lower(coalesce(e.payload->>'full_name',p.payload->>'full_name',''))`,
+    );
+    return { data: result.rows };
+  }
+
+  async listTelesaleAccounts(user: AuthUser) {
+    requireRole(user, managerRoles);
+    const result = await this.infrastructure.postgres.query(
+      `select p.payload->>'employee_code' employee_code,
+              coalesce(e.payload->>'full_name',p.payload->>'full_name') full_name,
+              p.payload->>'role' role,coalesce((p.payload->>'active')::boolean,true) active
+       from app.records p left join app.records e on e.entity_type='employees' and e.deleted_at is null
+         and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+       where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role' in ('telesale_staff','telesale_leader')
+       order by lower(coalesce(e.payload->>'full_name',p.payload->>'full_name'))`,
+    );
+    return { data: result.rows };
+  }
+
+  async createPgAccount(user: AuthUser, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const fullName = String(input.fullName || '').trim();
+    const phone = cleanPhone(input.phone);
+    const email = String(input.email || '').trim().toLowerCase();
+    const password = String(input.password || phone);
+    const requestedCode = String(input.employeeCode || '').trim().toUpperCase();
+    const employeeCode = requestedCode || `PG-${Date.now().toString(36).toUpperCase()}`;
+    if (!fullName || phone.length < 8 || !email.includes('@') || password.length < 8) {
+      throw new BadRequestException('Cần nhập đủ họ tên, email, số điện thoại và mật khẩu từ 8 ký tự.');
+    }
+    if (!/^PG-[A-Z0-9-]+$/.test(employeeCode)) throw new BadRequestException('Mã PG phải bắt đầu bằng PG-.');
+    const exists = await this.infrastructure.postgres.query(
+      `select 1 from app.records where deleted_at is null and (
+        (entity_type='profiles' and lower(payload->>'employee_code')=lower($1)) or
+        (entity_type='employees' and (lower(payload->>'email')=lower($2) or lower(payload->>'code')=lower($1)))
+      ) limit 1`, [employeeCode, email],
+    );
+    if (exists.rowCount) throw new BadRequestException('Mã PG hoặc email đã tồn tại.');
+
+    const id = randomUUID();
+    const profileKey = id;
+    const now = new Date().toISOString();
+    const branchId = String(input.branchId || 'pham-van-chieu');
+    const employee = {
+      id, code: employeeCode, employee_number: employeeCode, full_name: fullName, email, phone,
+      department: 'marketing', title: 'Nhân viên PG', role: 'pg_staff', branch_id: branchId,
+      status: 'active', created_by_code: user.employeeCode, created_at: now, updated_at: now,
+    };
+    const profile = {
+      id, employee_code: employeeCode, employee_number: employeeCode, full_name: fullName,
+      role: 'pg_staff', department: 'marketing', branch_id: branchId, active: true,
+      parent_support_code: user.employeeCode, created_at: now, updated_at: now,
+    };
+    const credentials = await hashPassword(password);
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      await client.query(
+        `insert into app.records(entity_type,record_key,payload,origin) values
+         ('employees',$1,$2::jsonb,'vps'),('profiles',$3,$4::jsonb,'vps')`,
+        [employeeCode, JSON.stringify(employee), profileKey, JSON.stringify(profile)],
+      );
+      await client.query(
+        `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash)
+         values ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, profileKey, email, employeeCode, branchId, credentials.salt, credentials.hash],
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit(user, 'pg.create', 'profile', profileKey, { employeeCode });
+    return { data: { id, employeeCode, fullName, email, branchId } };
+  }
+
+  async updatePgAccount(user: AuthUser, code: string, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+      `select record_key,payload from app.records where entity_type='profiles' and deleted_at is null
+       and payload->>'role'='pg_staff' and lower(payload->>'employee_code')=lower($1) limit 1`, [code],
+    );
+    const row = result.rows[0];
+    if (!row) throw new BadRequestException('Không tìm thấy tài khoản PG.');
+    const active = input.active === undefined ? row.payload.active !== false : Boolean(input.active);
+    const fullName = String(input.fullName || row.payload.full_name || '').trim();
+    const email = input.email ? String(input.email).trim().toLowerCase() : null;
+    const phone = input.phone ? cleanPhone(input.phone) : null;
+    const password = input.password ? String(input.password) : '';
+    if (password && password.length < 8) throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      await client.query(
+        `update app.records set payload=payload || $2::jsonb,updated_at=now(),version=version+1
+         where entity_type='profiles' and record_key=$1`,
+        [row.record_key, JSON.stringify({ full_name: fullName, active, updated_at: new Date().toISOString() })],
+      );
+      await client.query(
+        `update app.records set payload=payload || $2::jsonb,updated_at=now(),version=version+1
+         where entity_type='employees' and deleted_at is null and lower(payload->>'code')=lower($1)`,
+        [code, JSON.stringify({ full_name: fullName, ...(email ? { email } : {}), ...(phone ? { phone } : {}), status: active ? 'active' : 'inactive', updated_at: new Date().toISOString() })],
+      );
+      if (password) {
+        const credentials = await hashPassword(password);
+        await client.query(
+          `update app.local_accounts set password_salt=$2,password_hash=$3,active=$4,
+           email=coalesce($5,email),failed_attempts=0,locked_until=null,updated_at=now() where profile_key=$1`,
+          [row.record_key, credentials.salt, credentials.hash, active, email],
+        );
+      } else {
+        await client.query('update app.local_accounts set active=$2,email=coalesce($3,email),updated_at=now() where profile_key=$1', [row.record_key, active, email]);
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+    await this.audit(user, 'pg.update', 'profile', row.record_key, { code, active });
+    return { data: { employeeCode: code, fullName, active } };
+  }
+
+  async deletePgAccount(user: AuthUser, code: string) {
+    requireRole(user, supportRoles);
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const profile = await client.query<{ record_key: string }>(
+        `select record_key from app.records where entity_type='profiles' and deleted_at is null
+         and payload->>'role'='pg_staff' and lower(payload->>'employee_code')=lower($1) limit 1`, [code],
+      );
+      if (!profile.rows[0]) throw new BadRequestException('Không tìm thấy tài khoản PG.');
+      await client.query(`update app.records set deleted_at=now(),updated_at=now() where
+        (entity_type='profiles' and record_key=$1) or
+        (entity_type='employees' and lower(payload->>'code')=lower($2))`, [profile.rows[0].record_key, code]);
+      await client.query('update app.local_accounts set active=false,updated_at=now() where profile_key=$1', [profile.rows[0].record_key]);
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+    await this.audit(user, 'pg.delete', 'profile', code);
+    return { data: { deleted: true } };
+  }
+
+  async createLead(user: AuthUser, input: JsonMap) {
+    if (![...supportRoles, 'pg_staff'].includes(user.role)) throw new ForbiddenException();
+    const dataClass = String(input.dataClass || input.data_class || 'raw');
+    const netLevel = input.netLevel || input.net_level ? String(input.netLevel || input.net_level) : null;
+    const phone = cleanPhone(input.phone) || null;
+    const appointmentAt = input.appointmentAt || input.appointment_at ? new Date(String(input.appointmentAt || input.appointment_at)) : null;
+    if (!dataClasses.has(dataClass)) throw new BadRequestException('Loại data không hợp lệ.');
+    if (dataClass === 'net' && (!netLevel || !netLevels.has(netLevel) || !phone || !appointmentAt || !Number.isFinite(appointmentAt.getTime()))) {
+      throw new BadRequestException('Data net bắt buộc có số điện thoại, lịch hẹn và phân loại cơ bản/chuyên sâu.');
+    }
+    const customerName = String(input.customerName || input.full_name || '').trim();
+    if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.leads(customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+      [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
+        input.serviceType || input.service_interest || null, input.source || 'PG', input.branchId || input.branch_id || null,
+        input.notes || null, user.employeeCode],
+    );
+    await this.audit(user, 'lead.create', 'marketing.lead', result.rows[0].id, { dataClass, netLevel });
+    return { data: result.rows[0] };
+  }
+
+  async listLeads(user: AuthUser, query: JsonMap) {
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (user.role === 'pg_staff') {
+      params.push(user.employeeCode); where.push(`created_by_pg_code=$${params.length}`);
+    } else if (user.role === 'telesale_staff') {
+      params.push(user.employeeCode); where.push(`assigned_telesale_code=$${params.length}`);
+    } else if (!reportRoles.has(user.role)) {
+      throw new ForbiddenException();
+    }
+    for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code']] as const) {
+      if (query[field]) { params.push(query[field]); where.push(`${column}=$${params.length}`); }
+    }
+    const result = await this.infrastructure.postgres.query(
+      `select * from marketing.leads ${where.length ? `where ${where.join(' and ')}` : ''} order by created_at desc limit 5000`, params,
+    );
+    return { data: result.rows };
+  }
+
+  async assignNetLead(user: AuthUser, leadId: string, telesaleCode: string) {
+    requireRole(user, managerRoles);
+    if (!telesaleCode) throw new BadRequestException('Cần chọn nhân viên Telesale.');
+    const target = await this.infrastructure.postgres.query(
+      `select 1 from app.records where entity_type='profiles' and deleted_at is null
+       and payload->>'role'='telesale_staff' and coalesce((payload->>'active')::boolean,true)=true
+       and lower(payload->>'employee_code')=lower($1) limit 1`, [telesaleCode],
+    );
+    if (!target.rowCount) throw new BadRequestException('Tài khoản nhận data không phải Telesale đang hoạt động.');
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.leads set assigned_telesale_code=$2,assigned_by_code=$3,assigned_at=now(),updated_at=now()
+       where id=$1 and data_class='net' returning *`, [leadId, telesaleCode, user.employeeCode],
+    );
+    if (!result.rows[0]) throw new BadRequestException('Không tìm thấy data net.');
+    await this.audit(user, 'lead.assign_net', 'marketing.lead', leadId, { telesaleCode });
+    return { data: result.rows[0] };
+  }
+
+  async distributeRaw(user: AuthUser, quantity?: number) {
+    requireRole(user, managerRoles);
+    const staff = await this.infrastructure.postgres.query<{ code: string }>(
+      `select e.payload->>'code' code from app.records p join app.records e
+       on e.entity_type='employees' and e.deleted_at is null and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+       where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role'='telesale_staff'
+         and coalesce((p.payload->>'active')::boolean,true)=true`,
+    );
+    if (!staff.rows.length) throw new BadRequestException('Chưa có tài khoản Telesale đang hoạt động.');
+    const limit = Math.min(Math.max(Number(quantity || 5000), 1), 5000);
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const leads = await client.query<{ id: string }>(
+        `select id from marketing.leads where data_class='raw' and assigned_telesale_code is null
+         order by random() for update skip locked limit $1`, [limit],
+      );
+      const workloads = await client.query<{ code: string; count: string }>(
+        `select s.code,count(l.id)::text count from unnest($1::text[]) s(code)
+         left join marketing.leads l on l.assigned_telesale_code=s.code and l.status not in ('converted','cancelled')
+         group by s.code order by count(l.id),random()`, [staff.rows.map((row) => row.code)],
+      );
+      const queue = workloads.rows.map((row) => ({ code: row.code, count: Number(row.count) }));
+      for (const lead of leads.rows) {
+        queue.sort((a, b) => a.count - b.count || Math.random() - 0.5);
+        const target = queue[0];
+        await client.query(
+          `update marketing.leads set assigned_telesale_code=$2,assigned_by_code=$3,assigned_at=now(),updated_at=now() where id=$1`,
+          [lead.id, target.code, user.employeeCode],
+        );
+        target.count += 1;
+      }
+      await client.query('commit');
+      await this.audit(user, 'lead.distribute_raw', 'marketing.lead', undefined, { count: leads.rows.length });
+      return { data: { distributed: leads.rows.length, allocation: queue } };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async updateLead(user: AuthUser, leadId: string, input: JsonMap) {
+    const own = user.role === 'telesale_staff';
+    if (!own && !managerRoles.has(user.role)) throw new ForbiddenException();
+    const status = String(input.status || '');
+    if (!leadStatuses.has(status)) throw new BadRequestException('Trạng thái Lead không hợp lệ.');
+    const params: unknown[] = [leadId, status, input.notes || null];
+    let owner = '';
+    if (own) { params.push(user.employeeCode); owner = `and assigned_telesale_code=$${params.length}`; }
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.leads set status=$2,notes=coalesce($3,notes),updated_at=now() where id=$1 ${owner} returning *`, params,
+    );
+    if (!result.rows[0]) throw new ForbiddenException('Lead không thuộc quyền xử lý của tài khoản này.');
+    await this.audit(user, 'lead.update', 'marketing.lead', leadId, { status });
+    return { data: result.rows[0] };
+  }
+
+  async deleteLead(user: AuthUser, leadId: string) {
+    requireRole(user, managerRoles);
+    const result = await this.infrastructure.postgres.query('delete from marketing.leads where id=$1 returning id', [leadId]);
+    if (!result.rows[0]) throw new BadRequestException('Không tìm thấy Lead.');
+    await this.audit(user, 'lead.delete', 'marketing.lead', leadId);
+    return { data: { deleted: true } };
+  }
+
+  async addCallLog(user: AuthUser, leadId: string, input: JsonMap) {
+    if (user.role !== 'telesale_staff' && !managerRoles.has(user.role)) throw new ForbiddenException();
+    const status = String(input.callStatus || input.call_status || '');
+    if (!callStatuses.has(status)) throw new BadRequestException('Kết quả cuộc gọi không hợp lệ.');
+    const lead = await this.infrastructure.postgres.query<{ assigned_telesale_code: string }>(
+      'select assigned_telesale_code from marketing.leads where id=$1', [leadId],
+    );
+    if (!lead.rows[0] || (user.role === 'telesale_staff' && lead.rows[0].assigned_telesale_code !== user.employeeCode)) {
+      throw new ForbiddenException('Lead không thuộc quyền xử lý của tài khoản này.');
+    }
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.call_logs(lead_id,telesale_code,call_status,note,appointment_at)
+       values ($1,$2,$3,$4,$5) returning *`,
+      [leadId, user.employeeCode, status, input.note || null, input.appointmentAt || input.appointment_at || null],
+    );
+    const leadStatus = status === 'appointment_booked' ? 'appointment_booked' : status === 'rejected' ? 'cancelled' : 'contacted';
+    await this.infrastructure.postgres.query('update marketing.leads set status=$2,updated_at=now() where id=$1', [leadId, leadStatus]);
+    return { data: result.rows[0] };
+  }
+
+  async reports(user: AuthUser) {
+    requireRole(user, reportRoles);
+    const pg = await this.infrastructure.postgres.query(
+      `select created_by_pg_code pg_code,count(*)::int total,
+       count(*) filter (where data_class='raw')::int raw_count,
+       count(*) filter (where data_class='net')::int net_count,
+       count(*) filter (where net_level='basic')::int net_basic_count,
+       count(*) filter (where net_level='advanced')::int net_advanced_count
+       from marketing.leads group by created_by_pg_code order by total desc`,
+    );
+    const telesale = await this.infrastructure.postgres.query(
+      `select assigned_telesale_code telesale_code,count(*)::int assigned,
+       count(*) filter (where status='contacted')::int contacted,
+       count(*) filter (where status='appointment_booked')::int appointments,
+       count(*) filter (where status='converted')::int converted,
+       count(*) filter (where status='cancelled')::int cancelled
+       from marketing.leads where assigned_telesale_code is not null group by assigned_telesale_code order by assigned desc`,
+    );
+    const totals = await this.infrastructure.postgres.query(
+      `select count(*)::int total,count(*) filter(where data_class='raw')::int raw_count,
+       count(*) filter(where data_class='net')::int net_count,
+       count(*) filter(where status='converted')::int converted from marketing.leads`,
+    );
+    return { data: { totals: totals.rows[0], pg: pg.rows, telesale: telesale.rows } };
+  }
+
+  async createSite(user: AuthUser, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const latitude = Number(input.latitude); const longitude = Number(input.longitude);
+    if (!String(input.name || '').trim() || !String(input.address || '').trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      throw new BadRequestException('Thông tin vị trí chấm công chưa đầy đủ.');
+    }
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.pg_work_sites(name,address,latitude,longitude,allowed_radius_m,max_accuracy_m,created_by_code)
+       values ($1,$2,$3,$4,$5,$6,$7) returning *`,
+      [input.name, input.address, latitude, longitude, Number(input.allowedRadiusM || 100), Number(input.maxAccuracyM || 100), user.employeeCode],
+    );
+    return { data: result.rows[0] };
+  }
+
+  async listSites(user: AuthUser) {
+    if (user.role !== 'pg_staff') requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query('select * from marketing.pg_work_sites where active=true order by name');
+    return { data: result.rows };
+  }
+
+  async createAssignment(user: AuthUser, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.pg_shift_assignments(pg_code,site_id,work_date,start_time,end_time,created_by_code)
+       values ($1,$2,$3,$4,$5,$6)
+       on conflict(pg_code,work_date) do update set site_id=excluded.site_id,start_time=excluded.start_time,
+       end_time=excluded.end_time,created_by_code=excluded.created_by_code,updated_at=now() returning *`,
+      [input.pgCode, input.siteId, input.workDate, input.startTime, input.endTime, user.employeeCode],
+    );
+    return { data: result.rows[0] };
+  }
+
+  async listAssignments(user: AuthUser, date?: string) {
+    const params: unknown[] = [date || clinicDate()];
+    let owner = '';
+    if (user.role === 'pg_staff') { params.push(user.employeeCode); owner = `and a.pg_code=$${params.length}`; }
+    else requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query(
+      `select a.*,s.name site_name,s.address,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+       from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id
+       where a.work_date=$1 ${owner} order by a.start_time,a.pg_code`, params,
+    );
+    return { data: result.rows };
+  }
+
+  async recordPgAttendance(user: AuthUser, input: JsonMap) {
+    if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ tài khoản PG được chấm công tại vị trí được phân công.');
+    const type = input.type === 'checkout' ? 'checkout' : 'checkin';
+    const lat = Number(input.latitude ?? input.lat); const lng = Number(input.longitude ?? input.lng); const accuracy = Math.round(Number(input.accuracy));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy) || accuracy <= 0) throw new BadRequestException('GPS không hợp lệ.');
+    const assignment = await this.infrastructure.postgres.query<{
+      id: string; start_time: string; end_time: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
+    }>(
+      `select a.id,a.start_time::text,a.end_time::text,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+       from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
+       where a.pg_code=$1 and a.work_date=$2 limit 1`, [user.employeeCode, clinicDate()],
+    );
+    const shift = assignment.rows[0];
+    if (!shift) throw new BadRequestException('Support chưa phân công vị trí và thời gian làm việc hôm nay.');
+    if (accuracy > shift.max_accuracy_m) throw new BadRequestException(`Sai số GPS ±${accuracy} m vượt mức ${shift.max_accuracy_m} m.`);
+    const distance = distanceMeters(lat, lng, Number(shift.latitude), Number(shift.longitude));
+    if (distance > shift.allowed_radius_m) throw new BadRequestException(`Bạn đang cách vị trí làm việc ${distance} m, ngoài bán kính ${shift.allowed_radius_m} m.`);
+    const grace = 5 * 60;
+    const nowTime = seconds(clinicTime());
+    const status = type === 'checkin'
+      ? (nowTime > seconds(shift.start_time) + grace ? 'late' : 'valid')
+      : (nowTime < seconds(shift.end_time) - grace ? 'early_leave' : 'valid');
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.pg_attendance(assignment_id,pg_code,record_type,latitude,longitude,accuracy_m,distance_m,status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)
+       on conflict(assignment_id,record_type) do nothing returning *`,
+      [shift.id, user.employeeCode, type, lat, lng, accuracy, distance, status],
+    );
+    if (!result.rows[0]) throw new BadRequestException(type === 'checkin' ? 'Bạn đã check-in hôm nay.' : 'Bạn đã check-out hôm nay.');
+    return { data: result.rows[0] };
+  }
+
+  async listPgAttendance(user: AuthUser, from?: string, to?: string) {
+    if (user.role !== 'pg_staff') requireRole(user, supportRoles);
+    const values: unknown[] = [from || clinicDate(), to || clinicDate()];
+    let owner = '';
+    if (user.role === 'pg_staff') { values.push(user.employeeCode); owner = `and a.pg_code=$${values.length}`; }
+    const result = await this.infrastructure.postgres.query(
+      `select a.*,s.work_date,s.start_time,s.end_time,w.name site_name,w.address
+       from marketing.pg_attendance a join marketing.pg_shift_assignments s on s.id=a.assignment_id
+       join marketing.pg_work_sites w on w.id=s.site_id
+       where s.work_date between $1 and $2 ${owner} order by a.recorded_at desc`, values,
+    );
+    return { data: result.rows };
+  }
+}
+
+@Controller('/api/v2/marketing')
+@UseGuards(AuthGuard)
+export class MarketingController {
+  constructor(private readonly service: MarketingService) {}
+
+  @Get('/pg-accounts') listPg(@Req() request: ActorRequest) { return this.service.listPgAccounts(request.user); }
+  @Get('/telesale-accounts') listTelesale(@Req() request: ActorRequest) { return this.service.listTelesaleAccounts(request.user); }
+  @Post('/pg-accounts') createPg(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createPgAccount(request.user, body); }
+  @Patch('/pg-accounts/:code') updatePg(@Req() request: ActorRequest, @Param('code') code: string, @Body() body: JsonMap) { return this.service.updatePgAccount(request.user, code, body); }
+  @Delete('/pg-accounts/:code') deletePg(@Req() request: ActorRequest, @Param('code') code: string) { return this.service.deletePgAccount(request.user, code); }
+  @Get('/leads') listLeads(@Req() request: ActorRequest, @Query() query: JsonMap) { return this.service.listLeads(request.user, query); }
+  @Post('/leads') createLead(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createLead(request.user, body); }
+  @Patch('/leads/:id') updateLead(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.updateLead(request.user, id, body); }
+  @Delete('/leads/:id') deleteLead(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteLead(request.user, id); }
+  @Post('/leads/:id/assign-net') assignNet(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.assignNetLead(request.user, id, String(body.telesaleCode || '')); }
+  @Post('/leads/distribute-raw') distributeRaw(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.distributeRaw(request.user, Number(body.quantity || 0)); }
+  @Post('/leads/:id/calls') addCall(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.addCallLog(request.user, id, body); }
+  @Get('/reports') reports(@Req() request: ActorRequest) { return this.service.reports(request.user); }
+  @Get('/pg-sites') sites(@Req() request: ActorRequest) { return this.service.listSites(request.user); }
+  @Post('/pg-sites') createSite(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createSite(request.user, body); }
+  @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
+  @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
+  @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }
+  @Get('/pg-attendance') attendanceList(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string) { return this.service.listPgAttendance(request.user, from, to); }
+  @Get('/pg-attendance/export')
+  async attendanceExport(@Req() request: ActorRequest, @Res({ passthrough: true }) reply: FastifyReply, @Query('from') from?: string, @Query('to') to?: string) {
+    const result = await this.service.listPgAttendance(request.user, from, to);
+    const rows = result.data as JsonMap[];
+    const header = ['Mã PG','Ngày','Loại','Thời gian','Địa điểm','Khoảng cách (m)','Sai số GPS (m)','Trạng thái'];
+    const csv = '\uFEFF' + [header.map(csvCell).join(','), ...rows.map((row) => [
+      row.pg_code,row.work_date,row.record_type,row.recorded_at,row.site_name,row.distance_m,row.accuracy_m,row.status,
+    ].map(csvCell).join(','))].join('\n');
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="Cham_cong_PG_${from || clinicDate()}_${to || clinicDate()}.csv"`);
+    return csv;
+  }
+}

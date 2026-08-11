@@ -55,7 +55,7 @@ function verifyJwt(token: string) {
   return payload;
 }
 
-async function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
+export async function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
   const result = await scrypt(password, salt, 64) as Buffer;
   return { salt, hash: result.toString('hex') };
 }

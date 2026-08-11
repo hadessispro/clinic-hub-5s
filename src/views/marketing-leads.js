@@ -1,4 +1,4 @@
-import { getMarketingLeads, createMarketingLead, updateMarketingLead, deleteMarketingLead, exportLeadsToCSV } from '../services/marketing.js';
+import { getMarketingLeads, createMarketingLead, updateMarketingLead, deleteMarketingLead, distributeRawLeads, exportLeadsToCSV, getTelesaleAccounts } from '../services/marketing.js';
 import { getEmployees } from '../services/employees.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
@@ -15,18 +15,20 @@ export async function renderView(state) {
   const profile = store.getState().profile || {};
   const isPgStaff = profile.role === 'pg_staff';
   const isSupportMkt = profile.role === 'support_marketing';
-  const showIntakeForm = isPgStaff || isSupportMkt; // Only Field staff or Support Mkt enter intake form
+  const showIntakeForm = isPgStaff;
+  const isLeadManager = ['admin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
   const allowExport = canExportData(profile.role);
 
-  const [leads, employees] = await Promise.all([
+  const [leads, employees, telesaleAccounts] = await Promise.all([
     getMarketingLeads(),
-    getEmployees()
+    getEmployees(),
+    isLeadManager ? getTelesaleAccounts() : Promise.resolve([]),
   ]);
 
   cachedLeads = leads;
   cachedEmployees = employees;
 
-  const telesaleEmployees = employees.filter(e => e.department === 'mkt' || e.role === 'telesale_staff' || e.role === 'telesale_leader' || e.role === 'staff' || e.role === 'admin_marketing');
+  const telesaleEmployees = telesaleAccounts.filter((employee) => employee.role === 'telesale_staff' && employee.active !== false);
 
   // Group leads for Kanban columns
   const kanbanColumns = [
@@ -76,6 +78,7 @@ export async function renderView(state) {
 
                       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
                         <span style="padding:2px 8px; background:#e0f2fe; color:#0369a1; font-size:0.72rem; font-weight:700; border-radius:6px;">${escapeHTML(lead.source)}</span>
+                        <span style="padding:2px 8px; background:${lead.data_class === 'net' ? '#dcfce7' : '#fef3c7'}; color:${lead.data_class === 'net' ? '#166534' : '#92400e'}; font-size:0.72rem; font-weight:700; border-radius:6px;">${lead.data_class === 'net' ? `Net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</span>
                         <span style="padding:2px 8px; background:#f1f5f9; color:#475569; font-size:0.72rem; font-weight:600; border-radius:6px;">${escapeHTML(lead.service_interest)}</span>
                       </div>
 
@@ -85,8 +88,8 @@ export async function renderView(state) {
                       <div style="background:#f8fafc; border-top:1px solid #e2e8f0; margin:-4px -12px -12px -12px; padding:10px 12px; border-radius:0 0 12px 12px; display:flex; flex-direction:column; gap:8px;">
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
                           <span style="font-size:0.75rem; font-weight:600; color:#475569; width:65px; shrink:0;">Telesale:</span>
-                          <select class="select-badge" data-assign-lead data-id="${escapeHTML(lead.id)}" style="flex:1; width:100%; max-width:100% !important; height:32px;">
-                            <option value="">Chưa phân bổ</option>
+                          <select class="select-badge" data-assign-lead data-id="${escapeHTML(lead.id)}" ${lead.data_class === 'raw' ? 'disabled title="Data thô được hệ thống chia đều tự động"' : ''} style="flex:1; width:100%; max-width:100% !important; height:32px;">
+                            <option value="">${lead.data_class === 'raw' ? 'Chia tự động' : 'Chưa phân bổ'}</option>
                             ${telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`, lead.assigned_telesale_id === e.employee_code || lead.assigned_telesale_id === e.id)).join('')}
                           </select>
                         </div>
@@ -120,8 +123,8 @@ export async function renderView(state) {
             <td style="color:#334155;">${escapeHTML(lead.service_interest)}</td>
             <td style="color:#334155;">${lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu'}</td>
             <td>
-              <select class="select-badge" data-assign-lead data-id="${escapeHTML(lead.id)}">
-                <option value="">Chưa gán</option>
+              <select class="select-badge" data-assign-lead data-id="${escapeHTML(lead.id)}" ${lead.data_class === 'raw' ? 'disabled title="Data thô được hệ thống chia đều tự động"' : ''}>
+                <option value="">${lead.data_class === 'raw' ? 'Chia tự động' : 'Chưa gán'}</option>
                 ${telesaleEmployees.map(e => option(e.employee_code || e.id, e.name, lead.assigned_telesale_id === e.employee_code || lead.assigned_telesale_id === e.id)).join('')}
               </select>
             </td>
@@ -188,6 +191,18 @@ export async function renderView(state) {
         </div>
         <form class="form-grid three" id="createLeadForm">
           <div class="form-field">
+            <label for="leadDataClass">Phân loại data</label>
+            <select id="leadDataClass" name="data_class" required><option value="raw">Data thô</option><option value="net">Data net</option></select>
+          </div>
+          <div class="form-field" id="leadNetLevelField" hidden>
+            <label for="leadNetLevel">Cấp độ data net</label>
+            <select id="leadNetLevel" name="net_level"><option value="basic">Net cơ bản</option><option value="advanced">Net chuyên sâu</option></select>
+          </div>
+          <div class="form-field" id="leadAppointmentField" hidden>
+            <label for="leadAppointment">Lịch hẹn</label>
+            <input id="leadAppointment" name="appointment_at" type="datetime-local">
+          </div>
+          <div class="form-field">
             <label for="leadName">Họ tên khách hàng</label>
             <input id="leadName" name="full_name" required placeholder="VD: Nguyễn Văn A" />
           </div>
@@ -210,13 +225,6 @@ export async function renderView(state) {
             <label for="leadService">Dịch vụ quan tâm</label>
             <input id="leadService" name="service_interest" placeholder="VD: Trồng răng Implant, Niềng răng" />
           </div>
-          <div class="form-field">
-            <label for="leadAssignee">Gán Nhân viên Telesale</label>
-            <select id="leadAssignee" name="assigned_telesale_id">
-              <option value="">Chưa phân bổ</option>
-              ${telesaleOptionsHtml}
-            </select>
-          </div>
           <div class="form-field full">
             <label for="leadNotes">Ghi chú nhu cầu</label>
             <textarea id="leadNotes" name="notes" placeholder="Yêu cầu tư vấn, tình trạng răng miệng, thời gian thích hợp gọi lại..."></textarea>
@@ -229,7 +237,7 @@ export async function renderView(state) {
     ` : ''}
 
     <!-- Lead Pipeline & Spreadsheet Management Section -->
-    <section class="panel" style="margin-top:14px;">
+    <section class="panel" style="margin-top:14px;${isPgStaff ? 'display:none;' : ''}">
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <div>
           <h3 style="margin:0; font-size:1.1rem; font-weight:700;">Tổng quan Lead Marketing & Tiến độ Telesale (${leads.length})</h3>
@@ -237,6 +245,7 @@ export async function renderView(state) {
         </div>
         
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          ${isLeadManager ? `<label style="display:flex;align-items:center;gap:6px"><input id="rawDistributionQuantity" type="number" min="1" value="20" style="width:84px" aria-label="Số lượng data thô"><button type="button" id="distributeRawLeads" class="secondary-button">Chia đều data thô</button></label>` : ''}
           <!-- View Switcher -->
           <div style="display:inline-flex; background:#e2e8f0; padding:3px; border-radius:8px;">
             <button type="button" id="viewModeKanban" class="view-switch-btn ${activeViewMode === 'kanban' ? 'active' : ''}" style="padding:5px 12px; font-size:0.8rem; font-weight:600; border:0; border-radius:6px; cursor:pointer; background:${activeViewMode === 'kanban' ? '#ffffff' : 'transparent'}; color:${activeViewMode === 'kanban' ? '#0f172a' : '#64748b'}; box-shadow:${activeViewMode === 'kanban' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'};">
@@ -289,6 +298,29 @@ export async function renderView(state) {
 }
 
 export function initView() {
+  const dataClass = document.getElementById('leadDataClass');
+  const netLevelField = document.getElementById('leadNetLevelField');
+  const appointmentField = document.getElementById('leadAppointmentField');
+  const netLevel = document.getElementById('leadNetLevel');
+  const appointment = document.getElementById('leadAppointment');
+  const toggleNetFields = () => {
+    const isNet = dataClass?.value === 'net';
+    if (netLevelField) netLevelField.hidden = !isNet;
+    if (appointmentField) appointmentField.hidden = !isNet;
+    if (netLevel) netLevel.required = isNet;
+    if (appointment) appointment.required = isNet;
+  };
+  dataClass?.addEventListener('change', toggleNetFields);
+  toggleNetFields();
+
+  document.getElementById('distributeRawLeads')?.addEventListener('click', async () => {
+    try {
+      const quantity = Number(document.getElementById('rawDistributionQuantity')?.value || 0);
+      const result = await distributeRawLeads(quantity);
+      showToast(`Đã chia đều ${result.distributed} data thô.`);
+    } catch (error) { showToast(error.message, true); }
+  });
+
   const form = document.getElementById('createLeadForm');
   if (form) {
     form.addEventListener('submit', async (e) => {

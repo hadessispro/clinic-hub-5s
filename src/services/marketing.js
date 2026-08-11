@@ -1,5 +1,23 @@
 import { supabase } from '../supabase.js';
 
+const useVps = Boolean(supabase?.isLocal && supabase?.request);
+
+function mapVpsLead(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    full_name: row.customer_name,
+    appointment_date: row.appointment_at,
+    service_interest: row.service_type,
+    assigned_telesale_id: row.assigned_telesale_code,
+    created_by_pg: row.created_by_pg_code,
+  };
+}
+
+async function vpsRequest(path, options = {}) {
+  return supabase.request(`/marketing${path}`, options);
+}
+
 // Local storage fallback key for demo/offline resilience
 const LEADS_STORAGE_KEY = 'clinic_hub_marketing_leads';
 const CALL_LOGS_STORAGE_KEY = 'clinic_hub_telesale_call_logs';
@@ -38,6 +56,16 @@ const SEED_CAMPAIGNS = [
 
 /** Fetch all Marketing Leads */
 export async function getMarketingLeads(filters = {}) {
+  if (useVps) {
+    const query = new URLSearchParams();
+    if (filters.branch_id) query.set('branchId', filters.branch_id);
+    if (filters.status) query.set('status', filters.status);
+    if (filters.assigned_telesale_id) query.set('assignedTo', filters.assigned_telesale_id);
+    if (filters.data_class) query.set('dataClass', filters.data_class);
+    if (filters.net_level) query.set('netLevel', filters.net_level);
+    const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
+    return (payload.data || []).map(mapVpsLead);
+  }
   try {
     let query = supabase.from('marketing_leads').select('*').order('created_at', { ascending: false });
     if (filters.branch_id) query = query.eq('branch_id', filters.branch_id);
@@ -64,6 +92,23 @@ export async function getMarketingLeads(filters = {}) {
 
 /** Create a new Lead */
 export async function createMarketingLead(leadData) {
+  if (useVps) {
+    const payload = await vpsRequest('/leads', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerName: leadData.customerName || leadData.full_name,
+        phone: leadData.phone,
+        appointmentAt: leadData.appointmentAt || leadData.appointment_at,
+        dataClass: leadData.dataClass || leadData.data_class || 'raw',
+        netLevel: leadData.netLevel || leadData.net_level || null,
+        serviceType: leadData.serviceType || leadData.service_interest,
+        source: leadData.source || 'PG',
+        branchId: leadData.branchId || leadData.branch_id,
+        notes: leadData.notes,
+      }),
+    });
+    return mapVpsLead(payload.data);
+  }
   const newLead = {
     id: `lead-${Date.now()}`,
     full_name: leadData.full_name,
@@ -97,6 +142,18 @@ export async function createMarketingLead(leadData) {
 
 /** Update Lead status or assigned telesale */
 export async function updateMarketingLead(id, updates) {
+  if (useVps) {
+    if (updates.assigned_telesale_id) {
+      const payload = await vpsRequest(`/leads/${encodeURIComponent(id)}/assign-net`, {
+        method: 'POST', body: JSON.stringify({ telesaleCode: updates.assigned_telesale_id }),
+      });
+      return mapVpsLead(payload.data);
+    }
+    const payload = await vpsRequest(`/leads/${encodeURIComponent(id)}`, {
+      method: 'PATCH', body: JSON.stringify({ status: updates.status, notes: updates.notes }),
+    });
+    return mapVpsLead(payload.data);
+  }
   try {
     const { data, error } = await supabase.from('marketing_leads').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
     notifyDataChange('marketing_leads');
@@ -118,6 +175,14 @@ export async function updateMarketingLead(id, updates) {
 
 /** Add a Telesale Call Log */
 export async function addTelesaleCallLog(logData) {
+  if (useVps) {
+    const payload = await vpsRequest(`/leads/${encodeURIComponent(logData.lead_id)}/calls`, {
+      method: 'POST', body: JSON.stringify({
+        callStatus: logData.call_status, note: logData.note, appointmentAt: logData.appointment_date,
+      }),
+    });
+    return payload.data;
+  }
   const newLog = {
     id: `log-${Date.now()}`,
     lead_id: logData.lead_id,
@@ -260,6 +325,10 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
 
 /** Delete a Marketing Lead */
 export async function deleteMarketingLead(leadId) {
+  if (useVps) {
+    const payload = await vpsRequest(`/leads/${encodeURIComponent(leadId)}`, { method: 'DELETE' });
+    return Boolean(payload.data?.deleted);
+  }
   try {
     const { error } = await supabase.from('marketing_leads').delete().eq('id', leadId);
     if (error) console.warn('[Marketing Service] Supabase delete error:', error);
@@ -271,6 +340,97 @@ export async function deleteMarketingLead(leadId) {
   setLocalData(LEADS_STORAGE_KEY, updated);
   notifyDataChange('marketing_leads');
   return true;
+}
+
+export async function distributeRawLeads(quantity) {
+  if (!useVps) throw new Error('Chức năng chia data thô chỉ khả dụng trên VPS.');
+  const payload = await vpsRequest('/leads/distribute-raw', {
+    method: 'POST', body: JSON.stringify({ quantity: Number(quantity || 0) }),
+  });
+  return payload.data;
+}
+
+export async function getMarketingReports() {
+  if (!useVps) return { totals: {}, pg: [], telesale: [] };
+  const payload = await vpsRequest('/reports');
+  return payload.data;
+}
+
+export async function getPgAccounts() {
+  if (!useVps) return [];
+  const payload = await vpsRequest('/pg-accounts');
+  return payload.data || [];
+}
+
+export async function getTelesaleAccounts() {
+  if (!useVps) return [];
+  const payload = await vpsRequest('/telesale-accounts');
+  return (payload.data || []).map((row) => ({
+    id: row.employee_code, employee_code: row.employee_code, name: row.full_name, role: row.role, active: row.active,
+  }));
+}
+
+export async function createPgAccount(input) {
+  const payload = await vpsRequest('/pg-accounts', { method: 'POST', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function updatePgAccount(code, input) {
+  const payload = await vpsRequest(`/pg-accounts/${encodeURIComponent(code)}`, { method: 'PATCH', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function deletePgAccount(code) {
+  const payload = await vpsRequest(`/pg-accounts/${encodeURIComponent(code)}`, { method: 'DELETE' });
+  return payload.data;
+}
+
+export async function getPgSites() {
+  const payload = await vpsRequest('/pg-sites');
+  return payload.data || [];
+}
+
+export async function createPgSite(input) {
+  const payload = await vpsRequest('/pg-sites', { method: 'POST', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function getPgAssignments(date) {
+  const payload = await vpsRequest(`/pg-assignments${date ? `?date=${encodeURIComponent(date)}` : ''}`);
+  return payload.data || [];
+}
+
+export async function createPgAssignment(input) {
+  const payload = await vpsRequest('/pg-assignments', { method: 'POST', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function recordPgAttendance(input) {
+  const payload = await vpsRequest('/pg-attendance', { method: 'POST', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function getPgAttendance(from, to) {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const payload = await vpsRequest(`/pg-attendance${query.size ? `?${query}` : ''}`);
+  return payload.data || [];
+}
+
+export async function exportPgAttendanceCsv(from, to) {
+  const rows = await getPgAttendance(from, to);
+  const headers = ['Mã PG', 'Ngày', 'Loại', 'Thời gian', 'Địa điểm', 'Địa chỉ', 'Khoảng cách (m)', 'Sai số GPS (m)', 'Trạng thái'];
+  const cell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const lines = rows.map((row) => [row.pg_code, row.work_date, row.record_type, row.recorded_at, row.site_name, row.address, row.distance_m, row.accuracy_m, row.status].map(cell).join(','));
+  const blob = new Blob(['\uFEFF' + [headers.map(cell).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `Cham_cong_PG_${from || 'tu-ngay'}_${to || 'den-ngay'}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  return rows.length;
 }
 
 const broadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('clinic_hub_realtime_channel') : null;

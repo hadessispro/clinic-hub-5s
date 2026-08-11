@@ -57,6 +57,7 @@ export class AttendanceController {
   @Post()
   async record(@Req() request: { user: AuthUser }, @Body() body: JsonMap) {
     const user = request.user;
+    if (user.role === 'pg_staff') throw new BadRequestException('Tài khoản PG phải dùng phân hệ chấm công theo vị trí do Support phân công.');
     const type = body.type === 'checkout' ? 'checkout' : 'checkin';
     const eventId = String(body.clientEventId || '');
     const requestedTime = new Date(String(body.time || ''));
