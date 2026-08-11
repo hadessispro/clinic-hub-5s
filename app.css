@@ -559,6 +559,20 @@ select {
   flex-wrap: wrap;
 }
 
+.data-pagination[hidden] {
+  display: none !important;
+}
+
+.spreadsheet-table th:nth-child(7),
+.spreadsheet-table td:nth-child(7) {
+  min-width: 190px;
+}
+
+.spreadsheet-table td:nth-child(7) select {
+  width: 100% !important;
+  min-width: 170px;
+}
+
 tr.is-pagination-hidden {
   display: none !important;
 }
