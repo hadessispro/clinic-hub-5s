@@ -238,7 +238,15 @@
 .pg-assignment-submit { min-height: 40px; padding-inline: 16px; justify-content: center; white-space: nowrap; }
 .pg-account-actions { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
 .pg-account-actions button { min-height: 34px; padding: 6px 9px; }
-.pg-dialog-actions { justify-content: flex-end; gap: 8px; }
+.pg-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+}
+.pg-dialog-actions > button { margin: 0; }
 
 .app-dialog {
   width: min(620px, calc(100vw - 28px));
@@ -301,6 +309,7 @@
   .pg-assignment-form .form-field:nth-child(-n+2),
   .pg-assignment-submit { grid-column: auto; }
   .dialog-card { padding: 16px; }
+  .pg-dialog-actions { gap: 8px; }
 }
 
 * {
