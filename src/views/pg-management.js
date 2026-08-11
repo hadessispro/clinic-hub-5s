@@ -1,6 +1,6 @@
 import {
-  createPgAccount, createPgAssignment, createPgSite, deletePgAccount, exportPgAttendanceCsv,
-  getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, searchPgLocations, updatePgAccount,
+  createPgAccount, createPgAssignment, createPgSite, deletePgAccount, deletePgSite, exportPgAttendanceCsv,
+  getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, searchPgLocations, updatePgAccount, updatePgSite,
 } from '../services/marketing.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -74,6 +74,7 @@ export async function renderView() {
       <section class="panel">
         <div class="section-title"><div><h3>Tạo điểm chấm công PG</h3><p class="subtle">Tìm địa chỉ hoặc lấy GPS, không cần nhập tọa độ</p></div><span class="pill">Support quản lý</span></div>
         <form id="pgSiteForm" class="pg-site-form">
+          <input name="editingSiteId" type="hidden">
           <div class="pg-location-search-row">
             <label class="form-field"><span>Tìm địa điểm</span><input id="pgLocationQuery" placeholder="VD: Emart Phan Văn Trị, Gò Vấp" autocomplete="off"></label>
             <button id="searchPgLocation" class="secondary-button" type="button"><i class="ri-search-line"></i> Tìm</button>
@@ -93,8 +94,12 @@ export async function renderView() {
               <label class="form-field"><span>Sai số GPS tối đa (m)</span><input name="maxAccuracyM" type="number" value="100" min="10" max="200"></label>
             </div></details>
           </div>
-          <button class="primary-button pg-save-site-button" type="submit"><i class="ri-map-pin-add-line"></i> Lưu điểm chấm công</button>
+          <div class="pg-site-form-actions"><button class="secondary-button" id="cancelPgSiteEdit" type="button" hidden>Hủy chỉnh sửa</button><button class="primary-button pg-save-site-button" type="submit"><i class="ri-map-pin-add-line"></i> <span>Lưu điểm chấm công</span></button></div>
         </form>
+        <div class="pg-saved-sites">
+          <div class="section-title"><div><h4>Địa điểm đã lưu</h4><p class="subtle">Dùng lại, chỉnh sửa hoặc ngừng sử dụng địa điểm</p></div><span class="pill">${sites.length} điểm</span></div>
+          <div class="pg-saved-site-list">${sites.length ? sites.map((site) => `<article><div><strong>${escapeHTML(site.name)}</strong><p>${escapeHTML(site.address)}</p><small>Bán kính ${site.allowed_radius_m} m · GPS ±${site.max_accuracy_m} m</small></div><div class="pg-saved-site-actions"><button class="secondary-button" type="button" data-use-pg-site="${site.id}">Dùng</button><button class="secondary-button" type="button" data-edit-pg-site="${site.id}">Sửa</button><button class="danger-button" type="button" data-delete-pg-site="${site.id}">Xóa</button></div></article>`).join('') : '<div class="empty-state"><strong>Chưa có địa điểm đã lưu</strong><p>Địa điểm mới sẽ xuất hiện tại đây sau khi lưu.</p></div>'}</div>
+        </div>
       </section>
     </div>
 
@@ -109,7 +114,7 @@ export async function renderView() {
         <button class="primary-button pg-assignment-submit" type="submit"><i class="ri-send-plane-line"></i> Giao cho PG</button>
       </form>
       <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Địa chỉ</th></tr></thead><tbody>
-        ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(row.work_date)}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có phân công hôm nay.</td></tr>'}
+        ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có phân công hôm nay.</td></tr>'}
       </tbody></table></div>
     </section>
 
@@ -178,6 +183,28 @@ export function initView() {
   const locationResults = document.getElementById('pgLocationResults');
   const locationQuery = document.getElementById('pgLocationQuery');
   const searchButton = document.getElementById('searchPgLocation');
+  const siteSaveLabel = siteForm?.querySelector('.pg-save-site-button span');
+  const cancelSiteEdit = document.getElementById('cancelPgSiteEdit');
+  const resetSiteForm = () => {
+    siteForm?.reset();
+    if (siteForm?.elements.editingSiteId) siteForm.elements.editingSiteId.value = '';
+    if (siteSaveLabel) siteSaveLabel.textContent = 'Lưu điểm chấm công';
+    if (cancelSiteEdit) cancelSiteEdit.hidden = true;
+    locationResults?.setAttribute('hidden', '');
+    const preview = document.getElementById('pgMapPreview');
+    if (preview) { preview.className = 'pg-map-preview is-empty'; preview.innerHTML = '<div><i class="ri-map-2-line"></i><strong>Chưa chọn vị trí</strong><span>Tìm địa chỉ hoặc dùng GPS thiết bị để xem bản đồ.</span></div>'; }
+  };
+  const loadSiteIntoForm = (site, editing = false) => {
+    if (!siteForm || !site) return;
+    siteForm.elements.editingSiteId.value = editing ? site.id : '';
+    siteForm.elements.name.value = site.name || '';
+    siteForm.elements.allowedRadiusM.value = site.allowed_radius_m || 100;
+    siteForm.elements.maxAccuracyM.value = site.max_accuracy_m || 100;
+    selectPgLocation(siteForm, site);
+    if (siteSaveLabel) siteSaveLabel.textContent = editing ? 'Lưu thay đổi' : 'Lưu điểm chấm công';
+    if (cancelSiteEdit) cancelSiteEdit.hidden = !editing;
+    siteForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
   let locationSearchTimer = 0;
   let locationSearchRequest = 0;
   let activeLocationIndex = -1;
@@ -263,8 +290,20 @@ export function initView() {
   siteForm?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     if (!data.latitude || !data.longitude) return showToast('Hãy tìm và chọn một vị trí trên bản đồ trước.', true);
-    try { await createPgSite(data); await refresh('Đã lưu vị trí chấm công PG.'); } catch (error) { showToast(error.message, true); }
+    const editingSiteId = data.editingSiteId; delete data.editingSiteId;
+    try {
+      if (editingSiteId) await updatePgSite(editingSiteId, data); else await createPgSite(data);
+      await refresh(editingSiteId ? 'Đã cập nhật địa điểm chấm công.' : 'Đã lưu vị trí chấm công PG.');
+    } catch (error) { showToast(error.message, true); }
   });
+  cancelSiteEdit?.addEventListener('click', resetSiteForm);
+  document.querySelectorAll('[data-use-pg-site]').forEach((button) => button.addEventListener('click', () => loadSiteIntoForm(sites.find((site) => String(site.id) === button.dataset.usePgSite), false)));
+  document.querySelectorAll('[data-edit-pg-site]').forEach((button) => button.addEventListener('click', () => loadSiteIntoForm(sites.find((site) => String(site.id) === button.dataset.editPgSite), true)));
+  document.querySelectorAll('[data-delete-pg-site]').forEach((button) => button.addEventListener('click', async () => {
+    const site = sites.find((item) => String(item.id) === button.dataset.deletePgSite);
+    if (!site || !confirm(`Xóa địa điểm “${site.name}”?`)) return;
+    try { await deletePgSite(site.id); await refresh('Đã xóa địa điểm chấm công.'); } catch (error) { showToast(error.message, true); }
+  }));
   document.getElementById('pgAssignmentForm')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     try { await createPgAssignment(data); await refresh('Đã giao lịch và vị trí cho PG.'); } catch (error) { showToast(error.message, true); }

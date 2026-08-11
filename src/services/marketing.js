@@ -414,6 +414,16 @@ export async function createPgSite(input) {
   return payload.data;
 }
 
+export async function updatePgSite(id, input) {
+  const payload = await vpsRequest(`/pg-sites/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) });
+  return payload.data;
+}
+
+export async function deletePgSite(id) {
+  const payload = await vpsRequest(`/pg-sites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return payload.data;
+}
+
 export async function getPgAssignments(date) {
   const payload = await vpsRequest(`/pg-assignments${date ? `?date=${encodeURIComponent(date)}` : ''}`);
   return payload.data || [];

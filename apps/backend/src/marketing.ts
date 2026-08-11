@@ -442,6 +442,37 @@ export class MarketingService {
     return { data: result.rows };
   }
 
+  async updateSite(user: AuthUser, id: string, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const latitude = Number(input.latitude); const longitude = Number(input.longitude);
+    const radius = Number(input.allowedRadiusM || 100); const accuracy = Number(input.maxAccuracyM || 100);
+    if (!String(input.name || '').trim() || !String(input.address || '').trim() || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+      || radius < 20 || radius > 500 || accuracy < 10 || accuracy > 200) {
+      throw new BadRequestException('Thông tin vị trí chấm công chưa đầy đủ.');
+    }
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.pg_work_sites set name=$2,address=$3,latitude=$4,longitude=$5,allowed_radius_m=$6,max_accuracy_m=$7,updated_at=now()
+       where id::text=$1 and active=true returning *`,
+      [id, input.name, input.address, latitude, longitude, radius, accuracy],
+    );
+    if (!result.rows[0]) throw new BadRequestException('Không tìm thấy địa điểm đã lưu.');
+    return { data: result.rows[0] };
+  }
+
+  async deleteSite(user: AuthUser, id: string) {
+    requireRole(user, supportRoles);
+    const assigned = await this.infrastructure.postgres.query(
+      `select exists(select 1 from marketing.pg_shift_assignments where site_id::text=$1 and work_date>=(now() at time zone 'Asia/Ho_Chi_Minh')::date) assigned`, [id],
+    );
+    if (assigned.rows[0]?.assigned) throw new BadRequestException('Địa điểm đang có lịch PG hôm nay hoặc tương lai. Hãy đổi phân công trước khi xóa.');
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.pg_work_sites set active=false,updated_at=now() where id::text=$1 and active=true returning id`, [id],
+    );
+    if (!result.rows[0]) throw new BadRequestException('Không tìm thấy địa điểm đã lưu.');
+    return { data: { id, deleted: true } };
+  }
+
   async searchLocations(user: AuthUser, queryInput: string) {
     requireRole(user, supportRoles);
     const query = String(queryInput || '').trim();
@@ -582,6 +613,8 @@ export class MarketingController {
   @Get('/pg-sites') sites(@Req() request: ActorRequest) { return this.service.listSites(request.user); }
   @Get('/pg-location-search') searchLocations(@Req() request: ActorRequest, @Query('q') query: string) { return this.service.searchLocations(request.user, query); }
   @Post('/pg-sites') createSite(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createSite(request.user, body); }
+  @Patch('/pg-sites/:id') updateSite(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.updateSite(request.user, id, body); }
+  @Delete('/pg-sites/:id') deleteSite(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteSite(request.user, id); }
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
   @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }

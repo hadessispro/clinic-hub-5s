@@ -195,6 +195,18 @@
 .pg-location-results button small { margin-top: 2px; color: var(--muted); font-size: .72rem; }
 .pg-location-results button em { display: inline-block; margin-top: 4px; color: var(--teal-dark); font-size: .66rem; font-style: normal; font-weight: 800; }
 
+.pg-site-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pg-site-form-actions .pg-save-site-button { flex: 1; }
+.pg-saved-sites { display: grid; gap: 9px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.pg-saved-sites .section-title { margin: 0; }
+.pg-saved-site-list { display: grid; gap: 7px; max-height: 260px; overflow-y: auto; }
+.pg-saved-site-list article { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #dce8e3; border-radius: 10px; background: #f8fbfa; }
+.pg-saved-site-list article > div:first-child { min-width: 0; }
+.pg-saved-site-list p { margin: 3px 0; overflow: hidden; color: var(--muted); font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.pg-saved-site-list small { color: var(--muted); font-size: .68rem; }
+.pg-saved-site-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.pg-saved-site-actions button { min-height: 32px; padding: 5px 8px; }
+
 .pg-map-preview {
   position: relative;
   min-height: 150px;
@@ -312,6 +324,8 @@
   .pg-assignment-submit { grid-column: auto; }
   .dialog-card { padding: 16px; }
   .pg-dialog-actions { gap: 8px; }
+  .pg-saved-site-list article { align-items: stretch; flex-direction: column; }
+  .pg-saved-site-actions { display: grid; grid-template-columns: repeat(3, 1fr); }
 }
 
 * {
