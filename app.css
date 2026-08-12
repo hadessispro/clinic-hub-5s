@@ -6022,3 +6022,58 @@ body.dialog-open {
 }
 .pg-flow-strip{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;padding:12px;border:1px solid #cfe3dc;border-radius:16px;background:#fff}.pg-flow-strip span{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;background:#f2f8f6;color:#164f48;font-weight:700}.pg-flow-strip b{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#0d8b80;color:#fff}.pg-flow-strip i{color:#7a928d}.pg-workflow-grid{align-items:start}.pg-workflow-list{display:grid;gap:10px}.pg-workflow-list article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px;border:1px solid #d9e6e2;border-radius:14px;background:#fbfdfc}.pg-workflow-list article p,.pg-workflow-list article small{display:block;margin:5px 0;color:#657771}.pg-workflow-list article>.div:last-child,.pg-workflow-list article>div:last-child{text-align:right}.pg-workflow-list .button-row{justify-content:flex-end;margin-top:10px}
 @media(max-width:760px){.pg-flow-strip{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap}.pg-flow-strip span{white-space:nowrap}.pg-flow-strip i{display:none}.pg-workflow-grid{grid-template-columns:1fr}.pg-workflow-list article{grid-template-columns:1fr}.pg-workflow-list article>div:last-child{text-align:left}.pg-workflow-list .button-row{justify-content:flex-start}}
+
+/* PG workflow: compact, aligned forms and predictable button sizing */
+.pg-workflow-grid { gap: 14px; }
+.pg-workflow-grid > .panel { padding: 18px; overflow: hidden; }
+.pg-workflow-grid > .panel > .section-title { margin-bottom: 14px; }
+.pg-workflow-grid > .panel > .section-title h3 { margin-bottom: 3px; }
+.pg-workflow-grid > .panel > form.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+.pg-workflow-grid > .panel > form.form-grid > .form-field { min-width: 0; }
+.pg-workflow-grid > .panel > form.form-grid textarea {
+  min-height: 84px;
+  height: 84px;
+  resize: vertical;
+}
+.pg-workflow-grid > .panel > form.form-grid > button {
+  width: auto;
+  min-height: 42px;
+  height: 42px;
+  margin: 0;
+  padding: 0 18px;
+  justify-content: center;
+  align-self: end;
+}
+.pg-workflow-grid > .panel > form.form-grid > button[type="submit"] {
+  grid-column: 1 / -1;
+  justify-self: end;
+  min-width: 210px;
+}
+.pg-workflow-grid > .panel > form.form-grid > #captureSuggestionGps { justify-self: stretch; }
+.pg-workflow-grid > .panel > form.form-grid > #suggestionGpsState {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: #f3f7f5;
+  color: #60746e;
+  font-size: .8rem;
+  line-height: 1.35;
+}
+.pg-workflow-list > .empty-state { min-height: 104px; padding: 24px; }
+@media (max-width: 900px) {
+  .pg-workflow-grid > .panel > form.form-grid { grid-template-columns: 1fr; }
+  .pg-workflow-grid > .panel > form.form-grid > button[type="submit"] { grid-column: 1; width: 100%; min-width: 0; }
+}
+@media (max-width: 760px) {
+  .pg-workflow-grid > .panel { padding: 14px; }
+  .pg-workflow-grid > .panel > form.form-grid > button { width: 100%; }
+  .pg-workflow-list > .empty-state { min-height: 82px; padding: 18px; }
+}
