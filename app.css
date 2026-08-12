@@ -6077,3 +6077,62 @@ body.dialog-open {
   .pg-workflow-grid > .panel > form.form-grid > button { width: 100%; }
   .pg-workflow-list > .empty-state { min-height: 82px; padding: 18px; }
 }
+
+/* Final mobile topbar contract: one search row, one balanced account row. */
+@media (max-width: 760px) {
+  .topbar .top-actions { display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; }
+  .topbar .search-box { width: 100% !important; height: 42px !important; min-height: 42px !important; border-radius: 11px !important; }
+  .topbar .auth-area { width: 100% !important; min-width: 0 !important; }
+  .topbar .topbar-right-container {
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) 40px !important;
+    gap: 8px !important;
+    align-items: center !important;
+    width: 100% !important;
+  }
+  .topbar .topbar-right-container:has(.topbar-branch-switcher) {
+    grid-template-columns: minmax(116px, .95fr) 40px minmax(112px, 1fr) 40px !important;
+  }
+  .topbar .notif-container,
+  .topbar .notif-bell-btn,
+  .topbar .topbar-logout-button {
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 0 !important;
+    border-radius: 11px !important;
+  }
+  .topbar .auth-chip {
+    display: grid !important;
+    grid-template-columns: 9px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 7px !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 4px 9px !important;
+    overflow: hidden !important;
+    border-radius: 11px !important;
+  }
+  .topbar .auth-summary { display: grid !important; width: 100% !important; min-width: 0 !important; padding: 0 !important; text-align: left !important; }
+  .topbar .auth-summary strong { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .76rem !important; line-height: 1.2 !important; }
+  .topbar .auth-summary small { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .62rem !important; line-height: 1.2 !important; }
+  .topbar .topbar-branch-switcher,
+  .topbar .topbar-branch-button { width: 100% !important; min-width: 0 !important; height: 40px !important; min-height: 40px !important; }
+  .topbar .topbar-branch-label { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+}
+@media (max-width: 390px) {
+  .topbar .topbar-right-container:has(.topbar-branch-switcher) {
+    grid-template-columns: minmax(102px, .9fr) 38px minmax(92px, 1fr) 38px !important;
+    gap: 5px !important;
+  }
+  .topbar .notif-container,
+  .topbar .notif-bell-btn,
+  .topbar .topbar-logout-button { width: 38px !important; min-width: 38px !important; height: 38px !important; min-height: 38px !important; }
+  .topbar .auth-chip,
+  .topbar .topbar-branch-switcher,
+  .topbar .topbar-branch-button { height: 38px !important; min-height: 38px !important; }
+}
