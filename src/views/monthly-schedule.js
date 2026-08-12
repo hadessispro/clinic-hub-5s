@@ -2,6 +2,7 @@ import { getMonthlySchedule, saveMonthlySchedule, subscribeMonthlySchedule, upda
 import { DEPARTMENTS } from '../constants.js';
 import { escapeHTML, normalizeText, todayISO, smartMatch } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/app-dialog.js';
 import { store } from '../store.js';
 
 let selectedMonth = todayISO().slice(0, 7);
@@ -533,7 +534,7 @@ export function initMonthlySchedule() {
       && ['draft', 'returned', 'leader_review'].includes(request.stage)
     ));
     if (!eligible.length) return showToast('Chưa có lịch nào đã phân ca để xác nhận.', true);
-    if (!confirm(`Xác nhận và gửi ${eligible.length} lịch đã có ca đến hr.emily?`)) return;
+    if (!await confirmAction(`Xác nhận và gửi ${eligible.length} lịch đã có ca đến hr.emily?`, { title: 'Gửi lịch làm việc', confirmText: 'Gửi lịch' })) return;
     const button = event.currentTarget;
     button.disabled = true;
     button.textContent = `Đang xác nhận 0/${eligible.length}…`;
@@ -568,7 +569,7 @@ export function initMonthlySchedule() {
       return_to_staff: 'Gửi yêu cầu nhân viên chỉnh sửa lịch?', hr_approve: 'Chốt lịch chính thức cho nhân viên này?',
       hr_return: 'Trả lịch lại trưởng bộ phận để rà soát?',
     };
-    if (!confirm(confirmations[action] || 'Xác nhận thao tác?')) return;
+    if (!await confirmAction(confirmations[action] || 'Xác nhận thao tác?')) return;
     button.disabled = true;
     try {
       await updateMonthlyScheduleWorkflow({ month: selectedMonth, employee, action, note });

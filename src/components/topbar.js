@@ -7,6 +7,7 @@ import { navigateTo } from '../router.js';
 import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js';
 import { loadClinicLocation } from '../services/clinic.js';
 import { showToast } from './toast.js';
+import { confirmAction } from './app-dialog.js';
 
 let isDropdownOpen = false;
 
@@ -249,7 +250,7 @@ export function renderTopbar(state) {
       logoutBtn.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (confirm('Bạn có muốn đăng xuất khỏi hệ thống không?')) {
+        if (await confirmAction('Bạn có muốn đăng xuất khỏi hệ thống không?', { title: 'Đăng xuất', confirmText: 'Đăng xuất' })) {
           try {
             await signOut();
           } catch (err) {

@@ -4,6 +4,7 @@ import {
 } from '../services/marketing.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 
 let accounts = [];
@@ -251,7 +252,7 @@ export function initView() {
   document.querySelectorAll('[data-edit-pg-site]').forEach((button) => button.addEventListener('click', () => loadSiteIntoForm(sites.find((site) => String(site.id) === button.dataset.editPgSite), true)));
   document.querySelectorAll('[data-delete-pg-site]').forEach((button) => button.addEventListener('click', async () => {
     const site = sites.find((item) => String(item.id) === button.dataset.deletePgSite);
-    if (!site || !confirm(`Xóa địa điểm “${site.name}”?`)) return;
+    if (!site || !await confirmAction(`Xóa địa điểm “${site.name}”?`, { title: 'Xóa địa điểm PG', confirmText: 'Xóa địa điểm', tone: 'danger' })) return;
     try { await deletePgSite(site.id); await refresh('Đã xóa địa điểm chấm công.'); } catch (error) { showToast(error.message, true); }
   }));
   document.getElementById('pgAssignmentForm')?.addEventListener('submit', async (event) => {
@@ -260,7 +261,7 @@ export function initView() {
   });
   document.querySelectorAll('[data-delete-pg-assignment]').forEach((button) => button.addEventListener('click', async () => {
     const assignment = assignments.find((row) => String(row.id) === button.dataset.deletePgAssignment);
-    if (!assignment || !confirm(`Hủy phân công ${assignment.pg_code} tại “${assignment.site_name}” ngày ${String(assignment.work_date).slice(0, 10)}?`)) return;
+    if (!assignment || !await confirmAction(`Hủy phân công ${assignment.pg_code} tại “${assignment.site_name}” ngày ${String(assignment.work_date).slice(0, 10)}?`, { title: 'Hủy phân công', confirmText: 'Hủy phân công', tone: 'danger' })) return;
     button.disabled = true;
     try { await deletePgAssignment(assignment.id); await refresh('Đã hủy phân công vị trí của PG.'); } catch (error) { button.disabled = false; showToast(error.message, true); }
   }));
@@ -268,7 +269,7 @@ export function initView() {
     try { await updatePgAccount(button.dataset.togglePg, { active: button.dataset.active !== '1' }); await refresh('Đã cập nhật tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   }));
   document.querySelectorAll('[data-delete-pg]').forEach((button) => button.addEventListener('click', async () => {
-    if (!confirm(`Xóa tài khoản ${button.dataset.deletePg}?`)) return;
+    if (!await confirmAction(`Xóa tài khoản ${button.dataset.deletePg}?`, { title: 'Xóa tài khoản PG', confirmText: 'Xóa tài khoản', tone: 'danger' })) return;
     try { await deletePgAccount(button.dataset.deletePg); await refresh('Đã xóa tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   }));
   const editDialog = document.getElementById('editPgDialog');

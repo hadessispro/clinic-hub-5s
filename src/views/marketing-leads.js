@@ -4,6 +4,7 @@ import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { pill, statusPill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/app-dialog.js';
 import { canExportData } from '../permissions.js';
 import { store } from '../store.js';
 import { navigateTo } from '../router.js';
@@ -477,7 +478,7 @@ export function initView() {
   document.querySelectorAll('[data-delete-lead]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.deleteLead;
-      if (!window.confirm("Bạn có chắc chắn muốn xóa Lead này khỏi hệ thống?")) return;
+      if (!await confirmAction("Bạn có chắc chắn muốn xóa Lead này khỏi hệ thống?", { title: 'Xóa Lead', confirmText: 'Xóa Lead', tone: 'danger' })) return;
       try {
         showToast("Đang xóa Lead...");
         await deleteMarketingLead(id);

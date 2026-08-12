@@ -2,6 +2,7 @@ import {
   createPgSite, deletePgSite, getPgSites, searchPgLocations, updatePgSite,
 } from '../services/marketing.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { escapeHTML } from '../utils.js';
 
@@ -142,7 +143,7 @@ export function initView() {
   document.querySelectorAll('[data-edit-pg-site]').forEach((button) => button.addEventListener('click', () => loadSite(sites.find((site) => String(site.id) === button.dataset.editPgSite), true)));
   document.querySelectorAll('[data-delete-pg-site]').forEach((button) => button.addEventListener('click', async () => {
     const site = sites.find((item) => String(item.id) === button.dataset.deletePgSite);
-    if (!site || !confirm(`Xóa địa điểm “${site.name}”?`)) return;
+    if (!site || !await confirmAction(`Xóa địa điểm “${site.name}”?`, { title: 'Xóa địa điểm PG', confirmText: 'Xóa địa điểm', tone: 'danger' })) return;
     try { await deletePgSite(site.id); await refresh('Đã xóa địa điểm chấm công.'); } catch (error) { showToast(error.message, true); }
   }));
 }

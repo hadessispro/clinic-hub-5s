@@ -3,6 +3,7 @@ import { getEmployees } from '../services/employees.js';
 import { DEPARTMENTS, TASK_STATUS } from '../constants.js';
 import { todayISO, escapeHTML, smartMatch, departmentName } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { notifyDataChange } from '../services/marketing.js';
 
@@ -431,9 +432,9 @@ export function initView() {
   });
 
   document.querySelectorAll('[data-delete-featured]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.deleteFeatured;
-      if (confirm('Xóa thẻ sự kiện này khỏi trang chủ?')) {
+      if (await confirmAction('Xóa thẻ sự kiện này khỏi trang chủ?', { title: 'Xóa thẻ sự kiện', confirmText: 'Xóa thẻ', tone: 'danger' })) {
         featuredCards = featuredCards.filter(c => c.id !== id);
         saveStoredFeaturedCards(featuredCards);
         showToast('🗑️ Đã xóa thẻ sự kiện nổi bật!');
@@ -476,8 +477,8 @@ export function initView() {
   document.getElementById('btnTodayWeek')?.addEventListener('click', () => { currentWeekOffset = 0; store.setView(store.getState().currentView); });
 
   // Add Custom Tab
-  document.getElementById('btnAddCustomTab')?.addEventListener('click', () => {
-    const tabName = prompt('Nhập tên Tab công việc mới:');
+  document.getElementById('btnAddCustomTab')?.addEventListener('click', async () => {
+    const tabName = await requestInput('Đặt tên ngắn gọn để dễ nhận biết trên thanh công việc.', { title: 'Tạo tab công việc', label: 'Tên tab', placeholder: 'VD: Công việc tuần này', confirmText: 'Tạo tab', maxLength: 60 });
     if (tabName && tabName.trim()) {
       customTabs.push(tabName.trim());
       activeTab = tabName.trim();
@@ -583,7 +584,7 @@ export function initView() {
   // Delete Task Button inside Modal
   document.getElementById('btnDeleteTaskModal')?.addEventListener('click', async () => {
     if (!editingTaskId) return;
-    if (!confirm('Bạn có chắc chắn muốn xóa công việc này khỏi lịch trình?')) return;
+    if (!await confirmAction('Bạn có chắc chắn muốn xóa công việc này khỏi lịch trình?', { title: 'Xóa công việc', confirmText: 'Xóa công việc', tone: 'danger' })) return;
     try {
       await deleteTask(editingTaskId);
       cachedTasks = cachedTasks.filter(t => t.id !== editingTaskId);

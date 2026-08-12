@@ -1,6 +1,7 @@
 import { store } from '../store.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import {
   actionPgSupportRequest, createPgLocationSuggestion, createPgSupportRequest,
@@ -36,6 +37,6 @@ export function initView() {
   }, (error) => showToast(error.message || 'Không lấy được GPS.', true), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
   document.getElementById('pgSuggestLocation')?.addEventListener('submit', async (event) => { event.preventDefault(); if (!reading) return showToast('Hãy lấy GPS hiện tại trước.', true); try { await createPgLocationSuggestion(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi tọa độ chờ Admin duyệt.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
   document.getElementById('pgSupportRequest')?.addEventListener('submit', async (event) => { event.preventDefault(); try { await createPgSupportRequest(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi yêu cầu cho Support.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
-  document.querySelectorAll('[data-review-location]').forEach(b => b.addEventListener('click', async () => { try { await reviewPgLocationSuggestion(b.dataset.id, b.dataset.reviewLocation, prompt('Ghi chú duyệt (không bắt buộc)') || ''); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
-  document.querySelectorAll('[data-request-action]').forEach(b => b.addEventListener('click', async () => { const note = prompt(b.dataset.requestAction === 'complete' ? 'Nhập phản hồi cuối cùng cho PG' : 'Nhập ghi chú xử lý') || ''; if (b.dataset.requestAction === 'complete' && !note.trim()) return; try { await actionPgSupportRequest(b.dataset.id, b.dataset.requestAction, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
+  document.querySelectorAll('[data-review-location]').forEach(b => b.addEventListener('click', async () => { const note = await requestInput('Ghi chú giúp PG hiểu kết quả phê duyệt.', { title: b.dataset.reviewLocation === 'approved' ? 'Duyệt tọa độ' : 'Từ chối tọa độ', label: 'Ghi chú duyệt', placeholder: 'Không bắt buộc' }); if (note === null) return; try { await reviewPgLocationSuggestion(b.dataset.id, b.dataset.reviewLocation, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
+  document.querySelectorAll('[data-request-action]').forEach(b => b.addEventListener('click', async () => { const isComplete = b.dataset.requestAction === 'complete'; const note = await requestInput(isComplete ? 'Nhập phản hồi cuối cùng để PG nhận kết quả.' : 'Nhập ghi chú cho bước xử lý này.', { title: isComplete ? 'Hoàn tất yêu cầu' : 'Cập nhật yêu cầu', label: isComplete ? 'Phản hồi cho PG' : 'Ghi chú xử lý' }); if (note === null || (isComplete && !note.trim())) return; try { await actionPgSupportRequest(b.dataset.id, b.dataset.requestAction, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
 }

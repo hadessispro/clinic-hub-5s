@@ -5,6 +5,7 @@ import { ROLE_PROFILES } from '../constants.js';
 import { escapeHTML, downloadText, departmentName } from '../utils.js';
 import { pill, statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import {
   getProfiles,
@@ -467,7 +468,7 @@ export function initView() {
       const deleteBtn = e.target.closest('[data-action="delete-profile"]');
       if (deleteBtn) {
         const profileId = deleteBtn.dataset.profileId;
-        if (confirm("Bạn có chắc chắn muốn xóa hồ sơ phân quyền này? Thao tác này chỉ xóa dữ liệu phân quyền trong Database (Profiles) và giữ nguyên User trong Supabase Auth.")) {
+        if (await confirmAction("Bạn có chắc chắn muốn xóa hồ sơ phân quyền này? Thao tác này chỉ xóa dữ liệu phân quyền trong Database (Profiles) và giữ nguyên User trong Supabase Auth.", { title: 'Xóa hồ sơ phân quyền', confirmText: 'Xóa hồ sơ', tone: 'danger' })) {
           try {
             showToast("Đang xóa tài khoản...");
             await deleteProfile(profileId);

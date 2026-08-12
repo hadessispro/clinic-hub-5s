@@ -274,6 +274,26 @@
 }
 
 .app-dialog::backdrop { background: rgba(12, 31, 28, .52); backdrop-filter: blur(3px); }
+.app-modal-open { overflow: hidden; }
+.system-dialog-layer { position: fixed; inset: 0; z-index: 10020; display: grid; place-items: center; padding: 18px; opacity: 0; transition: opacity .15s ease; }
+.system-dialog-layer.is-open { opacity: 1; }
+.system-dialog-layer.is-closing { opacity: 0; }
+.system-dialog-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgba(9, 31, 27, .48); backdrop-filter: blur(5px); }
+.system-dialog-panel { position: relative; width: min(500px, 100%); display: grid; gap: 16px; padding: 20px; border: 1px solid rgba(164, 205, 196, .8); border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgba(12, 47, 40, .22); transform: translateY(12px) scale(.98); transition: transform .18s ease; }
+.system-dialog-layer.is-open .system-dialog-panel { transform: none; }
+.system-dialog-header { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center; }
+.system-dialog-header h3, .system-dialog-header p, .system-dialog-message { margin: 0; }
+.system-dialog-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #06776e; background: #def4ef; font-size: 1.15rem; font-weight: 900; }
+.system-dialog-icon.danger { color: #b9342b; background: #ffebe8; }
+.system-dialog-icon.success { color: #087b4e; background: #e4f7ec; }
+.system-dialog-message { color: var(--muted); line-height: 1.55; white-space: pre-line; }
+.system-dialog-field { display: grid; gap: 7px; font-weight: 700; }
+.system-dialog-field textarea { width: 100%; resize: vertical; min-height: 96px; }
+.system-dialog-field small { color: var(--muted); font-weight: 400; }
+.system-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.system-dialog-actions button { margin: 0; min-width: 104px; }
+.system-dialog-actions .danger-action { background: #c74439; border-color: #c74439; }
+@media (max-width: 520px) { .system-dialog-layer { align-items: end; padding: 10px; } .system-dialog-panel { padding: 17px; border-radius: 18px 18px 13px 13px; } .system-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; } .system-dialog-actions button { width: 100%; min-width: 0; } }
 .dialog-card { display: grid; gap: 16px; padding: 20px; }
 .dialog-card > .button-row { justify-content: flex-end; }
 .call-history-list { display: grid; gap: 10px; max-height: min(60vh, 520px); overflow-y: auto; }

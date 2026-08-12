@@ -4,6 +4,7 @@ import { LEAVE_STATUS, LEAVE_TYPES } from '../constants.js';
 import { todayISO, escapeHTML, formatShortDate, formatDateTime, formatCurrency, smartMatch, departmentName } from '../utils.js';
 import { pill, statusPill, option, emptyState, statusTone } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { triggerArchive2Months } from '../services/archive-sync.js';
 
@@ -410,7 +411,8 @@ export function initView() {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.id;
       try {
-        const reason = window.prompt('Lý do từ chối:') || '';
+        const reason = await requestInput('Vui lòng ghi rõ lý do để nhân viên nhận phản hồi.', { title: 'Từ chối đơn', label: 'Lý do từ chối', placeholder: 'Nhập lý do...', confirmText: 'Từ chối đơn', tone: 'danger' });
+        if (reason === null) return;
         await reviewLeaveRequest(id, "rejected", reason);
         showToast("Đã từ chối đơn.");
         store.notify();
@@ -428,7 +430,8 @@ export function initView() {
       try {
         let reason = '';
         if (targetStatus === 'rejected') {
-          reason = window.prompt('Lý do xem xét lại (Từ chối):') || '';
+          reason = await requestInput('Vui lòng ghi rõ lý do thay đổi kết quả xét duyệt.', { title: 'Xem xét lại đơn', label: 'Lý do từ chối', placeholder: 'Nhập lý do...', confirmText: 'Cập nhật' });
+          if (reason === null) return;
         }
         const profile = store.getState().profile;
         await updateLeaveRequest(id, {
@@ -447,7 +450,7 @@ export function initView() {
   });
 
   document.getElementById('triggerArchive2MonthsBtn')?.addEventListener('click', async () => {
-    if (!window.confirm('Hệ thống sẽ tổng hợp tất cả dữ liệu đơn từ & chấm công > 60 ngày thành file Excel, gửi lưu trữ về Google Drive và dọn dẹp cơ sở dữ liệu. Tiếp tục?')) return;
+    if (!await confirmAction('Hệ thống sẽ tổng hợp tất cả dữ liệu đơn từ & chấm công > 60 ngày thành file Excel, gửi lưu trữ về Google Drive và dọn dẹp cơ sở dữ liệu. Tiếp tục?', { title: 'Lưu trữ dữ liệu cũ', confirmText: 'Bắt đầu lưu trữ' })) return;
     try {
       showToast('Đang tổng hợp dữ liệu & đóng gói sang Google Drive...');
       const result = await triggerArchive2Months();

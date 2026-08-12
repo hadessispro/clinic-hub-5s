@@ -2,6 +2,7 @@ import { getMessages, sendMessage, subscribeToMessages, subscribeToIncomingMessa
 import { store } from '../store.js';
 import { escapeHTML, formatDateTime, departmentName } from '../utils.js';
 import { pill, emptyState } from '../components/shared.js';
+import { showNotice } from '../components/app-dialog.js';
 
 let contactsList = [];
 let selectedContactId = null;
@@ -99,7 +100,7 @@ export function initView() {
       promoteContact(selectedContactId);
     } catch (error) {
       console.error('[Chat] Send failed:', error);
-      alert('Không gửi được tin nhắn hoặc người nhận nằm ngoài phạm vi liên hệ.');
+      await showNotice('Không gửi được tin nhắn hoặc người nhận nằm ngoài phạm vi liên hệ.', { title: 'Không thể gửi tin nhắn', tone: 'danger' });
     } finally {
       input.disabled = false;
       input.focus();
