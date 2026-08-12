@@ -16,11 +16,15 @@ export function showToast(message, isError = false, variant = '') {
   
   const toast = document.createElement('div');
   toast.className = `toast${isError ? ' error' : ''}${variant ? ` ${variant}-toast` : ''}`;
-  toast.textContent = isError ? vietnameseMessage(message) : message;
+  const displayMessage = isError ? vietnameseMessage(message) : String(message || '');
+  toast.setAttribute('role', isError ? 'alert' : 'status');
+  toast.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  toast.innerHTML = `<span class="toast-status-icon" aria-hidden="true">${isError ? '!' : '✓'}</span><span class="toast-copy"><strong>${isError ? 'Không thể thực hiện' : 'Đã cập nhật'}</strong><span></span></span><button class="toast-close" type="button" aria-label="Đóng thông báo">×</button><i class="toast-progress" aria-hidden="true"></i>`;
+  toast.querySelector('.toast-copy span').textContent = displayMessage;
   
   document.body.appendChild(toast);
   
-  window.setTimeout(() => {
-    toast.remove();
-  }, 3600);
+  const close = () => { toast.classList.add('is-leaving'); window.setTimeout(() => toast.remove(), 160); };
+  toast.querySelector('.toast-close').addEventListener('click', close);
+  window.setTimeout(close, isError ? 5600 : 3800);
 }
