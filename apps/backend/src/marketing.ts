@@ -570,6 +570,121 @@ export class MarketingService {
     return { data: result.rows[0] };
   }
 
+  async listLocationSuggestions(user: AuthUser) {
+    if (user.role !== 'pg_staff' && !supportRoles.has(user.role)) throw new ForbiddenException();
+    const values: unknown[] = [];
+    const owner = user.role === 'pg_staff' ? 'where lower(s.pg_code)=lower($1)' : '';
+    if (user.role === 'pg_staff') values.push(user.employeeCode);
+    const result = await this.infrastructure.postgres.query(
+      `select s.*,a.work_date,a.start_time,a.end_time,w.name site_name,w.address current_address
+       from marketing.pg_location_suggestions s
+       left join marketing.pg_shift_assignments a on a.id=s.assignment_id
+       left join marketing.pg_work_sites w on w.id=a.site_id
+       ${owner} order by s.created_at desc limit 300`, values,
+    );
+    return { data: result.rows };
+  }
+
+  async suggestLocation(user: AuthUser, input: JsonMap) {
+    if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ PG được gửi tọa độ gợi ý.');
+    const assignmentId = String(input.assignmentId || '');
+    const latitude = Number(input.latitude); const longitude = Number(input.longitude); const accuracy = Math.round(Number(input.accuracy));
+    if (!assignmentId || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || accuracy < 1 || accuracy > 500) {
+      throw new BadRequestException('Tọa độ gợi ý không hợp lệ.');
+    }
+    const assignment = await this.infrastructure.postgres.query(
+      `select id from marketing.pg_shift_assignments where id::text=$1 and lower(pg_code)=lower($2) limit 1`,
+      [assignmentId, user.employeeCode],
+    );
+    if (!assignment.rows[0]) throw new BadRequestException('Phân công không thuộc tài khoản PG này.');
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.pg_location_suggestions(assignment_id,pg_code,latitude,longitude,accuracy_m,address,note)
+       values ($1,$2,$3,$4,$5,$6,$7) returning *`,
+      [assignmentId, user.employeeCode, latitude, longitude, accuracy, String(input.address || '').slice(0, 500) || null, String(input.note || '').slice(0, 1000) || null],
+    );
+    await this.audit(user, 'pg_location.suggest', 'marketing.pg_location_suggestion', result.rows[0].id, { assignmentId });
+    return { data: result.rows[0] };
+  }
+
+  async reviewLocationSuggestion(user: AuthUser, id: string, input: JsonMap) {
+    requireRole(user, adminRoles);
+    const decision = input.decision === 'approved' ? 'approved' : input.decision === 'rejected' ? 'rejected' : '';
+    if (!decision) throw new BadRequestException('Quyết định duyệt không hợp lệ.');
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query(
+        `select s.*,a.site_id from marketing.pg_location_suggestions s
+         join marketing.pg_shift_assignments a on a.id=s.assignment_id
+         where s.id::text=$1 and s.status='pending_admin' for update`, [id],
+      );
+      if (!current.rows[0]) throw new BadRequestException('Gợi ý không còn ở trạng thái chờ duyệt.');
+      const row = current.rows[0];
+      await client.query(
+        `update marketing.pg_location_suggestions set status=$2,reviewed_by_code=$3,reviewed_note=$4,reviewed_at=now(),updated_at=now()
+         where id::text=$1`, [id, decision, user.employeeCode, String(input.note || '').slice(0, 1000) || null],
+      );
+      if (decision === 'approved') {
+        await client.query(
+          `update marketing.pg_work_sites set latitude=$2,longitude=$3,address=coalesce(nullif($4,''),address),updated_at=now()
+           where id=$1`, [row.site_id, row.latitude, row.longitude, row.address || ''],
+        );
+      }
+      await client.query('commit');
+      await this.audit(user, `pg_location.${decision}`, 'marketing.pg_location_suggestion', id);
+      return { data: { id, status: decision } };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  async listSupportRequests(user: AuthUser) {
+    if (user.role !== 'pg_staff' && !supportRoles.has(user.role)) throw new ForbiddenException();
+    const values: unknown[] = [];
+    const owner = user.role === 'pg_staff' ? 'where lower(pg_code)=lower($1)' : '';
+    if (user.role === 'pg_staff') values.push(user.employeeCode);
+    const result = await this.infrastructure.postgres.query(
+      `select * from marketing.pg_support_requests ${owner} order by created_at desc limit 500`, values,
+    );
+    return { data: result.rows };
+  }
+
+  async createSupportRequest(user: AuthUser, input: JsonMap) {
+    if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ PG được tạo yêu cầu hỗ trợ.');
+    const type = String(input.requestType || 'other');
+    if (!['location_issue','schedule_change','account_access','data_issue','other'].includes(type)
+      || !String(input.title || '').trim() || !String(input.detail || '').trim()) throw new BadRequestException('Yêu cầu hỗ trợ chưa đầy đủ.');
+    const result = await this.infrastructure.postgres.query(
+      `insert into marketing.pg_support_requests(pg_code,request_type,title,detail) values ($1,$2,$3,$4) returning *`,
+      [user.employeeCode, type, String(input.title).slice(0, 200), String(input.detail).slice(0, 3000)],
+    );
+    await this.audit(user, 'pg_support.submit', 'marketing.pg_support_request', result.rows[0].id);
+    return { data: result.rows[0] };
+  }
+
+  async actionSupportRequest(user: AuthUser, id: string, input: JsonMap) {
+    const action = String(input.action || ''); const note = String(input.note || '').slice(0, 2000) || null;
+    let query = ''; let values: unknown[] = [];
+    if (action === 'forward') {
+      if (!supportRoles.has(user.role) || adminRoles.has(user.role)) throw new ForbiddenException('Support chịu trách nhiệm chuyển yêu cầu lên Admin.');
+      query = `update marketing.pg_support_requests set status='admin_review',support_code=$2,support_note=$3,forwarded_at=now(),updated_at=now() where id::text=$1 and status='submitted' returning *`;
+      values = [id, user.employeeCode, note];
+    } else if (action === 'approve' || action === 'reject') {
+      requireRole(user, adminRoles);
+      query = `update marketing.pg_support_requests set status=$2,admin_code=$3,admin_note=$4,decided_at=now(),updated_at=now() where id::text=$1 and status='admin_review' returning *`;
+      values = [id, action === 'approve' ? 'approved' : 'rejected', user.employeeCode, note];
+    } else if (action === 'start' || action === 'complete') {
+      if (!supportRoles.has(user.role) || adminRoles.has(user.role)) throw new ForbiddenException('Support chịu trách nhiệm xử lý và phản hồi PG.');
+      query = action === 'start'
+        ? `update marketing.pg_support_requests set status='in_progress',support_code=$2,support_note=coalesce($3,support_note),updated_at=now() where id::text=$1 and status='approved' returning *`
+        : `update marketing.pg_support_requests set status='completed',support_code=$2,resolution=$3,completed_at=now(),updated_at=now() where id::text=$1 and status='in_progress' returning *`;
+      values = [id, user.employeeCode, note];
+    } else throw new BadRequestException('Thao tác workflow không hợp lệ.');
+    const result = await this.infrastructure.postgres.query(query, values);
+    if (!result.rows[0]) throw new BadRequestException('Trạng thái yêu cầu đã thay đổi hoặc thao tác không đúng thứ tự.');
+    await this.audit(user, `pg_support.${action}`, 'marketing.pg_support_request', id);
+    return { data: result.rows[0] };
+  }
+
   async recordPgAttendance(user: AuthUser, input: JsonMap) {
     if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ tài khoản PG được chấm công tại vị trí được phân công.');
     const type = input.type === 'checkout' ? 'checkout' : 'checkin';
@@ -648,6 +763,12 @@ export class MarketingController {
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
   @Delete('/pg-assignments/:id') deleteAssignment(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteAssignment(request.user, id); }
+  @Get('/pg-location-suggestions') locationSuggestions(@Req() request: ActorRequest) { return this.service.listLocationSuggestions(request.user); }
+  @Post('/pg-location-suggestions') suggestLocation(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.suggestLocation(request.user, body); }
+  @Patch('/pg-location-suggestions/:id') reviewLocation(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.reviewLocationSuggestion(request.user, id, body); }
+  @Get('/pg-support-requests') supportRequests(@Req() request: ActorRequest) { return this.service.listSupportRequests(request.user); }
+  @Post('/pg-support-requests') createSupportRequest(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createSupportRequest(request.user, body); }
+  @Patch('/pg-support-requests/:id') actionSupportRequest(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.actionSupportRequest(request.user, id, body); }
   @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }
   @Get('/pg-attendance') attendanceList(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string) { return this.service.listPgAttendance(request.user, from, to); }
   @Get('/pg-attendance/export')

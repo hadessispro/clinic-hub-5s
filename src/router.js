@@ -27,6 +27,7 @@ const viewImports = {
   'marketing-analytics': () => import('./views/marketing-analytics.js'),
   'pg-management': () => import('./views/pg-management.js'),
   'pg-locations': () => import('./views/pg-locations.js'),
+  'pg-workflow': () => import('./views/pg-workflow.js'),
   'pg-attendance': () => import('./views/pg-attendance.js'),
 };
 
@@ -54,6 +55,7 @@ const viewTitles = {
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
   'pg-management': 'Quản lý PG',
   'pg-locations': 'Địa điểm chấm công PG',
+  'pg-workflow': 'Điều phối & hỗ trợ PG',
   'pg-attendance': 'Chấm công PG',
 };
 

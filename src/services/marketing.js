@@ -439,6 +439,13 @@ export async function deletePgAssignment(id) {
   return payload.data;
 }
 
+export async function getPgLocationSuggestions() { return (await vpsRequest('/pg-location-suggestions')).data || []; }
+export async function createPgLocationSuggestion(input) { return (await vpsRequest('/pg-location-suggestions', { method: 'POST', body: JSON.stringify(input) })).data; }
+export async function reviewPgLocationSuggestion(id, decision, note = '') { return (await vpsRequest(`/pg-location-suggestions/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ decision, note }) })).data; }
+export async function getPgSupportRequests() { return (await vpsRequest('/pg-support-requests')).data || []; }
+export async function createPgSupportRequest(input) { return (await vpsRequest('/pg-support-requests', { method: 'POST', body: JSON.stringify(input) })).data; }
+export async function actionPgSupportRequest(id, action, note = '') { return (await vpsRequest(`/pg-support-requests/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ action, note }) })).data; }
+
 export async function recordPgAttendance(input) {
   const payload = await vpsRequest('/pg-attendance', { method: 'POST', body: JSON.stringify(input) });
   return payload.data;
