@@ -8,7 +8,7 @@
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
   admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   support_marketing: ['dashboard', 'pg-management', 'pg-locations', 'pg-workflow', 'marketing-analytics', 'chat', 'tasks'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow'],
