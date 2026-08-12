@@ -21,7 +21,6 @@ export default async function handler(req, res) {
     const authAttributes = {
       email,
       password,
-      email_confirm: true,
       user_metadata: { full_name: 'Đào Thái Bảo', employee_code: 'PVC-IT', branch_id: 'all' },
     };
     if (authUser) {
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
       if (error) throw error;
       authUser = data.user;
     } else {
-      const { data, error } = await admin.auth.admin.createUser(authAttributes);
+      const { data, error } = await admin.auth.admin.createUser({ ...authAttributes, email_confirm: true });
       if (error) throw error;
       authUser = data.user;
     }
