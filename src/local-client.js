@@ -144,3 +144,31 @@ export const localClient = {
   },
   removeChannel() {},
 };
+
+export function subscribeToVpsChanges(callback, intervalMs = 2000) {
+  let stopped = false;
+  let running = false;
+  let version = null;
+  const poll = async () => {
+    if (stopped || running || document.visibilityState === 'hidden' || !navigator.onLine) return;
+    running = true;
+    try {
+      const next = await api('/data/version', { timeout: 7000 });
+      if (version !== null && String(next.version) !== String(version)) callback?.(next);
+      version = next.version;
+    } catch (error) {
+      console.warn('[VPS realtime] Không thể đọc phiên bản dữ liệu:', error?.message || error);
+    } finally { running = false; }
+  };
+  const wake = () => { if (!document.hidden) poll(); };
+  poll();
+  const timer = window.setInterval(poll, intervalMs);
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('focus', wake);
+  return { unsubscribe() {
+    stopped = true;
+    window.clearInterval(timer);
+    document.removeEventListener('visibilitychange', wake);
+    window.removeEventListener('focus', wake);
+  } };
+}

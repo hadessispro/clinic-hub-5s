@@ -16,11 +16,29 @@ import { subscribeToLeaveRequests } from './services/leave.js';
 import { initSmartChat, destroySmartChat } from './components/smart-chat.js';
 import { initErrorMonitoring } from './services/error-monitor.js';
 import { initPushNotifications, destroyPushNotifications } from './services/push-notifications.js';
+import { subscribeToVpsChanges } from './local-client.js';
 
 let notifSub = null;
 let leaveSub = null;
 let hasEnteredApp = false;
 let pendingAttendanceSync = null;
+let vpsChangeSub = null;
+let deferredRealtimeRefresh = false;
+
+function refreshActiveViewFromRealtime(detail) {
+  const active = document.activeElement;
+  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) {
+    deferredRealtimeRefresh = true;
+    return;
+  }
+  deferredRealtimeRefresh = false;
+  window.dispatchEvent(new CustomEvent('clinic:data-changed', { detail }));
+  store.notify();
+}
+
+document.addEventListener('focusout', () => {
+  if (deferredRealtimeRefresh) window.setTimeout(() => refreshActiveViewFromRealtime({ source: 'vps-deferred' }), 0);
+});
 
 initErrorMonitoring();
 
@@ -164,6 +182,12 @@ async function bootstrap() {
             }
           });
         }).catch(err => console.warn('[Main] Realtime subscription init error:', err));
+
+        if (!vpsChangeSub && import.meta.env.VITE_DATA_BACKEND === 'vps') {
+          vpsChangeSub = subscribeToVpsChanges((change) => {
+            refreshActiveViewFromRealtime({ ...change, source: 'vps-postgresql' });
+          });
+        }
       }
       
       // Render the sidebar menu dynamically based on their role permissions
@@ -182,6 +206,8 @@ async function bootstrap() {
       delete document.body.dataset.role;
       destroySmartChat();
       destroyPushNotifications();
+      vpsChangeSub?.unsubscribe();
+      vpsChangeSub = null;
       
       // Clean up notifications subscription
       if (notifSub) {
