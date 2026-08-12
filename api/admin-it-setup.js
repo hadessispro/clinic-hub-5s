@@ -48,15 +48,10 @@ export default async function handler(req, res) {
       manager_code: 'Tổng vận hành',
     }, { onConflict: 'code' }).select();
 
-    if (empErr) {
-      console.error('[Setup] Error upserting employee:', empErr);
-    }
+    if (empErr) throw empErr;
 
     // 3. Link the canonical profile to the Auth UID. Admin IT is branch-flexible
     // in the login guard, while branch_id remains the default attendance site.
-    const { error: staleError } = await admin.from('profiles').delete()
-      .eq('employee_code', 'PVC-IT').neq('id', authUser.id);
-    if (staleError) throw staleError;
     const { data: profData, error: profErr } = await admin.from('profiles').upsert({
       id: authUser.id,
       employee_code: 'PVC-IT',
@@ -68,9 +63,7 @@ export default async function handler(req, res) {
       active: true,
     }, { onConflict: 'id' }).select();
 
-    if (profErr) {
-      console.error('[Setup] Error updating profiles:', profErr);
-    }
+    if (profErr) throw profErr;
 
     return res.status(200).json({
       success: true,
@@ -80,6 +73,11 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('[Setup] Exception:', err);
-    return res.status(500).json({ error: String(err.message || err) });
+    return res.status(500).json({
+      error: err?.message || String(err),
+      code: err?.code || null,
+      details: err?.details || null,
+      hint: err?.hint || null,
+    });
   }
 }
