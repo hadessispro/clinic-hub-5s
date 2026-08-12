@@ -4,7 +4,16 @@ import { pollingSubscription } from './realtime-fallback.js';
 export async function getSystemHealth() {
   const { data, error } = await supabase.rpc('get_system_health');
   if (error) throw error;
-  return data || {};
+  const health = data || {};
+  return {
+    ...health,
+    database: ['online', 'active', 'ok', 'healthy'].includes(String(health.database || '').toLowerCase()) ? 'online' : health.database,
+    checked_at: health.checked_at || new Date().toISOString(),
+    active_profiles: health.active_profiles ?? health.active_accounts ?? 0,
+    inactive_profiles: health.inactive_profiles ?? health.inactive_accounts ?? 0,
+    failed_sync: health.failed_sync ?? health.sync_errors ?? 0,
+    pending_sync: health.pending_sync ?? 0,
+  };
 }
 
 export async function getBugLogs(filters = {}) {

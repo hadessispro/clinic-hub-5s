@@ -161,8 +161,29 @@ export class RpcService {
         'select entity_type,count(*)::text count from app.records where deleted_at is null group by entity_type',
       );
       const map = Object.fromEntries(counts.rows.map((row) => [row.entity_type, Number(row.count)]));
-      return { database: 'active', active_accounts: map.profiles || 0, attendance_records: map.attendance_records || 0,
-        sync_errors: 0, open_bugs: map.system_bug_logs || 0, source: 'vps-postgresql' };
+      const activeProfiles = await this.infrastructure.postgres.query<{ active: string; inactive: string }>(
+        `select
+           count(*) filter (where coalesce((payload->>'active')::boolean,true))::text active,
+           count(*) filter (where not coalesce((payload->>'active')::boolean,true))::text inactive
+         from app.records where entity_type='profiles' and deleted_at is null`,
+      );
+      const profileCounts = activeProfiles.rows[0] || { active: '0', inactive: '0' };
+      const lastAttendance = await this.infrastructure.postgres.query<{ last_at: string | null }>(
+        `select max(coalesce(payload->>'recorded_at',payload->>'created_at')) last_at
+         from app.records where entity_type='attendance_records' and deleted_at is null`,
+      );
+      return {
+        database: 'online',
+        checked_at: new Date().toISOString(),
+        active_profiles: Number(profileCounts.active || 0),
+        inactive_profiles: Number(profileCounts.inactive || 0),
+        attendance_records: map.attendance_records || 0,
+        last_attendance_at: lastAttendance.rows[0]?.last_at || null,
+        failed_sync: 0,
+        pending_sync: 0,
+        open_bugs: map.system_bug_logs || 0,
+        source: 'vps-postgresql',
+      };
     }
     if (name === 'publish_system_announcement') {
       if (!admins.has(user.role)) throw new ForbiddenException();
