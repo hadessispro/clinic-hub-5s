@@ -11,14 +11,39 @@ export default async function handler(req, res) {
 
     const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-    // 1. Upsert Admin IT into employees table
+    const email = 'thaibaoleo123@gmail.com';
+    const password = '0366013107';
+
+    // 1. Ensure the Supabase Auth identity exists and reset its credentials.
+    const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) throw listError;
+    let authUser = (listed.users || []).find((user) => user.email?.toLowerCase() === email);
+    const authAttributes = {
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: 'Đào Thái Bảo', employee_code: 'PVC-IT', branch_id: 'all' },
+    };
+    if (authUser) {
+      const { data, error } = await admin.auth.admin.updateUserById(authUser.id, authAttributes);
+      if (error) throw error;
+      authUser = data.user;
+    } else {
+      const { data, error } = await admin.auth.admin.createUser(authAttributes);
+      if (error) throw error;
+      authUser = data.user;
+    }
+
+    // 2. Upsert Admin IT into employees table.
     const { data: empData, error: empErr } = await admin.from('employees').upsert({
       code: 'PVC-IT',
       employee_number: '10999',
       branch_id: 'pham-van-chieu',
-      full_name: 'Admin IT',
+      full_name: 'Đào Thái Bảo',
       department: 'it',
       title: 'Quản trị IT',
+      email,
+      phone: password,
       status: 'active',
       manager_code: 'Tổng vận hành',
     }, { onConflict: 'code' }).select();
@@ -27,26 +52,31 @@ export default async function handler(req, res) {
       console.error('[Setup] Error upserting employee:', empErr);
     }
 
-    // 2. Update profiles for admin_it to link employee_code = 'PVC-IT'
-    const { data: profData, error: profErr } = await admin.from('profiles').update({
+    // 3. Link the canonical profile to the Auth UID. Admin IT is branch-flexible
+    // in the login guard, while branch_id remains the default attendance site.
+    const { error: staleError } = await admin.from('profiles').delete()
+      .eq('employee_code', 'PVC-IT').neq('id', authUser.id);
+    if (staleError) throw staleError;
+    const { data: profData, error: profErr } = await admin.from('profiles').upsert({
+      id: authUser.id,
       employee_code: 'PVC-IT',
-      full_name: 'Admin IT',
+      employee_number: '10999',
+      full_name: 'Đào Thái Bảo',
       department: 'it',
-    }).eq('role', 'admin_it').select();
+      branch_id: 'pham-van-chieu',
+      role: 'admin_it',
+      active: true,
+    }, { onConflict: 'id' }).select();
 
     if (profErr) {
       console.error('[Setup] Error updating profiles:', profErr);
     }
 
-    // 3. Also check profiles that have email containing 'it' or 'admin'
-    const { data: profEmailData } = await admin.from('profiles').update({
-      employee_code: 'PVC-IT',
-    }).or('role.eq.admin_it,email.ilike.%it%').select();
-
     return res.status(200).json({
       success: true,
+      auth: { id: authUser.id, email: authUser.email },
       employee: empData,
-      profilesUpdated: profData || profEmailData,
+      profilesUpdated: profData,
     });
   } catch (err) {
     console.error('[Setup] Exception:', err);
