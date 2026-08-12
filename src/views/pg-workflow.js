@@ -2,6 +2,7 @@ import { store } from '../store.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { requestInput } from '../components/app-dialog.js';
+import { geolocationErrorMessage } from '../services/geolocation.js';
 import { navigateTo } from '../router.js';
 import {
   actionPgSupportRequest, createPgLocationSuggestion, createPgSupportRequest,
@@ -34,7 +35,7 @@ export function initView() {
   let reading = null;
   document.getElementById('captureSuggestionGps')?.addEventListener('click', () => navigator.geolocation.getCurrentPosition(({ coords }) => {
     reading = coords; const form = document.getElementById('pgSuggestLocation'); form.elements.latitude.value = coords.latitude; form.elements.longitude.value = coords.longitude; form.elements.accuracy.value = Math.round(coords.accuracy); document.getElementById('suggestionGpsState').textContent = `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} · ±${Math.round(coords.accuracy)} m`;
-  }, (error) => showToast(error.message || 'Không lấy được GPS.', true), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+  }, (error) => showToast(geolocationErrorMessage(error), true), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
   document.getElementById('pgSuggestLocation')?.addEventListener('submit', async (event) => { event.preventDefault(); if (!reading) return showToast('Hãy lấy GPS hiện tại trước.', true); try { await createPgLocationSuggestion(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi tọa độ chờ Admin duyệt.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
   document.getElementById('pgSupportRequest')?.addEventListener('submit', async (event) => { event.preventDefault(); try { await createPgSupportRequest(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi yêu cầu cho Support.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
   document.querySelectorAll('[data-review-location]').forEach(b => b.addEventListener('click', async () => { const note = await requestInput('Ghi chú giúp PG hiểu kết quả phê duyệt.', { title: b.dataset.reviewLocation === 'approved' ? 'Duyệt tọa độ' : 'Từ chối tọa độ', label: 'Ghi chú duyệt', placeholder: 'Không bắt buộc' }); if (note === null) return; try { await reviewPgLocationSuggestion(b.dataset.id, b.dataset.reviewLocation, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));

@@ -6,6 +6,7 @@ import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
+import { geolocationErrorMessage } from '../services/geolocation.js';
 
 let accounts = [];
 let sites = [];
@@ -234,7 +235,7 @@ export function initView() {
         if (siteForm?.elements.maxAccuracyM && Number(accuracy) > 0) siteForm.elements.maxAccuracyM.value = String(Math.max(30, Math.min(200, Math.ceil(accuracy))));
         button.disabled = false;
       },
-      (error) => { button.disabled = false; showToast(error.message || 'Không lấy được GPS. Hãy cho phép quyền vị trí.', true); },
+      (error) => { button.disabled = false; showToast(geolocationErrorMessage(error), true); },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
     );
   });

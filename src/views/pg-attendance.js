@@ -3,6 +3,7 @@ import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
+import { geolocationErrorMessage } from '../services/geolocation.js';
 
 let assignments = [];
 let records = [];
@@ -73,7 +74,7 @@ export function initView() {
       await navigateTo('attendance');
     } catch (error) {
       button.disabled = false;
-      showToast(error.message || 'Không lấy được vị trí GPS.', true);
+      showToast(geolocationErrorMessage(error), true);
     }
   }));
 }

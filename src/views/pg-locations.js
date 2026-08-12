@@ -5,6 +5,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { escapeHTML } from '../utils.js';
+import { geolocationErrorMessage } from '../services/geolocation.js';
 
 let sites = [];
 
@@ -130,7 +131,7 @@ export function initView() {
       selectLocation(form, { latitude: coords.latitude, longitude: coords.longitude, name: 'Điểm làm việc PG', address: `Vị trí GPS (${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)})` });
       if (form?.elements.maxAccuracyM) form.elements.maxAccuracyM.value = String(Math.max(30, Math.min(200, Math.ceil(coords.accuracy || 100))));
       button.disabled = false;
-    }, (error) => { button.disabled = false; showToast(error.message || 'Không lấy được GPS.', true); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    }, (error) => { button.disabled = false; showToast(geolocationErrorMessage(error), true); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
   form?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(form).entries());

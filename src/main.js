@@ -118,7 +118,8 @@ async function bootstrap() {
       if (managerNotesTitle) {
         managerNotesTitle.textContent = `Chấm công tại ${BRANCH.address} bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.`;
       }
-      initSmartChat(authInfo).catch((error) => console.warn('[Clinic Hub] Smart chat unavailable:', error));
+      if (authInfo.profile.role === 'pg_staff') destroySmartChat();
+      else initSmartChat(authInfo).catch((error) => console.warn('[Clinic Hub] Smart chat unavailable:', error));
       initPushNotifications(authInfo).catch((error) => console.warn('[Clinic Hub] Push notification unavailable:', error));
 
       if (navigator.onLine) {

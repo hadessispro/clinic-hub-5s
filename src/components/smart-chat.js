@@ -146,6 +146,7 @@ export async function initSmartChat(authInfo) {
   destroySmartChat();
   const generation = initGeneration;
   if (!authInfo?.user || !authInfo?.profile) return;
+  if (authInfo.profile.role === 'pg_staff') return;
   session = authInfo;
   const allowed = await getMessageContacts().catch(() => []);
   if (generation !== initGeneration) return;
