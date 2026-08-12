@@ -6149,3 +6149,24 @@ body.dialog-open {
   .topbar .topbar-branch-switcher,
   .topbar .topbar-branch-button { height: 38px !important; min-height: 38px !important; }
 }
+
+/* Floating layers never overlap: toast above chat launcher, chat notifications at top. */
+.toast:not(.chat-toast) {
+  right: 22px;
+  bottom: 96px;
+  z-index: 70;
+}
+.smart-chat.is-open ~ .toast:not(.chat-toast),
+body:has(.smart-chat.is-open) .toast:not(.chat-toast) {
+  bottom: 112px;
+}
+@media (max-width: 760px) {
+  .toast:not(.chat-toast) {
+    right: 12px;
+    bottom: calc(160px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 24px);
+  }
+  body:not(:has(.smart-chat)) .toast:not(.chat-toast) {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+}
