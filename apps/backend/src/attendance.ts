@@ -125,6 +125,7 @@ export class AttendanceController {
       `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'vps')`,
       [String(payload.id), JSON.stringify(payload)],
     );
+    await this.infrastructure.markDataChanged(['attendance_records'], user.id, user.role);
     return { data: payload };
   }
 }

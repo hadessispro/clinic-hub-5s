@@ -118,25 +118,7 @@ export class DataService {
   }
 
   async version(user: AuthUser) {
-    const result = await this.infrastructure.postgres.query<{
-      version: string; changed_at: string; entity_types: string[] | null;
-    }>(
-      `with changes as (
-         select 'app.' || entity_type entity_type, version::bigint weight, updated_at
-         from app.records
-         union all select 'marketing.leads', 1, updated_at from marketing.leads
-         union all select 'marketing.call_logs', 1, created_at from marketing.call_logs
-         union all select 'marketing.pg_work_sites', 1, updated_at from marketing.pg_work_sites
-         union all select 'marketing.pg_shift_assignments', 1, updated_at from marketing.pg_shift_assignments
-         union all select 'marketing.pg_attendance', 1, recorded_at from marketing.pg_attendance
-       )
-       select concat(coalesce(sum(weight),0), ':', extract(epoch from coalesce(max(updated_at),now()))) version,
-         coalesce(max(updated_at),now())::text changed_at,
-         array_agg(distinct entity_type order by entity_type)
-           filter (where updated_at >= now() - interval '5 seconds') entity_types
-       from changes`,
-    );
-    return { ...result.rows[0], userId: user.id };
+    return { ...(await this.infrastructure.dataRevision(user.id, user.role)), userId: user.id };
   }
 
   async execute(user: AuthUser, request: QueryRequest) {
@@ -192,6 +174,7 @@ export class DataService {
         await client.query('rollback');
         throw error;
       } finally { client.release(); }
+      await this.infrastructure.markDataChanged([table], user.id, user.role);
       return { data: Array.isArray(request.values) ? output : output[0] };
     }
 
@@ -214,6 +197,7 @@ export class DataService {
         output.push(next);
       }
     }
+    if (selected.length) await this.infrastructure.markDataChanged([table], user.id, user.role);
     return { data: output };
   }
 }

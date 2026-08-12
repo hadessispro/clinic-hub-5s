@@ -67,6 +67,7 @@ export class MarketingService {
        values ($1,$2,$3,$4,$5::jsonb)`,
       [user.employeeCode, action, entityType, entityId || null, JSON.stringify(detail)],
     );
+    await this.infrastructure.markDataChanged([entityType], user.id, user.role);
   }
 
   async listPgAccounts(user: AuthUser) {
@@ -433,6 +434,7 @@ export class MarketingService {
        values ($1,$2,$3,$4,$5,$6,$7) returning *`,
       [input.name, input.address, latitude, longitude, radius, accuracy, user.employeeCode],
     );
+    await this.infrastructure.markDataChanged(['marketing.pg_work_site'], user.id, user.role);
     return { data: result.rows[0] };
   }
 
@@ -457,6 +459,7 @@ export class MarketingService {
       [id, input.name, input.address, latitude, longitude, radius, accuracy],
     );
     if (!result.rows[0]) throw new BadRequestException('Không tìm thấy địa điểm đã lưu.');
+    await this.infrastructure.markDataChanged(['marketing.pg_work_site'], user.id, user.role);
     return { data: result.rows[0] };
   }
 
@@ -470,6 +473,7 @@ export class MarketingService {
       `update marketing.pg_work_sites set active=false,updated_at=now() where id::text=$1 and active=true returning id`, [id],
     );
     if (!result.rows[0]) throw new BadRequestException('Không tìm thấy địa điểm đã lưu.');
+    await this.infrastructure.markDataChanged(['marketing.pg_work_site'], user.id, user.role);
     return { data: { id, deleted: true } };
   }
 
@@ -519,6 +523,7 @@ export class MarketingService {
        end_time=excluded.end_time,created_by_code=excluded.created_by_code,updated_at=now() returning *`,
       [pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
     );
+    await this.infrastructure.markDataChanged(['marketing.pg_shift_assignment'], user.id, user.role);
     return { data: result.rows[0] };
   }
 
@@ -594,6 +599,7 @@ export class MarketingService {
       [shift.id, user.employeeCode, type, lat, lng, accuracy, distance, status],
     );
     if (!result.rows[0]) throw new BadRequestException(type === 'checkin' ? 'Bạn đã check-in hôm nay.' : 'Bạn đã check-out hôm nay.');
+    await this.infrastructure.markDataChanged(['marketing.pg_attendance'], user.id, user.role);
     return { data: result.rows[0] };
   }
 

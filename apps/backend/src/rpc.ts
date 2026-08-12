@@ -20,6 +20,7 @@ export class RpcService {
        on conflict(entity_type,record_key) do update set payload=excluded.payload,origin='vps',version=app.records.version+1,updated_at=now(),deleted_at=null`,
       [table, key, JSON.stringify(value)],
     );
+    await this.infrastructure.markDataChanged([table]);
     return value;
   }
 

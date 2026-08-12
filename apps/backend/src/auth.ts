@@ -165,6 +165,7 @@ export class AuthService {
       'update app.local_accounts set failed_attempts=0,locked_until=null,last_login_at=now(),updated_at=now() where profile_key=$1',
       [candidate.profile_key],
     );
+    await this.infrastructure.markActive(user.id, user.role);
     return { user, session: { accessToken, refreshToken, expiresIn: accessTtlSeconds } };
   }
 
