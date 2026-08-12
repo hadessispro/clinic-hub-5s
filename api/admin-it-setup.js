@@ -11,29 +11,15 @@ export default async function handler(req, res) {
 
     const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-    const email = 'thaibaoleo123@gmail.com';
-    const password = '0366013107';
-
-    // 1. Ensure the Supabase Auth identity exists and reset its credentials.
+    // Keep this endpoint metadata-only. Auth credentials must never be stored
+    // in source code or reset through a public setup route.
+    const email = process.env.ADMIN_IT_EMAIL || 'thaibaoleo123@gmail.com';
     const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (listError) throw listError;
-    let authUser = (listed.users || []).find((user) => user.email?.toLowerCase() === email);
-    const authAttributes = {
-      email,
-      password,
-      user_metadata: { full_name: 'Đào Thái Bảo', employee_code: 'PVC-IT', branch_id: 'all' },
-    };
-    if (authUser) {
-      const { data, error } = await admin.auth.admin.updateUserById(authUser.id, authAttributes);
-      if (error) throw error;
-      authUser = data.user;
-    } else {
-      const { data, error } = await admin.auth.admin.createUser({ ...authAttributes, email_confirm: true });
-      if (error) throw error;
-      authUser = data.user;
-    }
+    const authUser = (listed.users || []).find((user) => user.email?.toLowerCase() === email);
+    if (!authUser) return res.status(409).json({ error: 'Admin IT Auth account is not provisioned.' });
 
-    // 2. Upsert Admin IT into employees table.
+    // Upsert Admin IT metadata.
     const { data: empData, error: empErr } = await admin.from('employees').upsert({
       code: 'PVC-IT',
       employee_number: '10999',
@@ -42,14 +28,13 @@ export default async function handler(req, res) {
       department: 'it',
       title: 'Quản trị IT',
       email,
-      phone: password,
       status: 'active',
       manager_code: 'Tổng vận hành',
     }, { onConflict: 'code' }).select();
 
     if (empErr) throw empErr;
 
-    // 3. Link the canonical profile to the Auth UID. Admin IT is branch-flexible
+    // Link the canonical profile to the Auth UID. Admin IT is branch-flexible
     // in the login guard, while branch_id remains the default attendance site.
     const { data: profData, error: profErr } = await admin.from('profiles').upsert({
       id: authUser.id,
