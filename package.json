@@ -11,7 +11,8 @@
     "backend:dev": "pnpm --dir apps/backend start:dev",
     "backend:start": "pnpm --dir apps/backend start:prod",
     "location:update": "node scripts/update-clinic-location.mjs",
-    "provision:pvc": "node scripts/provision-pvc-users.mjs"
+    "provision:pvc": "node scripts/provision-pvc-users.mjs",
+    "deploy:vps": "bash scripts/deploy-vps-hostinger.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
