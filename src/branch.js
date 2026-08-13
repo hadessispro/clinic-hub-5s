@@ -19,8 +19,8 @@ export function setActiveBranch(branchId) {
 }
 
 export function getEffectiveBranchId(profile, candidateBranchId = null) {
-  const isManager = ['admin', 'hr', 'leader', 'admin_it'].includes(profile?.role);
-  if (isManager) {
+  const canSelectBranch = ['admin', 'hr', 'leader', 'admin_it', 'admin_marketing', 'pg_staff'].includes(profile?.role);
+  if (canSelectBranch) {
     const saved = localStorage.getItem('5s_clinic_active_branch');
     return candidateBranchId || saved || profile?.branch_id || 'pham-van-chieu';
   }

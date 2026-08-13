@@ -194,8 +194,9 @@ const OFFICIAL_DEMO_USERS = {
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
   const normalized = String(identifier || '').trim().toLowerCase();
   const demoProfile = OFFICIAL_DEMO_USERS[normalized];
+  const demoAuthEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_AUTH === 'true';
   
-  if (demoProfile) {
+  if (demoAuthEnabled && demoProfile && String(password || '') === String(demoProfile.phone || '')) {
     console.warn('[Auth] Logging in with demo profile:', demoProfile);
     currentUser = { id: demoProfile.id, email: `${demoProfile.employee_code.toLowerCase()}@login.nhakhoa5s.vn` };
     currentProfile = demoProfile;
@@ -225,7 +226,8 @@ export async function signIn(identifier, password, branchId = 'pham-van-chieu') 
   await loadProfile(authData.user.id);
   
   if (!currentProfile || currentProfile.active === false) {
-    if (demoProfile) {
+    const profileWasInactive = currentProfile?.active === false;
+    if (demoAuthEnabled && demoProfile && String(password || '') === String(demoProfile.phone || '')) {
       currentProfile = demoProfile;
       cacheProfile(demoProfile);
     } else {
@@ -233,19 +235,20 @@ export async function signIn(identifier, password, branchId = 'pham-van-chieu') 
       currentUser = null;
       currentProfile = null;
       notifyListeners();
-      throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
+      throw new Error(profileWasInactive ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
     }
   }
 
   const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it', 'admin_marketing'].includes(currentProfile.role);
-  if (!normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
+  const isMobileFieldRole = currentProfile.role === 'pg_staff';
+  if (!normalized.includes('@') && !canUseManagedBranch && !isMobileFieldRole && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
     await supabase.auth.signOut();
     currentUser = null;
     currentProfile = null;
     throw new Error('Mã nhân viên không thuộc chi nhánh đã chọn.');
   }
 
-  const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
+  const effectiveBranch = isMobileFieldRole ? branchId : getEffectiveBranchId(currentProfile, branchId);
   setActiveBranch(effectiveBranch);
   localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
   localStorage.setItem('5s_clinic_last_branch', effectiveBranch);

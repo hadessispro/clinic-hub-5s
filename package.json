@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "backend:build": "pnpm --dir apps/backend build",
+    "backend:dev": "pnpm --dir apps/backend start:dev",
+    "backend:start": "pnpm --dir apps/backend start:prod",
     "location:update": "node scripts/update-clinic-location.mjs",
     "provision:pvc": "node scripts/provision-pvc-users.mjs"
   },

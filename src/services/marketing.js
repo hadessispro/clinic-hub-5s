@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { apiRequest, hasVpsApi } from './api-client.js';
 
 // Local storage fallback key for demo/offline resilience
 const LEADS_STORAGE_KEY = 'clinic_hub_marketing_leads';
@@ -39,6 +40,10 @@ const SEED_CAMPAIGNS = [
 /** Fetch all Marketing Leads */
 export async function getMarketingLeads(filters = {}) {
   try {
+    if (hasVpsApi()) {
+      const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value != null && value !== ''));
+      return await apiRequest(`/marketing/leads${query.size ? `?${query}` : ''}`);
+    }
     let query = supabase.from('marketing_leads').select('*').order('created_at', { ascending: false });
     if (filters.branch_id) query = query.eq('branch_id', filters.branch_id);
     if (filters.status) query = query.eq('status', filters.status);
@@ -81,6 +86,11 @@ export async function createMarketingLead(leadData) {
   };
 
   try {
+    if (hasVpsApi()) {
+      const created = await apiRequest('/marketing/leads', { method: 'POST', body: JSON.stringify(newLead) });
+      notifyDataChange('marketing_leads');
+      return created;
+    }
     const { data, error } = await supabase.from('marketing_leads').insert([newLead]).select().single();
     notifyDataChange('marketing_leads');
     if (error) throw error;
@@ -98,6 +108,11 @@ export async function createMarketingLead(leadData) {
 /** Update Lead status or assigned telesale */
 export async function updateMarketingLead(id, updates) {
   try {
+    if (hasVpsApi()) {
+      const updated = await apiRequest(`/marketing/leads/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(updates) });
+      notifyDataChange('marketing_leads');
+      return updated;
+    }
     const { data, error } = await supabase.from('marketing_leads').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
     notifyDataChange('marketing_leads');
     if (error) throw error;
@@ -129,6 +144,11 @@ export async function addTelesaleCallLog(logData) {
   };
 
   try {
+    if (hasVpsApi()) {
+      const created = await apiRequest('/marketing/call-logs', { method: 'POST', body: JSON.stringify(logData) });
+      notifyDataChange('telesale_call_logs');
+      return created;
+    }
     const { data, error } = await supabase.from('telesale_call_logs').insert([newLog]).select().single();
     if (error) throw error;
     
@@ -169,6 +189,7 @@ export async function getLeadCallLogs(leadId) {
 /** Fetch Marketing Campaigns */
 export async function getMarketingCampaigns() {
   try {
+    if (hasVpsApi()) return await apiRequest('/marketing/campaigns');
     const { data, error } = await supabase.from('marketing_campaigns').select('*').order('created_at', { ascending: false });
     if (error || !data || data.length === 0) return getLocalData(CAMPAIGNS_STORAGE_KEY, SEED_CAMPAIGNS);
     return data;
@@ -194,6 +215,11 @@ export async function createMarketingCampaign(campData) {
   };
 
   try {
+    if (hasVpsApi()) {
+      const created = await apiRequest('/marketing/campaigns', { method: 'POST', body: JSON.stringify(newCamp) });
+      notifyDataChange('marketing_campaigns');
+      return created;
+    }
     const { data, error } = await supabase.from('marketing_campaigns').insert([newCamp]).select().single();
     if (error) throw error;
     return data;
@@ -261,6 +287,11 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
 /** Delete a Marketing Lead */
 export async function deleteMarketingLead(leadId) {
   try {
+    if (hasVpsApi()) {
+      await apiRequest(`/marketing/leads/${encodeURIComponent(leadId)}`, { method: 'DELETE' });
+      notifyDataChange('marketing_leads');
+      return;
+    }
     const { error } = await supabase.from('marketing_leads').delete().eq('id', leadId);
     if (error) console.warn('[Marketing Service] Supabase delete error:', error);
   } catch (err) {

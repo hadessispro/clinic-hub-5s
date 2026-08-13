@@ -17,6 +17,8 @@ Cập nhật các biến Supabase trong `.env` trước khi chạy. Không commi
 ```bash
 npm run dev
 npm run build
+npm run backend:build
+npm run backend:dev
 npm run provision:pvc
 npm run location:update
 ```
@@ -25,6 +27,7 @@ npm run location:update
 
 - Frontend/API: Vercel (`clinic-hub-5s`)
 - Database/Auth/Storage: Supabase
+- VPS API tùy chọn: NestJS + PostgreSQL (`apps/backend`), xem `apps/backend/README.md`
 - Production: https://clinic-hub-5s.vercel.app
 
 Xem [SUPABASE_SETUP.md](SUPABASE_SETUP.md) để thiết lập database, tài khoản nhân viên và biến môi trường.
