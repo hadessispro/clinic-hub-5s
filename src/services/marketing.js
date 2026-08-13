@@ -18,6 +18,8 @@ async function vpsRequest(path, options = {}) {
   return supabase.request(`/marketing${path}`, options);
 }
 
+const pendingPgSiteDeletes = new Map();
+
 // Local storage fallback key for demo/offline resilience
 const LEADS_STORAGE_KEY = 'clinic_hub_marketing_leads';
 const CALL_LOGS_STORAGE_KEY = 'clinic_hub_telesale_call_logs';
@@ -419,9 +421,16 @@ export async function updatePgSite(id, input) {
   return payload.data;
 }
 
-export async function deletePgSite(id) {
-  const payload = await vpsRequest(`/pg-sites/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  return payload.data;
+export function deletePgSite(id) {
+  const key = String(id || '').trim();
+  if (!key) return Promise.reject(new Error('Thiếu mã địa điểm chấm công.'));
+  if (pendingPgSiteDeletes.has(key)) return pendingPgSiteDeletes.get(key);
+
+  const request = vpsRequest(`/pg-sites/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    .then((payload) => payload.data)
+    .finally(() => pendingPgSiteDeletes.delete(key));
+  pendingPgSiteDeletes.set(key, request);
+  return request;
 }
 
 export async function getPgAssignments(date) {

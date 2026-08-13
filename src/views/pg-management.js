@@ -252,9 +252,12 @@ export function initView() {
   document.querySelectorAll('[data-use-pg-site]').forEach((button) => button.addEventListener('click', () => loadSiteIntoForm(sites.find((site) => String(site.id) === button.dataset.usePgSite), false)));
   document.querySelectorAll('[data-edit-pg-site]').forEach((button) => button.addEventListener('click', () => loadSiteIntoForm(sites.find((site) => String(site.id) === button.dataset.editPgSite), true)));
   document.querySelectorAll('[data-delete-pg-site]').forEach((button) => button.addEventListener('click', async () => {
+    if (button.disabled || button.dataset.pending === '1') return;
     const site = sites.find((item) => String(item.id) === button.dataset.deletePgSite);
     if (!site || !await confirmAction(`Xóa địa điểm “${site.name}”?`, { title: 'Xóa địa điểm PG', confirmText: 'Xóa địa điểm', tone: 'danger' })) return;
+    button.disabled = true; button.dataset.pending = '1';
     try { await deletePgSite(site.id); await refresh('Đã xóa địa điểm chấm công.'); } catch (error) { showToast(error.message, true); }
+    finally { button.disabled = false; delete button.dataset.pending; }
   }));
   document.getElementById('pgAssignmentForm')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());

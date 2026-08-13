@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
-  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Injectable,
+  BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Injectable,
   Param, Patch, Post, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
@@ -468,7 +468,7 @@ export class MarketingService {
     const assigned = await this.infrastructure.postgres.query(
       `select exists(select 1 from marketing.pg_shift_assignments where site_id::text=$1 and work_date>=(now() at time zone 'Asia/Ho_Chi_Minh')::date) assigned`, [id],
     );
-    if (assigned.rows[0]?.assigned) throw new BadRequestException('Địa điểm đang có lịch PG hôm nay hoặc tương lai. Hãy đổi phân công trước khi xóa.');
+    if (assigned.rows[0]?.assigned) throw new ConflictException('Địa điểm đang có lịch PG hôm nay hoặc tương lai. Hãy đổi phân công trước khi xóa.');
     const result = await this.infrastructure.postgres.query(
       `update marketing.pg_work_sites set active=false,updated_at=now() where id::text=$1 and active=true returning id`, [id],
     );
