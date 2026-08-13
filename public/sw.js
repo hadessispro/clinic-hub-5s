@@ -1,4 +1,4 @@
-const CACHE_NAME = 'clinic-hub-attendance-gps-v84';
+const CACHE_NAME = 'clinic-hub-attendance-gps-v85';
 const APP_SHELL = ['/', '/manifest.json', '/images/nha-khoa-5s-wall.jpg'];
 
 self.addEventListener('install', (event) => {

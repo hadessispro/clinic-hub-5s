@@ -189,6 +189,16 @@ const OFFICIAL_DEMO_USERS = {
   '10239': { id: 'usr-10239', full_name: 'Phạm Thị Thu Trang', employee_code: '10239', role: 'staff', department: 'hcth', branch_id: 'pham-van-chieu', phone: '0909239239', active: true },
   '10190': { id: 'usr-10190', full_name: 'Đỗ Thị Cảnh', employee_code: '10190', role: 'staff', department: 'hcth', branch_id: 'pham-van-chieu', phone: '0909190190', active: true },
   '10253': { id: 'usr-10253', full_name: 'Ngô Thị Thanh Thuý', employee_code: '10253', role: 'staff', department: 'hcth', branch_id: 'le-van-tho', phone: '0909253253', active: true },
+
+  // Đội ngũ PG & Quản lý Thị trường (PG Staff)
+  'pg-003': { id: 'usr-pg-003', full_name: 'Huỳnh Thị Ngọc My', employee_code: 'PG-003', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0383701363', active: true },
+  'pg-004': { id: 'usr-pg-004', full_name: 'Trần Thị Diễm Trinh', employee_code: 'PG-004', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0766487464', active: true },
+  'pg-005': { id: 'usr-pg-005', full_name: 'Nguyễn Mỹ Trân', employee_code: 'PG-005', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0827444595', active: true },
+  'pg-017': { id: 'usr-pg-017', full_name: 'Ngọc 5S', employee_code: 'PG-017', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '094303000917', active: true },
+  '0383701363': { id: 'usr-pg-003', full_name: 'Huỳnh Thị Ngọc My', employee_code: 'PG-003', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0383701363', active: true },
+  '0766487464': { id: 'usr-pg-004', full_name: 'Trần Thị Diễm Trinh', employee_code: 'PG-004', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0766487464', active: true },
+  '0827444595': { id: 'usr-pg-005', full_name: 'Nguyễn Mỹ Trân', employee_code: 'PG-005', role: 'pg_staff', department: 'mkt', branch_id: 'pham-van-chieu', phone: '0827444595', active: true },
+  '094303000917': { id: 'usr-pg-017', full_name: 'Ngọc 5S', employee_code: 'PG-017', role: 'admin_marketing', department: 'mkt', branch_id: 'pham-van-chieu', phone: '094303000917', active: true },
 };
 
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {

@@ -1,10 +1,68 @@
 import { supabase } from '../supabase.js';
 import { apiRequest, hasVpsApi } from './api-client.js';
+import { SEED_PG_CUSTOMERS } from '../data/seed-pg-customers.js';
 
 // Local storage fallback key for demo/offline resilience
 const LEADS_STORAGE_KEY = 'clinic_hub_marketing_leads';
 const CALL_LOGS_STORAGE_KEY = 'clinic_hub_telesale_call_logs';
 const CAMPAIGNS_STORAGE_KEY = 'clinic_hub_marketing_campaigns';
+
+function mapPgCustomerToLead(c) {
+  let status = 'new';
+  if (c.arrived_status === '1' || c.live_status === 'Đã đến' || c.customer_status === 'Đã đến') {
+    status = 'converted';
+  } else if (c.appointment_status === 'Đã đặt lịch' || c.appointment_date) {
+    status = 'appointment_booked';
+  } else if (c.customer_status === 'Đã tư vấn' || c.tele_call_status === 'Đã gọi' || c.tele_note_latest) {
+    status = 'contacted';
+  } else if (c.customer_status === 'Không nhu cầu' || c.low_quality === '1') {
+    status = 'lost';
+  }
+
+  const branchId = (c.arrival_branch || '').toLowerCase().includes('tho') || (c.arrival_branch || '').toLowerCase().includes('lvt')
+    ? 'le-van-tho'
+    : 'pham-van-chieu';
+
+  return {
+    id: `lead-pg-${c.id}`,
+    customer_code: c.customer_code || `KH-${c.id}`,
+    full_name: c.customer_name || 'Khách hàng PG',
+    phone: c.phone || '',
+    email: c.customer_code ? `${c.customer_code.toLowerCase()}@khachhang5s.vn` : '',
+    source: c.source || (c.booth ? `Booth ${c.booth}` : 'PG Thu thập'),
+    campaign_name: c.booth ? `Chiến dịch Booth ${c.booth}` : 'Chiến dịch PG 5S',
+    branch_id: branchId,
+    service_interest: c.service_need || 'Tư vấn Nha khoa Tổng quát',
+    status: status,
+    assigned_telesale_id: c.tele_name || 'Telesale MKT',
+    notes: [c.note, c.tele_note_latest].filter(Boolean).join(' | ') || 'Khách hàng thu thập từ đội ngũ PG',
+    created_at: c.created_at || c.created_date || new Date().toISOString(),
+    customer_portrait: {
+      id: c.id,
+      customer_code: c.customer_code || `KH-${c.id}`,
+      customer_name: c.customer_name,
+      phone: c.phone,
+      service_need: c.service_need || 'Tư vấn tổng quát',
+      booth: c.booth || 'N/A',
+      pg_name: c.pg_name || 'PG 5S',
+      tele_name: c.tele_name || 'Telesale 5S',
+      customer_status: c.customer_status || 'Mới thu thập',
+      live_status: c.live_status || 'N/A',
+      call_status: c.call_status || c.tele_call_status || 'Chưa gọi',
+      appointment_status: c.appointment_status || 'Chưa đặt lịch',
+      appointment_date: c.appointment_date || 'Chưa có',
+      arrived_status: c.arrived_status === '1' ? 'Đã đến phòng khám' : 'Chưa đến',
+      latest_note: c.tele_note_latest || c.note || 'Chưa có ghi chú bổ sung',
+      note_updated_by_name: c.tele_note_updated_by_name || c.tele_name || '',
+      note_updated_at: c.tele_note_updated_at || c.created_at || '',
+      vtech_revenue: c.vtech_service_revenue ? `${Number(c.vtech_service_revenue).toLocaleString('vi-VN')} đ` : '0 đ',
+      vtech_sales: c.vtech_service_sales ? `${Number(c.vtech_service_sales).toLocaleString('vi-VN')} đ` : '0 đ',
+      vtech_verified: c.vtech_service_verified === '1'
+    }
+  };
+}
+
+const PARSED_PG_LEADS = (SEED_PG_CUSTOMERS || []).map(mapPgCustomerToLead);
 
 function getLocalData(key, fallback = []) {
   try {
@@ -25,6 +83,7 @@ function setLocalData(key, data) {
 
 // Default Seed Data for Demo & Initial Testing
 const SEED_LEADS = [
+  ...PARSED_PG_LEADS,
   { id: 'lead-001', full_name: 'Nguyễn Văn Hải', phone: '0908123456', email: 'hai.nguyen@gmail.com', source: 'Facebook Ads', campaign_name: 'ImplantThang8', branch_id: 'le-van-tho', service_interest: 'Trồng răng Implant', status: 'new', assigned_telesale_id: 'PVC-TS01', notes: 'Quan tâm cấy 1 răng hàm dưới', created_at: new Date(Date.now() - 3600000 * 4).toISOString() },
   { id: 'lead-002', full_name: 'Trần Thị Thu Hà', phone: '0912987654', email: 'thuha92@yahoo.com', source: 'Google Ads', campaign_name: 'NiengRangDep', branch_id: 'pham-van-chieu', service_interest: 'Niềng răng trong suốt', status: 'contacted', assigned_telesale_id: 'PVC-TS01', notes: 'Hỏi giá niềng trong suốt Invisalign', created_at: new Date(Date.now() - 3600000 * 24).toISOString() },
   { id: 'lead-003', full_name: 'Lê Hoàng Nam', phone: '0983112233', email: 'hoangnam@gmail.com', source: 'Zalo OA', campaign_name: 'TayTrangRang', branch_id: 'le-van-tho', service_interest: 'Tẩy trắng răng Laser', status: 'appointment_booked', assigned_telesale_id: 'PVC-TS02', notes: 'Đã chốt lịch hẹn 15:00 ngày mai', created_at: new Date(Date.now() - 3600000 * 48).toISOString() },

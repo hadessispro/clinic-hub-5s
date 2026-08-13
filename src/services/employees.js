@@ -114,7 +114,22 @@ const SEED_EMPLOYEES = [
   { code: '10249', employee_number: '10249', full_name: 'Nguyễn Thị Thương', department: 'hcth', title: 'Trưởng Phòng HCTH', phone: '0909249249', email: 'nguyen.thi.thuong@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
   { code: '10239', employee_number: '10239', full_name: 'Phạm Thị Thu Trang', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909239239', email: 'pham.thu.trang@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
   { code: '10190', employee_number: '10190', full_name: 'Đỗ Thị Cảnh', department: 'hcth', title: 'Nhân viên Tạp vụ / HCTH', phone: '0909190190', email: 'do.thi.canh@nhakhoa5s.vn', branch_id: 'pham-van-chieu', status: 'active' },
-  { code: '10253', employee_number: '10253', full_name: 'Ngô Thị Thanh Thuý', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909253253', email: 'ngo.thanh.thuy@nhakhoa5s.vn', branch_id: 'le-van-tho', status: 'active' }
+  { code: '10253', employee_number: '10253', full_name: 'Ngô Thị Thanh Thuý', department: 'hcth', title: 'Nhân viên HCTH', phone: '0909253253', email: 'ngo.thanh.thuy@nhakhoa5s.vn', branch_id: 'le-van-tho', status: 'active' },
+
+  // ── Đội ngũ PG & Quản lý Thị trường (Đồng bộ từ 39urY3_fspg_pg_staff) ──
+  { code: 'PG-003', employee_number: 'PG-003', full_name: 'Huỳnh Thị Ngọc My', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0383701363', email: 'huynhmy1826@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-004', employee_number: 'PG-004', full_name: 'Trần Thị Diễm Trinh', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0766487464', email: 'trinhtrinhh2103@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-005', employee_number: 'PG-005', full_name: 'Nguyễn Mỹ Trân', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0827444595', email: 'nguyenmytranst08@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-014', employee_number: 'PG-014', full_name: 'Nguyễn Thị Quỳnh Như', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0366824492', email: 'nguenthiqyunhnhu@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-017', employee_number: 'PG-017', full_name: 'Ngọc 5S', department: 'mkt', title: 'Quản lý PG & Booth', phone: '094303000917', email: 'hongngoc7101@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-022', employee_number: 'PG-022', full_name: 'Đào Minh Thi', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0383460904', email: 'daominhthi@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-023', employee_number: 'PG-023', full_name: 'Nguyễn Thuỳ Trang', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0777791204', email: 'nguyenthuytrang@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-024', employee_number: 'PG-024', full_name: 'Nguyễn Thùy Trinh', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0886171921', email: 'nguyenthuytrinh@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-025', employee_number: 'PG-025', full_name: 'Đỗ Bảo Hân', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0708328259', email: 'dobaohan@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-026', employee_number: 'PG-026', full_name: 'Nguyễn Anh Hào', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0387982649', email: 'anhhao@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-027', employee_number: 'PG-027', full_name: 'Lê Thị Thiên Trang', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0379137498', email: 'thientrang@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-028', employee_number: 'PG-028', full_name: 'Đỗ Thị Diệu', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0376067347', email: 'dothidieu@gmail.com', branch_id: 'pham-van-chieu', status: 'active' },
+  { code: 'PG-029', employee_number: 'PG-029', full_name: 'Nguyễn Mai Quỳnh Diễm', department: 'mkt', title: 'Nhân viên PG Thị trường', phone: '0332164309', email: 'quynhdiem@gmail.com', branch_id: 'pham-van-chieu', status: 'active' }
 ];
 
 export async function getEmployees() {
