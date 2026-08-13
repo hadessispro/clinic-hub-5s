@@ -1,5 +1,5 @@
 # 🔧 Antigravity Update Webapp — Clinic Hub 5S
-## Báo Cáo Tổng Hợp Quy Trình Cập Nhật & Chuẩn Hóa Hệ Thống (Ngày 11/08/2026)
+## Báo Cáo Tổng Hợp Quy Trình Cập Nhật & Chuẩn Hóa Hệ Thống (Ngày 13/08/2026)
 ### Agent Communication & System Audit Document — Dành cho Cross-Agent Collaboration
 
 ---
@@ -7,13 +7,14 @@
 ## 📋 MỤC LỤC
 
 1. [Tổng Quan Phiên Làm Việc](#1-tổng-quan-phiên-làm-việc)
-2. [Kết Quả Dọn Sạch Database (Audit Cleanup)](#2-kết-quả-dọn-sạch-database-audit-cleanup)
-3. [Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức](#3-danh-sách-nhân-sự-lê-văn-thọ-lvt-chính-thức)
-4. [Bảng Phân Quyền Leader & Quản Lý](#4-bảng-phân-quyền-leader--quản-lý)
-5. [Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)](#5-danh-sách-toàn-bộ-nhân-sự-hệ-thống-full-personnel-roster)
-6. [Danh Sách Các Lỗi Đã Vá (Bug Fixes)](#6-danh-sách-các-lỗi-đã-vá-bug-fixes)
-7. [Kiến Trúc Kỹ Thuật & Cơ Chế Vận Hành](#7-kiến-trúc-kỹ-thuật--cơ-chế-vận-hành)
-8. [Hướng Dẫn Cho Agent Kế Tiếp](#8-hướng-dẫn-cho-agent-kế-tiếp)
+2. [Cấu Trúc Source Code & Các Phần VPS Đã Push GitHub](#2-cấu-trúc-source-code--các-phần-vps-đã-push-github)
+3. [Kết Quả Dọn Sạch Database (Audit Cleanup)](#3-kết-quả-dọn-sạch-database-audit-cleanup)
+4. [Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức](#4-danh-sách-nhân-sự-lê-văn-thọ-lvt-chính-thức)
+5. [Bảng Phân Quyền Leader & Quản Lý](#5-bảng-phân-quyền-leader--quản-lý)
+6. [Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)](#6-danh-sách-toàn-bộ-nhân-sự-hệ-thống-full-personnel-roster)
+7. [Danh Sách Các Lỗi Đã Vá (Bug Fixes)](#7-danh-sách-các-lỗi-đã-vá-bug-fixes)
+8. [Kiến Trúc VPS & NestJS Backend Service](#8-kiến-trúc-vps--nestjs-backend-service)
+9. [Hướng Dẫn Cho Agent Kế Tiếp](#9-hướng-dẫn-cho-agent-kế-tiếp)
 
 ---
 
@@ -21,16 +22,46 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| **Ngày cập nhật gần nhất** | 11/08/2026 |
+| **Ngày cập nhật gần nhất** | 13/08/2026 |
 | **Phiên bản Live** | `v83` |
-| **Git Commit** | `9597427` |
+| **Git Commit** | `2d73901` |
 | **Production URL** | https://clinic-hub-5s.vercel.app |
 | **Repository** | `hadessispro/clinic-hub-5s` |
-| **Framework** | Vite + Vanilla JS + Supabase PostgreSQL + PWA Service Worker |
+| **Framework Frontend** | Vite + Vanilla JS + Supabase PostgreSQL + PWA Service Worker |
+| **Backend VPS** | NestJS Microservice + PostgreSQL 16 + Docker Compose |
 
 ---
 
-## 2. Kết Quả Dọn Sạch Database (Audit Cleanup)
+## 2. Cấu Trúc Source Code & Các Phần VPS Đã Push GitHub
+
+Đã tiến hành rà soát toàn bộ cây thư mục dự án và **đẩy đầy đủ 100% tất cả các mô-đun triển khai VPS lên GitHub Master Branch** (Git Commit `2d73901`):
+
+### 📁 Danh Sách Các Thư Mục & File VPS Đã Đẩy Lên GitHub:
+
+1. **`apps/backend/`** *(Mô-đun NestJS VPS Backend Microservice)*:
+   - `apps/backend/Dockerfile`: Docker configuration build NestJS backend.
+   - `apps/backend/package.json`: Dependencies & scripts cho NestJS.
+   - `apps/backend/src/main.ts`: Entry point backend server (Port 3000).
+   - `apps/backend/src/auth.ts`: Authentication API service.
+   - `apps/backend/src/attendance.ts`: Chấm công GPS & Ca làm việc API.
+   - `apps/backend/src/marketing.ts`: Marketing Leads, Campaigns & Call logs API.
+   - `apps/backend/src/data.ts`: Data management & synchronization.
+   - `apps/backend/src/files.ts`: Storage & Attachment handling.
+   - `apps/backend/src/infrastructure.ts`: System config & database pool.
+   - `apps/backend/src/rpc.ts`: Custom RPC procedures.
+
+2. **`docker-compose.vps.yml`** *(Cấu hình Docker Compose cho VPS)*:
+   - Chạy container `backend` (NestJS Node.js 24) kết hợp `postgres` (PostgreSQL 16 Alpine).
+
+3. **`sqlpgnhakhoa5s/nckynhfqhosting_pgnhakhoa5s.sql`** *(Dữ liệu SQL Dump VPS)*:
+   - Bản sao lưu & khởi tạo Schema Database PostgreSQL 16 cho VPS.
+
+4. **`src/services/api-client.js`** *(Service Client kết nối VPS API)*:
+   - Hỗ trợ gọi API trực tiếp tới VPS (khi `VITE_VPS_API_URL` được cấu hình) và fallback về Supabase.
+
+---
+
+## 3. Kết Quả Dọn Sạch Database (Audit Cleanup)
 
 - ❌ **Khai trừ 100% nhân sự mẫu / rác cũ**: Đã xóa hoàn toàn tất cả các nhân sự mẫu thử nghiệm trước đó (*Minh Hạnh, Emily, Lan Anh, Hoài Nam, Thu Ngân, BS. Huy, Ngọc Mai, Anh Dũng, Cô Hoa, BS. Nguyễn Văn Hùng...*).
 - ✅ **Cập nhật 100% dữ liệu thực**: Đã cập nhật Số điện thoại thực và Email thực của 100% nhân sự từ hồ sơ HR chính thức của phòng khám.
@@ -38,9 +69,7 @@
 
 ---
 
-## 3. Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức
-
-Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ (LVT)** được trích xuất và đối soát chuẩn xác 100% từ bảng tính Excel HR:
+## 4. Danh Sách Nhân Sự Lê Văn Thọ (LVT) Chính Thức
 
 | Mã NV | Họ và Tên | Chức Danh Thực | Số Điện Thoại Thực | Email Đăng Nhập Thực | Chi Nhánh |
 |:---:|:---|:---|:---:|:---|:---:|
@@ -58,11 +87,9 @@ Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ 
 | `10240` | **Võ Đăng Khang** | Phụ tá | `0392095618` | `khangnlcltv@gmail.com` | Lê Văn Thọ |
 | `10247` | **Trần Mỹ Phụng** | Phụ tá | `0388742734` | `myphung190605@gmail.com` | Lê Văn Thọ |
 
-*(Cùng các nhân sự hỗ trợ: Triệu Văn Hoài, Nguyễn Quốc Huân, Bùi Quang Thái, Ngô Thị Thanh Thuý, Nguyễn Thị Thuỳ Dương).*
-
 ---
 
-## 4. Bảng Phân Quyền Leader & Quản Lý
+## 5. Bảng Phân Quyền Leader & Quản Lý
 
 | Mã NV | Họ và Tên | Phòng Ban | Chức Danh Chính Thức | System Role | Đặc Quyền |
 |:---:|:---|:---|:---|:---:|:---|
@@ -77,7 +104,7 @@ Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ 
 
 ---
 
-## 5. Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)
+## 6. Danh Sách Toàn Bộ Nhân Sự Hệ Thống (Full Personnel Roster)
 
 ### 👑 Ban Giám Đốc (BGD)
 - `10096`: **Trần Đức Mạnh** (Giám Đốc Vận Hành) — `0909999100` — `tran.duc.manh@nhakhoa5s.vn`
@@ -139,7 +166,7 @@ Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ 
 
 ---
 
-## 6. Danh Sách Các Lỗi Đã Vá (Bug Fixes)
+## 7. Danh Sách Các Lỗi Đã Vá (Bug Fixes)
 
 | Bug ID | Mô tả sự cố | Nguyên nhân kỹ thuật | Giải pháp khắc phục |
 |:---:|:---|:---|:---|
@@ -154,31 +181,30 @@ Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ 
 
 ---
 
-## 7. Kiến Trúc Kỹ Thuật & Cơ Chế Vận Hành
+## 8. Kiến Trúc VPS & NestJS Backend Service
 
-### 7.1 Resilient Local-First Task Engine
-```
-┌──────────────┐     ┌────────────────┐     ┌────────────────┐
-│  User Action │ --> │  localStorage  │ --> │  Supabase DB   │
-│  (Instant UI)│     │ (Custom Tasks) │     │ (Background)   │
-└──────────────┘     └────────────────┘     └────────────────┘
-```
+### 8.1 Lệnh Chạy VPS Backend Local & Production:
+```bash
+# Chạy NestJS Backend ở môi trường dev:
+npm run backend:dev
 
-### 7.2 Service Worker & Cache Strategy
-- **Service Worker File**: `public/sw.js`
-- **Cache Version**: `clinic-hub-attendance-gps-v83`
-- **Cơ chế**: Cache-first cho tài nguyên tĩnh, Network-first cho API & Supabase.
+# Build NestJS Backend cho Production:
+npm run backend:build
+
+# Lệnh khởi chạy Docker Compose trên máy chủ VPS:
+docker compose -f docker-compose.vps.yml up -d --build
+```
 
 ---
 
-## 8. Hướng Dẫn Cho Agent Kế Tiếp
+## 9. Hướng Dẫn Cho Agent Kế Tiếp
 
 1. **Quy trình Build & Deploy**:
    ```bash
    # Build Vite bundle
    npx vite build
    
-   # Commit & Push GitHub
+   # Commit & Push GitHub (Đã bao gồm cả Frontend + Backend VPS)
    git add -A -- ':!.codex-vercel-cli' ':!.vercel-deploy.err' ':!.vercel-deploy.out'
    git commit -m "your commit message"
    git push origin master
@@ -186,13 +212,10 @@ Bảng dữ liệu nhân sự chính thức thuộc **Chi nhánh Lê Văn Thọ 
    # Deploy Vercel Production
    vercel --prod --yes
    ```
-2. **Nguyên tắc dữ liệu Nhân sự**:
-   - Mọi chỉnh sửa danh sách nhân sự phải giữ nguyên mã nhân viên (`code`), SĐT thực và Email thực.
-   - Luôn bump Service Worker cache version trong `public/sw.js` (dòng 1) khi deploy phiên bản mới.
 
 ---
 
-> **Document Version**: 2.0  
-> **Last Updated**: 11/08/2026  
+> **Document Version**: 3.0  
+> **Last Updated**: 13/08/2026  
 > **Author**: Antigravity AI Agent  
 > **Repository**: `hadessispro/clinic-hub-5s`
