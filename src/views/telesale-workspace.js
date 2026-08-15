@@ -1,9 +1,10 @@
-import { getMarketingLeads, addTelesaleCallLog, getLeadCallLogs, exportLeadsToCSV } from '../services/marketing.js';
-import { LEAD_STATUS, CALL_STATUS } from '../constants.js';
-import { escapeHTML, formatDateTime } from '../utils.js';
+import { getMarketingLeads, exportLeadsToCSV } from '../services/marketing.js';
+import { LEAD_STATUS } from '../constants.js';
+import { escapeHTML } from '../utils.js';
 import { pill, statusPill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
+import { initLeadConsultationDrawer, leadConsultationDrawer } from '../components/lead-consultation-drawer.js';
 
 let cachedLeads = [];
 let telesalePage = 1;
@@ -20,15 +21,20 @@ export async function renderView(state) {
 
   const leadsListHtml = leads.length
     ? leads.map((lead) => {
+        const creatorName = lead.created_by_name || lead.created_by_pg || 'Không xác định';
+        const creatorCode = lead.created_by_pg || '';
+        const creatorLabel = lead.created_by_role === 'pg_staff'
+          ? `PG nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`
+          : `Nguồn nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`;
         return `
-          <article class="task-card telesale-lead-card" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}" style="border-left: 4px solid var(--teal); background:#ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-radius:12px; padding:16px;">
+          <article class="task-card telesale-lead-card" data-workspace-lead="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}" style="border-left: 4px solid var(--teal); background:#ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-radius:12px; padding:16px;">
             <div class="telesale-card-summary">
               <div class="telesale-card-identity">
                 <h4>${escapeHTML(lead.full_name)}</h4>
                 <span><i class="ri-phone-line"></i>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</span>
               </div>
               <div class="telesale-card-actions">
-                ${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}
+                <span data-workspace-lead-status>${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}</span>
                 <button type="button" class="telesale-card-toggle" data-toggle-workspace-card="${escapeHTML(lead.id)}" aria-expanded="false" title="Mở nội dung chăm sóc" aria-label="Mở nội dung chăm sóc"><i class="ri-arrow-down-s-line"></i></button>
               </div>
             </div>
@@ -39,34 +45,10 @@ export async function renderView(state) {
               ${pill(lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô')}
               ${pill(lead.service_interest)}
               ${pill(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}
+              ${pill(`<i class="ri-user-received-line" style="margin-right:4px"></i>${escapeHTML(creatorLabel)}`, true)}
             </div>
             <p class="subtle" style="margin:8px 0; font-size:0.86rem; color:#49544e;"><strong>Ghi chú nhu cầu:</strong> ${escapeHTML(lead.notes || 'Không có')}</p>
-            <button type="button" class="secondary-button" data-view-call-logs="${escapeHTML(lead.id)}" data-lead-name="${escapeHTML(lead.full_name)}" style="width:100%;justify-content:center;margin-top:4px"><i class="ri-history-line"></i> Xem lịch sử chăm sóc</button>
-            <div style="margin-top:12px; padding:12px; background:#f2f7f5; border-radius:10px; border:1px solid #d8e6e1; width:100%; box-sizing:border-box;">
-              <strong style="font-size:0.84rem; color:var(--teal-dark); display:block; margin-bottom:8px;">+ Nhập Nhật ký cuộc gọi mới:</strong>
-              <form class="call-log-form" data-lead-id="${escapeHTML(lead.id)}" style="display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box;">
-                <div style="display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box;">
-                  <div style="width:100%; box-sizing:border-box;">
-                    <label style="font-size:0.75rem; font-weight:600; color:#374151; display:block; margin-bottom:3px;">Trạng thái cuộc gọi</label>
-                    <select name="call_status" required style="width:100%; box-sizing:border-box; font-size:0.83rem; padding:8px 10px; border-radius:8px; border:1px solid #bce0d6; background:#fff; font-family:inherit; color:#1d2421;">
-                      ${Object.keys(CALL_STATUS).map(st => option(st, CALL_STATUS[st])).join('')}
-                    </select>
-                  </div>
-                  <div style="width:100%; box-sizing:border-box;">
-                    <label style="font-size:0.75rem; font-weight:600; color:#374151; display:block; margin-bottom:3px;">Lịch hẹn khám (nếu có)</label>
-                    <input name="appointment_date" type="datetime-local" style="width:100%; box-sizing:border-box; font-size:0.83rem; padding:8px 10px; border-radius:8px; border:1px solid #bce0d6; background:#fff; font-family:inherit; color:#1d2421;" />
-                  </div>
-                </div>
-                <div style="width:100%; box-sizing:border-box;">
-                  <label style="font-size:0.75rem; font-weight:600; color:#374151; display:block; margin-bottom:3px;">Nội dung tư vấn</label>
-                  <input name="note" placeholder="Nội dung trao đổi với khách..." required style="width:100%; box-sizing:border-box; font-size:0.84rem; padding:8px 10px; border-radius:8px; border:1px solid #bce0d6; background:#fff; font-family:inherit;" />
-                </div>
-                <button type="submit" class="primary-button" style="width:100%; box-sizing:border-box; min-height:38px; padding:0 14px; font-size:0.84rem; display:inline-flex; align-items:center; justify-content:center; gap:6px; margin-top:4px;">
-                  <i class="ri-phone-fill"></i>
-                  Lưu cuộc gọi & Đặt hẹn
-                </button>
-              </form>
-            </div>
+            <button type="button" class="primary-button" data-open-lead-consultation="${escapeHTML(lead.id)}" style="width:100%;justify-content:center;margin-top:10px"><i class="ri-customer-service-2-line"></i> Mở trình tư vấn khách hàng</button>
             </div>
           </article>
         `;
@@ -135,7 +117,7 @@ export async function renderView(state) {
         </div>
       </div>
     </section>
-    <dialog id="callHistoryDialog" class="app-dialog"><div class="dialog-card"><div class="section-title"><div><p class="eyebrow">LỊCH SỬ CHĂM SÓC</p><h3 id="callHistoryTitle">Khách hàng</h3></div><button type="button" class="icon-button" id="closeCallHistory" aria-label="Đóng">×</button></div><div id="callHistoryContent" class="call-history-list"></div></div></dialog>
+    ${leadConsultationDrawer()}
   `;
 }
 
@@ -253,48 +235,15 @@ export function initView() {
   });
   applyTelesaleFilters();
 
-  const historyDialog = document.getElementById('callHistoryDialog');
-  const historyContent = document.getElementById('callHistoryContent');
-  document.getElementById('closeCallHistory')?.addEventListener('click', () => historyDialog?.close());
-  document.querySelectorAll('[data-view-call-logs]').forEach((button) => button.addEventListener('click', async () => {
-    if (!historyDialog || !historyContent) return;
-    document.getElementById('callHistoryTitle').textContent = button.dataset.leadName || 'Khách hàng';
-    historyContent.innerHTML = '<p class="subtle">Đang tải lịch sử...</p>'; historyDialog.showModal();
-    try {
-      const logs = await getLeadCallLogs(button.dataset.viewCallLogs);
-      historyContent.innerHTML = logs.length ? logs.map((log) => `<article><div><strong>${escapeHTML(CALL_STATUS[log.call_status] || log.call_status)}</strong><time>${formatDateTime(log.created_at)}</time></div><p>${escapeHTML(log.note || 'Không có ghi chú')}</p>${log.appointment_at ? `<small>Lịch hẹn: ${formatDateTime(log.appointment_at)}</small>` : ''}</article>`).join('') : '<div class="empty-state"><strong>Chưa có lịch sử gọi</strong><p>Nhật ký sẽ xuất hiện sau lần chăm sóc đầu tiên.</p></div>';
-    } catch (error) { historyContent.innerHTML = `<p class="subtle">${escapeHTML(error.message || 'Không tải được lịch sử.')}</p>`; }
-  }));
-
-  document.querySelectorAll('.call-log-form').forEach(form => {
-    const callStatus = form.elements.call_status;
-    const appointment = form.elements.appointment_date;
-    const syncAppointmentRequirement = () => {
-      const required = callStatus?.value === 'appointment_booked';
-      if (appointment) appointment.required = required;
-    };
-    callStatus?.addEventListener('change', syncAppointmentRequirement);
-    syncAppointmentRequirement();
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const lead_id = form.dataset.leadId;
-      const formData = new FormData(form);
-      const data = Object.fromEntries(formData.entries());
-
-      try {
-        showToast("Đang lưu cuộc gọi...");
-        await addTelesaleCallLog({
-          lead_id,
-          telesale_id: profile.employee_code || profile.id || 'PVC-TS01',
-          call_status: data.call_status,
-          note: data.note,
-          appointment_date: data.appointment_date ? new Date(data.appointment_date).toISOString() : null
-        });
-        showToast("✅ Đã lưu nhật ký cuộc gọi và cập nhật trạng thái Lead thành công!");
-        form.reset();
-      } catch (err) {
-        showToast("Lỗi khi lưu cuộc gọi: " + err.message, true);
-      }
-    });
+  initLeadConsultationDrawer({
+    getLead: (id) => cachedLeads.find((lead) => String(lead.id) === String(id)),
+    onSaved: (lead) => {
+      const index = cachedLeads.findIndex((item) => String(item.id) === String(lead.id));
+      if (index >= 0) cachedLeads[index] = lead;
+      const card = document.querySelector(`[data-workspace-lead="${CSS.escape(String(lead.id))}"]`);
+      if (card) card.dataset.status = lead.status;
+      const status = card?.querySelector('[data-workspace-lead-status]');
+      if (status) status.innerHTML = statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending');
+    },
   });
 }
