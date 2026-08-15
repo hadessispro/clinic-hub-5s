@@ -13,10 +13,27 @@ let dateTo = '';
 let reportDate = today();
 let statusFilter = '';
 let currentPage = 1;
+let renderedLeads = new Map();
 const PAGE_SIZE = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches ? 20 : 50;
 
 const number = (value) => Number(value || 0).toLocaleString('vi-VN');
 const branchName = (id) => id === 'le-van-tho' ? '5S Lê Văn Thọ' : id === 'pham-van-chieu' ? '5S Phạm Văn Chiêu' : (id || 'Chưa xác định');
+const callStatusName = {
+  interested: 'Quan tâm / Tư vấn',
+  appointment_booked: 'Đã hẹn khám',
+  busy: 'Khách bận',
+  no_answer: 'Không nghe máy',
+  rejected: 'Từ chối',
+};
+
+function displayValue(value, fallback = 'Chưa cập nhật') {
+  const normalized = String(value ?? '').trim();
+  return escapeHTML(normalized || fallback);
+}
+
+function customerField(label, value, fallback) {
+  return `<div class="tsm-profile-field"><small>${escapeHTML(label)}</small><strong>${displayValue(value, fallback)}</strong></div>`;
+}
 
 function rerender() {
   navigateTo('telesale-management');
@@ -42,6 +59,7 @@ export async function renderView() {
   ]);
   const telesales = accounts.filter((item) => ['telesale_staff', 'telesale_leader'].includes(item.role) && item.active !== false);
   const leads = leadPage.data || [];
+  renderedLeads = new Map(leads.map((lead) => [String(lead.id), lead]));
   const meta = leadPage.meta || { page: 1, pageSize: PAGE_SIZE, total: leads.length };
   const totalPages = Math.max(1, Math.ceil(Number(meta.total || 0) / Number(meta.pageSize || PAGE_SIZE)));
   const totals = summary.totals || {};
@@ -73,7 +91,7 @@ export async function renderView() {
     <td data-label="Trạng thái"><span class="tsm-status">${escapeHTML(LEAD_STATUS[lead.status] || lead.status || 'Chưa rõ')}</span></td>
     <td data-label="Nguồn nhập"><strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong><small>${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small></td>
     <td data-label="Tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
-    <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-lead-history="${escapeHTML(lead.id)}" data-lead-name="${escapeHTML(lead.full_name || 'Khách hàng')}"><i class="ri-history-line"></i> Lịch sử</button></td>
+    <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-lead-history="${escapeHTML(lead.id)}"><i class="ri-history-line"></i> Lịch sử</button></td>
   </tr>`).join('') || '<tr><td colspan="10" class="tsm-empty">Không có hồ sơ phù hợp với bộ lọc.</td></tr>';
 
   return `<div class="tsm-page">
@@ -121,9 +139,18 @@ export async function renderView() {
         <button type="button" class="secondary-button" id="tsmResetFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
       <div class="tsm-table-wrap"><table class="tsm-table" data-auto-pagination="off"><thead><tr><th>STT</th><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Chi nhánh</th><th>Telesale phụ trách</th><th>Trạng thái</th><th>Nguồn nhập</th><th>Ngày tiếp nhận</th><th>Hồ sơ</th></tr></thead><tbody>${leadRows}</tbody></table></div>
-      <div class="tsm-history-panel" id="tsmHistoryPanel" hidden></div>
       <footer class="tsm-pagination"><span>Trang ${currentPage}/${totalPages} · ${number(meta.total)} hồ sơ</span><div><button type="button" class="secondary-button" id="tsmPrev" ${currentPage <= 1 ? 'disabled' : ''}><i class="ri-arrow-left-s-line"></i> Trước</button><button type="button" class="secondary-button" id="tsmNext" ${currentPage >= totalPages ? 'disabled' : ''}>Sau <i class="ri-arrow-right-s-line"></i></button></div></footer>
     </section>
+    <dialog id="tsmCustomerDialog" class="app-dialog tsm-customer-dialog">
+      <div class="dialog-card tsm-customer-dialog-card">
+        <header class="tsm-customer-dialog-header">
+          <div class="tsm-customer-avatar"><i class="ri-user-heart-line"></i></div>
+          <div><p class="eyebrow">HỒ SƠ KHÁCH HÀNG</p><h3 id="tsmCustomerDialogTitle">Khách hàng</h3><span id="tsmCustomerDialogSubtitle">Thông tin tiếp nhận và lịch sử chăm sóc</span></div>
+          <button type="button" class="icon-button" id="tsmCloseCustomerDialog" aria-label="Đóng">×</button>
+        </header>
+        <div id="tsmCustomerDialogContent" class="tsm-customer-dialog-content"></div>
+      </div>
+    </dialog>
   </div>`;
 }
 
@@ -184,17 +211,66 @@ export function initView() {
       showToast(`Đã xuất ${rows.length} hồ sơ.`);
     } catch (error) { showToast(error.message || 'Không thể xuất dữ liệu.', true); }
   });
+  const customerDialog = document.getElementById('tsmCustomerDialog');
+  const customerDialogContent = document.getElementById('tsmCustomerDialogContent');
+  document.getElementById('tsmCloseCustomerDialog')?.addEventListener('click', () => customerDialog?.close());
+  customerDialog?.addEventListener('click', (event) => {
+    if (event.target === customerDialog) customerDialog.close();
+  });
   document.querySelectorAll('[data-lead-history]').forEach((button) => button.addEventListener('click', async () => {
-    const panel = document.getElementById('tsmHistoryPanel');
-    if (!panel) return;
-    panel.hidden = false;
-    panel.innerHTML = '<div class="tsm-empty">Đang tải lịch sử chăm sóc...</div>';
+    if (!customerDialog || !customerDialogContent) return;
+    const lead = renderedLeads.get(String(button.dataset.leadHistory));
+    if (!lead) { showToast('Không tìm thấy hồ sơ khách hàng.', true); return; }
+    const customer = lead.customer_profile || {};
+    const name = lead.full_name || customer.customerName || 'Khách hàng';
+    document.getElementById('tsmCustomerDialogTitle').textContent = name;
+    document.getElementById('tsmCustomerDialogSubtitle').textContent = `${lead.phone || customer.phone || 'Chưa có số điện thoại'} · ${branchName(lead.branch_id)}`;
+    const appointment = lead.appointment_at || lead.appointment_date || customer.appointmentText;
+    customerDialogContent.innerHTML = `
+      <section class="tsm-profile-summary">
+        <div class="tsm-profile-badges">
+          <span class="pill">${lead.data_class === 'net' ? 'Data net' : 'Data thô'}</span>
+          ${lead.net_level ? `<span class="pill">${lead.net_level === 'advanced' ? 'Net chuyên sâu' : 'Net cơ bản'}</span>` : ''}
+          <span class="pill">${displayValue(LEAD_STATUS[lead.status] || lead.status, 'Mới tiếp nhận')}</span>
+        </div>
+        <div class="tsm-profile-grid">
+          ${customerField('Mã khách hàng', customer.customerCode || lead.id)}
+          ${customerField('Số điện thoại', lead.phone || customer.phone)}
+          ${customerField('Dịch vụ quan tâm', lead.service_interest || customer.serviceNeed)}
+          ${customerField('Lịch hẹn', appointment ? (String(appointment).includes('T') ? formatDateTime(appointment) : appointment) : '')}
+          ${customerField('Nguồn tiếp nhận', lead.created_by_name || customer.pgName || lead.source)}
+          ${customerField('Telesale phụ trách', customer.telesaleName || lead.assigned_telesale_id)}
+          ${customerField('Chi nhánh', branchName(lead.branch_id || customer.arrivalBranch))}
+          ${customerField('Ngày tiếp nhận', lead.created_at ? formatDateTime(lead.created_at) : '')}
+        </div>
+      </section>
+      <section class="tsm-profile-notes">
+        <h4>Thông tin và ghi chú cũ</h4>
+        <div class="tsm-profile-grid">
+          ${customerField('Trạng thái khách hàng', customer.customerStatus)}
+          ${customerField('Trạng thái cuộc gọi', customer.callStatus)}
+          ${customerField('Trạng thái lịch hẹn', customer.appointmentStatus)}
+          ${customerField('Khách đã đến', customer.arrived === true ? 'Đã đến' : customer.arrived === false ? 'Chưa đến' : '')}
+        </div>
+        <div class="tsm-profile-note"><small>Nhu cầu / ghi chú</small><p>${displayValue(lead.notes || customer.latestTelesaleNote || customer.note || customer.feedback, 'Chưa có ghi chú')}</p></div>
+      </section>
+      <section class="tsm-profile-history"><div class="section-title"><div><h4>Lịch sử chăm sóc</h4><p class="subtle">Nhật ký cuộc gọi và lịch hẹn đã lưu trước đây.</p></div></div><div id="tsmCustomerHistory"><div class="tsm-history-loading"><i class="ri-loader-4-line"></i> Đang tải lịch sử...</div></div></section>`;
+    customerDialog.showModal();
     try {
       const logs = await getLeadCallLogs(button.dataset.leadHistory);
-      panel.innerHTML = `<div class="section-title"><div><h3>Hồ sơ chăm sóc: ${escapeHTML(button.dataset.leadName || '')}</h3><p class="subtle">Toàn bộ lịch sử cuộc gọi và cập nhật cũ đã lưu.</p></div><button type="button" class="secondary-button" id="tsmCloseHistory">Đóng</button></div>${logs.length ? `<div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>Người chăm sóc</th><th>Kết quả</th><th>Nội dung</th><th>Lịch hẹn</th></tr></thead><tbody>${logs.map((log) => `<tr><td>${formatDateTime(log.created_at)}</td><td>${escapeHTML(log.telesale_name || log.telesale_code || log.telesale_id || 'Chưa xác định')}</td><td>${escapeHTML(LEAD_STATUS[log.call_status] || log.call_status || 'Đã liên hệ')}</td><td>${escapeHTML(log.note || 'Không có ghi chú')}</td><td>${log.appointment_at || log.appointment_date ? formatDateTime(log.appointment_at || log.appointment_date) : 'Không có'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="tsm-empty">Hồ sơ này chưa có lịch sử chăm sóc.</div>'}`;
-      document.getElementById('tsmCloseHistory')?.addEventListener('click', () => { panel.hidden = true; panel.innerHTML = ''; });
-      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } catch (error) { panel.innerHTML = `<div class="tsm-empty">${escapeHTML(error.message || 'Không thể tải lịch sử chăm sóc.')}</div>`; }
+      const history = document.getElementById('tsmCustomerHistory');
+      if (!history) return;
+      history.innerHTML = logs.length ? `<div class="tsm-history-timeline">${logs.map((log) => `<article>
+        <span class="tsm-history-icon"><i class="ri-phone-line"></i></span>
+        <div><header><strong>${displayValue(callStatusName[log.call_status] || log.call_status, 'Đã liên hệ')}</strong><time>${log.created_at ? formatDateTime(log.created_at) : 'Chưa rõ thời gian'}</time></header>
+        <small>${displayValue(log.telesale_name || log.telesale_code || log.telesale_id, 'Chưa xác định người chăm sóc')}</small>
+        <p>${displayValue(log.note, 'Không có ghi chú')}</p>
+        ${log.appointment_at || log.appointment_date ? `<em><i class="ri-calendar-check-line"></i> Lịch hẹn: ${formatDateTime(log.appointment_at || log.appointment_date)}</em>` : ''}</div>
+      </article>`).join('')}</div>` : '<div class="tsm-empty">Hồ sơ này chưa có lịch sử chăm sóc. Thông tin gốc vẫn được hiển thị phía trên.</div>';
+    } catch (error) {
+      const history = document.getElementById('tsmCustomerHistory');
+      if (history) history.innerHTML = `<div class="tsm-empty">${escapeHTML(error.message || 'Không thể tải lịch sử chăm sóc.')}</div>`;
+    }
   }));
   document.getElementById('tsmReportDate')?.addEventListener('change', (event) => { reportDate = event.target.value || today(); rerender(); });
   document.getElementById('tsmMemberFilter')?.addEventListener('change', (event) => { selectedTelesale = event.target.value; currentPage = 1; rerender(); });
