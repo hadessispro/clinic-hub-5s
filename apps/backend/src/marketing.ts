@@ -250,8 +250,11 @@ export class MarketingService {
     const customerName = String(input.customerName || input.full_name || '').trim();
     if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
     const result = await this.infrastructure.postgres.query(
-      `insert into marketing.leads(customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+      `insert into marketing.leads(
+         customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code,
+         assigned_telesale_code,assigned_by_code,assigned_at
+       )
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,null,null,null) returning *`,
       [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
         dataClass === 'net' ? serviceType : null, input.source || 'PG', input.branchId || input.branch_id || null,
         input.notes || null, user.employeeCode],
@@ -264,14 +267,22 @@ export class MarketingService {
     const params: unknown[] = [];
     const where: string[] = [];
     if (user.role === 'pg_staff') {
-      params.push(user.employeeCode); where.push(`created_by_pg_code=$${params.length}`);
+      params.push(user.employeeCode); where.push(`l.created_by_pg_code=$${params.length}`);
     } else if (user.role === 'telesale_staff') {
-      params.push(user.employeeCode); where.push(`assigned_telesale_code=$${params.length}`);
+      params.push(user.employeeCode); where.push(`l.assigned_telesale_code=$${params.length}`);
     } else if (!reportRoles.has(user.role)) {
       throw new ForbiddenException();
     }
     for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code']] as const) {
-      if (query[field]) { params.push(query[field]); where.push(`${column}=$${params.length}`); }
+      if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
+    }
+    if (String(query.pgUnassignedOnly || '').toLowerCase() === 'true') {
+      where.push(`l.assigned_telesale_code is null and exists (
+        select 1 from app.records pg_creator
+        where pg_creator.entity_type='profiles' and pg_creator.deleted_at is null
+          and pg_creator.payload->>'role'='pg_staff'
+          and lower(pg_creator.payload->>'employee_code')=lower(l.created_by_pg_code)
+      )`);
     }
     const result = await this.infrastructure.postgres.query(
       `select l.*,creator.full_name created_by_name,creator.role created_by_role,
@@ -300,7 +311,7 @@ export class MarketingService {
            and lower(p.payload->>'employee_code')=lower(l.created_by_pg_code)
          order by p.updated_at desc limit 1
        ) creator on true
-       ${where.length ? `where ${where.map((item) => `l.${item}`).join(' and ')}` : ''}
+       ${where.length ? `where ${where.join(' and ')}` : ''}
        order by l.created_at desc limit 5000`, params,
     );
     return { data: result.rows };

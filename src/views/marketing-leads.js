@@ -324,7 +324,7 @@ export async function renderView(state) {
               <i class="ri-shuffle-line"></i><span><strong>Chia Data thô</strong><small>${leads.filter((lead) => lead.data_class !== 'net').length} Lead · chia ngẫu nhiên đều</small></span>
             </button>
             <button type="button" class="lead-data-filter ${activePgUnhandledOnly ? 'is-active' : ''}" id="pgUnhandledLeadFilter">
-              <i class="ri-user-received-line"></i><span><strong>PG mới nhập · chưa xử lý</strong><small>${leads.filter((lead) => lead.created_by_role === 'pg_staff' && lead.status === 'new').length} Lead cần quản lý kiểm tra</small></span>
+              <i class="ri-user-received-line"></i><span><strong>PG mới nhập · chưa gán</strong><small>${leads.filter((lead) => lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id).length} Lead chờ quản lý phân bổ</small></span>
             </button>
             <button type="button" class="lead-data-filter-reset" id="clearLeadClassFilter" ${(activeDataClassFilter || activePgUnhandledOnly) ? '' : 'hidden'}>Xem tất cả</button>
           </div>
@@ -656,14 +656,13 @@ export function initView() {
       const cardBranch = card.dataset.branch || '';
       const cardClass = card.dataset.class || 'raw';
       const creatorRole = card.dataset.creatorRole || '';
-      const currentStatus = card.dataset.currentStatus || 'new';
-
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || cardBranch === branch;
       const matchSource = !source || cardSource === source;
 
       const matchClass = !dataClass || cardClass === dataClass;
-      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && currentStatus === 'new');
+      const assignedCode = cachedLeads.find((lead) => String(lead.id) === String(card.dataset.id))?.assigned_telesale_id || '';
+      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && !assignedCode);
       card.style.display = (matchQ && matchBranch && matchSource && matchClass && matchPgUnhandled) ? 'block' : 'none';
     });
 
@@ -675,14 +674,15 @@ export function initView() {
       const rowBranch = row.dataset.branch || '';
       const rowClass = row.dataset.class || 'raw';
       const creatorRole = row.dataset.creatorRole || '';
-      const currentStatus = row.dataset.currentStatus || 'new';
+      const leadId = String(row.id || '').replace('table-row-', '');
+      const assignedCode = cachedLeads.find((lead) => String(lead.id) === leadId)?.assigned_telesale_id || '';
 
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || rowBranch === branch;
       const matchSource = !source || rowSource === source;
 
       const matchClass = !dataClass || rowClass === dataClass;
-      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && currentStatus === 'new');
+      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && !assignedCode);
       row.style.display = (matchQ && matchBranch && matchSource && matchClass && matchPgUnhandled) ? 'table-row' : 'none';
     });
   }

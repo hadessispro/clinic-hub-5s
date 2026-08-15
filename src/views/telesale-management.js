@@ -116,7 +116,7 @@ export async function renderView() {
     </section>
 
     <section class="panel tsm-ledger">
-      <div class="section-title"><div><h3>Danh sách hồ sơ & giao lại Telesale</h3><p class="subtle">Bộ lọc áp dụng trên toàn bộ dữ liệu máy chủ, không chỉ 50 dòng đang hiển thị.</p></div><div class="tsm-ledger-actions"><button type="button" class="secondary-button${pgUnhandledOnly ? ' is-active' : ''}" id="tsmPgUnhandled"><i class="ri-user-received-line"></i> PG mới nhập · chưa xử lý</button><span class="pill">${number(meta.total)} hồ sơ</span></div></div>
+      <div class="section-title"><div><h3>Danh sách hồ sơ & giao lại Telesale</h3><p class="subtle">Bộ lọc áp dụng trên toàn bộ dữ liệu máy chủ, không chỉ 50 dòng đang hiển thị.</p></div><div class="tsm-ledger-actions"><button type="button" class="secondary-button${pgUnhandledOnly ? ' is-active' : ''}" id="tsmPgUnhandled"><i class="ri-user-received-line"></i> PG mới nhập · chưa gán</button><span class="pill">${number(meta.total)} hồ sơ</span></div></div>
       <div class="tsm-filters">
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
@@ -180,7 +180,7 @@ export function initView() {
   document.getElementById('tsmExport')?.addEventListener('click', async () => {
     try {
       let rows = await getMarketingLeads({ status: statusFilter || undefined, assigned_telesale_id: selectedTelesale || undefined });
-      if (pgUnhandledOnly) rows = rows.filter((lead) => lead.created_by_role === 'pg_staff' && lead.status === 'new');
+      if (pgUnhandledOnly) rows = rows.filter((lead) => lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id);
       const from = dateFrom ? new Date(`${dateFrom}T00:00:00+07:00`) : null;
       const to = dateTo ? new Date(`${dateTo}T23:59:59.999+07:00`) : null;
       rows = rows.filter((lead) => { const value = new Date(lead.created_at || 0); return (!from || value >= from) && (!to || value <= to); });
@@ -203,7 +203,12 @@ export function initView() {
   document.getElementById('tsmDateFrom')?.addEventListener('change', (event) => { dateFrom = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateTo')?.addEventListener('change', (event) => { dateTo = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmStatus')?.addEventListener('change', (event) => { statusFilter = event.target.value; currentPage = 1; rerender(); });
-  document.getElementById('tsmPgUnhandled')?.addEventListener('click', () => { pgUnhandledOnly = !pgUnhandledOnly; currentPage = 1; rerender(); });
+  document.getElementById('tsmPgUnhandled')?.addEventListener('click', () => {
+    pgUnhandledOnly = !pgUnhandledOnly;
+    if (pgUnhandledOnly) selectedTelesale = '';
+    currentPage = 1;
+    rerender();
+  });
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
   document.getElementById('tsmResetFilters')?.addEventListener('click', () => { selectedTelesale = ''; dateFrom = ''; dateTo = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
   document.getElementById('tsmPrev')?.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); rerender(); });

@@ -67,6 +67,7 @@ export async function getMarketingLeads(filters = {}) {
     if (filters.assigned_telesale_id) query.set('assignedTo', filters.assigned_telesale_id);
     if (filters.data_class) query.set('dataClass', filters.data_class);
     if (filters.net_level) query.set('netLevel', filters.net_level);
+    if (filters.pg_unhandled_only) query.set('pgUnassignedOnly', 'true');
     const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
     return (payload.data || []).map(mapVpsLead);
   }
@@ -397,11 +398,12 @@ export async function getMarketingLeadPage(filters = {}) {
     assigned_telesale_id: filters.assigned_telesale_id,
     data_class: filters.data_class,
     net_level: filters.net_level,
+    pg_unhandled_only: filters.pg_unhandled_only,
   });
   const from = filters.date_from ? new Date(`${filters.date_from}T00:00:00+07:00`) : null;
   const to = filters.date_to ? new Date(`${filters.date_to}T23:59:59.999+07:00`) : null;
   const filtered = leads.filter((lead) => {
-    if (filters.pg_unhandled_only && !(lead.created_by_role === 'pg_staff' && lead.status === 'new')) return false;
+    if (filters.pg_unhandled_only && !(lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id)) return false;
     if (!from && !to) return true;
     const created = new Date(lead.created_at || 0);
     if (Number.isNaN(created.getTime())) return false;
