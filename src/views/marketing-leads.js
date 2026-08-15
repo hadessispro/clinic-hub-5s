@@ -505,6 +505,7 @@ export function initView() {
         await updateMarketingLead(id, { assigned_telesale_id });
         const leadObj = cachedLeads.find(l => l.id === id);
         if (leadObj) leadObj.assigned_telesale_id = assigned_telesale_id;
+        applyFilters();
         showToast("✅ Đã gán Telesale thành công!");
       } catch (err) {
         showToast("Lỗi khi gán Telesale: " + err.message, true);
