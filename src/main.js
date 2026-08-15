@@ -9,7 +9,7 @@ import { getNotifications, subscribeToNotifications } from './services/notificat
 import { syncOfflineAttendance } from './services/attendance.js';
 import { syncPendingProofs } from './services/attendance-proofs.js';
 import { showToast } from './components/toast.js';
-import { getDefaultView, isOpsRole } from './permissions.js';
+import { canAccessView, getDefaultView, isOpsRole } from './permissions.js';
 import { loadClinicLocation } from './services/clinic.js';
 import { BRANCH, branchSettings, getEffectiveBranchId, setActiveBranch } from './branch.js';
 import { subscribeToLeaveRequests } from './services/leave.js';
@@ -198,7 +198,11 @@ async function bootstrap() {
       
       // Nhân viên vào thẳng màn hình chấm công trong lần mở ứng dụng đầu tiên.
       const state = store.getState();
-      navigateTo(hasEnteredApp ? state.currentView : getDefaultView(authInfo.profile.role));
+      const requestedView = hasEnteredApp ? state.currentView : getDefaultView(authInfo.profile.role);
+      const safeView = canAccessView(authInfo.profile.role, requestedView)
+        ? requestedView
+        : getDefaultView(authInfo.profile.role);
+      navigateTo(safeView);
       hasEnteredApp = true;
     } else {
       // User is logged out

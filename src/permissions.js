@@ -7,12 +7,12 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
-  support_marketing: ['dashboard', 'pg-management', 'pg-locations', 'pg-workflow', 'marketing-analytics', 'chat', 'tasks'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'chat', 'tasks'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow'],
-  telesale_leader: ['dashboard', 'marketing-leads', 'telesale-workspace', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   superadmin: [],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
@@ -99,7 +99,8 @@ const NAV_ITEMS = [
   ]},
   { group: 'Marketing & Telesale', items: [
     { view: 'marketing-leads', label: 'Tiếp nhận Lead', icon: 'ri-megaphone-line' },
-    { view: 'telesale-workspace', label: 'Workspace Telesale', icon: 'ri-headset-line' },
+    { view: 'telesale-management', label: 'Quản lý Telesale', icon: 'ri-team-line' },
+    { view: 'telesale-workspace', label: 'Chăm sóc khách hàng', icon: 'ri-headset-line' },
     { view: 'marketing-analytics', label: 'Báo cáo Marketing', icon: 'ri-line-chart-line' },
     { view: 'pg-management', label: 'Quản lý PG', icon: 'ri-user-location-line' },
     { view: 'pg-locations', label: 'Địa điểm PG', icon: 'ri-map-pin-2-line' },
@@ -146,7 +147,8 @@ export function getDefaultView(role) {
     admin_it: 'system-admin',
     pg_staff: 'marketing-leads',
     telesale_staff: 'telesale-workspace',
-    support_marketing: 'pg-management',
+    support_marketing: 'pg-workflow',
+    telesale_leader: 'telesale-management',
   };
   if (roleDefaults[role]) return roleDefaults[role];
   return role === 'staff' ? 'attendance' : 'dashboard';

@@ -13,6 +13,7 @@ const MOBILE_NAV_ICONS = {
   reports: '<svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   'system-admin': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg>',
   'marketing-leads': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>',
+  'telesale-management': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="11" cy="7" r="4"/><path d="M19 8v6M16 11h6"/></svg>',
   'telesale-workspace': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
   'marketing-analytics': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
 };
@@ -30,6 +31,7 @@ const MOBILE_NAV_LABELS = {
   'system-admin': 'Quản trị',
   reports: 'Báo cáo',
   'marketing-leads': 'Nạp Lead',
+  'telesale-management': 'QL Telesale',
   'telesale-workspace': 'Telesale',
   'marketing-analytics': 'Báo cáo MKT',
 };
@@ -80,9 +82,15 @@ export function renderSidebar(role) {
   const allItems = navGroups.flatMap((group) =>
     group.items.map((item) => ({ ...item, group: group.group })),
   );
-  const preferredViews = role === 'admin_it'
-    ? ['system-admin', 'attendance', 'schedule', 'reports']
-    : ['dashboard', 'attendance', 'schedule', 'chat'];
+  const preferredByRole = {
+    admin_it: ['system-admin', 'attendance', 'schedule', 'reports'],
+    telesale_leader: ['telesale-management', 'dashboard', 'marketing-analytics', 'chat'],
+    telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
+    pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],
+    admin_marketing: ['telesale-management', 'marketing-leads', 'marketing-analytics', 'pg-management'],
+    support_marketing: ['pg-workflow', 'pg-locations', 'chat', 'dashboard'],
+  };
+  const preferredViews = preferredByRole[role] || ['dashboard', 'attendance', 'schedule', 'chat'];
   const preferredItems = preferredViews
     .map((view) => allItems.find((item) => item.view === view))
     .filter(Boolean);

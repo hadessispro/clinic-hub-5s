@@ -24,6 +24,7 @@ const viewImports = {
   'system-admin': () => import('./views/system-admin.js'),
   'marketing-leads': () => import('./views/marketing-leads.js'),
   'telesale-workspace': () => import('./views/telesale-workspace.js'),
+  'telesale-management': () => import('./views/telesale-management.js'),
   'marketing-analytics': () => import('./views/marketing-analytics.js'),
   'pg-management': () => import('./views/pg-management.js'),
   'pg-locations': () => import('./views/pg-locations.js'),
@@ -51,7 +52,8 @@ const viewTitles = {
   integrations: 'Cấu hình tích hợp',
   'system-admin': 'Quản trị hệ thống',
   'marketing-leads': 'Tiếp nhận Lead Marketing',
-  'telesale-workspace': 'Workspace Telesale',
+  'telesale-workspace': 'Chăm sóc khách hàng Telesale',
+  'telesale-management': 'Quản lý Telesale',
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
   'pg-management': 'Quản lý PG',
   'pg-locations': 'Địa điểm chấm công PG',
@@ -130,6 +132,10 @@ store.subscribe(async (state) => {
       viewContainer.innerHTML = `<h3>View "${currentView}" not found</h3>`;
     }
   } catch (error) {
+    // A view started before authentication completed may fail with 401 after
+    // the user has already signed in and triggered a newer render. Do not let
+    // that stale failure overwrite the authenticated screen.
+    if (requestId !== renderRequestId || store.getState().currentView !== currentView) return;
     console.error(`[Router] Error loading view "${currentView}":`, error);
     viewContainer.innerHTML = `
       <div class="empty-state error">

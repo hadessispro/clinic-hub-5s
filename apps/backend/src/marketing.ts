@@ -16,6 +16,10 @@ const managerRoles = new Set([...adminRoles, 'telesale_leader']);
 const reportRoles = new Set([...managerRoles, 'support_marketing']);
 const dataClasses = new Set(['raw', 'net']);
 const netLevels = new Set(['basic', 'advanced']);
+const netServices: Record<string, Set<string>> = {
+  basic: new Set(['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng']),
+  advanced: new Set(['Implant', 'Răng sứ', 'Niềng răng']),
+};
 const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'cancelled']);
 const callStatuses = new Set(['interested', 'appointment_booked', 'busy', 'no_answer', 'rejected']);
 
@@ -93,7 +97,9 @@ export class MarketingService {
               p.payload->>'role' role,coalesce((p.payload->>'active')::boolean,true) active
        from app.records p left join app.records e on e.entity_type='employees' and e.deleted_at is null
          and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
-       where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role' in ('telesale_staff','telesale_leader')
+       where p.entity_type='profiles' and p.deleted_at is null
+         and p.payload->>'role' in ('telesale_staff','telesale_leader')
+         and coalesce((p.payload->>'active')::boolean,true)=true
        order by lower(coalesce(e.payload->>'full_name',p.payload->>'full_name'))`,
     );
     return { data: result.rows };
@@ -228,14 +234,18 @@ export class MarketingService {
   }
 
   async createLead(user: AuthUser, input: JsonMap) {
-    if (![...supportRoles, 'pg_staff'].includes(user.role)) throw new ForbiddenException();
+    if (![...supportRoles, 'telesale_leader', 'pg_staff'].includes(user.role)) throw new ForbiddenException();
     const dataClass = String(input.dataClass || input.data_class || 'raw');
     const netLevel = input.netLevel || input.net_level ? String(input.netLevel || input.net_level) : null;
+    const serviceType = String(input.serviceType || input.service_interest || '').trim() || null;
     const phone = cleanPhone(input.phone) || null;
     const appointmentAt = input.appointmentAt || input.appointment_at ? new Date(String(input.appointmentAt || input.appointment_at)) : null;
     if (!dataClasses.has(dataClass)) throw new BadRequestException('Loại data không hợp lệ.');
     if (dataClass === 'net' && (!netLevel || !netLevels.has(netLevel) || !phone || !appointmentAt || !Number.isFinite(appointmentAt.getTime()))) {
       throw new BadRequestException('Data net bắt buộc có số điện thoại, lịch hẹn và phân loại cơ bản/chuyên sâu.');
+    }
+    if (dataClass === 'net' && (!serviceType || !netServices[netLevel!]?.has(serviceType))) {
+      throw new BadRequestException('Dịch vụ không phù hợp với cấp độ Data net đã chọn.');
     }
     const customerName = String(input.customerName || input.full_name || '').trim();
     if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
@@ -243,7 +253,7 @@ export class MarketingService {
       `insert into marketing.leads(customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
       [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
-        input.serviceType || input.service_interest || null, input.source || 'PG', input.branchId || input.branch_id || null,
+        dataClass === 'net' ? serviceType : null, input.source || 'PG', input.branchId || input.branch_id || null,
         input.notes || null, user.employeeCode],
     );
     await this.audit(user, 'lead.create', 'marketing.lead', result.rows[0].id, { dataClass, netLevel });
@@ -264,7 +274,34 @@ export class MarketingService {
       if (query[field]) { params.push(query[field]); where.push(`${column}=$${params.length}`); }
     }
     const result = await this.infrastructure.postgres.query(
-      `select * from marketing.leads ${where.length ? `where ${where.join(' and ')}` : ''} order by created_at desc limit 5000`, params,
+      `select l.*,creator.full_name created_by_name,creator.role created_by_role,
+        case when cp.id is null then null else jsonb_build_object(
+          'customerCode',cp.customer_code,'customerName',cp.customer_name,'phone',cp.phone,
+          'serviceNeed',cp.service_need,'booth',cp.booth,'pgName',cp.pg_name,'telesaleName',cp.telesale_name,
+          'customerStatus',cp.customer_status,'callStatus',cp.call_status,
+          'appointmentStatus',cp.appointment_status,'appointmentText',cp.appointment_text,
+          'arrived',cp.arrived,'source',cp.source_label,'note',cp.note,'feedback',cp.feedback,
+          'dataType',cp.data_type,'arrivalBranch',cp.arrival_branch,'lowQuality',cp.low_quality,
+          'lowQualityReason',cp.low_quality_reason,'latestTelesaleNote',cp.latest_telesale_note,
+          'vtechServiceType',cp.vtech_service_type,'vtechServiceDate',cp.vtech_service_date,
+          'vtechServiceRevenue',cp.vtech_service_revenue,'vtechServiceSales',cp.vtech_service_sales,
+          'commissionStatus',cp.commission_status,'sourceCreatedAt',cp.source_created_at,
+          'sourceUpdatedAt',cp.source_updated_at
+        ) end customer_profile
+       from marketing.leads l
+       left join marketing.customer_profiles cp on cp.id=l.customer_profile_id
+       left join lateral (
+         select coalesce(e.payload->>'full_name',p.payload->>'full_name',l.created_by_pg_code) full_name,
+                p.payload->>'role' role
+         from app.records p
+         left join app.records e on e.entity_type='employees' and e.deleted_at is null
+           and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+         where p.entity_type='profiles' and p.deleted_at is null
+           and lower(p.payload->>'employee_code')=lower(l.created_by_pg_code)
+         order by p.updated_at desc limit 1
+       ) creator on true
+       ${where.length ? `where ${where.map((item) => `l.${item}`).join(' and ')}` : ''}
+       order by l.created_at desc limit 5000`, params,
     );
     return { data: result.rows };
   }
@@ -274,13 +311,13 @@ export class MarketingService {
     if (!telesaleCode) throw new BadRequestException('Cần chọn nhân viên Telesale.');
     const target = await this.infrastructure.postgres.query(
       `select 1 from app.records where entity_type='profiles' and deleted_at is null
-       and payload->>'role'='telesale_staff' and coalesce((payload->>'active')::boolean,true)=true
+       and payload->>'role' in ('telesale_staff','telesale_leader') and coalesce((payload->>'active')::boolean,true)=true
        and lower(payload->>'employee_code')=lower($1) limit 1`, [telesaleCode],
     );
     if (!target.rowCount) throw new BadRequestException('Tài khoản nhận data không phải Telesale đang hoạt động.');
     const result = await this.infrastructure.postgres.query(
       `update marketing.leads set assigned_telesale_code=$2,assigned_by_code=$3,assigned_at=now(),updated_at=now()
-       where id=$1 and data_class='net' returning *`, [leadId, telesaleCode, user.employeeCode],
+       where id=$1 returning *`, [leadId, telesaleCode, user.employeeCode],
     );
     if (!result.rows[0]) throw new BadRequestException('Không tìm thấy data net.');
     await this.audit(user, 'lead.assign_net', 'marketing.lead', leadId, { telesaleCode });

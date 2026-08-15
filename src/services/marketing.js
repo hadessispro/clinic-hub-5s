@@ -11,6 +11,8 @@ function mapVpsLead(row) {
     service_interest: row.service_type,
     assigned_telesale_id: row.assigned_telesale_code,
     created_by_pg: row.created_by_pg_code,
+    created_by_name: row.created_by_name || row.customer_profile?.pgName || null,
+    created_by_role: row.created_by_role || null,
   };
 }
 
@@ -382,6 +384,69 @@ export async function getTelesaleAccounts() {
   return (payload.data || []).map((row) => ({
     id: row.employee_code, employee_code: row.employee_code, name: row.full_name, role: row.role, active: row.active,
   }));
+}
+
+/**
+ * Danh sách lead có phân trang cho màn điều hành Telesale.
+ * Backend hiện trả tối đa 5.000 bản ghi; việc lọc ngày và chia trang được thực
+ * hiện tại client để tương thích với dữ liệu hiện hữu mà không đổi schema.
+ */
+export async function getMarketingLeadPage(filters = {}) {
+  const leads = await getMarketingLeads({
+    status: filters.status,
+    assigned_telesale_id: filters.assigned_telesale_id,
+    data_class: filters.data_class,
+    net_level: filters.net_level,
+  });
+  const from = filters.date_from ? new Date(`${filters.date_from}T00:00:00+07:00`) : null;
+  const to = filters.date_to ? new Date(`${filters.date_to}T23:59:59.999+07:00`) : null;
+  const filtered = leads.filter((lead) => {
+    if (!from && !to) return true;
+    const created = new Date(lead.created_at || 0);
+    if (Number.isNaN(created.getTime())) return false;
+    return (!from || created >= from) && (!to || created <= to);
+  });
+  const page = Math.max(1, Number(filters.page || 1));
+  const pageSize = Math.max(1, Math.min(100, Number(filters.page_size || 50)));
+  const start = (page - 1) * pageSize;
+  return {
+    data: filtered.slice(start, start + pageSize),
+    meta: { page, pageSize, total: filtered.length },
+  };
+}
+
+/** Tổng hợp nhanh theo ngày cho Quản lý Telesale. */
+export async function getTelesaleDailySummary(reportDate) {
+  const [accounts, leads] = await Promise.all([getTelesaleAccounts(), getMarketingLeads()]);
+  const day = String(reportDate || '').trim();
+  const isSameDay = (value) => {
+    if (!value || !day) return false;
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) === day;
+  };
+  const closed = new Set(['converted', 'cancelled', 'lost']);
+  const visited = new Set(['arrived', 'visited', 'converted']);
+  const staff = accounts.filter((item) => item.active !== false && ['telesale_staff', 'telesale_leader'].includes(item.role)).map((member) => {
+    const owned = leads.filter((lead) => lead.assigned_telesale_id === member.employee_code);
+    const changed = owned.filter((lead) => isSameDay(lead.updated_at));
+    return {
+      ...member,
+      full_name: member.name,
+      assigned_total: owned.length,
+      assigned_active: owned.filter((lead) => !closed.has(lead.status)).length,
+      handled_today: changed.length,
+      status_changes_today: changed.length,
+      calls_today: 0,
+      appointments_today: changed.filter((lead) => lead.status === 'appointment_booked').length,
+      visited_today: changed.filter((lead) => visited.has(lead.status)).length,
+    };
+  });
+  const totals = staff.reduce((sum, row) => {
+    for (const key of ['assigned_total', 'assigned_active', 'handled_today', 'status_changes_today', 'calls_today', 'appointments_today', 'visited_today']) {
+      sum[key] = (sum[key] || 0) + Number(row[key] || 0);
+    }
+    return sum;
+  }, {});
+  return { date: day, totals, staff };
 }
 
 export async function createPgAccount(input) {
