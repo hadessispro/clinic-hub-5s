@@ -710,10 +710,6 @@ select {
   min-width: 170px;
 }
 
-tr.is-pagination-hidden {
-  display: none !important;
-}
-
 .lead-distribution-mode {
   margin-top: 14px;
   padding: 12px;
