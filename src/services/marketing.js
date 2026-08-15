@@ -401,6 +401,7 @@ export async function getMarketingLeadPage(filters = {}) {
   const from = filters.date_from ? new Date(`${filters.date_from}T00:00:00+07:00`) : null;
   const to = filters.date_to ? new Date(`${filters.date_to}T23:59:59.999+07:00`) : null;
   const filtered = leads.filter((lead) => {
+    if (filters.pg_unhandled_only && !(lead.created_by_role === 'pg_staff' && lead.status === 'new')) return false;
     if (!from && !to) return true;
     const created = new Date(lead.created_at || 0);
     if (Number.isNaN(created.getTime())) return false;

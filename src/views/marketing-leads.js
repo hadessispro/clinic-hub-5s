@@ -13,12 +13,21 @@ let cachedLeads = [];
 let cachedEmployees = [];
 let activeViewMode = 'kanban'; // 'kanban' | 'table'
 let activeDataClassFilter = '';
+let activePgUnhandledOnly = false;
+let pgSubmissionPage = 1;
+let pgSubmissionPageSize = 50;
+
+const NET_SERVICES = {
+  basic: ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'],
+  advanced: ['Implant', 'Răng sứ', 'Niềng răng'],
+};
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
   const isPgStaff = profile.role === 'pg_staff';
   const isSupportMkt = profile.role === 'support_marketing';
-  const showIntakeForm = isPgStaff;
+  const isTelesaleLeader = profile.role === 'telesale_leader';
+  const showIntakeForm = isPgStaff || isTelesaleLeader;
   const isLeadManager = ['admin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
   const allowExport = canExportData(profile.role);
 
@@ -31,7 +40,14 @@ export async function renderView(state) {
   cachedLeads = leads;
   cachedEmployees = employees;
 
-  const telesaleEmployees = telesaleAccounts.filter((employee) => employee.role === 'telesale_staff' && employee.active !== false);
+  const telesaleEmployees = telesaleAccounts
+    .filter((employee) => ['telesale_staff', 'telesale_leader'].includes(employee.role) && employee.active !== false)
+    .map((employee) => ({
+      ...employee,
+      name: employee.role === 'telesale_leader'
+        ? `${employee.name}${employee.employee_code === profile.employee_code ? ' (Tôi · Quản lý)' : ' (Quản lý)'}`
+        : employee.name,
+    }));
 
   // Group leads for Kanban columns
   const kanbanColumns = [
@@ -61,7 +77,7 @@ export async function renderView(state) {
               ${colLeads.length ? colLeads.map(lead => {
                 const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
                 return `
-                  <article class="kanban-card lead-kanban-card is-collapsed" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" data-class="${escapeHTML(lead.data_class || 'raw')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
+                  <article class="kanban-card lead-kanban-card is-collapsed" draggable="true" id="kanban-card-${lead.id}" data-id="${lead.id}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-source="${escapeHTML(lead.source || '')}" data-branch="${escapeHTML(lead.branch_id || '')}" data-class="${escapeHTML(lead.data_class || 'raw')}" data-creator-role="${escapeHTML(lead.created_by_role || '')}" data-current-status="${escapeHTML(lead.status || 'new')}" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.04); position:relative; overflow:hidden;">
                     <!-- Top Info Section -->
                     <div class="card-header">
                       <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#0f172a; line-height:1.2;">${escapeHTML(lead.full_name)}</h4>
@@ -120,7 +136,7 @@ export async function renderView(state) {
     ? leads.map((lead, idx) => {
         const assignedEmp = employees.find(e => e.id === lead.assigned_telesale_id || e.employee_code === lead.assigned_telesale_id);
         return `
-          <tr id="table-row-${lead.id}" class="lead-table-row" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-source="${escapeHTML(lead.source)}" data-branch="${escapeHTML(lead.branch_id)}" data-class="${escapeHTML(lead.data_class || 'raw')}">
+          <tr id="table-row-${lead.id}" class="lead-table-row" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-source="${escapeHTML(lead.source)}" data-branch="${escapeHTML(lead.branch_id)}" data-class="${escapeHTML(lead.data_class || 'raw')}" data-creator-role="${escapeHTML(lead.created_by_role || '')}" data-current-status="${escapeHTML(lead.status || 'new')}">
             <td style="text-align:center; color:#64748b; font-size:0.82rem;">${idx + 1}</td>
             <td style="font-weight:600; color:#0f172a;">${escapeHTML(lead.full_name)}</td>
             <td style="font-weight:600; color:#0284c7;">${escapeHTML(lead.phone)}</td>
@@ -181,7 +197,7 @@ export async function renderView(state) {
   const telesaleOptionsHtml = telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`)).join('');
 
   const pgSubmissionRows = leads.length
-    ? leads.slice(0, 50).map((lead) => `<tr>
+    ? leads.map((lead) => `<tr data-pg-submission-row>
         <td><strong>${escapeHTML(lead.full_name)}</strong><br><span class="subtle">${escapeHTML(lead.phone || 'Không có SĐT')}</span></td>
         <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
         <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
@@ -201,7 +217,7 @@ export async function renderView(state) {
     ${showIntakeForm ? `
       <section class="panel">
         <div class="section-title">
-          <h3>+ Nạp Data Khách Hàng (Support Marketing / PG)</h3>
+          <h3>+ Nạp Data Khách Hàng (${isTelesaleLeader ? 'Quản lý Telesale' : 'PG'})</h3>
           ${pill(isPgStaff ? "Nạp trực tiếp từ thị trường" : "Nạp từ Ads / Hotline")}
         </div>
         <form class="form-grid three" id="createLeadForm">
@@ -209,11 +225,11 @@ export async function renderView(state) {
             <label for="leadDataClass">Phân loại data</label>
             <select id="leadDataClass" name="data_class" required><option value="raw">Data thô</option><option value="net">Data net</option></select>
           </div>
-          <div class="form-field" id="leadNetLevelField" hidden>
+          <div class="form-field" id="leadNetLevelField" hidden style="display:none">
             <label for="leadNetLevel">Cấp độ data net</label>
             <select id="leadNetLevel" name="net_level"><option value="basic">Net cơ bản</option><option value="advanced">Net chuyên sâu</option></select>
           </div>
-          <div class="form-field" id="leadAppointmentField" hidden>
+          <div class="form-field" id="leadAppointmentField" hidden style="display:none">
             <label for="leadAppointment">Lịch hẹn</label>
             <input id="leadAppointment" name="appointment_at" type="datetime-local">
           </div>
@@ -223,7 +239,7 @@ export async function renderView(state) {
           </div>
           <div class="form-field">
             <label for="leadPhone">Số điện thoại</label>
-            <input id="leadPhone" name="phone" required placeholder="090..." type="tel" />
+            <input id="leadPhone" name="phone" placeholder="090..." type="tel" />
           </div>
           <div class="form-field">
             <label for="leadSource">Nguồn tiếp nhận</label>
@@ -236,9 +252,11 @@ export async function renderView(state) {
               <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
             </select>
           </div>
-          <div class="form-field">
+          <div class="form-field" id="leadServiceField" hidden style="display:none">
             <label for="leadService">Dịch vụ quan tâm</label>
-            <input id="leadService" name="service_interest" placeholder="VD: Trồng răng Implant, Niềng răng" />
+            <select id="leadService" name="service_interest" disabled>
+              <option value="">Chọn dịch vụ</option>
+            </select>
           </div>
           <div class="form-field full">
             <label for="leadNotes">Ghi chú nhu cầu</label>
@@ -250,8 +268,21 @@ export async function renderView(state) {
         </form>
       </section>
       <section class="panel" style="margin-top:14px">
-        <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Tối đa 50 bản ghi gần nhất · chỉ hiển thị dữ liệu của tài khoản hiện tại</p></div><span class="pill">${leads.length} bản ghi</span></div>
+        <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Số liệu thực tế của tài khoản hiện tại · 50 bản ghi mỗi trang</p></div><span class="pill">${leads.length} bản ghi</span></div>
         <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Lịch hẹn</th><th>Trạng thái</th></tr></thead><tbody>${pgSubmissionRows}</tbody></table></div>
+        <div class="data-pagination" id="pgSubmissionPagination" aria-label="Phân trang dữ liệu PG">
+          <div class="data-pagination-summary" id="pgSubmissionPaginationSummary"></div>
+          <div class="data-pagination-actions">
+            <label class="data-page-size">Hiển thị
+              <select id="pgSubmissionPageSize">
+                ${[25, 50, 100].map((size) => option(size, `${size} bản ghi`, pgSubmissionPageSize === size)).join('')}
+              </select>
+            </label>
+            <button type="button" class="data-page-nav" id="pgSubmissionPrevPage"><i class="ri-arrow-left-s-line"></i><span>Trước</span></button>
+            <div class="data-page-numbers" id="pgSubmissionPageNumbers"></div>
+            <button type="button" class="data-page-nav" id="pgSubmissionNextPage"><span>Sau</span><i class="ri-arrow-right-s-line"></i></button>
+          </div>
+        </div>
       </section>
     ` : ''}
 
@@ -292,7 +323,10 @@ export async function renderView(state) {
             <button type="button" class="lead-data-filter ${activeDataClassFilter === 'raw' ? 'is-active' : ''}" data-lead-class-filter="raw">
               <i class="ri-shuffle-line"></i><span><strong>Chia Data thô</strong><small>${leads.filter((lead) => lead.data_class !== 'net').length} Lead · chia ngẫu nhiên đều</small></span>
             </button>
-            <button type="button" class="lead-data-filter-reset" id="clearLeadClassFilter" ${activeDataClassFilter ? '' : 'hidden'}>Xem tất cả</button>
+            <button type="button" class="lead-data-filter ${activePgUnhandledOnly ? 'is-active' : ''}" id="pgUnhandledLeadFilter">
+              <i class="ri-user-received-line"></i><span><strong>PG mới nhập · chưa xử lý</strong><small>${leads.filter((lead) => lead.created_by_role === 'pg_staff' && lead.status === 'new').length} Lead cần quản lý kiểm tra</small></span>
+            </button>
+            <button type="button" class="lead-data-filter-reset" id="clearLeadClassFilter" ${(activeDataClassFilter || activePgUnhandledOnly) ? '' : 'hidden'}>Xem tất cả</button>
           </div>
           <div class="lead-distribution-guidance" id="netDistributionGuidance" ${activeDataClassFilter === 'net' ? '' : 'hidden'}>
             <i class="ri-information-line"></i><span>Chọn Telesale tại từng dòng Data net. Mỗi Telesale vẫn có thể nhận đồng thời Data thô.</span>
@@ -342,14 +376,35 @@ export function initView() {
   const appointmentField = document.getElementById('leadAppointmentField');
   const netLevel = document.getElementById('leadNetLevel');
   const appointment = document.getElementById('leadAppointment');
+  const phone = document.getElementById('leadPhone');
+  const serviceField = document.getElementById('leadServiceField');
+  const service = document.getElementById('leadService');
+  const updateServiceOptions = () => {
+    if (!service) return;
+    const items = NET_SERVICES[netLevel?.value] || NET_SERVICES.basic;
+    const previous = service.value;
+    service.innerHTML = `<option value="">Chọn dịch vụ</option>${items.map((item) => `<option value="${escapeHTML(item)}">${escapeHTML(item)}</option>`).join('')}`;
+    service.value = items.includes(previous) ? previous : '';
+  };
   const toggleNetFields = () => {
     const isNet = dataClass?.value === 'net';
-    if (netLevelField) netLevelField.hidden = !isNet;
-    if (appointmentField) appointmentField.hidden = !isNet;
-    if (netLevel) netLevel.required = isNet;
-    if (appointment) appointment.required = isNet;
+    for (const field of [netLevelField, appointmentField, serviceField]) {
+      if (!field) continue;
+      field.hidden = !isNet;
+      field.style.display = isNet ? '' : 'none';
+    }
+    if (netLevel) { netLevel.required = isNet; netLevel.disabled = !isNet; }
+    if (appointment) { appointment.required = isNet; appointment.disabled = !isNet; }
+    if (phone) phone.required = isNet;
+    if (service) {
+      service.disabled = !isNet;
+      service.required = isNet;
+      if (!isNet) service.value = '';
+    }
+    if (isNet) updateServiceOptions();
   };
   dataClass?.addEventListener('change', toggleNetFields);
+  netLevel?.addEventListener('change', updateServiceOptions);
   toggleNetFields();
 
   document.getElementById('distributeRawLeads')?.addEventListener('click', async () => {
@@ -467,6 +522,10 @@ export function initView() {
         await updateMarketingLead(id, { status });
         const leadObj = cachedLeads.find(l => l.id === id);
         if (leadObj) leadObj.status = status;
+        const card = document.getElementById(`kanban-card-${id}`);
+        const row = document.getElementById(`table-row-${id}`);
+        if (card) card.dataset.currentStatus = status;
+        if (row) row.dataset.currentStatus = status;
         showToast("✅ Đã chuyển trạng thái Lead thành công!");
       } catch (err) {
         showToast("Lỗi khi chuyển trạng thái: " + err.message, true);
@@ -564,6 +623,9 @@ export function initView() {
           await updateMarketingLead(leadId, { status: newStatus });
           const leadObj = cachedLeads.find(l => l.id === leadId);
           if (leadObj) leadObj.status = newStatus;
+          card.dataset.currentStatus = newStatus;
+          const row = document.getElementById(`table-row-${leadId}`);
+          if (row) row.dataset.currentStatus = newStatus;
           showToast(`✅ Đã chuyển Lead sang "${LEAD_STATUS[newStatus] || newStatus}" thành công!`);
         } catch (err) {
           showToast("Lỗi khi chuyển trạng thái: " + err.message, true);
@@ -593,13 +655,16 @@ export function initView() {
       const cardSource = card.dataset.source || '';
       const cardBranch = card.dataset.branch || '';
       const cardClass = card.dataset.class || 'raw';
+      const creatorRole = card.dataset.creatorRole || '';
+      const currentStatus = card.dataset.currentStatus || 'new';
 
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || cardBranch === branch;
       const matchSource = !source || cardSource === source;
 
       const matchClass = !dataClass || cardClass === dataClass;
-      card.style.display = (matchQ && matchBranch && matchSource && matchClass) ? 'block' : 'none';
+      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && currentStatus === 'new');
+      card.style.display = (matchQ && matchBranch && matchSource && matchClass && matchPgUnhandled) ? 'block' : 'none';
     });
 
     // Filter Table rows
@@ -609,13 +674,16 @@ export function initView() {
       const rowSource = row.dataset.source || '';
       const rowBranch = row.dataset.branch || '';
       const rowClass = row.dataset.class || 'raw';
+      const creatorRole = row.dataset.creatorRole || '';
+      const currentStatus = row.dataset.currentStatus || 'new';
 
       const matchQ = !q || name.includes(q) || phone.includes(q);
       const matchBranch = !branch || rowBranch === branch;
       const matchSource = !source || rowSource === source;
 
       const matchClass = !dataClass || rowClass === dataClass;
-      row.style.display = (matchQ && matchBranch && matchSource && matchClass) ? 'table-row' : 'none';
+      const matchPgUnhandled = !activePgUnhandledOnly || (creatorRole === 'pg_staff' && currentStatus === 'new');
+      row.style.display = (matchQ && matchBranch && matchSource && matchClass && matchPgUnhandled) ? 'table-row' : 'none';
     });
   }
 
@@ -630,10 +698,19 @@ export function initView() {
   }));
   clearClassFilter?.addEventListener('click', () => {
     activeDataClassFilter = '';
+    activePgUnhandledOnly = false;
     document.querySelectorAll('[data-lead-class-filter]').forEach((item) => item.classList.remove('is-active'));
+    document.getElementById('pgUnhandledLeadFilter')?.classList.remove('is-active');
     if (rawDistributionControl) rawDistributionControl.hidden = true;
     if (netDistributionGuidance) netDistributionGuidance.hidden = true;
     clearClassFilter.hidden = true;
+    applyFilters();
+  });
+  document.getElementById('pgUnhandledLeadFilter')?.addEventListener('click', (event) => {
+    activePgUnhandledOnly = !activePgUnhandledOnly;
+    event.currentTarget.classList.toggle('is-active', activePgUnhandledOnly);
+    if (clearClassFilter) clearClassFilter.hidden = !(activeDataClassFilter || activePgUnhandledOnly);
+    activateTableView();
     applyFilters();
   });
   applyFilters();
@@ -641,4 +718,47 @@ export function initView() {
   if (searchInput) searchInput.addEventListener('input', applyFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyFilters);
   if (sourceSelect) sourceSelect.addEventListener('change', applyFilters);
+
+  const pgRows = Array.from(document.querySelectorAll('[data-pg-submission-row]'));
+  const pgSummary = document.getElementById('pgSubmissionPaginationSummary');
+  const pgNumbers = document.getElementById('pgSubmissionPageNumbers');
+  const pgPrevious = document.getElementById('pgSubmissionPrevPage');
+  const pgNext = document.getElementById('pgSubmissionNextPage');
+  const pgPageSizeSelect = document.getElementById('pgSubmissionPageSize');
+
+  function renderPgSubmissionPage() {
+    if (!pgRows.length) {
+      document.getElementById('pgSubmissionPagination')?.setAttribute('hidden', '');
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(pgRows.length / pgSubmissionPageSize));
+    pgSubmissionPage = Math.min(Math.max(1, pgSubmissionPage), totalPages);
+    const start = (pgSubmissionPage - 1) * pgSubmissionPageSize;
+    const end = Math.min(start + pgSubmissionPageSize, pgRows.length);
+    pgRows.forEach((row, index) => { row.hidden = index < start || index >= end; });
+    if (pgSummary) pgSummary.textContent = `Hiển thị ${start + 1}–${end} trong ${pgRows.length} bản ghi thực tế`;
+    if (pgPrevious) pgPrevious.disabled = pgSubmissionPage <= 1;
+    if (pgNext) pgNext.disabled = pgSubmissionPage >= totalPages;
+    if (pgNumbers) {
+      const pages = Array.from(new Set([1, pgSubmissionPage - 1, pgSubmissionPage, pgSubmissionPage + 1, totalPages]))
+        .filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+      pgNumbers.innerHTML = pages.map((page, index) => {
+        const gap = index > 0 && page - pages[index - 1] > 1 ? '<span class="data-page-gap">…</span>' : '';
+        return `${gap}<button type="button" class="data-page-number${page === pgSubmissionPage ? ' is-active' : ''}" data-pg-submission-page="${page}" ${page === pgSubmissionPage ? 'aria-current="page"' : ''}>${page}</button>`;
+      }).join('');
+      pgNumbers.querySelectorAll('[data-pg-submission-page]').forEach((button) => button.addEventListener('click', () => {
+        pgSubmissionPage = Number(button.dataset.pgSubmissionPage) || 1;
+        renderPgSubmissionPage();
+      }));
+    }
+  }
+
+  pgPageSizeSelect?.addEventListener('change', () => {
+    pgSubmissionPageSize = Number(pgPageSizeSelect.value) || 50;
+    pgSubmissionPage = 1;
+    renderPgSubmissionPage();
+  });
+  pgPrevious?.addEventListener('click', () => { pgSubmissionPage -= 1; renderPgSubmissionPage(); });
+  pgNext?.addEventListener('click', () => { pgSubmissionPage += 1; renderPgSubmissionPage(); });
+  renderPgSubmissionPage();
 }

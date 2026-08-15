@@ -594,6 +594,26 @@ select {
   padding: 12px 14px !important;
 }
 
+/* Cards are laid out independently so expanding one customer does not create
+   a large empty row underneath the neighbouring collapsed cards. */
+.telesale-card-grid {
+  column-width: 340px;
+  column-gap: 14px;
+  margin-top: 12px;
+}
+
+.telesale-card-grid .telesale-lead-card {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 14px;
+  break-inside: avoid;
+  vertical-align: top;
+}
+
+@media (max-width: 520px) {
+  .telesale-card-grid { column-width: auto; column-count: 1; }
+}
+
 .telesale-card-summary {
   display: flex;
   align-items: center;
@@ -6284,6 +6304,21 @@ body.dialog-open {
 .toast.chat-toast {
   display: block;
   width: auto;
+}
+
+.tsm-ledger-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tsm-ledger-actions .secondary-button.is-active {
+  border-color: var(--teal);
+  color: var(--teal-dark);
+  background: #e8f7f3;
+  box-shadow: 0 0 0 2px rgba(0, 139, 130, 0.1);
 }
 
 /* Lead inventory report: replace the redundant long Kanban with an at-a-glance operational dashboard. */

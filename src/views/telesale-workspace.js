@@ -100,7 +100,7 @@ export async function renderView(state) {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap:14px; margin-top:12px; align-items:start;">
+      <div class="telesale-card-grid">
         ${leadsListHtml}
       </div>
       <div class="data-pagination" id="telesalePagination" aria-label="Phân trang danh sách Lead">
