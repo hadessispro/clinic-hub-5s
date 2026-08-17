@@ -119,7 +119,7 @@ export async function renderView() {
     <section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Báo cáo data theo tài khoản PG</h3><span class="pill">Dữ liệu PostgreSQL</span></div>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Tổng</th><th>Data thô</th><th>Net cơ bản</th><th>Net chuyên sâu</th></tr></thead><tbody>
-        ${pgRows.length ? pgRows.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.total}</td><td>${row.raw_count}</td><td>${row.net_basic_count}</td><td>${row.net_advanced_count}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có data PG.</td></tr>'}
+        ${pgRows.length ? pgRows.map((row) => `<tr><td><strong>${escapeHTML(row.pg_name || row.pg_code)}</strong><small>${escapeHTML(row.pg_code)}</small></td><td>${row.total}</td><td>${row.raw_count}</td><td>${row.net_basic_count}</td><td>${row.net_advanced_count}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có data PG.</td></tr>'}
       </tbody></table></div>
     </section>
 
@@ -144,7 +144,7 @@ export async function renderView() {
           return `<tr><td>${pgLeadStart + index}</td><td><strong>${escapeHTML(lead.full_name || '')}</strong><small>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</small></td><td><strong>${escapeHTML(lead.created_by_pg || '—')}</strong><small>${escapeHTML(lead.created_by_name || 'PG')}</small></td><td><span class="pg-data-tag ${lead.data_class === 'net' ? 'is-net' : 'is-raw'}">${escapeHTML(dataLabel)}</span></td><td><strong>${escapeHTML(lead.service_interest || 'Chưa xác định')}</strong><small>${escapeHTML(appointment)}</small></td><td>${lead.assigned_telesale_id ? `<strong>${escapeHTML(lead.assigned_telesale_id)}</strong>` : '<span class="pg-unassigned">Chưa gán</span>'}</td><td>${leadStatusPill(lead.status)}</td><td><strong>${escapeHTML(lead.source || 'PG')}</strong><small>${lead.created_at ? new Date(lead.created_at).toLocaleString('vi-VN') : '—'}</small></td></tr>`;
         }).join('') : '<tr><td colspan="8" class="pg-lead-empty">Không có data PG phù hợp bộ lọc.</td></tr>'}
       </tbody></table></div>
-      <div class="data-pagination"><span class="data-pagination-summary">Hiển thị ${pgLeadStart}–${Math.min(pgLeadStart + pgLeads.length - 1, pgLeadTotal)} trong ${pgLeadTotal.toLocaleString('vi-VN')} data PG</span><div class="data-pagination-actions"><button type="button" class="data-page-nav" data-pg-lead-page="${Math.max(1, Number(pgLeadMeta.page || 1) - 1)}"${Number(pgLeadMeta.page || 1) <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button><span class="data-page-number is-active">${Number(pgLeadMeta.page || 1)}</span><button type="button" class="data-page-nav" data-pg-lead-page="${Math.min(pgLeadPages, Number(pgLeadMeta.page || 1) + 1)}"${Number(pgLeadMeta.page || 1) >= pgLeadPages ? ' disabled' : ''}><span>Sau</span> ›</button></div></div>
+      <div class="data-pagination"><span class="data-pagination-summary">Hiển thị ${pgLeadStart}–${Math.min(pgLeadStart + pgLeads.length - 1, pgLeadTotal)} trong ${pgLeadTotal.toLocaleString('vi-VN')} data PG</span><div class="data-pagination-actions"><button type="button" class="data-page-nav" data-pg-lead-page="${Math.max(1, Number(pgLeadMeta.page || 1) - 1)}"${Number(pgLeadMeta.page || 1) <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button><label class="data-page-picker"><span>Trang</span><select aria-label="Chọn trang data PG" data-pg-lead-page-select>${Array.from({ length: pgLeadPages }, (_, index) => `<option value="${index + 1}"${index + 1 === Number(pgLeadMeta.page || 1) ? ' selected' : ''}>${index + 1}/${pgLeadPages}</option>`).join('')}</select></label><button type="button" class="data-page-nav" data-pg-lead-page="${Math.min(pgLeadPages, Number(pgLeadMeta.page || 1) + 1)}"${Number(pgLeadMeta.page || 1) >= pgLeadPages ? ' disabled' : ''}><span>Sau</span> ›</button></div></div>
     </section>
 
     ${adminOperations ? `<section class="panel" style="margin-top:14px">
@@ -205,6 +205,10 @@ export function initView() {
     pgLeadPage = Number(button.dataset.pgLeadPage || 1);
     await navigateTo('pg-management');
   }));
+  document.querySelector('[data-pg-lead-page-select]')?.addEventListener('change', async (event) => {
+    pgLeadPage = Number(event.currentTarget.value || 1);
+    await navigateTo('pg-management');
+  });
   document.querySelector('[data-reset-pg-leads]')?.addEventListener('click', async () => {
     pgLeadSearch = ''; pgLeadCode = ''; pgLeadDataClass = ''; pgLeadNetLevel = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadAssignment = ''; pgLeadPage = 1;
     await navigateTo('pg-management');

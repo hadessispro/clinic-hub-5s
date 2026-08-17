@@ -863,6 +863,27 @@ select {
   padding: 0 2px;
 }
 
+.data-page-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #627169;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.data-page-picker select {
+  min-width: 86px;
+  height: 34px;
+  padding: 0 27px 0 9px;
+  border: 1px solid #cfe0da;
+  border-radius: 9px;
+  background: #fff;
+  color: #315249;
+  font: inherit;
+}
+
 .pg-lead-audit-panel { overflow: hidden; }
 .pg-lead-filter-grid { display: grid; grid-template-columns: minmax(260px, 1.65fr) repeat(6, minmax(138px, .78fr)) auto; align-items: end; gap: 10px; margin: 16px 0 10px; padding: 14px; border: 1px solid #d7e5e1; border-radius: 14px; background: #f7fbf9; }
 .pg-lead-filter-grid .form-field { min-width: 0; }
@@ -907,6 +928,15 @@ select {
 
   .data-page-nav span {
     display: none;
+  }
+
+  .data-page-picker {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .data-page-picker select {
+    min-width: 104px;
   }
 }
 

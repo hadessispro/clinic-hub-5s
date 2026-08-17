@@ -485,12 +485,28 @@ export class MarketingService {
   async reports(user: AuthUser) {
     requireRole(user, reportRoles);
     const pg = await this.infrastructure.postgres.query(
-      `select created_by_pg_code pg_code,count(*)::int total,
-       count(*) filter (where data_class='raw')::int raw_count,
-       count(*) filter (where data_class='net')::int net_count,
-       count(*) filter (where net_level='basic')::int net_basic_count,
-       count(*) filter (where net_level='advanced')::int net_advanced_count
-       from marketing.leads group by created_by_pg_code order by total desc`,
+      `with pg_totals as (
+         select created_by_pg_code pg_code,count(*)::int total,
+                count(*) filter (where data_class='raw')::int raw_count,
+                count(*) filter (where data_class='net')::int net_count,
+                count(*) filter (where net_level='basic')::int net_basic_count,
+                count(*) filter (where net_level='advanced')::int net_advanced_count
+           from marketing.leads
+          group by created_by_pg_code
+       )
+       select totals.*,coalesce(creator.full_name,totals.pg_code) pg_name
+         from pg_totals totals
+         left join lateral (
+           select coalesce(e.payload->>'full_name',p.payload->>'full_name') full_name
+             from app.records p
+             left join app.records e on e.entity_type='employees' and e.deleted_at is null
+               and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+            where p.entity_type='profiles' and p.deleted_at is null
+              and lower(p.payload->>'employee_code')=lower(totals.pg_code)
+            order by p.updated_at desc
+            limit 1
+         ) creator on true
+        order by totals.total desc`,
     );
     const telesale = await this.infrastructure.postgres.query(
       `select l.assigned_telesale_code telesale_code,count(distinct l.id)::int assigned,
