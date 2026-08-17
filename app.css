@@ -2034,6 +2034,61 @@ h3 {
   background: var(--mint);
 }
 
+/* Lead statuses share one semantic color system across PG, Telesale and Admin. */
+.status-pill.lead-status {
+  border-width: 1px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.34);
+}
+
+.status-pill.lead-new {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.status-pill.lead-contacted {
+  border-color: #fcd34d;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.status-pill.lead-appointment {
+  border-color: #c4b5fd;
+  color: #6d28d9;
+  background: #f5f3ff;
+}
+
+.status-pill.lead-visited {
+  border-color: #67e8f9;
+  color: #0f766e;
+  background: #ecfeff;
+}
+
+.status-pill.lead-converted {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.status-pill.lead-cancelled {
+  border-color: #fca5a5;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.status-pill.lead-unknown {
+  border-color: #cbd5e1;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.select-badge.lead-status-control.lead-new { border-color: #93c5fd !important; color: #1d4ed8 !important; background-color: #eff6ff !important; }
+.select-badge.lead-status-control.lead-contacted { border-color: #fcd34d !important; color: #92400e !important; background-color: #fffbeb !important; }
+.select-badge.lead-status-control.lead-appointment { border-color: #c4b5fd !important; color: #6d28d9 !important; background-color: #f5f3ff !important; }
+.select-badge.lead-status-control.lead-visited { border-color: #67e8f9 !important; color: #0f766e !important; background-color: #ecfeff !important; }
+.select-badge.lead-status-control.lead-converted { border-color: #86efac !important; color: #166534 !important; background-color: #f0fdf4 !important; }
+.select-badge.lead-status-control.lead-cancelled { border-color: #fca5a5 !important; color: #b91c1c !important; background-color: #fef2f2 !important; }
+
 .priority-pill.high {
   color: #97302e;
   background: #ffe6e3;

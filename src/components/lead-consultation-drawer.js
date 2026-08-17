@@ -3,6 +3,7 @@ import { CALL_STATUS, LEAD_STATUS } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from './toast.js';
 import { store } from '../store.js';
+import { leadStatusTone } from './shared.js';
 
 const branchName = (id) => id === 'le-van-tho'
   ? '5S Lê Văn Thọ'
@@ -26,7 +27,7 @@ function facts(lead) {
     <span class="lead-dossier-eyebrow">TRÌNH TƯ VẤN KHÁCH HÀNG</span>
     <h3 id="leadConsultationTitle">${safe(lead.full_name || customer.customerName, 'Khách hàng')}</h3>
     <p>${safe(lead.phone || customer.phone, 'Chưa có số điện thoại')} · ${safe(branchName(lead.branch_id || customer.arrivalBranch))}</p>
-    <span class="lead-dossier-status" data-consultation-current-status>${safe(LEAD_STATUS[lead.status] || lead.status, 'Mới tiếp nhận')}</span>
+    <span class="lead-dossier-status status-pill lead-status ${leadStatusTone(lead.status)}" data-consultation-current-status>${safe(LEAD_STATUS[lead.status] || lead.status, 'Mới tiếp nhận')}</span>
   </div>
   <div class="lead-dossier-facts">
     <div><small>Mã hồ sơ</small><strong>${safe(customer.customerCode || lead.id)}</strong></div>
@@ -126,7 +127,11 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
         });
         const updated = await updateMarketingLead(activeLead.id, { status: data.status, notes: data.note });
         activeLead = { ...activeLead, ...(updated || {}), status: data.status, notes: data.note };
-        content.querySelector('[data-consultation-current-status]').textContent = LEAD_STATUS[data.status] || data.status;
+        const currentStatus = content.querySelector('[data-consultation-current-status]');
+        if (currentStatus) {
+          currentStatus.textContent = LEAD_STATUS[data.status] || data.status;
+          currentStatus.className = `lead-dossier-status status-pill lead-status ${leadStatusTone(data.status)}`;
+        }
         const logs = await getLeadCallLogs(activeLead.id);
         const history = content.querySelector('[data-consultation-history]');
         if (history) history.innerHTML = historyHtml(logs);

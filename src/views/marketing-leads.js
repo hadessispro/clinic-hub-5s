@@ -2,7 +2,7 @@ import { getMarketingLeads, createMarketingLead, updateMarketingLead, deleteMark
 import { getEmployees } from '../services/employees.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
-import { pill, statusPill, option, emptyState } from '../components/shared.js';
+import { leadStatusPill, leadStatusTone, pill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { canExportData } from '../permissions.js';
@@ -116,7 +116,7 @@ export async function renderView(state) {
                         </div>
                         <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
                           <span style="font-size:0.75rem; font-weight:600; color:#475569; width:65px; shrink:0;">Trạng thái:</span>
-                          <select class="select-badge" data-change-status data-id="${escapeHTML(lead.id)}" style="flex:1; width:100%; max-width:100% !important; height:32px;">
+                          <select class="select-badge lead-status-control ${leadStatusTone(lead.status)}" data-change-status data-id="${escapeHTML(lead.id)}" style="flex:1; width:100%; max-width:100% !important; height:32px;">
                             ${Object.keys(LEAD_STATUS).map(st => option(st, LEAD_STATUS[st], lead.status === st)).join('')}
                           </select>
                         </div>
@@ -150,7 +150,7 @@ export async function renderView(state) {
               </select>
             </td>
             <td>
-              <select class="select-badge" data-change-status data-id="${escapeHTML(lead.id)}">
+              <select class="select-badge lead-status-control ${leadStatusTone(lead.status)}" data-change-status data-id="${escapeHTML(lead.id)}">
                 ${Object.keys(LEAD_STATUS).map(st => option(st, LEAD_STATUS[st], lead.status === st)).join('')}
               </select>
             </td>
@@ -202,7 +202,7 @@ export async function renderView(state) {
         <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
         <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
         <td>${lead.appointment_at ? formatDateTime(lead.appointment_at) : 'Chưa có lịch hẹn'}</td>
-        <td>${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'cancelled' ? 'rejected' : lead.status === 'converted' ? 'approved' : 'pending')}</td>
+        <td>${leadStatusPill(lead.status)}</td>
       </tr>`).join('')
     : '<tr><td colspan="5">Bạn chưa nhập dữ liệu khách hàng nào.</td></tr>';
 
@@ -518,6 +518,7 @@ export function initView() {
     select.addEventListener('change', async () => {
       const id = select.dataset.id;
       const status = select.value;
+      const previousStatus = cachedLeads.find(l => l.id === id)?.status || 'new';
       try {
         showToast("Đang cập nhật trạng thái Lead...");
         await updateMarketingLead(id, { status });
@@ -527,8 +528,14 @@ export function initView() {
         const row = document.getElementById(`table-row-${id}`);
         if (card) card.dataset.currentStatus = status;
         if (row) row.dataset.currentStatus = status;
+        document.querySelectorAll(`[data-change-status][data-id="${CSS.escape(id)}"]`).forEach((control) => {
+          control.value = status;
+          control.classList.remove(leadStatusTone(previousStatus));
+          control.classList.add(leadStatusTone(status));
+        });
         showToast("✅ Đã chuyển trạng thái Lead thành công!");
       } catch (err) {
+        select.value = previousStatus;
         showToast("Lỗi khi chuyển trạng thái: " + err.message, true);
       }
     });
@@ -616,8 +623,12 @@ export function initView() {
         cardList.appendChild(card);
         
         // Update select dropdown inside card
-        const select = card.querySelector('[data-change-status]');
-        if (select) select.value = newStatus;
+        const previousStatus = card.dataset.currentStatus || 'new';
+        document.querySelectorAll(`[data-change-status][data-id="${CSS.escape(leadId)}"]`).forEach((control) => {
+          control.value = newStatus;
+          control.classList.remove(leadStatusTone(previousStatus));
+          control.classList.add(leadStatusTone(newStatus));
+        });
 
         try {
           showToast(`Đang chuyển Lead sang "${LEAD_STATUS[newStatus] || newStatus}"...`);

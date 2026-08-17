@@ -1,7 +1,7 @@
 import { createMarketingLead, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
-import { option } from '../components/shared.js';
+import { leadStatusPill, option } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
 import { navigateTo } from '../router.js';
@@ -74,7 +74,7 @@ export async function renderView() {
       <option value="">Chưa gán</option>
       ${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, lead.assigned_telesale_id === member.employee_code)).join('')}
     </select></td>
-    <td data-label="Trạng thái"><span class="tsm-status" data-tsm-lead-status>${escapeHTML(LEAD_STATUS[lead.status] || lead.status || 'Chưa rõ')}</span></td>
+    <td data-label="Trạng thái"><span data-tsm-lead-status>${leadStatusPill(lead.status)}</span></td>
     <td data-label="Nguồn nhập"><strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong><small>${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small></td>
     <td data-label="Tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
     <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td>
@@ -195,7 +195,7 @@ export function initView() {
       renderedLeads.set(String(lead.id), lead);
       const row = document.querySelector(`[data-tsm-lead-row="${CSS.escape(String(lead.id))}"]`);
       const status = row?.querySelector('[data-tsm-lead-status]');
-      if (status) status.textContent = LEAD_STATUS[lead.status] || lead.status;
+      if (status) status.innerHTML = leadStatusPill(lead.status);
     },
   });
   document.getElementById('tsmReportDate')?.addEventListener('change', (event) => { reportDate = event.target.value || today(); rerender(); });

@@ -1,7 +1,7 @@
 import { getMarketingLeads, exportLeadsToCSV } from '../services/marketing.js';
 import { LEAD_STATUS } from '../constants.js';
 import { escapeHTML } from '../utils.js';
-import { pill, statusPill, option, emptyState } from '../components/shared.js';
+import { leadStatusPill, pill, option, emptyState } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
 import { initLeadConsultationDrawer, leadConsultationDrawer } from '../components/lead-consultation-drawer.js';
@@ -34,7 +34,7 @@ export async function renderView(state) {
                 <span><i class="ri-phone-line"></i>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</span>
               </div>
               <div class="telesale-card-actions">
-                <span data-workspace-lead-status>${statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending')}</span>
+                <span data-workspace-lead-status>${leadStatusPill(lead.status)}</span>
                 <button type="button" class="telesale-card-toggle" data-toggle-workspace-card="${escapeHTML(lead.id)}" aria-expanded="false" title="Mở nội dung chăm sóc" aria-label="Mở nội dung chăm sóc"><i class="ri-arrow-down-s-line"></i></button>
               </div>
             </div>
@@ -243,7 +243,7 @@ export function initView() {
       const card = document.querySelector(`[data-workspace-lead="${CSS.escape(String(lead.id))}"]`);
       if (card) card.dataset.status = lead.status;
       const status = card?.querySelector('[data-workspace-lead-status]');
-      if (status) status.innerHTML = statusPill(LEAD_STATUS[lead.status] || lead.status, lead.status === 'converted' ? 'approved' : lead.status === 'cancelled' ? 'rejected' : 'pending');
+      if (status) status.innerHTML = leadStatusPill(lead.status);
     },
   });
 }

@@ -1,5 +1,5 @@
 import { escapeHTML } from '../utils.js';
-import { PRIORITY_LABELS } from '../constants.js';
+import { LEAD_STATUS, PRIORITY_LABELS } from '../constants.js';
 
 export function pill(text, isRawHtml = false) {
   return `<span class="pill">${isRawHtml ? text : escapeHTML(String(text))}</span>`;
@@ -7,6 +7,22 @@ export function pill(text, isRawHtml = false) {
 
 export function statusPill(text, tone) {
   return `<span class="status-pill ${tone || 'neutral'}">${escapeHTML(String(text))}</span>`;
+}
+
+export function leadStatusTone(status) {
+  const tones = {
+    new: 'lead-new',
+    contacted: 'lead-contacted',
+    appointment_booked: 'lead-appointment',
+    visited: 'lead-visited',
+    converted: 'lead-converted',
+    cancelled: 'lead-cancelled',
+  };
+  return tones[status] || 'lead-unknown';
+}
+
+export function leadStatusPill(status) {
+  return `<span class="status-pill lead-status ${leadStatusTone(status)}">${escapeHTML(LEAD_STATUS[status] || status || 'Chưa rõ')}</span>`;
 }
 
 export function priorityPill(priority) {
