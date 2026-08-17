@@ -9,6 +9,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { geolocationErrorMessage } from '../services/geolocation.js';
+import { store } from '../store.js';
 
 let accounts = [];
 let sites = [];
@@ -32,6 +33,7 @@ function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'As
 export async function renderView() {
   attendanceFrom ||= today();
   attendanceTo ||= today();
+  const adminOperations = store.getState().role !== 'support_marketing';
   const pgLeadRequest = getMarketingLeadPage({
     page: pgLeadPage, page_size: PG_LEAD_PAGE_SIZE, pg_only: true,
     search: pgLeadSearch || undefined, pg_code: pgLeadCode || undefined,
@@ -40,7 +42,11 @@ export async function renderView() {
     assignment: pgLeadAssignment || undefined,
   });
   const loaded = await Promise.all([
-    getPgAccounts(), getPgSites(), getPgAssignments(today()), getMarketingReports(), getPgAttendance(attendanceFrom, attendanceTo),
+    adminOperations ? getPgAccounts() : Promise.resolve([]),
+    adminOperations ? getPgSites() : Promise.resolve([]),
+    adminOperations ? getPgAssignments(today()) : Promise.resolve([]),
+    getMarketingReports(),
+    adminOperations ? getPgAttendance(attendanceFrom, attendanceTo) : Promise.resolve([]),
     pgLeadRequest,
   ]);
   [accounts, sites, assignments, report, attendance] = loaded;
@@ -59,14 +65,14 @@ export async function renderView() {
   return `
     <div class="view-header"><div><p class="eyebrow">PG OPERATIONS</p><h3>Quản lý tài khoản, dữ liệu và chấm công PG</h3></div></div>
 
-    <div class="shift-overview-metrics">
+    ${adminOperations ? `<div class="shift-overview-metrics">
       <article><span>Tài khoản PG</span><strong>${accounts.length}</strong><small>${accounts.filter((row) => row.login_active).length} đang hoạt động</small></article>
       <article><span>Tổng data</span><strong>${Number(totals.total || 0)}</strong><small>${Number(totals.raw_count || 0)} thô · ${Number(totals.net_count || 0)} net</small></article>
       <article><span>PG nhiều data nhất</span><strong>${maxCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === maxCount)?.pg_code || 'Chưa có')}</small></article>
       <article><span>PG ít data nhất</span><strong>${minCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === minCount)?.pg_code || 'Chưa có')}</small></article>
-    </div>
+    </div>` : ''}
 
-    <div class="grid">
+    ${adminOperations ? `<div class="grid">
       <section class="panel">
         <div class="section-title"><h3>Tạo tài khoản PG</h3><span class="pill">Chỉ nhập data và chấm công</span></div>
         <form id="pgAccountForm" class="form-grid two pg-compact-form" autocomplete="off">
@@ -80,9 +86,9 @@ export async function renderView() {
         </form>
       </section>
 
-    </div>
+    </div>` : ''}
 
-    <section class="panel" style="margin-top:14px">
+    ${adminOperations ? `<section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Phân công vị trí và thời gian</h3><span class="pill">Mỗi PG · mỗi ngày một ca</span></div>
       <form id="pgAssignmentForm" class="pg-assignment-form">
         <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG</option>${accounts.map((row) => `<option value="${escapeHTML(row.profile?.employee_code || '')}">${escapeHTML(row.employee?.full_name || row.profile?.full_name || '')} · ${escapeHTML(row.profile?.employee_code || '')}</option>`).join('')}</select></label>
@@ -95,9 +101,9 @@ export async function renderView() {
       <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Địa chỉ</th><th>Thao tác</th></tr></thead><tbody>
         ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td><td><button class="danger-button pg-assignment-remove" type="button" data-delete-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button></td></tr>`).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
       </tbody></table></div>
-    </section>
+    </section>` : ''}
 
-    <section class="panel" style="margin-top:14px">
+    ${adminOperations ? `<section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Danh sách tài khoản PG</h3><span class="pill">${accounts.length} tài khoản</span></div>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Liên hệ</th><th>Chi nhánh</th><th>Đăng nhập cuối</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
         ${accounts.length ? accounts.map((row) => { const code = row.profile?.employee_code || ''; return `<tr>
@@ -108,9 +114,9 @@ export async function renderView() {
           <td><div class="button-row pg-account-actions"><button class="secondary-button" data-edit-pg="${escapeHTML(code)}"><i class="ri-edit-line"></i> Sửa</button><button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}"><i class="ri-lock-line"></i> ${row.login_active ? 'Khóa' : 'Mở khóa'}</button><button class="danger-button" data-delete-pg="${escapeHTML(code)}"><i class="ri-delete-bin-line"></i> Xóa</button></div></td>
         </tr>`; }).join('') : '<tr><td colspan="6">Chưa có tài khoản PG.</td></tr>'}
       </tbody></table></div>
-    </section>
+    </section>` : ''}
 
-    <section class="panel" style="margin-top:14px">
+    ${adminOperations ? `<section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Báo cáo data theo tài khoản PG</h3><span class="pill">Dữ liệu PostgreSQL</span></div>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Tổng</th><th>Data thô</th><th>Net cơ bản</th><th>Net chuyên sâu</th></tr></thead><tbody>
         ${pgRows.length ? pgRows.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.total}</td><td>${row.raw_count}</td><td>${row.net_basic_count}</td><td>${row.net_advanced_count}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có data PG.</td></tr>'}
@@ -152,9 +158,9 @@ export async function renderView() {
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Loại</th><th>Thời gian</th><th>Vị trí</th><th>GPS</th><th>Trạng thái</th></tr></thead><tbody>
         ${attendance.length ? attendance.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${escapeHTML(row.site_name)}</td><td>${row.distance_m} m · ±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="6">Chưa có lượt chấm công hôm nay.</td></tr>'}
       </tbody></table></div>
-    </section>
+    </section>` : ''}
 
-    <dialog id="editPgDialog" class="app-dialog">
+    ${adminOperations ? `<dialog id="editPgDialog" class="app-dialog">
       <form id="editPgForm" method="dialog" class="dialog-card">
         <div class="section-title"><div><p class="eyebrow">TÀI KHOẢN PG</p><h3>Chỉnh sửa tài khoản</h3></div><button type="button" class="icon-button" data-close-pg-dialog aria-label="Đóng">×</button></div>
         <input name="employeeCode" type="hidden">
@@ -166,7 +172,7 @@ export async function renderView() {
         </div>
         <div class="button-row pg-dialog-actions"><button type="button" class="secondary-button" data-close-pg-dialog>Hủy</button><button type="submit" class="primary-button">Lưu thay đổi</button></div>
       </form>
-    </dialog>`;
+    </dialog>` : ''}`;
 }
 
 async function refresh(message) {
