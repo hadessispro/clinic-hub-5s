@@ -1,7 +1,9 @@
 import {
   createPgAccount, createPgAssignment, deletePgAccount, deletePgAssignment, exportPgAttendanceCsv,
-  getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
+  getMarketingLeadPage, getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
 } from '../services/marketing.js';
+import { LEAD_STATUS } from '../constants.js';
+import { leadStatusPill } from '../components/shared.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
@@ -15,19 +17,44 @@ let report = { totals: {}, pg: [], telesale: [] };
 let attendance = [];
 let attendanceFrom = '';
 let attendanceTo = '';
+let pgLeadPage = 1;
+let pgLeadSearch = '';
+let pgLeadCode = '';
+let pgLeadDataClass = '';
+let pgLeadNetLevel = '';
+let pgLeadStatus = '';
+let pgLeadBranch = '';
+let pgLeadAssignment = '';
+const PG_LEAD_PAGE_SIZE = 25;
 
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
 
 export async function renderView() {
   attendanceFrom ||= today();
   attendanceTo ||= today();
-  [accounts, sites, assignments, report, attendance] = await Promise.all([
+  const pgLeadRequest = getMarketingLeadPage({
+    page: pgLeadPage, page_size: PG_LEAD_PAGE_SIZE, pg_only: true,
+    search: pgLeadSearch || undefined, pg_code: pgLeadCode || undefined,
+    data_class: pgLeadDataClass || undefined, net_level: pgLeadNetLevel || undefined,
+    status: pgLeadStatus || undefined, branch_id: pgLeadBranch || undefined,
+    assignment: pgLeadAssignment || undefined,
+  });
+  const loaded = await Promise.all([
     getPgAccounts(), getPgSites(), getPgAssignments(today()), getMarketingReports(), getPgAttendance(attendanceFrom, attendanceTo),
+    pgLeadRequest,
   ]);
+  [accounts, sites, assignments, report, attendance] = loaded;
+  const pgLeadResult = loaded[5];
   const totals = report.totals || {};
   const pgRows = report.pg || [];
   const maxCount = pgRows.length ? Math.max(...pgRows.map((row) => Number(row.total || 0))) : 0;
   const minCount = pgRows.length ? Math.min(...pgRows.map((row) => Number(row.total || 0))) : 0;
+  const pgLeads = pgLeadResult.data || [];
+  const pgLeadMeta = pgLeadResult.meta || { page: 1, pageSize: PG_LEAD_PAGE_SIZE, total: 0 };
+  const pgLeadTotal = Number(pgLeadMeta.total || 0);
+  const pgLeadPages = Math.max(1, Math.ceil(pgLeadTotal / PG_LEAD_PAGE_SIZE));
+  const pgLeadStart = pgLeadTotal ? ((Number(pgLeadMeta.page || 1) - 1) * PG_LEAD_PAGE_SIZE) + 1 : 0;
+  const pgOptions = [...new Set(pgRows.map((row) => row.pg_code).filter(Boolean))];
 
   return `
     <div class="view-header"><div><p class="eyebrow">PG OPERATIONS</p><h3>Quản lý tài khoản, dữ liệu và chấm công PG</h3></div></div>
@@ -90,6 +117,30 @@ export async function renderView() {
       </tbody></table></div>
     </section>
 
+    <section class="panel pg-lead-audit-panel" style="margin-top:14px">
+      <div class="section-title"><div><p class="eyebrow">KIỂM TRA DATA PG</p><h3>Data PG đã nhập</h3><p class="subtle">Tìm gần đúng và lọc trực tiếp trên PostgreSQL. Chỉ hiển thị nguồn do tài khoản PG nhập.</p></div><span class="pill">${pgLeadTotal.toLocaleString('vi-VN')} hồ sơ</span></div>
+      <form id="pgLeadFilter" class="pg-lead-filter-grid" autocomplete="off">
+        <label class="form-field pg-lead-search"><span>Tìm thông minh</span><div class="pg-lead-search-input"><i class="ri-search-line"></i><input id="pgLeadSearch" name="search" value="${escapeHTML(pgLeadSearch)}" placeholder="Tên khách, SĐT, mã/tên PG, dịch vụ hoặc nguồn"></div></label>
+        <label class="form-field"><span>PG nhập</span><select name="pgCode"><option value="">Tất cả PG</option>${pgOptions.map((code) => `<option value="${escapeHTML(code)}"${pgLeadCode === code ? ' selected' : ''}>${escapeHTML(code)}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Phân loại</span><select name="dataClass"><option value="">Tất cả data</option><option value="raw"${pgLeadDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${pgLeadDataClass === 'net' ? ' selected' : ''}>Data net</option></select></label>
+        <label class="form-field"><span>Cấp độ net</span><select name="netLevel"${pgLeadDataClass && pgLeadDataClass !== 'net' ? ' disabled' : ''}><option value="">Tất cả cấp độ</option><option value="basic"${pgLeadNetLevel === 'basic' ? ' selected' : ''}>Net cơ bản</option><option value="advanced"${pgLeadNetLevel === 'advanced' ? ' selected' : ''}>Net chuyên sâu</option></select></label>
+        <label class="form-field"><span>Trạng thái</span><select name="status"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([value, label]) => `<option value="${value}"${pgLeadStatus === value ? ' selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Chi nhánh</span><select name="branchId"><option value="">Cả hai chi nhánh</option><option value="pham-van-chieu"${pgLeadBranch === 'pham-van-chieu' ? ' selected' : ''}>Phạm Văn Chiêu</option><option value="le-van-tho"${pgLeadBranch === 'le-van-tho' ? ' selected' : ''}>Lê Văn Thọ</option></select></label>
+        <label class="form-field"><span>Phân bổ Telesale</span><select name="assignment"><option value="">Tất cả</option><option value="unassigned"${pgLeadAssignment === 'unassigned' ? ' selected' : ''}>Chưa gán Telesale</option><option value="assigned"${pgLeadAssignment === 'assigned' ? ' selected' : ''}>Đã gán Telesale</option></select></label>
+        <button class="secondary-button pg-lead-reset" type="button" data-reset-pg-leads><i class="ri-refresh-line"></i> Xóa lọc</button>
+      </form>
+      <div class="pg-lead-suggestions" aria-label="Lọc nhanh"><span>Gợi ý nhanh:</span><button type="button" data-pg-lead-preset="unassigned-new">PG mới nhập · chưa gán</button><button type="button" data-pg-lead-preset="net">Data net của PG</button><button type="button" data-pg-lead-preset="raw">Data thô của PG</button><button type="button" data-pg-lead-preset="all">Toàn bộ data PG</button></div>
+      <div class="table-wrap pg-lead-table-wrap"><table class="pg-lead-table"><thead><tr><th>STT</th><th>Khách hàng</th><th>PG nhập</th><th>Phân loại</th><th>Dịch vụ / lịch hẹn</th><th>Telesale</th><th>Trạng thái</th><th>Nguồn · ngày nhập</th></tr></thead><tbody>
+        ${pgLeads.length ? pgLeads.map((lead, index) => {
+          const profile = lead.customer_profile || {};
+          const appointment = profile.appointmentText || (lead.appointment_at ? new Date(lead.appointment_at).toLocaleString('vi-VN') : 'Chưa có lịch hẹn');
+          const dataLabel = lead.data_class === 'net' ? `Data net${lead.net_level === 'advanced' ? ' · Chuyên sâu' : ' · Cơ bản'}` : 'Data thô';
+          return `<tr><td>${pgLeadStart + index}</td><td><strong>${escapeHTML(lead.full_name || '')}</strong><small>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</small></td><td><strong>${escapeHTML(lead.created_by_pg || '—')}</strong><small>${escapeHTML(lead.created_by_name || 'PG')}</small></td><td><span class="pg-data-tag ${lead.data_class === 'net' ? 'is-net' : 'is-raw'}">${escapeHTML(dataLabel)}</span></td><td><strong>${escapeHTML(lead.service_interest || 'Chưa xác định')}</strong><small>${escapeHTML(appointment)}</small></td><td>${lead.assigned_telesale_id ? `<strong>${escapeHTML(lead.assigned_telesale_id)}</strong>` : '<span class="pg-unassigned">Chưa gán</span>'}</td><td>${leadStatusPill(lead.status)}</td><td><strong>${escapeHTML(lead.source || 'PG')}</strong><small>${lead.created_at ? new Date(lead.created_at).toLocaleString('vi-VN') : '—'}</small></td></tr>`;
+        }).join('') : '<tr><td colspan="8" class="pg-lead-empty">Không có data PG phù hợp bộ lọc.</td></tr>'}
+      </tbody></table></div>
+      <div class="data-pagination"><span class="data-pagination-summary">Hiển thị ${pgLeadStart}–${Math.min(pgLeadStart + pgLeads.length - 1, pgLeadTotal)} trong ${pgLeadTotal.toLocaleString('vi-VN')} data PG</span><div class="data-pagination-actions"><button type="button" class="data-page-nav" data-pg-lead-page="${Math.max(1, Number(pgLeadMeta.page || 1) - 1)}"${Number(pgLeadMeta.page || 1) <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button><span class="data-page-number is-active">${Number(pgLeadMeta.page || 1)}</span><button type="button" class="data-page-nav" data-pg-lead-page="${Math.min(pgLeadPages, Number(pgLeadMeta.page || 1) + 1)}"${Number(pgLeadMeta.page || 1) >= pgLeadPages ? ' disabled' : ''}><span>Sau</span> ›</button></div></div>
+    </section>
+
     <section class="panel" style="margin-top:14px">
       <div class="section-title"><div><h3>Báo cáo chấm công PG</h3><p class="subtle">Lọc theo khoảng ngày và xuất dữ liệu đang hiển thị</p></div><span class="pill">${attendance.length} lượt</span></div>
       <form id="pgAttendanceFilter" class="pg-attendance-filter">
@@ -124,6 +175,44 @@ async function refresh(message) {
 }
 
 export function initView() {
+  const applyPgLeadFilters = async (form, { resetPage = true } = {}) => {
+    if (!form) return;
+    const data = Object.fromEntries(new FormData(form).entries());
+    pgLeadSearch = String(data.search || '').trim();
+    pgLeadCode = String(data.pgCode || '');
+    pgLeadDataClass = String(data.dataClass || '');
+    pgLeadNetLevel = pgLeadDataClass === 'net' ? String(data.netLevel || '') : '';
+    pgLeadStatus = String(data.status || '');
+    pgLeadBranch = String(data.branchId || '');
+    pgLeadAssignment = String(data.assignment || '');
+    if (resetPage) pgLeadPage = 1;
+    await navigateTo('pg-management');
+  };
+  const pgLeadFilter = document.getElementById('pgLeadFilter');
+  let pgLeadSearchTimer = 0;
+  pgLeadFilter?.addEventListener('change', (event) => applyPgLeadFilters(event.currentTarget));
+  document.getElementById('pgLeadSearch')?.addEventListener('input', (event) => {
+    window.clearTimeout(pgLeadSearchTimer);
+    pgLeadSearchTimer = window.setTimeout(() => applyPgLeadFilters(event.currentTarget.closest('form')), 300);
+  });
+  document.querySelectorAll('[data-pg-lead-page]').forEach((button) => button.addEventListener('click', async () => {
+    pgLeadPage = Number(button.dataset.pgLeadPage || 1);
+    await navigateTo('pg-management');
+  }));
+  document.querySelector('[data-reset-pg-leads]')?.addEventListener('click', async () => {
+    pgLeadSearch = ''; pgLeadCode = ''; pgLeadDataClass = ''; pgLeadNetLevel = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadAssignment = ''; pgLeadPage = 1;
+    await navigateTo('pg-management');
+  });
+  document.querySelectorAll('[data-pg-lead-preset]').forEach((button) => button.addEventListener('click', async () => {
+    const preset = button.dataset.pgLeadPreset;
+    pgLeadSearch = ''; pgLeadCode = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadNetLevel = '';
+    if (preset === 'unassigned-new') { pgLeadDataClass = ''; pgLeadStatus = 'new'; pgLeadAssignment = 'unassigned'; }
+    else if (preset === 'net') { pgLeadDataClass = 'net'; pgLeadAssignment = ''; }
+    else if (preset === 'raw') { pgLeadDataClass = 'raw'; pgLeadAssignment = ''; }
+    else { pgLeadDataClass = ''; pgLeadAssignment = ''; }
+    pgLeadPage = 1;
+    await navigateTo('pg-management');
+  }));
   document.getElementById('pgAccountForm')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     data.email = data.pgEmail; data.phone = data.pgPhone; data.password = data.pgPassword;

@@ -276,6 +276,40 @@ export class MarketingService {
     for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code']] as const) {
       if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
     }
+    if (query.branchId) { params.push(query.branchId); where.push(`l.branch_id=$${params.length}`); }
+    if (query.pgCode) { params.push(query.pgCode); where.push(`lower(l.created_by_pg_code)=lower($${params.length})`); }
+    if (query.assignment === 'unassigned') where.push('l.assigned_telesale_code is null');
+    if (query.assignment === 'assigned') where.push('l.assigned_telesale_code is not null');
+    if (String(query.pgOnly || '').toLowerCase() === 'true') {
+      where.push(`exists (
+        select 1 from app.records pg_creator
+        where pg_creator.entity_type='profiles' and pg_creator.deleted_at is null
+          and pg_creator.payload->>'role'='pg_staff'
+          and lower(pg_creator.payload->>'employee_code')=lower(l.created_by_pg_code)
+      )`);
+    }
+    const searchTerms = String(query.search || '').trim().split(/\s+/).filter(Boolean).slice(0, 4);
+    for (const term of searchTerms) {
+      params.push(`%${term}%`);
+      const placeholder = `$${params.length}`;
+      where.push(`(
+        l.customer_name ilike ${placeholder}
+        or coalesce(l.phone,'') ilike ${placeholder}
+        or l.created_by_pg_code ilike ${placeholder}
+        or coalesce(l.service_type,'') ilike ${placeholder}
+        or coalesce(l.source,'') ilike ${placeholder}
+        or exists (
+          select 1 from app.records pg_search
+          left join app.records pg_employee on pg_employee.entity_type='employees' and pg_employee.deleted_at is null
+            and lower(pg_employee.payload->>'code')=lower(pg_search.payload->>'employee_code')
+          where pg_search.entity_type='profiles' and pg_search.deleted_at is null
+            and lower(pg_search.payload->>'employee_code')=lower(l.created_by_pg_code)
+            and coalesce(pg_employee.payload->>'full_name',pg_search.payload->>'full_name','') ilike ${placeholder}
+        )
+      )`);
+    }
+    if (query.dateFrom) { params.push(`${String(query.dateFrom)}T00:00:00+07:00`); where.push(`l.created_at >= $${params.length}::timestamptz`); }
+    if (query.dateTo) { params.push(`${String(query.dateTo)}T23:59:59.999+07:00`); where.push(`l.created_at <= $${params.length}::timestamptz`); }
     if (String(query.pgUnassignedOnly || '').toLowerCase() === 'true') {
       where.push(`l.assigned_telesale_code is null and exists (
         select 1 from app.records pg_creator
@@ -284,8 +318,14 @@ export class MarketingService {
           and lower(pg_creator.payload->>'employee_code')=lower(l.created_by_pg_code)
       )`);
     }
+    const requestedPage = Math.max(1, Number(query.page || 1));
+    const hasPaging = query.page !== undefined || query.pageSize !== undefined;
+    const pageSize = Math.max(1, Math.min(100, Number(query.pageSize || 50)));
+    const limit = hasPaging ? pageSize : 5000;
+    const offset = hasPaging ? (requestedPage - 1) * pageSize : 0;
+    params.push(limit, offset);
     const result = await this.infrastructure.postgres.query(
-      `select l.*,creator.full_name created_by_name,creator.role created_by_role,
+      `select l.*,count(*) over()::int total_count,creator.full_name created_by_name,creator.role created_by_role,
         case when cp.id is null then null else jsonb_build_object(
           'customerCode',cp.customer_code,'customerName',cp.customer_name,'phone',cp.phone,
           'serviceNeed',cp.service_need,'booth',cp.booth,'pgName',cp.pg_name,'telesaleName',cp.telesale_name,
@@ -312,9 +352,11 @@ export class MarketingService {
          order by p.updated_at desc limit 1
        ) creator on true
        ${where.length ? `where ${where.join(' and ')}` : ''}
-       order by l.created_at desc limit 5000`, params,
+       order by l.created_at desc limit $${params.length - 1} offset $${params.length}`, params,
     );
-    return { data: result.rows };
+    const total = Number(result.rows[0]?.total_count || 0);
+    const data = result.rows.map(({ total_count: _totalCount, ...row }) => row);
+    return { data, meta: { page: hasPaging ? requestedPage : 1, pageSize: limit, total } };
   }
 
   async assignNetLead(user: AuthUser, leadId: string, telesaleCode: string) {

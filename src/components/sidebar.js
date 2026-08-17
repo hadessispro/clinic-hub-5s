@@ -88,7 +88,7 @@ export function renderSidebar(role) {
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
     pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],
     admin_marketing: ['telesale-management', 'marketing-leads', 'marketing-analytics', 'pg-management'],
-    support_marketing: ['pg-workflow', 'pg-locations', 'chat', 'dashboard'],
+    support_marketing: ['pg-management', 'pg-workflow', 'pg-locations', 'chat'],
   };
   const preferredViews = preferredByRole[role] || ['dashboard', 'attendance', 'schedule', 'chat'];
   const preferredItems = preferredViews

@@ -10,7 +10,7 @@ const ROLE_VIEWS = {
   admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
-  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'chat', 'tasks'],
+  support_marketing: ['dashboard', 'pg-management', 'pg-locations', 'pg-workflow', 'chat', 'tasks'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow'],
   telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],

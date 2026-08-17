@@ -68,6 +68,12 @@ export async function getMarketingLeads(filters = {}) {
     if (filters.data_class) query.set('dataClass', filters.data_class);
     if (filters.net_level) query.set('netLevel', filters.net_level);
     if (filters.pg_unhandled_only) query.set('pgUnassignedOnly', 'true');
+    if (filters.pg_code) query.set('pgCode', filters.pg_code);
+    if (filters.search) query.set('search', filters.search);
+    if (filters.assignment) query.set('assignment', filters.assignment);
+    if (filters.pg_only) query.set('pgOnly', 'true');
+    if (filters.date_from) query.set('dateFrom', filters.date_from);
+    if (filters.date_to) query.set('dateTo', filters.date_to);
     const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
     return (payload.data || []).map(mapVpsLead);
   }
@@ -387,12 +393,26 @@ export async function getTelesaleAccounts() {
   }));
 }
 
-/**
- * Danh sách lead có phân trang cho màn điều hành Telesale.
- * Backend hiện trả tối đa 5.000 bản ghi; việc lọc ngày và chia trang được thực
- * hiện tại client để tương thích với dữ liệu hiện hữu mà không đổi schema.
- */
+/** Danh sách Lead có lọc và phân trang phía máy chủ khi đang chạy VPS. */
 export async function getMarketingLeadPage(filters = {}) {
+  if (useVps) {
+    const query = new URLSearchParams();
+    const mappings = {
+      status: 'status', assigned_telesale_id: 'assignedTo', data_class: 'dataClass',
+      net_level: 'netLevel', pg_unhandled_only: 'pgUnassignedOnly', branch_id: 'branchId',
+      pg_code: 'pgCode', search: 'search', assignment: 'assignment', pg_only: 'pgOnly',
+      date_from: 'dateFrom', date_to: 'dateTo',
+    };
+    Object.entries(mappings).forEach(([key, target]) => {
+      if (filters[key]) query.set(target, filters[key] === true ? 'true' : String(filters[key]));
+    });
+    query.set('page', String(Math.max(1, Number(filters.page || 1))));
+    query.set('pageSize', String(Math.max(1, Math.min(100, Number(filters.page_size || 50)))));
+    const payload = await vpsRequest(`/leads?${query}`);
+    const page = Number(payload.meta?.page || filters.page || 1);
+    const pageSize = Number(payload.meta?.pageSize || filters.page_size || 50);
+    return { data: (payload.data || []).map(mapVpsLead), meta: { page, pageSize, total: Number(payload.meta?.total || 0) } };
+  }
   const leads = await getMarketingLeads({
     status: filters.status,
     assigned_telesale_id: filters.assigned_telesale_id,
