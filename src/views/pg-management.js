@@ -116,7 +116,7 @@ export async function renderView() {
       </tbody></table></div>
     </section>` : ''}
 
-    ${adminOperations ? `<section class="panel" style="margin-top:14px">
+    <section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Báo cáo data theo tài khoản PG</h3><span class="pill">Dữ liệu PostgreSQL</span></div>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Tổng</th><th>Data thô</th><th>Net cơ bản</th><th>Net chuyên sâu</th></tr></thead><tbody>
         ${pgRows.length ? pgRows.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${row.total}</td><td>${row.raw_count}</td><td>${row.net_basic_count}</td><td>${row.net_advanced_count}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có data PG.</td></tr>'}
@@ -147,7 +147,7 @@ export async function renderView() {
       <div class="data-pagination"><span class="data-pagination-summary">Hiển thị ${pgLeadStart}–${Math.min(pgLeadStart + pgLeads.length - 1, pgLeadTotal)} trong ${pgLeadTotal.toLocaleString('vi-VN')} data PG</span><div class="data-pagination-actions"><button type="button" class="data-page-nav" data-pg-lead-page="${Math.max(1, Number(pgLeadMeta.page || 1) - 1)}"${Number(pgLeadMeta.page || 1) <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button><span class="data-page-number is-active">${Number(pgLeadMeta.page || 1)}</span><button type="button" class="data-page-nav" data-pg-lead-page="${Math.min(pgLeadPages, Number(pgLeadMeta.page || 1) + 1)}"${Number(pgLeadMeta.page || 1) >= pgLeadPages ? ' disabled' : ''}><span>Sau</span> ›</button></div></div>
     </section>
 
-    <section class="panel" style="margin-top:14px">
+    ${adminOperations ? `<section class="panel" style="margin-top:14px">
       <div class="section-title"><div><h3>Báo cáo chấm công PG</h3><p class="subtle">Lọc theo khoảng ngày và xuất dữ liệu đang hiển thị</p></div><span class="pill">${attendance.length} lượt</span></div>
       <form id="pgAttendanceFilter" class="pg-attendance-filter">
         <label class="form-field"><span>Từ ngày</span><input name="from" type="date" value="${attendanceFrom}" required></label>
