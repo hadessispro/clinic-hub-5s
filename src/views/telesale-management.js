@@ -1,4 +1,4 @@
-import { createMarketingLead, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
+import { createMarketingLead, distributeRawLeads, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { leadStatusPill, option } from '../components/shared.js';
@@ -31,7 +31,7 @@ export async function renderView() {
     return '<div class="empty-state error"><strong>Không có quyền truy cập</strong><span>Khu vực này chỉ dành cho Quản lý Telesale.</span></div>';
   }
 
-  const [accounts, summary, leadPage] = await Promise.all([
+  const [accounts, summary, leadPage, rawInventory] = await Promise.all([
     getTelesaleAccounts(),
     getTelesaleDailySummary(reportDate),
     getMarketingLeadPage({
@@ -44,6 +44,7 @@ export async function renderView() {
       data_class: dataClassFilter || undefined,
       pg_unhandled_only: pgUnhandledOnly,
     }),
+    getMarketingLeadPage({ page: 1, page_size: 1, data_class: 'raw', assignment: 'unassigned' }),
   ]);
   const telesales = accounts.filter((item) => ['telesale_staff', 'telesale_leader'].includes(item.role) && item.active !== false);
   const leads = leadPage.data || [];
@@ -52,6 +53,7 @@ export async function renderView() {
   const totalPages = Math.max(1, Math.ceil(Number(meta.total || 0) / Number(meta.pageSize || PAGE_SIZE)));
   const totals = summary.totals || {};
   const staff = summary.staff || [];
+  const unassignedRawTotal = Number(rawInventory.meta?.total || 0);
 
   const staffRows = staff.map((member) => {
     const active = selectedTelesale === member.employee_code;
@@ -119,6 +121,14 @@ export async function renderView() {
 
     <section class="panel tsm-ledger">
       <div class="section-title"><div><h3>Danh sách hồ sơ & giao lại Telesale</h3><p class="subtle">Bộ lọc áp dụng trên toàn bộ dữ liệu máy chủ, không chỉ 50 dòng đang hiển thị.</p></div><div class="tsm-ledger-actions"><button type="button" class="secondary-button${pgUnhandledOnly ? ' is-active' : ''}" id="tsmPgUnhandled"><i class="ri-user-received-line"></i> PG mới nhập · chưa gán</button><span class="pill">${number(meta.total)} hồ sơ</span></div></div>
+      <div class="tsm-distribution" aria-label="Phân bổ tự động Data thô">
+        <div class="tsm-distribution-copy">
+          <i class="ri-shuffle-line"></i>
+          <span><strong>Chia ngẫu nhiên Data thô</strong><small>${number(unassignedRawTotal)} hồ sơ chưa gán · cân bằng theo số hồ sơ đang mở của từng Telesale</small></span>
+        </div>
+        <label for="tsmRawQuantity"><span>Số lượng cần chia</span><input id="tsmRawQuantity" type="number" min="1" max="5000" value="${Math.min(Math.max(unassignedRawTotal, 1), 20)}" inputmode="numeric" ${unassignedRawTotal < 1 ? 'disabled' : ''}></label>
+        <button type="button" class="primary-button" id="tsmDistributeRaw" ${unassignedRawTotal < 1 ? 'disabled' : ''}><i class="ri-shuffle-line"></i> Phân bổ ngẫu nhiên, chia đều</button>
+      </div>
       <div class="tsm-filters">
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
@@ -212,6 +222,25 @@ export function initView() {
     if (pgUnhandledOnly) selectedTelesale = '';
     currentPage = 1;
     rerender();
+  });
+  document.getElementById('tsmDistributeRaw')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const quantity = Number(document.getElementById('tsmRawQuantity')?.value || 0);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      showToast('Cần nhập số lượng Data thô muốn phân bổ.', true);
+      return;
+    }
+    button.disabled = true;
+    try {
+      const result = await distributeRawLeads(quantity);
+      const distributed = Number(result?.distributed || 0);
+      showToast(distributed > 0 ? `Đã chia đều ${distributed} Data thô cho đội Telesale.` : 'Không còn Data thô chưa gán để phân bổ.');
+      currentPage = 1;
+      rerender();
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || 'Không thể phân bổ Data thô.', true);
+    }
   });
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
   document.getElementById('tsmResetFilters')?.addEventListener('click', () => { selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });

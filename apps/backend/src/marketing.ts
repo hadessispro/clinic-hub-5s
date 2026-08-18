@@ -380,9 +380,10 @@ export class MarketingService {
   async distributeRaw(user: AuthUser, quantity?: number) {
     requireRole(user, managerRoles);
     const staff = await this.infrastructure.postgres.query<{ code: string }>(
-      `select e.payload->>'code' code from app.records p join app.records e
-       on e.entity_type='employees' and e.deleted_at is null and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
-       where p.entity_type='profiles' and p.deleted_at is null and p.payload->>'role'='telesale_staff'
+      `select distinct p.payload->>'employee_code' code from app.records p
+       where p.entity_type='profiles' and p.deleted_at is null
+         and p.payload->>'role' in ('telesale_staff','telesale_leader')
+         and nullif(trim(p.payload->>'employee_code'),'') is not null
          and coalesce((p.payload->>'active')::boolean,true)=true`,
     );
     if (!staff.rows.length) throw new BadRequestException('Chưa có tài khoản Telesale đang hoạt động.');

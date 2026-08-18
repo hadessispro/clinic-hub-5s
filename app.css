@@ -6561,6 +6561,28 @@ body.dialog-open {
   box-shadow: 0 0 0 2px rgba(0, 139, 130, 0.1);
 }
 
+.tsm-distribution {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(150px, 190px) auto;
+  align-items: end;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 14px;
+  border: 1px solid #bfe0d8;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #effaf7, #fff);
+}
+.tsm-distribution-copy { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.tsm-distribution-copy > i { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; border-radius: 12px; color: #087f70; background: #d9f2ec; font-size: 1.2rem; }
+.tsm-distribution-copy strong, .tsm-distribution-copy small { display: block; }
+.tsm-distribution-copy strong { color: #173b35; font-size: .9rem; }
+.tsm-distribution-copy small { margin-top: 3px; color: #667d77; font-size: .76rem; line-height: 1.35; }
+.tsm-distribution label span { display: block; margin-bottom: 6px; color: #55716b; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.tsm-distribution input { width: 100%; height: 42px; padding: 0 12px; border: 1px solid #c6dcd6; border-radius: 10px; background: #fff; color: #17312e; font: inherit; box-sizing: border-box; }
+.tsm-distribution .primary-button { min-height: 42px; white-space: nowrap; }
+@media(max-width:900px) { .tsm-distribution { grid-template-columns: 1fr 160px; } .tsm-distribution-copy { grid-column: 1 / -1; } }
+@media(max-width:600px) { .tsm-distribution { grid-template-columns: 1fr; } .tsm-distribution-copy { grid-column: auto; } .tsm-distribution .primary-button { width: 100%; justify-content: center; } }
+
 /* Lead inventory report: replace the redundant long Kanban with an at-a-glance operational dashboard. */
 .lead-insight-report { margin-top: 16px; padding: 22px; border: 1px solid #c9e1da; border-radius: 20px; color: #173b34; background: linear-gradient(135deg, #f5fbf8 0%, #fff 46%, #effaf6 100%); box-shadow: 0 14px 34px rgba(17, 84, 70, .08); }
 .lead-insight-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; padding-bottom: 18px; border-bottom: 1px solid #d9ebe5; }
