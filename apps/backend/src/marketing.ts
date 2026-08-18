@@ -382,11 +382,11 @@ export class MarketingService {
     const staff = await this.infrastructure.postgres.query<{ code: string }>(
       `select distinct p.payload->>'employee_code' code from app.records p
        where p.entity_type='profiles' and p.deleted_at is null
-         and p.payload->>'role' in ('telesale_staff','telesale_leader')
+         and p.payload->>'role'='telesale_staff'
          and nullif(trim(p.payload->>'employee_code'),'') is not null
          and coalesce((p.payload->>'active')::boolean,true)=true`,
     );
-    if (!staff.rows.length) throw new BadRequestException('Chưa có tài khoản Telesale đang hoạt động.');
+    if (!staff.rows.length) throw new BadRequestException('Chưa có nhân viên Telesale đang hoạt động để nhận Data thô.');
     const limit = Math.min(Math.max(Number(quantity || 5000), 1), 5000);
     const client = await this.infrastructure.postgres.connect();
     try {
