@@ -23,11 +23,19 @@ let leaveSub = null;
 let hasEnteredApp = false;
 let pendingAttendanceSync = null;
 let vpsChangeSub = null;
+let marketingSub = null;
 let deferredRealtimeRefresh = false;
 
-function refreshActiveViewFromRealtime(detail) {
+function hasBlockingInteraction() {
   const active = document.activeElement;
-  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) {
+  const isEditing = active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
+  const hasOverlay = document.body.classList.contains('has-open-drawer')
+    || document.body.classList.contains('app-modal-open');
+  return isEditing || hasOverlay;
+}
+
+function refreshActiveViewFromRealtime(detail) {
+  if (hasBlockingInteraction()) {
     deferredRealtimeRefresh = true;
     return;
   }
@@ -38,6 +46,9 @@ function refreshActiveViewFromRealtime(detail) {
 
 document.addEventListener('focusout', () => {
   if (deferredRealtimeRefresh) window.setTimeout(() => refreshActiveViewFromRealtime({ source: 'vps-deferred' }), 0);
+});
+window.addEventListener('clinic:overlay-closed', () => {
+  if (deferredRealtimeRefresh) window.setTimeout(() => refreshActiveViewFromRealtime({ source: 'overlay-deferred' }), 0);
 });
 
 initErrorMonitoring();
@@ -175,11 +186,12 @@ async function bootstrap() {
 
         // Setup marketing & lead realtime sync
         import('./services/marketing.js').then(({ subscribeToRealtime }) => {
-          subscribeToRealtime(() => {
+          marketingSub?.();
+          marketingSub = subscribeToRealtime((change) => {
             const currentState = store.getState();
             if (['marketing-leads', 'telesale-workspace', 'telesale-management', 'marketing-analytics', 'dashboard'].includes(currentState.currentView)) {
               console.log('[Realtime Auto-Refresh] Updating active view:', currentState.currentView);
-              store.notify();
+              refreshActiveViewFromRealtime({ ...(change || {}), source: 'marketing-realtime' });
             }
           });
         }).catch(err => console.warn('[Main] Realtime subscription init error:', err));
@@ -213,6 +225,8 @@ async function bootstrap() {
       destroyPushNotifications();
       vpsChangeSub?.unsubscribe();
       vpsChangeSub = null;
+      marketingSub?.();
+      marketingSub = null;
       
       // Clean up notifications subscription
       if (notifSub) {

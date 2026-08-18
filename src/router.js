@@ -119,6 +119,9 @@ store.subscribe(async (state) => {
       // by a newer navigation request.
       if (requestId !== renderRequestId || store.getState().currentView !== currentView) return;
 
+      // A realtime render can replace an open drawer. Always release global
+      // scroll locks before replacing its DOM so the page never stays frozen.
+      document.body.classList.remove('has-open-drawer', 'app-modal-open');
       viewContainer.innerHTML = content;
       
       // Bind event listeners if view exports a post-render init function

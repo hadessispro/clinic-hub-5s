@@ -1,4 +1,5 @@
 const SESSION_KEY = '5s_vps_session_v1';
+let refreshPromise = null;
 
 function readSession() {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
@@ -7,6 +8,36 @@ function readSession() {
 function writeSession(session) {
   if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   else localStorage.removeItem(SESSION_KEY);
+}
+
+async function refreshSession(refreshToken) {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch('/api/v2/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return false;
+      const value = await response.json();
+      const user = authUser(value);
+      writeSession({ ...value.session, user });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
 }
 
 async function api(path, options = {}) {
@@ -25,14 +56,18 @@ async function api(path, options = {}) {
     });
     const payload = await response.json().catch(() => ({}));
     if (response.status === 401 && session?.refreshToken && !options._retried && path !== '/auth/refresh') {
-      const refreshed = await fetch('/api/v2/auth/refresh', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: session.refreshToken }), signal: controller.signal,
-      });
-      if (refreshed.ok) {
-        const value = await refreshed.json();
-        const user = authUser(value);
-        writeSession({ ...value.session, user });
+      const latestSession = readSession();
+      if (latestSession?.accessToken && latestSession.accessToken !== session.accessToken) {
+        clearTimeout(timeout);
+        return api(path, { ...options, _retried: true });
+      }
+      const refreshed = await refreshSession(latestSession?.refreshToken || session.refreshToken);
+      if (refreshed) {
+        clearTimeout(timeout);
+        return api(path, { ...options, _retried: true });
+      }
+      const sessionAfterRefresh = readSession();
+      if (sessionAfterRefresh?.accessToken && sessionAfterRefresh.accessToken !== session.accessToken) {
         clearTimeout(timeout);
         return api(path, { ...options, _retried: true });
       }

@@ -92,7 +92,10 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
     drawer.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('has-open-drawer');
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => { drawer.hidden = true; }, 220);
+    closeTimer = setTimeout(() => {
+      drawer.hidden = true;
+      window.dispatchEvent(new CustomEvent('clinic:overlay-closed', { detail: { overlay: 'lead-consultation' } }));
+    }, 220);
   };
 
   const wireForm = () => {
