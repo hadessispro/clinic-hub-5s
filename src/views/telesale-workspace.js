@@ -69,11 +69,11 @@ export async function renderView(state) {
     const creatorName = lead.created_by_name || lead.created_by_pg || lead.source || 'Không xác định';
     const dataLabel = lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô';
     return `<tr data-workspace-lead-row="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name || '').toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-status="${escapeHTML(lead.status || '')}" data-branch="${escapeHTML(lead.branch_id || '')}">
-      <td>${index + 1}</td><td><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || 'Chưa có SĐT')}</small></td>
-      <td><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${escapeHTML(dataLabel)}</span></td><td>${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
-      <td>${escapeHTML(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}</td><td data-workspace-lead-status>${leadStatusPill(lead.status)}</td>
-      <td><strong>${escapeHTML(creatorName)}</strong><small>${escapeHTML(lead.created_by_pg || lead.source || '')}</small></td><td><time>${formatDateTime(lead.created_at)}</time></td>
-      <td><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td></tr>`;
+      <td data-label="STT">${index + 1}</td><td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || 'Chưa có SĐT')}</small></td>
+      <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${escapeHTML(dataLabel)}</span></td><td data-label="Dịch vụ">${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
+      <td data-label="Chi nhánh">${escapeHTML(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}</td><td data-label="Trạng thái" data-workspace-lead-status>${leadStatusPill(lead.status)}</td>
+      <td data-label="Nguồn nhập"><strong>${escapeHTML(creatorName)}</strong><small>${escapeHTML(lead.created_by_pg || lead.source || '')}</small></td><td data-label="Ngày tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
+      <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td></tr>`;
   }).join('') : '<tr><td colspan="9" class="tsm-empty">Không có Lead phù hợp bộ lọc.</td></tr>';
 
   return `
@@ -104,11 +104,11 @@ export async function renderView(state) {
       </div>
 
       <!-- Filter Toolbar -->
-      <div style="margin-top:12px; padding:10px 14px; background:#f1f5f9; border-radius:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-        <div style="flex:1; min-width:220px; display:flex; align-items:center;">
+      <div class="telesale-filter-toolbar">
+        <div class="telesale-filter-search">
           <input id="searchTelesaleInput" placeholder="🔍 Tìm theo Tên hoặc Số điện thoại..." style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none;" />
         </div>
-        <div style="min-width:160px; display:flex; align-items:center;">
+        <div class="telesale-filter-select">
           <select id="filterTelesaleStatus" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none; cursor:pointer; font-weight:600;">
             <option value="">Tất cả Trạng thái</option>
             <option value="new">Mới nạp</option>
@@ -118,7 +118,7 @@ export async function renderView(state) {
             <option value="cancelled">Hủy/Thất bại</option>
           </select>
         </div>
-        <div style="min-width:160px; display:flex; align-items:center;">
+        <div class="telesale-filter-select">
           <select id="filterTelesaleBranch" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none; cursor:pointer; font-weight:600;">
             <option value="">Tất cả Chi nhánh</option>
             <option value="le-van-tho">5S Lê Văn Thọ</option>
@@ -127,14 +127,14 @@ export async function renderView(state) {
         </div>
         <div class="telesale-date-filter"><label>Từ ngày<input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label></div>
         <div class="telesale-date-filter"><label>Đến ngày<input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label></div>
-        <div style="min-width:150px; display:flex; align-items:center;"><select id="filterTelesaleDataClass"><option value="">Tất cả data</option><option value="raw"${telesaleDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${telesaleDataClass === 'net' ? ' selected' : ''}>Data net</option></select></div>
+        <div class="telesale-filter-select"><select id="filterTelesaleDataClass"><option value="">Tất cả data</option><option value="raw"${telesaleDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${telesaleDataClass === 'net' ? ' selected' : ''}>Data net</option></select></div>
         <button type="button" class="secondary-button" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
 
       <div class="telesale-card-grid" id="telesaleCardView"${telesaleViewMode === 'sheet' ? ' hidden' : ''}>
         ${leadsListHtml}
       </div>
-      <div class="table-wrap telesale-sheet-wrap" id="telesaleSheetView"${telesaleViewMode === 'cards' ? ' hidden' : ''}><table class="workspace-lead-table" data-auto-pagination="off"><thead><tr><th>STT</th><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Chi nhánh</th><th>Trạng thái</th><th>Nguồn nhập</th><th>Ngày tiếp nhận</th><th>Hồ sơ</th></tr></thead><tbody>${leadTableRows}</tbody></table></div>
+      <div class="table-wrap telesale-sheet-wrap" id="telesaleSheetView"${telesaleViewMode === 'cards' ? ' hidden' : ''}><table class="workspace-lead-table" data-auto-pagination="off"><colgroup><col class="workspace-col-index"><col class="workspace-col-customer"><col class="workspace-col-class"><col class="workspace-col-service"><col class="workspace-col-branch"><col class="workspace-col-status"><col class="workspace-col-source"><col class="workspace-col-date"><col class="workspace-col-action"></colgroup><thead><tr><th>STT</th><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Chi nhánh</th><th>Trạng thái</th><th>Nguồn nhập</th><th>Ngày tiếp nhận</th><th>Hồ sơ</th></tr></thead><tbody>${leadTableRows}</tbody></table></div>
       <div class="data-pagination" id="telesalePagination" aria-label="Phân trang danh sách Lead">
         <div class="data-pagination-summary" id="telesalePaginationSummary"></div>
         <div class="data-pagination-actions">
@@ -202,7 +202,7 @@ export function initView() {
     const end = Math.min(start + telesalePageSize, total);
 
     matchedCards.forEach((card, index) => {
-      card.style.display = index >= start && index < end ? 'block' : 'none';
+      card.style.display = index >= start && index < end ? '' : 'none';
     });
     if (paginationSummary) {
       paginationSummary.textContent = total
