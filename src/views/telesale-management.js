@@ -78,7 +78,7 @@ export async function renderView() {
   const leadRows = leads.map((lead, index) => `<tr data-tsm-lead-row="${escapeHTML(lead.id)}">
     <td data-label="STT">${(currentPage - 1) * PAGE_SIZE + index + 1}</td>
     <td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || '')}</small></td>
-    <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${lead.data_class === 'net' ? 'Data net' : 'Data thô'}</span></td>
+    <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</span></td>
     <td data-label="Dịch vụ">${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
     <td data-label="Chi nhánh">${escapeHTML(branchName(lead.branch_id))}</td>
     <td data-label="Telesale phụ trách"><select class="select-badge tsm-assign" data-reassign-lead="${escapeHTML(lead.id)}" data-current="${escapeHTML(lead.assigned_telesale_id || '')}">
