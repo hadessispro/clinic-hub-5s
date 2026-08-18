@@ -50,6 +50,7 @@ export async function renderView(state) {
   const contactedLeads = leads.filter(l => l.status !== 'new').length;
   const appointmentLeads = leads.filter(l => ['appointment_booked', 'visited', 'converted'].includes(l.status)).length;
   const convertedLeads = leads.filter(l => l.status === 'converted').length;
+  const lowQualityLeads = leads.filter(l => l.status === 'low_quality').length;
 
   const contactRate = totalLeads ? Math.round((contactedLeads / totalLeads) * 100) : 0;
   const appointmentRate = totalLeads ? Math.round((appointmentLeads / totalLeads) * 100) : 0;
@@ -226,6 +227,16 @@ export async function renderView(state) {
         </div>
         <strong style="font-size:1.65rem; color:#197a44; display:block; margin-top:6px;">${conversionRate}%</strong>
       </div>
+
+      <div class="metric-card" style="padding:14px; background:#f1f5f9; border-radius:12px; border:1px solid #cbd5e1;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span class="subtle" style="font-size:0.82rem; font-weight:700; color:#334155;">Khách không chất lượng (KCL)</span>
+          <span style="display:inline-flex; width:32px; height:32px; align-items:center; justify-content:center; background:#e2e8f0; border-radius:8px; color:#475569; font-size:1.15rem;">
+            <i class="ri-user-unfollow-line"></i>
+          </span>
+        </div>
+        <strong style="font-size:1.65rem; color:#334155; display:block; margin-top:6px;">${lowQualityLeads}</strong>
+      </div>
     </div>
 
     <!-- SVG Area Line Chart: Lead Trend 7 Days -->
@@ -268,8 +279,8 @@ export async function renderView(state) {
       </section>
       <section class="panel">
         <div class="section-title"><h3>Hiệu suất theo tài khoản Telesale</h3>${pill(`${operationalReport.telesale?.length || 0} tài khoản`)}</div>
-        <div class="table-wrap"><table><thead><tr><th>Telesale</th><th>Được giao</th><th>Đã gọi</th><th>Hẹn khám</th><th>Chốt</th></tr></thead><tbody>
-          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(formatTelesaleIdentity(row.telesale_code))}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td></tr>`).join('') : '<tr><td colspan="5">Chưa có dữ liệu Telesale.</td></tr>'}
+        <div class="table-wrap"><table><thead><tr><th>Telesale</th><th>Được giao</th><th>Đã gọi</th><th>Hẹn khám</th><th>Chốt</th><th>Khách KCL</th></tr></thead><tbody>
+          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(formatTelesaleIdentity(row.telesale_code))}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td><td>${row.low_quality || 0}</td></tr>`).join('') : '<tr><td colspan="6">Chưa có dữ liệu Telesale.</td></tr>'}
         </tbody></table></div>
       </section>
     </div>

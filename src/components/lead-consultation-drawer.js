@@ -1,5 +1,5 @@
 import { addTelesaleCallLog, getLeadCallLogs, updateMarketingLead } from '../services/marketing.js';
-import { CALL_STATUS, LEAD_STATUS } from '../constants.js';
+import { CALL_STATUS, LEAD_STATUS, LOW_QUALITY_REASONS } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from './toast.js';
 import { store } from '../store.js';
@@ -23,6 +23,7 @@ export function leadConsultationDrawer() {
 function facts(lead) {
   const customer = lead.customer_profile || {};
   const appointment = lead.appointment_at || lead.appointment_date || customer.appointmentText;
+  const lowQualityReason = lead.low_quality_reason || customer.lowQualityReason;
   return `<div class="lead-dossier-head">
     <span class="lead-dossier-eyebrow">TRÌNH TƯ VẤN KHÁCH HÀNG</span>
     <h3 id="leadConsultationTitle">${safe(lead.full_name || customer.customerName, 'Khách hàng')}</h3>
@@ -34,6 +35,7 @@ function facts(lead) {
     <div><small>Dịch vụ quan tâm</small><strong>${safe(lead.service_interest || customer.serviceNeed)}</strong></div>
     <div><small>Nguồn tiếp nhận</small><strong>${safe(lead.created_by_name || customer.pgName || lead.source)}</strong></div>
     <div><small>Lịch hẹn</small><strong>${appointment ? safe(String(appointment).includes('T') ? formatDateTime(appointment) : appointment) : 'Chưa có lịch hẹn'}</strong></div>
+    ${lead.status === 'low_quality' ? `<div class="full"><small>Lý do khách KCL</small><strong>${safe(LOW_QUALITY_REASONS[lowQualityReason] || lowQualityReason)}</strong></div>` : ''}
   </div>`;
 }
 
@@ -50,6 +52,7 @@ function historyHtml(logs) {
 }
 
 function consultationForm(lead) {
+  const lowQualityReason = lead.low_quality_reason || lead.customer_profile?.lowQualityReason || '';
   return `<section class="lead-dossier-section lead-consultation-form-section">
     <div class="lead-dossier-section-title"><h4>Cập nhật tư vấn</h4><span>Lưu ngay vào hồ sơ khách hàng</span></div>
     <form id="leadConsultationForm" class="lead-dossier-form" data-lead-id="${safe(lead.id)}">
@@ -61,6 +64,13 @@ function consultationForm(lead) {
       </label>
       <label class="full" data-consultation-appointment hidden>Ngày giờ hẹn khám
         <input type="datetime-local" name="appointment_date">
+      </label>
+      <label class="full" data-consultation-low-quality hidden>Lý do khách không chất lượng (KCL)
+        <select name="low_quality_reason">
+          <option value="">Chọn lý do KCL</option>
+          ${Object.entries(LOW_QUALITY_REASONS).map(([value, label]) => `<option value="${escapeHTML(value)}" ${lowQualityReason === value ? 'selected' : ''}>${escapeHTML(label)}</option>`).join('')}
+        </select>
+        <small>Áp dụng cho thuê bao, sai số điện thoại, nhầm máy hoặc dữ liệu không thể chăm sóc.</small>
       </label>
       <label class="full">Nội dung tư vấn
         <textarea name="note" required placeholder="Ghi rõ nội dung trao đổi, nhu cầu và bước chăm sóc tiếp theo..."></textarea>
@@ -92,11 +102,19 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
     const customerStatus = form.elements.status;
     const appointmentWrap = form.querySelector('[data-consultation-appointment]');
     const appointment = form.elements.appointment_date;
+    const lowQualityWrap = form.querySelector('[data-consultation-low-quality]');
+    const lowQualityReason = form.elements.low_quality_reason;
     const syncAppointment = () => {
       const isAppointment = callStatus.value === 'appointment_booked';
       appointmentWrap.hidden = !isAppointment;
       appointment.required = isAppointment;
       if (!isAppointment) appointment.value = '';
+    };
+    const syncLowQualityReason = () => {
+      const isLowQuality = customerStatus.value === 'low_quality';
+      lowQualityWrap.hidden = !isLowQuality;
+      lowQualityReason.required = isLowQuality;
+      if (!isLowQuality) lowQualityReason.value = '';
     };
     const syncCustomerStatus = () => {
       const statusByResult = {
@@ -108,9 +126,12 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
       };
       customerStatus.value = statusByResult[callStatus.value] || customerStatus.value;
       syncAppointment();
+      syncLowQualityReason();
     };
     callStatus.addEventListener('change', syncCustomerStatus);
+    customerStatus.addEventListener('change', syncLowQualityReason);
     syncAppointment();
+    syncLowQualityReason();
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const submit = form.querySelector('button[type="submit"]');
@@ -125,8 +146,18 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
           note: data.note,
           appointment_date: data.appointment_date ? new Date(data.appointment_date).toISOString() : null,
         });
-        const updated = await updateMarketingLead(activeLead.id, { status: data.status, notes: data.note });
-        activeLead = { ...activeLead, ...(updated || {}), status: data.status, notes: data.note };
+        const updated = await updateMarketingLead(activeLead.id, {
+          status: data.status,
+          notes: data.note,
+          low_quality_reason: data.status === 'low_quality' ? data.low_quality_reason : null,
+        });
+        activeLead = {
+          ...activeLead,
+          ...(updated || {}),
+          status: data.status,
+          notes: data.note,
+          low_quality_reason: data.status === 'low_quality' ? data.low_quality_reason : null,
+        };
         const currentStatus = content.querySelector('[data-consultation-current-status]');
         if (currentStatus) {
           currentStatus.textContent = LEAD_STATUS[data.status] || data.status;

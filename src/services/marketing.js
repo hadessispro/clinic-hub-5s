@@ -13,6 +13,7 @@ function mapVpsLead(row) {
     created_by_pg: row.created_by_pg_code,
     created_by_name: row.created_by_name || row.customer_profile?.pgName || null,
     created_by_role: row.created_by_role || null,
+    low_quality_reason: row.low_quality_reason || row.customer_profile?.lowQualityReason || null,
   };
 }
 
@@ -165,7 +166,11 @@ export async function updateMarketingLead(id, updates) {
       return mapVpsLead(payload.data);
     }
     const payload = await vpsRequest(`/leads/${encodeURIComponent(id)}`, {
-      method: 'PATCH', body: JSON.stringify({ status: updates.status, notes: updates.notes }),
+      method: 'PATCH', body: JSON.stringify({
+        status: updates.status,
+        notes: updates.notes,
+        lowQualityReason: updates.low_quality_reason,
+      }),
     });
     notifyDataChange('marketing_leads');
     return mapVpsLead(payload.data);
@@ -316,7 +321,10 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     new: 'Mới nạp',
     contacted: 'Đã liên hệ',
     appointment_booked: 'Đã hẹn khám',
+    visited: 'Đã đến phòng khám',
     converted: 'Chốt thành công',
+    appointment_cancelled: 'Khách hủy hẹn',
+    low_quality: 'Khách không chất lượng (KCL)',
     cancelled: 'Hủy/Thất bại'
   };
 
@@ -451,7 +459,7 @@ export async function getTelesaleDailySummary(reportDate) {
     if (!value || !day) return false;
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) === day;
   };
-  const closed = new Set(['converted', 'cancelled', 'lost']);
+  const closed = new Set(['converted', 'appointment_cancelled', 'low_quality', 'cancelled', 'lost']);
   const visited = new Set(['arrived', 'visited', 'converted']);
   const staff = accounts.filter((item) => item.active !== false && ['telesale_staff', 'telesale_leader'].includes(item.role)).map((member) => {
     const owned = leads.filter((lead) => lead.assigned_telesale_id === member.employee_code);
@@ -466,10 +474,12 @@ export async function getTelesaleDailySummary(reportDate) {
       calls_today: 0,
       appointments_today: changed.filter((lead) => lead.status === 'appointment_booked').length,
       visited_today: changed.filter((lead) => visited.has(lead.status)).length,
+      low_quality_today: changed.filter((lead) => lead.status === 'low_quality').length,
+      low_quality_total: owned.filter((lead) => lead.status === 'low_quality').length,
     };
   });
   const totals = staff.reduce((sum, row) => {
-    for (const key of ['assigned_total', 'assigned_active', 'handled_today', 'status_changes_today', 'calls_today', 'appointments_today', 'visited_today']) {
+    for (const key of ['assigned_total', 'assigned_active', 'handled_today', 'status_changes_today', 'calls_today', 'appointments_today', 'visited_today', 'low_quality_today', 'low_quality_total']) {
       sum[key] = (sum[key] || 0) + Number(row[key] || 0);
     }
     return sum;

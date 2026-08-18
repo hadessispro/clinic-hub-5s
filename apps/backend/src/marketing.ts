@@ -20,7 +20,8 @@ const netServices: Record<string, Set<string>> = {
   basic: new Set(['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng']),
   advanced: new Set(['Implant', 'Răng sứ', 'Niềng răng']),
 };
-const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'cancelled']);
+const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'appointment_cancelled', 'low_quality', 'cancelled']);
+const lowQualityReasons = new Set(['subscriber_unavailable', 'wrong_phone', 'wrong_person', 'duplicate', 'spam', 'other']);
 const callStatuses = new Set(['interested', 'appointment_booked', 'busy', 'no_answer', 'rejected']);
 
 function requireRole(user: AuthUser, roles: Set<string>) {
@@ -440,14 +441,18 @@ export class MarketingService {
     if (!own && !managerRoles.has(user.role)) throw new ForbiddenException();
     const status = String(input.status || '');
     if (!leadStatuses.has(status)) throw new BadRequestException('Trạng thái Lead không hợp lệ.');
-    const params: unknown[] = [leadId, status, input.notes || null];
+    const lowQualityReason = status === 'low_quality' ? String(input.lowQualityReason || input.low_quality_reason || '').trim() : '';
+    if (status === 'low_quality' && !lowQualityReasons.has(lowQualityReason)) {
+      throw new BadRequestException('Khách không chất lượng bắt buộc phải chọn lý do hợp lệ.');
+    }
+    const params: unknown[] = [leadId, status, input.notes || null, lowQualityReason || null];
     let owner = '';
     if (own) { params.push(user.employeeCode); owner = `and assigned_telesale_code=$${params.length}`; }
     const result = await this.infrastructure.postgres.query(
-      `update marketing.leads set status=$2,notes=coalesce($3,notes),updated_at=now() where id=$1 ${owner} returning *`, params,
+      `update marketing.leads set status=$2,notes=coalesce($3,notes),low_quality_reason=$4,updated_at=now() where id=$1 ${owner} returning *`, params,
     );
     if (!result.rows[0]) throw new ForbiddenException('Lead không thuộc quyền xử lý của tài khoản này.');
-    await this.audit(user, 'lead.update', 'marketing.lead', leadId, { status });
+    await this.audit(user, 'lead.update', 'marketing.lead', leadId, { status, lowQualityReason: lowQualityReason || null });
     return { data: result.rows[0] };
   }
 
@@ -530,6 +535,8 @@ export class MarketingService {
        count(distinct c.lead_id)::int contacted,
        count(distinct c.lead_id) filter (where c.call_status='appointment_booked')::int appointments,
        count(distinct l.id) filter (where l.status='converted')::int converted,
+       count(distinct l.id) filter (where l.status='low_quality')::int low_quality,
+       count(distinct l.id) filter (where l.status='appointment_cancelled')::int appointment_cancelled,
        count(distinct l.id) filter (where l.status='cancelled')::int cancelled,
        count(c.id)::int total_calls
        from marketing.leads l left join marketing.call_logs c on c.lead_id=l.id
@@ -538,7 +545,10 @@ export class MarketingService {
     const totals = await this.infrastructure.postgres.query(
       `select count(*)::int total,count(*) filter(where data_class='raw')::int raw_count,
        count(*) filter(where data_class='net')::int net_count,
-       count(*) filter(where status='converted')::int converted from marketing.leads`,
+       count(*) filter(where status='converted')::int converted,
+       count(*) filter(where status='low_quality')::int low_quality,
+       count(*) filter(where status='appointment_cancelled')::int appointment_cancelled
+       from marketing.leads`,
     );
     return { data: { totals: totals.rows[0], pg: pg.rows, telesale: telesale.rows } };
   }

@@ -123,6 +123,8 @@ export async function renderView(state) {
             <option value="appointment_booked">Đã hẹn khám</option>
             <option value="converted">Chốt thành công</option>
             <option value="cancelled">Hủy/Thất bại</option>
+            <option value="appointment_cancelled">Khách hủy hẹn</option>
+            <option value="low_quality">Khách không chất lượng (KCL)</option>
           </select>
         </div>
         <div class="telesale-filter-select">

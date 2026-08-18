@@ -16,6 +16,8 @@ export function leadStatusTone(status) {
     appointment_booked: 'lead-appointment',
     visited: 'lead-visited',
     converted: 'lead-converted',
+    appointment_cancelled: 'lead-appointment-cancelled',
+    low_quality: 'lead-low-quality',
     cancelled: 'lead-cancelled',
   };
   return tones[status] || 'lead-unknown';

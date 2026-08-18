@@ -2265,6 +2265,18 @@ h3 {
   background: #fef2f2;
 }
 
+.status-pill.lead-appointment-cancelled {
+  border-color: #fdba74;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.status-pill.lead-low-quality {
+  border-color: #94a3b8;
+  color: #334155;
+  background: #f1f5f9;
+}
+
 .status-pill.lead-unknown {
   border-color: #cbd5e1;
   color: #475569;
@@ -2277,6 +2289,8 @@ h3 {
 .select-badge.lead-status-control.lead-visited { border-color: #67e8f9 !important; color: #0f766e !important; background-color: #ecfeff !important; }
 .select-badge.lead-status-control.lead-converted { border-color: #86efac !important; color: #166534 !important; background-color: #f0fdf4 !important; }
 .select-badge.lead-status-control.lead-cancelled { border-color: #fca5a5 !important; color: #b91c1c !important; background-color: #fef2f2 !important; }
+.select-badge.lead-status-control.lead-appointment-cancelled { border-color: #fdba74 !important; color: #9a3412 !important; background-color: #fff7ed !important; }
+.select-badge.lead-status-control.lead-low-quality { border-color: #94a3b8 !important; color: #334155 !important; background-color: #f1f5f9 !important; }
 
 .priority-pill.high {
   color: #97302e;
@@ -6805,4 +6819,11 @@ body.dialog-open {
 }
 /* Shared customer consultation drawer: manager and telesale use the same workflow. */
 .lead-consultation-drawer{justify-items:start}.lead-consultation-drawer .lead-dossier-backdrop{opacity:0;transition:opacity .2s ease}.lead-consultation-drawer .lead-dossier-sheet{box-shadow:22px 0 55px rgba(8,45,36,.22);transform:translateX(-102%);transition:transform .22s ease}.lead-consultation-drawer.is-open .lead-dossier-backdrop{opacity:1}.lead-consultation-drawer.is-open .lead-dossier-sheet{transform:translateX(0)}.has-open-drawer{overflow:hidden}.lead-consultation-form-section{position:sticky;bottom:-28px;margin-bottom:-28px;border-radius:14px 14px 0 0;box-shadow:0 -12px 30px rgba(20,73,63,.08)}.lead-dossier-form .primary-button{min-height:42px;justify-content:center}.lead-dossier-form [hidden]{display:none!important}
+.lead-dossier-facts .full{grid-column:1/-1}.lead-dossier-form label>small{color:#789089;font-size:.68rem;font-weight:500;line-height:1.35}
 @media(max-width:620px){.lead-consultation-drawer .lead-dossier-sheet{width:min(92vw,430px);padding:20px 16px}.lead-consultation-drawer .lead-dossier-close{top:12px;right:12px}.lead-consultation-drawer .lead-dossier-head{padding-right:38px}.lead-consultation-drawer .lead-dossier-head h3{font-size:1.22rem}.lead-consultation-drawer .lead-dossier-facts{grid-template-columns:1fr 1fr}.lead-consultation-drawer .lead-dossier-form{grid-template-columns:1fr}.lead-consultation-drawer .lead-dossier-form .full{grid-column:auto}.lead-consultation-form-section{bottom:-20px;margin-bottom:-20px}}
+
+/* Telesale KCL reporting extends the performance grid with one semantic column. */
+@media(min-width:1051px){
+  .tsm-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .tsm-team-head,.tsm-staff-row{grid-template-columns:42px minmax(220px,1.5fr) repeat(5,minmax(82px,.65fr)) 22px}
+}

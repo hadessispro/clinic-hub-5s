@@ -71,6 +71,7 @@ export async function renderView() {
       <span><b>${number(member.handled_today)}</b><small>đã xử lý</small></span>
       <span><b>${number(member.status_changes_today)}</b><small>đổi trạng thái</small></span>
       <span><b>${number(member.visited_today)}</b><small>khách đến</small></span>
+      <span><b>${number(member.low_quality_total)}</b><small>khách KCL</small></span>
       <i class="ri-arrow-right-s-line"></i>
     </button>`;
   }).join('') || '<div class="tsm-empty">Chưa có tài khoản Telesale Staff đang hoạt động.</div>';
@@ -118,11 +119,12 @@ export async function renderView() {
       <article><i class="ri-customer-service-2-line"></i><div><small>Đã xử lý trong ngày</small><strong>${number(totals.handled_today)}</strong><span>${number(totals.calls_today)} lượt chăm sóc</span></div></article>
       <article><i class="ri-refresh-line"></i><div><small>Đổi trạng thái</small><strong>${number(totals.status_changes_today)}</strong><span>${number(totals.appointments_today)} khách đã hẹn</span></div></article>
       <article><i class="ri-hospital-line"></i><div><small>Khách đến chi nhánh</small><strong>${number(totals.visited_today)}</strong><span>Ghi nhận trong ngày chọn</span></div></article>
+      <article><i class="ri-user-unfollow-line"></i><div><small>Khách không chất lượng</small><strong>${number(totals.low_quality_total)}</strong><span>${number(totals.low_quality_today)} KCL trong ngày chọn</span></div></article>
     </section>
 
     <section class="panel tsm-team-panel">
       <div class="section-title"><div><h3>Hiệu suất từng Telesale</h3><p class="subtle">Chọn nhân viên để lọc ngay danh sách hồ sơ đang phụ trách.</p></div><button type="button" class="secondary-button" id="tsmClearMember">Xem toàn đội</button></div>
-      <div class="tsm-team-head"><span>Nhân viên</span><span>Kho hồ sơ</span><span>Hôm nay</span><span>Cập nhật</span><span>Khách đến</span></div>
+      <div class="tsm-team-head"><span>Nhân viên</span><span>Kho hồ sơ</span><span>Hôm nay</span><span>Cập nhật</span><span>Khách đến</span><span>Khách KCL</span></div>
       <div class="tsm-team-list">${staffRows}</div>
     </section>
 

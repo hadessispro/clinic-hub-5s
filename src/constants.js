@@ -91,7 +91,18 @@ export const LEAD_STATUS = {
   appointment_booked: 'Đã hẹn khám',
   visited: 'Đã đến PK',
   converted: 'Chốt thành công',
+  appointment_cancelled: 'Khách hủy hẹn',
+  low_quality: 'Khách không chất lượng (KCL)',
   cancelled: 'Hủy/Không nhu cầu',
+};
+
+export const LOW_QUALITY_REASONS = {
+  subscriber_unavailable: 'Thuê bao/không liên lạc được',
+  wrong_phone: 'Sai số điện thoại',
+  wrong_person: 'Nhầm máy/không đúng khách',
+  duplicate: 'Trùng dữ liệu',
+  spam: 'Data rác/không có nhu cầu thực',
+  other: 'Lý do khác',
 };
 
 export const CALL_STATUS = {
