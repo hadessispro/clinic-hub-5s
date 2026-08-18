@@ -20,6 +20,7 @@ const netServices: Record<string, Set<string>> = {
   basic: new Set(['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng']),
   advanced: new Set(['Implant', 'Răng sứ', 'Niềng răng']),
 };
+const rawServices = new Set(['Cạo vôi răng', 'Thăm khám răng']);
 const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'appointment_cancelled', 'low_quality', 'cancelled']);
 const lowQualityReasons = new Set(['subscriber_unavailable', 'wrong_phone', 'wrong_person', 'duplicate', 'spam', 'other']);
 const callStatuses = new Set(['interested', 'appointment_booked', 'busy', 'no_answer', 'rejected']);
@@ -315,6 +316,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (dataClass === 'net' && (!serviceType || !netServices[netLevel!]?.has(serviceType))) {
       throw new BadRequestException('Dịch vụ không phù hợp với cấp độ Data net đã chọn.');
     }
+    if (dataClass === 'raw' && (!serviceType || !rawServices.has(serviceType))) {
+      throw new BadRequestException('Data thô cần chọn dịch vụ Cạo vôi răng hoặc Thăm khám răng.');
+    }
     const customerName = String(input.customerName || input.full_name || '').trim();
     if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
     const result = await this.infrastructure.postgres.query(
@@ -324,7 +328,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        )
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,null,null,null) returning *`,
       [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
-        dataClass === 'net' ? serviceType : null, input.source || 'PG', input.branchId || input.branch_id || null,
+        serviceType, input.source || 'PG', input.branchId || input.branch_id || null,
         input.notes || null, user.employeeCode],
     );
     await this.audit(user, 'lead.create', 'marketing.lead', result.rows[0].id, { dataClass, netLevel });

@@ -21,6 +21,7 @@ const NET_SERVICES = {
   basic: ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'],
   advanced: ['Implant', 'Răng sứ', 'Niềng răng'],
 };
+const RAW_SERVICES = ['Cạo vôi răng', 'Thăm khám răng'];
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
@@ -252,9 +253,9 @@ export async function renderView(state) {
               <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
             </select>
           </div>
-          <div class="form-field" id="leadServiceField" hidden style="display:none">
+          <div class="form-field" id="leadServiceField">
             <label for="leadService">Dịch vụ quan tâm</label>
-            <select id="leadService" name="service_interest" disabled>
+            <select id="leadService" name="service_interest" required>
               <option value="">Chọn dịch vụ</option>
             </select>
           </div>
@@ -381,14 +382,15 @@ export function initView() {
   const service = document.getElementById('leadService');
   const updateServiceOptions = () => {
     if (!service) return;
-    const items = NET_SERVICES[netLevel?.value] || NET_SERVICES.basic;
+    const isNet = dataClass?.value === 'net';
+    const items = isNet ? (NET_SERVICES[netLevel?.value] || NET_SERVICES.basic) : RAW_SERVICES;
     const previous = service.value;
     service.innerHTML = `<option value="">Chọn dịch vụ</option>${items.map((item) => `<option value="${escapeHTML(item)}">${escapeHTML(item)}</option>`).join('')}`;
     service.value = items.includes(previous) ? previous : '';
   };
   const toggleNetFields = () => {
     const isNet = dataClass?.value === 'net';
-    for (const field of [netLevelField, appointmentField, serviceField]) {
+    for (const field of [netLevelField, appointmentField]) {
       if (!field) continue;
       field.hidden = !isNet;
       field.style.display = isNet ? '' : 'none';
@@ -397,11 +399,14 @@ export function initView() {
     if (appointment) { appointment.required = isNet; appointment.disabled = !isNet; }
     if (phone) phone.required = isNet;
     if (service) {
-      service.disabled = !isNet;
-      service.required = isNet;
-      if (!isNet) service.value = '';
+      service.disabled = false;
+      service.required = true;
     }
-    if (isNet) updateServiceOptions();
+    if (serviceField) {
+      serviceField.hidden = false;
+      serviceField.style.display = '';
+    }
+    updateServiceOptions();
   };
   dataClass?.addEventListener('change', toggleNetFields);
   netLevel?.addEventListener('change', updateServiceOptions);
@@ -427,6 +432,7 @@ export function initView() {
         const newLead = await createMarketingLead(data);
         showToast("✅ Đã thêm Lead mới thành công!");
         form.reset();
+        toggleNetFields();
         if (newLead) {
           cachedLeads.unshift(newLead);
         }
