@@ -124,10 +124,12 @@ export async function renderView() {
       <div class="tsm-distribution" aria-label="Phân bổ tự động Data thô">
         <div class="tsm-distribution-copy">
           <i class="ri-shuffle-line"></i>
-          <span><strong>Chia ngẫu nhiên Data thô</strong><small>${number(unassignedRawTotal)} hồ sơ chưa gán · cân bằng theo số hồ sơ đang mở của từng Telesale</small></span>
+          <span><strong>Chia ngẫu nhiên Data thô</strong><small><b>${number(unassignedRawTotal)} hồ sơ chưa gán</b><span aria-hidden="true">·</span> Cân bằng theo khối lượng đang xử lý của từng Telesale</small></span>
         </div>
-        <label for="tsmRawQuantity"><span>Số lượng cần chia</span><input id="tsmRawQuantity" type="number" min="1" max="5000" value="${Math.min(Math.max(unassignedRawTotal, 1), 20)}" inputmode="numeric" ${unassignedRawTotal < 1 ? 'disabled' : ''}></label>
-        <button type="button" class="primary-button" id="tsmDistributeRaw" ${unassignedRawTotal < 1 ? 'disabled' : ''}><i class="ri-shuffle-line"></i> Phân bổ ngẫu nhiên, chia đều</button>
+        <div class="tsm-distribution-controls">
+          <label for="tsmRawQuantity"><span>Số lượng cần chia</span><input id="tsmRawQuantity" type="number" min="1" max="5000" value="${Math.min(Math.max(unassignedRawTotal, 1), 20)}" inputmode="numeric" ${unassignedRawTotal < 1 ? 'disabled' : ''}></label>
+          <button type="button" class="primary-button" id="tsmDistributeRaw" ${unassignedRawTotal < 1 ? 'disabled' : ''}><i class="ri-shuffle-line"></i><span>Phân bổ ngẫu nhiên, chia đều</span></button>
+        </div>
       </div>
       <div class="tsm-filters">
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
