@@ -383,6 +383,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         or coalesce(l.service_type,'') ilike ${placeholder}
         or coalesce(l.source,'') ilike ${placeholder}
         or exists (
+          select 1 from marketing.customer_profiles pg_source
+          where pg_source.id=l.customer_profile_id
+            and coalesce(pg_source.pg_name,'') ilike ${placeholder}
+        )
+        or exists (
           select 1 from app.records pg_search
           left join app.records pg_employee on pg_employee.entity_type='employees' and pg_employee.deleted_at is null
             and lower(pg_employee.payload->>'code')=lower(pg_search.payload->>'employee_code')
@@ -409,7 +414,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const offset = hasPaging ? (requestedPage - 1) * pageSize : 0;
     params.push(limit, offset);
     const result = await this.infrastructure.postgres.query(
-      `select l.*,count(*) over()::int total_count,creator.full_name created_by_name,creator.role created_by_role,
+      `select l.*,count(*) over()::int total_count,
+        coalesce(creator.full_name,nullif(trim(cp.pg_name),''),l.created_by_pg_code) created_by_name,
+        creator.role created_by_role,
         case when cp.id is null then null else jsonb_build_object(
           'customerCode',cp.customer_code,'customerName',cp.customer_name,'phone',cp.phone,
           'serviceNeed',cp.service_need,'booth',cp.booth,'pgName',cp.pg_name,'telesaleName',cp.telesale_name,
@@ -426,7 +433,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        from marketing.leads l
        left join marketing.customer_profiles cp on cp.id=l.customer_profile_id
        left join lateral (
-         select coalesce(e.payload->>'full_name',p.payload->>'full_name',l.created_by_pg_code) full_name,
+         select coalesce(e.payload->>'full_name',p.payload->>'full_name',nullif(trim(cp.pg_name),''),l.created_by_pg_code) full_name,
                 p.payload->>'role' role
          from app.records p
          left join app.records e on e.entity_type='employees' and e.deleted_at is null
@@ -583,7 +590,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
            from marketing.leads
           group by created_by_pg_code
        )
-       select totals.*,coalesce(creator.full_name,totals.pg_code) pg_name
+       select totals.*,coalesce(creator.full_name,source_creator.pg_name,totals.pg_code) pg_name
          from pg_totals totals
          left join lateral (
            select coalesce(e.payload->>'full_name',p.payload->>'full_name') full_name
@@ -595,6 +602,16 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
             order by p.updated_at desc
             limit 1
          ) creator on true
+         left join lateral (
+           select nullif(trim(cp.pg_name),'') pg_name
+             from marketing.leads l
+             join marketing.customer_profiles cp on cp.id=l.customer_profile_id
+            where lower(l.created_by_pg_code)=lower(totals.pg_code)
+              and nullif(trim(cp.pg_name),'') is not null
+            group by nullif(trim(cp.pg_name),'')
+            order by count(*) desc, nullif(trim(cp.pg_name),'')
+            limit 1
+         ) source_creator on true
         order by totals.total desc`,
     );
     const telesale = await this.infrastructure.postgres.query(

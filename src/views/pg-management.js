@@ -74,7 +74,17 @@ export async function renderView() {
   const pgLeadTotal = Number(pgLeadMeta.total || 0);
   const pgLeadPages = Math.max(1, Math.ceil(pgLeadTotal / PG_LEAD_PAGE_SIZE));
   const pgLeadStart = pgLeadTotal ? ((Number(pgLeadMeta.page || 1) - 1) * PG_LEAD_PAGE_SIZE) + 1 : 0;
-  const pgOptions = [...new Set(pgRows.map((row) => row.pg_code).filter(Boolean))];
+  const pgOptions = pgRows
+    .filter((row) => row.pg_code)
+    .map((row) => ({ code: row.pg_code, name: row.pg_name || row.pg_code }))
+    .sort((left, right) => left.name.localeCompare(right.name, 'vi', { sensitivity: 'base' }));
+  const pgAccountNames = new Map(accounts.map((row) => [
+    String(row.profile?.employee_code || '').toLowerCase(),
+    row.employee?.full_name || row.profile?.full_name || row.profile?.employee_code || '',
+  ]));
+  const pgReportNames = new Map(pgRows.map((row) => [String(row.pg_code || '').toLowerCase(), row.pg_name || row.pg_code]));
+  const pgDisplayName = (code) => pgAccountNames.get(String(code || '').toLowerCase())
+    || pgReportNames.get(String(code || '').toLowerCase()) || code || 'PG';
 
   return `
     <div class="view-header"><div><p class="eyebrow">PG OPERATIONS</p><h3>Quản lý tài khoản, dữ liệu và chấm công PG</h3></div></div>
@@ -82,8 +92,8 @@ export async function renderView() {
     ${adminOperations ? `<div class="shift-overview-metrics">
       <article><span>Tài khoản PG</span><strong>${accounts.length}</strong><small>${accounts.filter((row) => row.login_active).length} đang hoạt động</small></article>
       <article><span>Tổng data</span><strong>${Number(totals.total || 0)}</strong><small>${Number(totals.raw_count || 0)} thô · ${Number(totals.net_count || 0)} net</small></article>
-      <article><span>PG nhiều data nhất</span><strong>${maxCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === maxCount)?.pg_code || 'Chưa có')}</small></article>
-      <article><span>PG ít data nhất</span><strong>${minCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === minCount)?.pg_code || 'Chưa có')}</small></article>
+      <article><span>PG nhiều data nhất</span><strong>${maxCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === maxCount)?.pg_name || 'Chưa có')}</small></article>
+      <article><span>PG ít data nhất</span><strong>${minCount}</strong><small>${escapeHTML(pgRows.find((row) => Number(row.total) === minCount)?.pg_name || 'Chưa có')}</small></article>
     </div>` : ''}
 
     ${adminOperations ? `<div class="grid">
@@ -105,7 +115,7 @@ export async function renderView() {
     <section class="panel pg-assignment-panel" style="margin-top:14px">
       <div class="section-title"><div><h3>Phân công vị trí và thời gian</h3><p class="subtle">PG nhận thông báo ngay; chấm công chỉ mở theo ca và vị trí còn hiệu lực.</p></div><span class="pill">Mỗi PG · mỗi ngày một ca</span></div>
       <form id="pgAssignmentForm" class="pg-assignment-form">
-        <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG</option>${accounts.map((row) => `<option value="${escapeHTML(row.profile?.employee_code || '')}">${escapeHTML(row.employee?.full_name || row.profile?.full_name || '')} · ${escapeHTML(row.profile?.employee_code || '')}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG theo tên</option>${accounts.map((row) => `<option value="${escapeHTML(row.profile?.employee_code || '')}">${escapeHTML(row.employee?.full_name || row.profile?.full_name || row.profile?.employee_code || '')}</option>`).join('')}</select></label>
         <label class="form-field"><span>Vị trí</span><select name="siteId" required><option value="">Chọn vị trí</option>${sites.map((site) => `<option value="${site.id}">${escapeHTML(site.name)}</option>`).join('')}</select></label>
         <label class="form-field"><span>Ngày làm</span><input name="workDate" type="date" value="${today()}" required></label>
         <label class="form-field"><span>Giờ vào</span><input name="startTime" type="time" value="08:00" required></label>
@@ -113,7 +123,7 @@ export async function renderView() {
         <button class="primary-button pg-assignment-submit" type="submit"><i class="ri-send-plane-line"></i> Giao cho PG</button>
       </form>
       <div class="table-wrap pg-assignment-table"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-        ${assignments.length ? assignments.map((row) => { const [label, tone] = assignmentStatus(row); const cancellable = ['scheduled', 'checked_in'].includes(row.status || 'scheduled'); return `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td><strong>${escapeHTML(row.site_name)}</strong><small>${escapeHTML(row.address)}</small></td><td><span class="assignment-status is-${tone}">${escapeHTML(label)}</span></td><td>${cancellable ? `<button class="danger-button pg-assignment-remove" type="button" data-cancel-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button>` : '<span class="subtle">Đã khóa thao tác</span>'}</td></tr>`; }).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
+        ${assignments.length ? assignments.map((row) => { const [label, tone] = assignmentStatus(row); const cancellable = ['scheduled', 'checked_in'].includes(row.status || 'scheduled'); return `<tr><td><strong>${escapeHTML(pgDisplayName(row.pg_code))}</strong><small>${escapeHTML(row.pg_code)}</small></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td><strong>${escapeHTML(row.site_name)}</strong><small>${escapeHTML(row.address)}</small></td><td><span class="assignment-status is-${tone}">${escapeHTML(label)}</span></td><td>${cancellable ? `<button class="danger-button pg-assignment-remove" type="button" data-cancel-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button>` : '<span class="subtle">Đã khóa thao tác</span>'}</td></tr>`; }).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
       </tbody></table></div>
     </section>
 
@@ -154,7 +164,7 @@ export async function renderView() {
       <div class="section-title"><div><p class="eyebrow">KIỂM TRA DATA PG</p><h3>Data PG đã nhập</h3><p class="subtle">Tìm gần đúng và lọc trực tiếp trên PostgreSQL. Chỉ hiển thị nguồn do tài khoản PG nhập.</p></div><span class="pill">${pgLeadTotal.toLocaleString('vi-VN')} hồ sơ</span></div>
       <form id="pgLeadFilter" class="pg-lead-filter-grid" autocomplete="off">
         <label class="form-field pg-lead-search"><span>Tìm thông minh</span><div class="pg-lead-search-input"><i class="ri-search-line"></i><input id="pgLeadSearch" name="search" value="${escapeHTML(pgLeadSearch)}" placeholder="Tên khách, SĐT, mã/tên PG, dịch vụ hoặc nguồn"></div></label>
-        <label class="form-field"><span>PG nhập</span><select name="pgCode"><option value="">Tất cả PG</option>${pgOptions.map((code) => `<option value="${escapeHTML(code)}"${pgLeadCode === code ? ' selected' : ''}>${escapeHTML(code)}</option>`).join('')}</select></label>
+        <label class="form-field"><span>PG nhập</span><select name="pgCode"><option value="">Tất cả PG</option>${pgOptions.map((pg) => `<option value="${escapeHTML(pg.code)}"${pgLeadCode === pg.code ? ' selected' : ''}>${escapeHTML(pg.name)}</option>`).join('')}</select></label>
         <label class="form-field"><span>Phân loại</span><select name="dataClass"><option value="">Tất cả data</option><option value="raw"${pgLeadDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${pgLeadDataClass === 'net' ? ' selected' : ''}>Data net</option></select></label>
         <label class="form-field"><span>Cấp độ net</span><select name="netLevel"${pgLeadDataClass && pgLeadDataClass !== 'net' ? ' disabled' : ''}><option value="">Tất cả cấp độ</option><option value="basic"${pgLeadNetLevel === 'basic' ? ' selected' : ''}>Net cơ bản</option><option value="advanced"${pgLeadNetLevel === 'advanced' ? ' selected' : ''}>Net chuyên sâu</option></select></label>
         <label class="form-field"><span>Trạng thái</span><select name="status"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([value, label]) => `<option value="${value}"${pgLeadStatus === value ? ' selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select></label>
@@ -168,7 +178,7 @@ export async function renderView() {
           const profile = lead.customer_profile || {};
           const appointment = profile.appointmentText || (lead.appointment_at ? new Date(lead.appointment_at).toLocaleString('vi-VN') : 'Chưa có lịch hẹn');
           const dataLabel = lead.data_class === 'net' ? `Data net${lead.net_level === 'advanced' ? ' · Chuyên sâu' : ' · Cơ bản'}` : 'Data thô';
-          return `<tr><td>${pgLeadStart + index}</td><td><strong>${escapeHTML(lead.full_name || '')}</strong><small>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</small></td><td><strong>${escapeHTML(lead.created_by_pg || '—')}</strong><small>${escapeHTML(lead.created_by_name || 'PG')}</small></td><td><span class="pg-data-tag ${lead.data_class === 'net' ? 'is-net' : 'is-raw'}">${escapeHTML(dataLabel)}</span></td><td><strong>${escapeHTML(lead.service_interest || 'Chưa xác định')}</strong><small>${escapeHTML(appointment)}</small></td><td>${lead.assigned_telesale_id ? `<strong>${escapeHTML(lead.assigned_telesale_id)}</strong>` : '<span class="pg-unassigned">Chưa gán</span>'}</td><td>${leadStatusPill(lead.status)}</td><td><strong>${escapeHTML(lead.source || 'PG')}</strong><small>${lead.created_at ? new Date(lead.created_at).toLocaleString('vi-VN') : '—'}</small></td></tr>`;
+          return `<tr><td>${pgLeadStart + index}</td><td><strong>${escapeHTML(lead.full_name || '')}</strong><small>${escapeHTML(lead.phone || 'Chưa có số điện thoại')}</small></td><td><strong>${escapeHTML(lead.created_by_name || pgDisplayName(lead.created_by_pg))}</strong><small>${escapeHTML(lead.created_by_pg || 'PG')}</small></td><td><span class="pg-data-tag ${lead.data_class === 'net' ? 'is-net' : 'is-raw'}">${escapeHTML(dataLabel)}</span></td><td><strong>${escapeHTML(lead.service_interest || 'Chưa xác định')}</strong><small>${escapeHTML(appointment)}</small></td><td>${lead.assigned_telesale_id ? `<strong>${escapeHTML(lead.assigned_telesale_id)}</strong>` : '<span class="pg-unassigned">Chưa gán</span>'}</td><td>${leadStatusPill(lead.status)}</td><td><strong>${escapeHTML(lead.source || 'PG')}</strong><small>${lead.created_at ? new Date(lead.created_at).toLocaleString('vi-VN') : '—'}</small></td></tr>`;
         }).join('') : '<tr><td colspan="8" class="pg-lead-empty">Không có data PG phù hợp bộ lọc.</td></tr>'}
       </tbody></table></div>
       <div class="data-pagination"><span class="data-pagination-summary">Hiển thị ${pgLeadStart}–${Math.min(pgLeadStart + pgLeads.length - 1, pgLeadTotal)} trong ${pgLeadTotal.toLocaleString('vi-VN')} data PG</span><div class="data-pagination-actions"><button type="button" class="data-page-nav" data-pg-lead-page="${Math.max(1, Number(pgLeadMeta.page || 1) - 1)}"${Number(pgLeadMeta.page || 1) <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button><label class="data-page-picker"><span>Trang</span><select aria-label="Chọn trang data PG" data-pg-lead-page-select>${Array.from({ length: pgLeadPages }, (_, index) => `<option value="${index + 1}"${index + 1 === Number(pgLeadMeta.page || 1) ? ' selected' : ''}>${index + 1}/${pgLeadPages}</option>`).join('')}</select></label><button type="button" class="data-page-nav" data-pg-lead-page="${Math.min(pgLeadPages, Number(pgLeadMeta.page || 1) + 1)}"${Number(pgLeadMeta.page || 1) >= pgLeadPages ? ' disabled' : ''}><span>Sau</span> ›</button></div></div>
