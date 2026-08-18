@@ -425,6 +425,7 @@ export async function getMarketingLeadPage(filters = {}) {
     return { data: (payload.data || []).map(mapVpsLead), meta: { page, pageSize, total: Number(payload.meta?.total || 0) } };
   }
   const leads = await getMarketingLeads({
+    search: filters.search,
     status: filters.status,
     assigned_telesale_id: filters.assigned_telesale_id,
     data_class: filters.data_class,
@@ -546,9 +547,18 @@ export async function createPgAssignment(input) {
   return payload.data;
 }
 
-export async function deletePgAssignment(id) {
-  const payload = await vpsRequest(`/pg-assignments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export async function cancelPgAssignment(id, reason) {
+  const payload = await vpsRequest(`/pg-assignments/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason }) });
   return payload.data;
+}
+
+export async function getPgAssignmentHistory(from, to, status = '') {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  if (status) query.set('status', status);
+  const payload = await vpsRequest(`/pg-assignment-history${query.size ? `?${query}` : ''}`);
+  return payload.data || [];
 }
 
 export async function getPgLocationSuggestions() { return (await vpsRequest('/pg-location-suggestions')).data || []; }

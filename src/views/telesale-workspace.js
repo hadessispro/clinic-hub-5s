@@ -16,6 +16,7 @@ let telesaleDateTo = '';
 let telesaleDataClass = '';
 let telesaleServiceGroup = '';
 let telesaleServiceType = '';
+let telesaleSearch = '';
 const BASIC_SERVICES = ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'];
 const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
 
@@ -31,6 +32,7 @@ export async function renderView(state) {
     data_class: telesaleDataClass || undefined,
     service_group: telesaleServiceGroup || undefined,
     service_type: telesaleServiceType || undefined,
+    search: telesaleSearch || undefined,
   };
   const leads = await getMarketingLeads(filters);
   cachedLeads = leads;
@@ -113,7 +115,7 @@ export async function renderView(state) {
       <!-- Filter Toolbar -->
       <div class="telesale-filter-toolbar">
         <div class="telesale-filter-search">
-          <input id="searchTelesaleInput" placeholder="🔍 Tìm theo Tên hoặc Số điện thoại..." style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none;" />
+          <input id="searchTelesaleInput" value="${escapeHTML(telesaleSearch)}" placeholder="🔍 Tìm nhanh tên hoặc số điện thoại khách hàng..." autocomplete="off" inputmode="search" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none;" />
         </div>
         <div class="telesale-filter-select">
           <select id="filterTelesaleStatus" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none; cursor:pointer; font-weight:600;">
@@ -267,7 +269,23 @@ export function initView() {
     renderTelesalePagination(matchedCards);
   }
 
-  if (searchInput) searchInput.addEventListener('input', () => applyTelesaleFilters(true));
+  let telesaleSearchTimer;
+  searchInput?.addEventListener('input', () => {
+    clearTimeout(telesaleSearchTimer);
+    telesaleSearchTimer = setTimeout(() => {
+      telesaleSearch = searchInput.value.trim();
+      telesalePage = 1;
+      navigateTo('telesale-workspace');
+    }, 260);
+  });
+  searchInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    clearTimeout(telesaleSearchTimer);
+    telesaleSearch = searchInput.value.trim();
+    telesalePage = 1;
+    navigateTo('telesale-workspace');
+  });
   if (statusSelect) statusSelect.addEventListener('change', () => applyTelesaleFilters(true));
   if (branchSelect) branchSelect.addEventListener('change', () => applyTelesaleFilters(true));
   dateFromInput?.addEventListener('change', () => { telesaleDateFrom = dateFromInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
@@ -286,7 +304,7 @@ export function initView() {
     navigateTo('telesale-workspace');
   });
   serviceTypeSelect?.addEventListener('change', () => { telesaleServiceType = serviceTypeSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
-  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
+  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleSearch = ''; telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
   document.querySelectorAll('[data-workspace-view]').forEach((button) => button.addEventListener('click', () => {
     telesaleViewMode = button.dataset.workspaceView === 'sheet' ? 'sheet' : 'cards';
     document.getElementById('telesaleCardView').hidden = telesaleViewMode === 'sheet';

@@ -17,6 +17,7 @@ let dataClassFilter = '';
 let serviceGroupFilter = '';
 let serviceTypeFilter = '';
 let pgUnhandledOnly = false;
+let customerSearch = '';
 let currentPage = 1;
 let renderedLeads = new Map();
 const PAGE_SIZE = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches ? 20 : 50;
@@ -48,6 +49,7 @@ export async function renderView() {
       data_class: dataClassFilter || undefined,
       service_group: serviceGroupFilter || undefined,
       service_type: serviceTypeFilter || undefined,
+      search: customerSearch || undefined,
       pg_unhandled_only: pgUnhandledOnly,
     }),
     getMarketingLeadPage({ page: 1, page_size: 1, data_class: 'raw', assignment: 'unassigned' }),
@@ -141,6 +143,7 @@ export async function renderView() {
         </div>
       </div>
       <div class="tsm-filters">
+        <label class="tsm-customer-search"><span>Tìm nhanh khách hàng / SĐT</span><div class="tsm-search-control"><i class="ri-search-line"></i><input type="search" id="tsmCustomerSearch" value="${escapeHTML(customerSearch)}" placeholder="Nhập tên hoặc số điện thoại" autocomplete="off" inputmode="search"></div></label>
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
         <label><span>Đến ngày</span><input type="date" id="tsmDateTo" value="${escapeHTML(dateTo)}"></label>
@@ -205,7 +208,7 @@ export function initView() {
   });
   document.getElementById('tsmExport')?.addEventListener('click', async () => {
     try {
-      let rows = await getMarketingLeads({ status: statusFilter || undefined, data_class: dataClassFilter || undefined, service_group: serviceGroupFilter || undefined, service_type: serviceTypeFilter || undefined, assigned_telesale_id: selectedTelesale || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined });
+      let rows = await getMarketingLeads({ search: customerSearch || undefined, status: statusFilter || undefined, data_class: dataClassFilter || undefined, service_group: serviceGroupFilter || undefined, service_type: serviceTypeFilter || undefined, assigned_telesale_id: selectedTelesale || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined });
       if (pgUnhandledOnly) rows = rows.filter((lead) => lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id);
       const from = dateFrom ? new Date(`${dateFrom}T00:00:00+07:00`) : null;
       const to = dateTo ? new Date(`${dateTo}T23:59:59.999+07:00`) : null;
@@ -225,6 +228,24 @@ export function initView() {
     },
   });
   document.getElementById('tsmReportDate')?.addEventListener('change', (event) => { reportDate = event.target.value || today(); rerender(); });
+  const customerSearchInput = document.getElementById('tsmCustomerSearch');
+  let customerSearchTimer;
+  customerSearchInput?.addEventListener('input', () => {
+    window.clearTimeout(customerSearchTimer);
+    customerSearchTimer = window.setTimeout(() => {
+      customerSearch = customerSearchInput.value.trim();
+      currentPage = 1;
+      rerender();
+    }, 260);
+  });
+  customerSearchInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    window.clearTimeout(customerSearchTimer);
+    customerSearch = customerSearchInput.value.trim();
+    currentPage = 1;
+    rerender();
+  });
   document.getElementById('tsmMemberFilter')?.addEventListener('change', (event) => { selectedTelesale = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateFrom')?.addEventListener('change', (event) => { dateFrom = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateTo')?.addEventListener('change', (event) => { dateTo = event.target.value; currentPage = 1; rerender(); });
@@ -269,7 +290,7 @@ export function initView() {
     }
   });
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
-  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
+  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { customerSearch = ''; selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
   document.getElementById('tsmPrev')?.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); rerender(); });
   document.getElementById('tsmNext')?.addEventListener('click', () => { currentPage += 1; rerender(); });
   document.querySelectorAll('[data-team-member]').forEach((button) => button.addEventListener('click', () => { selectedTelesale = button.dataset.teamMember || ''; currentPage = 1; rerender(); }));

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, Injectable,
-  Param, Patch, Post, Query, Req, Res, UseGuards,
+  OnModuleDestroy, OnModuleInit, Param, Patch, Post, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { AuthGuard, AuthUser, hashPassword } from './auth';
@@ -63,8 +63,24 @@ function csvCell(value: unknown) {
 }
 
 @Injectable()
-export class MarketingService {
+export class MarketingService implements OnModuleInit, OnModuleDestroy {
+  private assignmentExpiryTimer?: NodeJS.Timeout;
+
   constructor(private readonly infrastructure: InfrastructureService) {}
+
+  onModuleInit() {
+    this.assignmentExpiryTimer = setInterval(() => {
+      void this.expireAssignments().catch((error) => {
+        console.warn('[PG assignment expiry]', error instanceof Error ? error.message : error);
+      });
+    }, 60_000);
+    this.assignmentExpiryTimer.unref();
+    void this.expireAssignments().catch(() => undefined);
+  }
+
+  onModuleDestroy() {
+    if (this.assignmentExpiryTimer) clearInterval(this.assignmentExpiryTimer);
+  }
 
   private async audit(user: AuthUser, action: string, entityType: string, entityId?: string, detail: JsonMap = {}) {
     await this.infrastructure.postgres.query(
@@ -73,6 +89,57 @@ export class MarketingService {
       [user.employeeCode, action, entityType, entityId || null, JSON.stringify(detail)],
     );
     await this.infrastructure.markDataChanged([entityType], user.id, user.role);
+  }
+
+  private async notifyEmployee(employeeCode: string, title: string, body: string, linkView = 'attendance') {
+    const profile = await this.infrastructure.postgres.query<{ user_id: string }>(
+      `select payload->>'id' user_id from app.records
+       where entity_type='profiles' and deleted_at is null
+         and lower(trim(payload->>'employee_code'))=lower(trim($1)) limit 1`,
+      [employeeCode],
+    );
+    const userId = profile.rows[0]?.user_id;
+    if (!userId) return;
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+    const payload = { id, user_id: userId, title, body, type: 'pg_assignment', link_view: linkView, read: false, created_at: createdAt, updated_at: createdAt };
+    await this.infrastructure.postgres.query(
+      `insert into app.records(entity_type,record_key,payload,origin)
+       values ('notifications',$1,$2::jsonb,'vps')`,
+      [id, JSON.stringify(payload)],
+    );
+  }
+
+  private async notifyRoles(roles: string[], title: string, body: string) {
+    const profiles = await this.infrastructure.postgres.query<{ employee_code: string }>(
+      `select distinct payload->>'employee_code' employee_code from app.records
+       where entity_type='profiles' and deleted_at is null and payload->>'role'=any($1::text[])
+         and coalesce((payload->>'active')::boolean,true)=true`, [roles],
+    );
+    for (const profile of profiles.rows) {
+      if (profile.employee_code) await this.notifyEmployee(profile.employee_code, title, body, 'pg-management');
+    }
+  }
+
+  private async expireAssignments() {
+    const expired = await this.infrastructure.postgres.query<{
+      id: string; pg_code: string; work_date: string; start_time: string; end_time: string;
+    }>('select * from marketing.expire_pg_assignments()');
+    if (!expired.rowCount) return [];
+    for (const row of expired.rows) {
+      await this.notifyEmployee(
+        row.pg_code,
+        'Phân công PG đã hết hạn',
+        `Ca ngày ${String(row.work_date).slice(0, 10)} (${String(row.start_time).slice(0, 5)}–${String(row.end_time).slice(0, 5)}) tự động hết hạn vì chưa check-in.`,
+      );
+    }
+    await this.notifyRoles(
+      ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing'],
+      `${expired.rowCount} phân công PG tự động hết hạn`,
+      'Có ca đã quá giờ kết thúc nhưng PG chưa check-in. Mở Quản lý PG để xem lịch sử.',
+    );
+    await this.infrastructure.markDataChanged(['marketing.pg_shift_assignment', 'notifications']);
+    return expired.rows;
   }
 
   async listPgAccounts(user: AuthUser) {
@@ -649,18 +716,44 @@ export class MarketingService {
     );
     if (!valid.rows[0]?.pg_valid) throw new BadRequestException('Tài khoản PG không tồn tại hoặc đã bị khóa.');
     if (!valid.rows[0]?.site_valid) throw new BadRequestException('Vị trí chấm công không tồn tại hoặc đã ngừng hoạt động.');
-    const result = await this.infrastructure.postgres.query(
-      `insert into marketing.pg_shift_assignments(pg_code,site_id,work_date,start_time,end_time,created_by_code)
-       values ($1,$2,$3,$4,$5,$6)
-       on conflict(pg_code,work_date) do update set site_id=excluded.site_id,start_time=excluded.start_time,
-       end_time=excluded.end_time,created_by_code=excluded.created_by_code,updated_at=now() returning *`,
-      [pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
-    );
-    await this.infrastructure.markDataChanged(['marketing.pg_shift_assignment'], user.id, user.role);
-    return { data: result.rows[0] };
+    const client = await this.infrastructure.postgres.connect();
+    let assignment: JsonMap;
+    try {
+      await client.query('begin');
+      const current = await client.query(
+        `select a.*,exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id) has_attendance
+         from marketing.pg_shift_assignments a
+         where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2 for update`,
+        [pgCode, workDate],
+      );
+      if (current.rows[0]?.has_attendance) throw new BadRequestException('Ca này đã phát sinh chấm công nên không thể thay đổi phân công.');
+      const result = current.rows[0]
+        ? await client.query(
+          `update marketing.pg_shift_assignments
+           set site_id=$2,start_time=$3,end_time=$4,status='scheduled',created_by_code=$5,
+               cancelled_at=null,cancelled_by_code=null,cancel_reason=null,expired_at=null,completed_at=null,updated_at=now()
+           where id=$1 returning *`,
+          [current.rows[0].id, siteId, startTime, endTime, user.employeeCode],
+        )
+        : await client.query(
+          `insert into marketing.pg_shift_assignments(pg_code,site_id,work_date,start_time,end_time,created_by_code,status)
+           values ($1,$2,$3,$4,$5,$6,'scheduled') returning *`,
+          [pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
+        );
+      assignment = result.rows[0];
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+    await this.notifyEmployee(pgCode, 'Bạn có phân công PG mới', `Ca ngày ${workDate}, ${startTime.slice(0, 5)}–${endTime.slice(0, 5)} đã được giao. Mở Chấm công để xem vị trí.`);
+    await this.audit(user, 'pg_assignment.assign', 'marketing.pg_shift_assignment', String(assignment.id), { pgCode, workDate, siteId, startTime, endTime });
+    await this.infrastructure.markDataChanged(['marketing.pg_shift_assignment', 'notifications'], user.id, user.role);
+    return { data: assignment };
   }
 
   async listAssignments(user: AuthUser, date?: string) {
+    await this.expireAssignments();
     // A PG must always receive the assignment for the clinic's current day.
     // Do not trust a device date here because an incorrect mobile clock/timezone
     // would make a valid Support assignment appear to be missing.
@@ -668,38 +761,67 @@ export class MarketingService {
     let owner = '';
     if (user.role === 'pg_staff') {
       params.push(user.employeeCode);
-      owner = `and lower(trim(a.pg_code))=lower(trim($${params.length}))`;
+      owner = `and lower(trim(a.pg_code))=lower(trim($${params.length})) and a.status in ('scheduled','checked_in','completed')`;
     }
     else requireRole(user, supportRoles);
     const result = await this.infrastructure.postgres.query(
-      `select a.*,s.name site_name,s.address,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+      `select a.*,s.name site_name,s.address,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m,
+              exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id and t.record_type='checkin') has_checkin,
+              exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id and t.record_type='checkout') has_checkout
        from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id
        where a.work_date=$1 ${owner} order by a.start_time,a.pg_code`, params,
     );
     return { data: result.rows };
   }
 
-  async deleteAssignment(user: AuthUser, id: string) {
+  async listAssignmentHistory(user: AuthUser, from?: string, to?: string, status?: string) {
     requireRole(user, supportRoles);
+    await this.expireAssignments();
+    const values: unknown[] = [from || clinicDate(new Date(Date.now() - 30 * 86400000)), to || clinicDate()];
+    const statusFilter = status && ['scheduled', 'checked_in', 'completed', 'cancelled', 'expired'].includes(status)
+      ? `and a.status=$${values.push(status)}` : '';
     const result = await this.infrastructure.postgres.query(
-      `delete from marketing.pg_shift_assignments a
-       where a.id::text=$1
-         and not exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id)
-       returning a.id,a.pg_code,a.work_date`, [id],
+      `select a.*,s.name site_name,s.address,
+              coalesce(e.payload->>'full_name',p.payload->>'full_name',a.pg_code) pg_name,
+              coalesce(jsonb_agg(jsonb_build_object('event_type',ev.event_type,'actor_code',ev.actor_code,
+                'reason',ev.reason,'created_at',ev.created_at) order by ev.created_at)
+                filter (where ev.id is not null),'[]'::jsonb) events
+       from marketing.pg_shift_assignments a
+       join marketing.pg_work_sites s on s.id=a.site_id
+       left join app.records p on p.entity_type='profiles' and p.deleted_at is null
+         and lower(trim(p.payload->>'employee_code'))=lower(trim(a.pg_code))
+       left join app.records e on e.entity_type='employees' and e.deleted_at is null
+         and lower(trim(e.payload->>'code'))=lower(trim(a.pg_code))
+       left join marketing.pg_assignment_events ev on ev.assignment_id=a.id
+       where a.work_date between $1 and $2 ${statusFilter}
+       group by a.id,s.name,s.address,e.payload,p.payload
+       order by a.work_date desc,a.start_time desc,a.pg_code`, values,
+    );
+    return { data: result.rows };
+  }
+
+  async cancelAssignment(user: AuthUser, id: string, input: JsonMap) {
+    requireRole(user, supportRoles);
+    const reason = String(input.reason || '').trim().slice(0, 500);
+    if (!reason) throw new BadRequestException('Vui lòng nhập lý do hủy phân công.');
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.pg_shift_assignments a
+       set status='cancelled',cancelled_at=now(),cancelled_by_code=$2,cancel_reason=$3,updated_at=now()
+       where a.id::text=$1 and a.status in ('scheduled','checked_in')
+       returning a.id,a.pg_code,a.work_date,a.start_time,a.end_time`, [id, user.employeeCode, reason],
     );
     if (!result.rows[0]) {
       const current = await this.infrastructure.postgres.query(
-        `select a.id,exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id) has_attendance
-         from marketing.pg_shift_assignments a where a.id::text=$1`, [id],
+        `select a.id,a.status from marketing.pg_shift_assignments a where a.id::text=$1`, [id],
       );
-      if (current.rows[0]?.has_attendance) {
-        throw new BadRequestException('Phân công đã phát sinh chấm công nên phải được giữ lại để đối soát.');
-      }
+      if (current.rows[0]) throw new BadRequestException(`Phân công đang ở trạng thái “${current.rows[0].status}” nên không thể hủy lại.`);
       throw new BadRequestException('Phân công không còn tồn tại.');
     }
-    await this.audit(user, 'pg_assignment.delete', 'marketing.pg_shift_assignment', id, {
-      pgCode: result.rows[0].pg_code, workDate: result.rows[0].work_date,
+    await this.notifyEmployee(result.rows[0].pg_code, 'Phân công PG đã bị hủy', `Ca ngày ${String(result.rows[0].work_date).slice(0, 10)} đã bị hủy. Lý do: ${reason}`);
+    await this.audit(user, 'pg_assignment.cancel', 'marketing.pg_shift_assignment', id, {
+      pgCode: result.rows[0].pg_code, workDate: result.rows[0].work_date, reason,
     });
+    await this.infrastructure.markDataChanged(['marketing.pg_shift_assignment', 'notifications'], user.id, user.role);
     return { data: result.rows[0] };
   }
 
@@ -820,15 +942,17 @@ export class MarketingService {
 
   async recordPgAttendance(user: AuthUser, input: JsonMap) {
     if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ tài khoản PG được chấm công tại vị trí được phân công.');
+    await this.expireAssignments();
     const type = input.type === 'checkout' ? 'checkout' : 'checkin';
     const lat = Number(input.latitude ?? input.lat); const lng = Number(input.longitude ?? input.lng); const accuracy = Math.round(Number(input.accuracy));
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy) || accuracy <= 0) throw new BadRequestException('GPS không hợp lệ.');
     const assignment = await this.infrastructure.postgres.query<{
-      id: string; start_time: string; end_time: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
+      id: string; start_time: string; end_time: string; status: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
     }>(
-      `select a.id,a.start_time::text,a.end_time::text,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+      `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
        from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
-       where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2 limit 1`, [user.employeeCode, clinicDate()],
+       where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2
+         and a.status in ('scheduled','checked_in') limit 1`, [user.employeeCode, clinicDate()],
     );
     const shift = assignment.rows[0];
     if (!shift) throw new BadRequestException('Support chưa phân công vị trí và thời gian làm việc hôm nay.');
@@ -837,6 +961,10 @@ export class MarketingService {
     if (distance > shift.allowed_radius_m) throw new BadRequestException(`Bạn đang cách vị trí làm việc ${distance} m, ngoài bán kính ${shift.allowed_radius_m} m.`);
     const grace = 5 * 60;
     const nowTime = seconds(clinicTime());
+    if (type === 'checkin' && shift.status !== 'scheduled') throw new BadRequestException('Ca này đã check-in hoặc không còn hiệu lực.');
+    if (type === 'checkout' && shift.status !== 'checked_in') throw new BadRequestException('Bạn cần check-in trước khi check-out.');
+    if (type === 'checkin' && nowTime < seconds(shift.start_time) - 3600) throw new BadRequestException('Chưa đến khung giờ chấm công. Bạn chỉ có thể check-in sớm tối đa 60 phút.');
+    if (type === 'checkin' && nowTime > seconds(shift.end_time)) throw new BadRequestException('Ca đã quá giờ kết thúc và không còn nhận check-in.');
     const status = type === 'checkin'
       ? (nowTime > seconds(shift.start_time) + grace ? 'late' : 'valid')
       : (nowTime < seconds(shift.end_time) - grace ? 'early_leave' : 'valid');
@@ -847,6 +975,12 @@ export class MarketingService {
       [shift.id, user.employeeCode, type, lat, lng, accuracy, distance, status],
     );
     if (!result.rows[0]) throw new BadRequestException(type === 'checkin' ? 'Bạn đã check-in hôm nay.' : 'Bạn đã check-out hôm nay.');
+    await this.infrastructure.postgres.query(
+      type === 'checkin'
+        ? `update marketing.pg_shift_assignments set status='checked_in',updated_at=now() where id=$1 and status='scheduled'`
+        : `update marketing.pg_shift_assignments set status='completed',completed_at=now(),updated_at=now() where id=$1 and status='checked_in'`,
+      [shift.id],
+    );
     await this.infrastructure.markDataChanged(['marketing.pg_attendance'], user.id, user.role);
     return { data: result.rows[0] };
   }
@@ -894,8 +1028,9 @@ export class MarketingController {
   @Patch('/pg-sites/:id') updateSite(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.updateSite(request.user, id, body); }
   @Delete('/pg-sites/:id') deleteSite(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteSite(request.user, id); }
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
+  @Get('/pg-assignment-history') assignmentHistory(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string) { return this.service.listAssignmentHistory(request.user, from, to, status); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
-  @Delete('/pg-assignments/:id') deleteAssignment(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteAssignment(request.user, id); }
+  @Patch('/pg-assignments/:id/cancel') cancelAssignment(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.cancelAssignment(request.user, id, body); }
   @Get('/pg-location-suggestions') locationSuggestions(@Req() request: ActorRequest) { return this.service.listLocationSuggestions(request.user); }
   @Post('/pg-location-suggestions') suggestLocation(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.suggestLocation(request.user, body); }
   @Patch('/pg-location-suggestions/:id') reviewLocation(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.reviewLocationSuggestion(request.user, id, body); }

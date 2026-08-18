@@ -1,12 +1,12 @@
 import {
-  createPgAccount, createPgAssignment, deletePgAccount, deletePgAssignment, exportPgAttendanceCsv,
-  getMarketingLeadPage, getMarketingReports, getPgAccounts, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
+  cancelPgAssignment, createPgAccount, createPgAssignment, deletePgAccount, exportPgAttendanceCsv,
+  getMarketingLeadPage, getMarketingReports, getPgAccounts, getPgAssignmentHistory, getPgAssignments, getPgAttendance, getPgSites, updatePgAccount,
 } from '../services/marketing.js';
 import { LEAD_STATUS } from '../constants.js';
 import { leadStatusPill } from '../components/shared.js';
 import { escapeHTML } from '../utils.js';
 import { showToast } from '../components/toast.js';
-import { confirmAction } from '../components/app-dialog.js';
+import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { geolocationErrorMessage } from '../services/geolocation.js';
 import { store } from '../store.js';
@@ -14,6 +14,10 @@ import { store } from '../store.js';
 let accounts = [];
 let sites = [];
 let assignments = [];
+let assignmentHistory = [];
+let assignmentHistoryFrom = '';
+let assignmentHistoryTo = '';
+let assignmentHistoryStatus = '';
 let report = { totals: {}, pg: [], telesale: [] };
 let attendance = [];
 let attendanceFrom = '';
@@ -29,10 +33,18 @@ let pgLeadAssignment = '';
 const PG_LEAD_PAGE_SIZE = 25;
 
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
+function daysAgo(days) { return new Date(Date.now() - days * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
+const ASSIGNMENT_STATUS = {
+  scheduled: ['Đã phân công', 'info'], checked_in: ['Đang trong ca', 'warning'], completed: ['Hoàn thành', 'success'],
+  cancelled: ['Đã hủy', 'danger'], expired: ['Tự hết hạn', 'muted'],
+};
+function assignmentStatus(row) { return ASSIGNMENT_STATUS[row.status] || [row.status || 'Đã phân công', 'muted']; }
 
 export async function renderView() {
   attendanceFrom ||= today();
   attendanceTo ||= today();
+  assignmentHistoryFrom ||= daysAgo(30);
+  assignmentHistoryTo ||= today();
   const adminOperations = store.getState().role !== 'support_marketing';
   const pgLeadRequest = getMarketingLeadPage({
     page: pgLeadPage, page_size: PG_LEAD_PAGE_SIZE, pg_only: true,
@@ -42,14 +54,16 @@ export async function renderView() {
     assignment: pgLeadAssignment || undefined,
   });
   const loaded = await Promise.all([
-    adminOperations ? getPgAccounts() : Promise.resolve([]),
-    adminOperations ? getPgSites() : Promise.resolve([]),
-    adminOperations ? getPgAssignments(today()) : Promise.resolve([]),
+    getPgAccounts(),
+    getPgSites(),
+    getPgAssignments(today()),
     getMarketingReports(),
     adminOperations ? getPgAttendance(attendanceFrom, attendanceTo) : Promise.resolve([]),
     pgLeadRequest,
+    getPgAssignmentHistory(assignmentHistoryFrom, assignmentHistoryTo, assignmentHistoryStatus),
   ]);
   [accounts, sites, assignments, report, attendance] = loaded;
+  assignmentHistory = loaded[6] || [];
   const pgLeadResult = loaded[5];
   const totals = report.totals || {};
   const pgRows = report.pg || [];
@@ -88,8 +102,8 @@ export async function renderView() {
 
     </div>` : ''}
 
-    ${adminOperations ? `<section class="panel" style="margin-top:14px">
-      <div class="section-title"><h3>Phân công vị trí và thời gian</h3><span class="pill">Mỗi PG · mỗi ngày một ca</span></div>
+    <section class="panel pg-assignment-panel" style="margin-top:14px">
+      <div class="section-title"><div><h3>Phân công vị trí và thời gian</h3><p class="subtle">PG nhận thông báo ngay; chấm công chỉ mở theo ca và vị trí còn hiệu lực.</p></div><span class="pill">Mỗi PG · mỗi ngày một ca</span></div>
       <form id="pgAssignmentForm" class="pg-assignment-form">
         <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG</option>${accounts.map((row) => `<option value="${escapeHTML(row.profile?.employee_code || '')}">${escapeHTML(row.employee?.full_name || row.profile?.full_name || '')} · ${escapeHTML(row.profile?.employee_code || '')}</option>`).join('')}</select></label>
         <label class="form-field"><span>Vị trí</span><select name="siteId" required><option value="">Chọn vị trí</option>${sites.map((site) => `<option value="${site.id}">${escapeHTML(site.name)}</option>`).join('')}</select></label>
@@ -98,10 +112,23 @@ export async function renderView() {
         <label class="form-field"><span>Giờ ra</span><input name="endTime" type="time" value="17:00" required></label>
         <button class="primary-button pg-assignment-submit" type="submit"><i class="ri-send-plane-line"></i> Giao cho PG</button>
       </form>
-      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Địa chỉ</th><th>Thao tác</th></tr></thead><tbody>
-        ${assignments.length ? assignments.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td>${escapeHTML(row.site_name)}</td><td>${escapeHTML(row.address)}</td><td><button class="danger-button pg-assignment-remove" type="button" data-delete-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button></td></tr>`).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
+      <div class="table-wrap pg-assignment-table"><table><thead><tr><th>PG</th><th>Ngày</th><th>Ca</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+        ${assignments.length ? assignments.map((row) => { const [label, tone] = assignmentStatus(row); const cancellable = ['scheduled', 'checked_in'].includes(row.status || 'scheduled'); return `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(String(row.work_date).slice(0,10))}</td><td>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</td><td><strong>${escapeHTML(row.site_name)}</strong><small>${escapeHTML(row.address)}</small></td><td><span class="assignment-status is-${tone}">${escapeHTML(label)}</span></td><td>${cancellable ? `<button class="danger-button pg-assignment-remove" type="button" data-cancel-pg-assignment="${escapeHTML(row.id)}"><i class="ri-close-circle-line"></i> Hủy phân công</button>` : '<span class="subtle">Đã khóa thao tác</span>'}</td></tr>`; }).join('') : '<tr><td colspan="6">Chưa có phân công hôm nay.</td></tr>'}
       </tbody></table></div>
-    </section>` : ''}
+    </section>
+
+    <section class="panel pg-assignment-history" style="margin-top:14px">
+      <div class="section-title"><div><p class="eyebrow">LỊCH SỬ PHÂN CÔNG</p><h3>Đối soát ca PG</h3><p class="subtle">Lưu cả phân công đã hủy, tự hết hạn, check-in và hoàn thành.</p></div><span class="pill">${assignmentHistory.length} bản ghi</span></div>
+      <form id="pgAssignmentHistoryFilter" class="pg-assignment-history-filter">
+        <label class="form-field"><span>Từ ngày</span><input name="from" type="date" value="${assignmentHistoryFrom}"></label>
+        <label class="form-field"><span>Đến ngày</span><input name="to" type="date" value="${assignmentHistoryTo}"></label>
+        <label class="form-field"><span>Trạng thái</span><select name="status"><option value="">Tất cả trạng thái</option>${Object.entries(ASSIGNMENT_STATUS).map(([value, item]) => `<option value="${value}"${assignmentHistoryStatus === value ? ' selected' : ''}>${item[0]}</option>`).join('')}</select></label>
+        <button class="secondary-button" type="submit"><i class="ri-filter-3-line"></i> Lọc lịch sử</button>
+      </form>
+      <div class="table-wrap"><table><thead><tr><th>PG</th><th>Ngày · ca</th><th>Vị trí</th><th>Trạng thái</th><th>Người xử lý / lý do</th></tr></thead><tbody>
+        ${assignmentHistory.length ? assignmentHistory.map((row) => { const [label, tone] = assignmentStatus(row); const lastEvent = Array.isArray(row.events) ? row.events.at(-1) : null; return `<tr><td><strong>${escapeHTML(row.pg_name || row.pg_code)}</strong><small>${escapeHTML(row.pg_code)}</small></td><td><strong>${escapeHTML(String(row.work_date).slice(0,10))}</strong><small>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</small></td><td><strong>${escapeHTML(row.site_name)}</strong><small>${escapeHTML(row.address)}</small></td><td><span class="assignment-status is-${tone}">${escapeHTML(label)}</span></td><td><strong>${escapeHTML(lastEvent?.actor_code || row.created_by_code || 'Hệ thống')}</strong><small>${escapeHTML(row.cancel_reason || lastEvent?.reason || (row.status === 'expired' ? 'Tự động hết hạn do chưa check-in' : '—'))}</small></td></tr>`; }).join('') : '<tr><td colspan="5">Không có phân công phù hợp bộ lọc.</td></tr>'}
+      </tbody></table></div>
+    </section>
 
     ${adminOperations ? `<section class="panel" style="margin-top:14px">
       <div class="section-title"><h3>Danh sách tài khoản PG</h3><span class="pill">${accounts.length} tài khoản</span></div>
@@ -362,12 +389,20 @@ export function initView() {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     try { await createPgAssignment(data); await refresh('Đã giao lịch và vị trí cho PG.'); } catch (error) { showToast(error.message, true); }
   });
-  document.querySelectorAll('[data-delete-pg-assignment]').forEach((button) => button.addEventListener('click', async () => {
-    const assignment = assignments.find((row) => String(row.id) === button.dataset.deletePgAssignment);
-    if (!assignment || !await confirmAction(`Hủy phân công ${assignment.pg_code} tại “${assignment.site_name}” ngày ${String(assignment.work_date).slice(0, 10)}?`, { title: 'Hủy phân công', confirmText: 'Hủy phân công', tone: 'danger' })) return;
+  document.querySelectorAll('[data-cancel-pg-assignment]').forEach((button) => button.addEventListener('click', async () => {
+    const assignment = assignments.find((row) => String(row.id) === button.dataset.cancelPgAssignment);
+    if (!assignment) return;
+    const reason = await requestInput(`Hủy phân công ${assignment.pg_code} tại “${assignment.site_name}” ngày ${String(assignment.work_date).slice(0, 10)}. Bản ghi vẫn được lưu để đối soát.`, { title: 'Hủy phân công PG', label: 'Lý do hủy', placeholder: 'VD: PG nghỉ đột xuất, đổi địa điểm hoặc đổi ca...', confirmText: 'Xác nhận hủy', tone: 'danger', maxLength: 500 });
+    if (!reason) return;
     button.disabled = true;
-    try { await deletePgAssignment(assignment.id); await refresh('Đã hủy phân công vị trí của PG.'); } catch (error) { button.disabled = false; showToast(error.message, true); }
+    try { await cancelPgAssignment(assignment.id, reason); await refresh('Đã hủy phân công và lưu vào lịch sử.'); } catch (error) { button.disabled = false; showToast(error.message, true); }
   }));
+  document.getElementById('pgAssignmentHistoryFilter')?.addEventListener('submit', async (event) => {
+    event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (data.from && data.to && data.from > data.to) return showToast('Ngày bắt đầu không được lớn hơn ngày kết thúc.', true);
+    assignmentHistoryFrom = data.from || daysAgo(30); assignmentHistoryTo = data.to || today(); assignmentHistoryStatus = data.status || '';
+    await navigateTo('pg-management');
+  });
   document.querySelectorAll('[data-toggle-pg]').forEach((button) => button.addEventListener('click', async () => {
     try { await updatePgAccount(button.dataset.togglePg, { active: button.dataset.active !== '1' }); await refresh('Đã cập nhật tài khoản PG.'); } catch (error) { showToast(error.message, true); }
   }));
