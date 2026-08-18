@@ -14,10 +14,14 @@ let dateTo = '';
 let reportDate = today();
 let statusFilter = '';
 let dataClassFilter = '';
+let serviceGroupFilter = '';
+let serviceTypeFilter = '';
 let pgUnhandledOnly = false;
 let currentPage = 1;
 let renderedLeads = new Map();
 const PAGE_SIZE = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches ? 20 : 50;
+const BASIC_SERVICES = ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'];
+const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
 
 const number = (value) => Number(value || 0).toLocaleString('vi-VN');
 const branchName = (id) => id === 'le-van-tho' ? '5S Lê Văn Thọ' : id === 'pham-van-chieu' ? '5S Phạm Văn Chiêu' : (id || 'Chưa xác định');
@@ -42,6 +46,8 @@ export async function renderView() {
       date_to: dateTo || undefined,
       status: statusFilter || undefined,
       data_class: dataClassFilter || undefined,
+      service_group: serviceGroupFilter || undefined,
+      service_type: serviceTypeFilter || undefined,
       pg_unhandled_only: pgUnhandledOnly,
     }),
     getMarketingLeadPage({ page: 1, page_size: 1, data_class: 'raw', assignment: 'unassigned' }),
@@ -54,6 +60,7 @@ export async function renderView() {
   const totals = summary.totals || {};
   const staff = summary.staff || [];
   const unassignedRawTotal = Number(rawInventory.meta?.total || 0);
+  const serviceOptions = serviceGroupFilter === 'advanced' ? ADVANCED_SERVICES : serviceGroupFilter === 'basic' ? BASIC_SERVICES : [];
 
   const staffRows = staff.map((member) => {
     const active = selectedTelesale === member.employee_code;
@@ -136,6 +143,8 @@ export async function renderView() {
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
         <label><span>Đến ngày</span><input type="date" id="tsmDateTo" value="${escapeHTML(dateTo)}"></label>
         <label><span>Phân loại data</span><select id="tsmDataClassFilter"><option value="">Tất cả data</option><option value="raw"${dataClassFilter === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${dataClassFilter === 'net' ? ' selected' : ''}>Data net</option></select></label>
+        <label><span>Nhóm dịch vụ</span><select id="tsmServiceGroupFilter"><option value="">Tất cả dịch vụ</option><option value="basic"${serviceGroupFilter === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${serviceGroupFilter === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
+        <label><span>Dịch vụ cụ thể</span><select id="tsmServiceTypeFilter"${serviceGroupFilter ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, serviceTypeFilter === serviceName)).join('')}</select></label>
         <label><span>Trạng thái</span><select id="tsmStatus"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([key, label]) => option(key, label, statusFilter === key)).join('')}</select></label>
         <button type="button" class="secondary-button" id="tsmResetFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
@@ -194,7 +203,7 @@ export function initView() {
   });
   document.getElementById('tsmExport')?.addEventListener('click', async () => {
     try {
-      let rows = await getMarketingLeads({ status: statusFilter || undefined, data_class: dataClassFilter || undefined, assigned_telesale_id: selectedTelesale || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined });
+      let rows = await getMarketingLeads({ status: statusFilter || undefined, data_class: dataClassFilter || undefined, service_group: serviceGroupFilter || undefined, service_type: serviceTypeFilter || undefined, assigned_telesale_id: selectedTelesale || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined });
       if (pgUnhandledOnly) rows = rows.filter((lead) => lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id);
       const from = dateFrom ? new Date(`${dateFrom}T00:00:00+07:00`) : null;
       const to = dateTo ? new Date(`${dateTo}T23:59:59.999+07:00`) : null;
@@ -217,7 +226,20 @@ export function initView() {
   document.getElementById('tsmMemberFilter')?.addEventListener('change', (event) => { selectedTelesale = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateFrom')?.addEventListener('change', (event) => { dateFrom = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateTo')?.addEventListener('change', (event) => { dateTo = event.target.value; currentPage = 1; rerender(); });
-  document.getElementById('tsmDataClassFilter')?.addEventListener('change', (event) => { dataClassFilter = event.target.value; currentPage = 1; rerender(); });
+  document.getElementById('tsmDataClassFilter')?.addEventListener('change', (event) => {
+    dataClassFilter = event.target.value;
+    if (dataClassFilter === 'raw' && serviceGroupFilter === 'advanced') { serviceGroupFilter = ''; serviceTypeFilter = ''; }
+    currentPage = 1;
+    rerender();
+  });
+  document.getElementById('tsmServiceGroupFilter')?.addEventListener('change', (event) => {
+    serviceGroupFilter = event.target.value;
+    serviceTypeFilter = '';
+    if (serviceGroupFilter === 'advanced') dataClassFilter = 'net';
+    currentPage = 1;
+    rerender();
+  });
+  document.getElementById('tsmServiceTypeFilter')?.addEventListener('change', (event) => { serviceTypeFilter = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmStatus')?.addEventListener('change', (event) => { statusFilter = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmPgUnhandled')?.addEventListener('click', () => {
     pgUnhandledOnly = !pgUnhandledOnly;
@@ -245,7 +267,7 @@ export function initView() {
     }
   });
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
-  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
+  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
   document.getElementById('tsmPrev')?.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); rerender(); });
   document.getElementById('tsmNext')?.addEventListener('click', () => { currentPage += 1; rerender(); });
   document.querySelectorAll('[data-team-member]').forEach((button) => button.addEventListener('click', () => { selectedTelesale = button.dataset.teamMember || ''; currentPage = 1; rerender(); }));

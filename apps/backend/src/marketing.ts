@@ -276,6 +276,22 @@ export class MarketingService {
     for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code']] as const) {
       if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
     }
+    const serviceGroup = String(query.serviceGroup || '').trim().toLowerCase();
+    if (serviceGroup === 'basic') {
+      params.push(Array.from(netServices.basic));
+      where.push(`exists (select 1 from unnest($${params.length}::text[]) service_name
+        where coalesce(l.service_type,'') ilike '%' || service_name || '%')`);
+    } else if (serviceGroup === 'advanced') {
+      params.push(Array.from(netServices.advanced));
+      where.push(`l.data_class='net' and l.net_level='advanced' and exists (
+        select 1 from unnest($${params.length}::text[]) service_name
+        where coalesce(l.service_type,'') ilike '%' || service_name || '%'
+      )`);
+    }
+    if (query.serviceType) {
+      params.push(`%${String(query.serviceType)}%`);
+      where.push(`coalesce(l.service_type,'') ilike $${params.length}`);
+    }
     if (query.branchId) { params.push(query.branchId); where.push(`l.branch_id=$${params.length}`); }
     if (query.pgCode) { params.push(query.pgCode); where.push(`lower(l.created_by_pg_code)=lower($${params.length})`); }
     if (query.assignment === 'unassigned') where.push('l.assigned_telesale_code is null');

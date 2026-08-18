@@ -74,6 +74,8 @@ export async function getMarketingLeads(filters = {}) {
     if (filters.pg_only) query.set('pgOnly', 'true');
     if (filters.date_from) query.set('dateFrom', filters.date_from);
     if (filters.date_to) query.set('dateTo', filters.date_to);
+    if (filters.service_group) query.set('serviceGroup', filters.service_group);
+    if (filters.service_type) query.set('serviceType', filters.service_type);
     const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
     return (payload.data || []).map(mapVpsLead);
   }
@@ -401,7 +403,8 @@ export async function getMarketingLeadPage(filters = {}) {
       status: 'status', assigned_telesale_id: 'assignedTo', data_class: 'dataClass',
       net_level: 'netLevel', pg_unhandled_only: 'pgUnassignedOnly', branch_id: 'branchId',
       pg_code: 'pgCode', search: 'search', assignment: 'assignment', pg_only: 'pgOnly',
-      date_from: 'dateFrom', date_to: 'dateTo',
+      date_from: 'dateFrom', date_to: 'dateTo', service_group: 'serviceGroup',
+      service_type: 'serviceType',
     };
     Object.entries(mappings).forEach(([key, target]) => {
       if (filters[key]) query.set(target, filters[key] === true ? 'true' : String(filters[key]));
@@ -418,6 +421,8 @@ export async function getMarketingLeadPage(filters = {}) {
     assigned_telesale_id: filters.assigned_telesale_id,
     data_class: filters.data_class,
     net_level: filters.net_level,
+    service_group: filters.service_group,
+    service_type: filters.service_type,
     pg_unhandled_only: filters.pg_unhandled_only,
   });
   const from = filters.date_from ? new Date(`${filters.date_from}T00:00:00+07:00`) : null;

@@ -14,6 +14,10 @@ let telesaleViewMode = 'cards';
 let telesaleDateFrom = '';
 let telesaleDateTo = '';
 let telesaleDataClass = '';
+let telesaleServiceGroup = '';
+let telesaleServiceType = '';
+const BASIC_SERVICES = ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'];
+const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
@@ -25,9 +29,12 @@ export async function renderView(state) {
     date_from: telesaleDateFrom || undefined,
     date_to: telesaleDateTo || undefined,
     data_class: telesaleDataClass || undefined,
+    service_group: telesaleServiceGroup || undefined,
+    service_type: telesaleServiceType || undefined,
   };
   const leads = await getMarketingLeads(filters);
   cachedLeads = leads;
+  const serviceOptions = telesaleServiceGroup === 'advanced' ? ADVANCED_SERVICES : telesaleServiceGroup === 'basic' ? BASIC_SERVICES : [];
 
   const leadsListHtml = leads.length
     ? leads.map((lead) => {
@@ -128,6 +135,8 @@ export async function renderView(state) {
         <div class="telesale-date-filter"><label>Từ ngày<input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label></div>
         <div class="telesale-date-filter"><label>Đến ngày<input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label></div>
         <div class="telesale-filter-select"><select id="filterTelesaleDataClass"><option value="">Tất cả data</option><option value="raw"${telesaleDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${telesaleDataClass === 'net' ? ' selected' : ''}>Data net</option></select></div>
+        <div class="telesale-filter-select"><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></div>
+        <div class="telesale-filter-select"><select id="filterTelesaleServiceType"${telesaleServiceGroup ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></div>
         <button type="button" class="secondary-button" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
 
@@ -188,6 +197,8 @@ export function initView() {
   const dateFromInput = document.getElementById('filterTelesaleDateFrom');
   const dateToInput = document.getElementById('filterTelesaleDateTo');
   const dataClassSelect = document.getElementById('filterTelesaleDataClass');
+  const serviceGroupSelect = document.getElementById('filterTelesaleServiceGroup');
+  const serviceTypeSelect = document.getElementById('filterTelesaleServiceType');
   const pageSizeSelect = document.getElementById('telesalePageSize');
   const previousPageButton = document.getElementById('telesalePrevPage');
   const nextPageButton = document.getElementById('telesaleNextPage');
@@ -259,8 +270,21 @@ export function initView() {
   if (branchSelect) branchSelect.addEventListener('change', () => applyTelesaleFilters(true));
   dateFromInput?.addEventListener('change', () => { telesaleDateFrom = dateFromInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dateToInput?.addEventListener('change', () => { telesaleDateTo = dateToInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
-  dataClassSelect?.addEventListener('change', () => { telesaleDataClass = dataClassSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
-  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
+  dataClassSelect?.addEventListener('change', () => {
+    telesaleDataClass = dataClassSelect.value;
+    if (telesaleDataClass === 'raw' && telesaleServiceGroup === 'advanced') { telesaleServiceGroup = ''; telesaleServiceType = ''; }
+    telesalePage = 1;
+    navigateTo('telesale-workspace');
+  });
+  serviceGroupSelect?.addEventListener('change', () => {
+    telesaleServiceGroup = serviceGroupSelect.value;
+    telesaleServiceType = '';
+    if (telesaleServiceGroup === 'advanced') telesaleDataClass = 'net';
+    telesalePage = 1;
+    navigateTo('telesale-workspace');
+  });
+  serviceTypeSelect?.addEventListener('change', () => { telesaleServiceType = serviceTypeSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
+  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
   document.querySelectorAll('[data-workspace-view]').forEach((button) => button.addEventListener('click', () => {
     telesaleViewMode = button.dataset.workspaceView === 'sheet' ? 'sheet' : 'cards';
     document.getElementById('telesaleCardView').hidden = telesaleViewMode === 'sheet';
