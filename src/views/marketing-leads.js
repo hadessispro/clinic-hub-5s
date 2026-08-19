@@ -240,7 +240,8 @@ export async function renderView(state) {
           </div>
           <div class="form-field">
             <label for="leadPhone">Số điện thoại</label>
-            <input id="leadPhone" name="phone" placeholder="090..." type="tel" />
+            <input id="leadPhone" name="phone" placeholder="090..." type="tel" inputmode="tel" minlength="8" required />
+            <small>Dùng để kiểm tra trùng trên toàn bộ kho khách hàng.</small>
           </div>
           <div class="form-field">
             <label for="leadSource">Nguồn tiếp nhận</label>
@@ -397,7 +398,7 @@ export function initView() {
     }
     if (netLevel) { netLevel.required = isNet; netLevel.disabled = !isNet; }
     if (appointment) { appointment.required = isNet; appointment.disabled = !isNet; }
-    if (phone) phone.required = isNet;
+    if (phone) phone.required = true;
     if (service) {
       service.disabled = false;
       service.required = true;

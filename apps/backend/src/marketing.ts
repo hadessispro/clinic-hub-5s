@@ -310,6 +310,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const phone = cleanPhone(input.phone) || null;
     const appointmentAt = input.appointmentAt || input.appointment_at ? new Date(String(input.appointmentAt || input.appointment_at)) : null;
     if (!dataClasses.has(dataClass)) throw new BadRequestException('Loại data không hợp lệ.');
+    if (!phone || phone.length < 8) {
+      throw new BadRequestException('Cần nhập số điện thoại hợp lệ để kiểm tra trùng dữ liệu.');
+    }
     if (dataClass === 'net' && (!netLevel || !netLevels.has(netLevel) || !phone || !appointmentAt || !Number.isFinite(appointmentAt.getTime()))) {
       throw new BadRequestException('Data net bắt buộc có số điện thoại, lịch hẹn và phân loại cơ bản/chuyên sâu.');
     }
@@ -321,16 +324,36 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     }
     const customerName = String(input.customerName || input.full_name || '').trim();
     if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
-    const result = await this.infrastructure.postgres.query(
-      `insert into marketing.leads(
-         customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code,
-         assigned_telesale_code,assigned_by_code,assigned_at
-       )
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,null,null,null) returning *`,
-      [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
-        serviceType, input.source || 'PG', input.branchId || input.branch_id || null,
-        input.notes || null, user.employeeCode],
+    const duplicate = await this.infrastructure.postgres.query<{ id: string }>(
+      `select id from marketing.leads
+       where length(regexp_replace(coalesce(phone,''),'\\D','','g')) >= 8
+         and regexp_replace(phone,'\\D','','g')=$1
+       limit 1`,
+      [phone],
     );
+    if (duplicate.rowCount) {
+      throw new ConflictException('Số điện thoại này đã tồn tại trong hệ thống. Không thể nhập trùng khách hàng.');
+    }
+
+    let result;
+    try {
+      result = await this.infrastructure.postgres.query(
+        `insert into marketing.leads(
+           customer_name,phone,appointment_at,data_class,net_level,service_type,source,branch_id,notes,created_by_pg_code,
+           assigned_telesale_code,assigned_by_code,assigned_at
+         )
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,null,null,null) returning *`,
+        [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
+          serviceType, input.source || 'PG', input.branchId || input.branch_id || null,
+          input.notes || null, user.employeeCode],
+      );
+    } catch (error) {
+      const databaseError = error as { code?: string; constraint?: string };
+      if (databaseError.code === '23505' && databaseError.constraint === 'marketing_leads_phone_unique_guard') {
+        throw new ConflictException('Số điện thoại này vừa được nhập trên thiết bị khác. Không thể tạo bản ghi trùng.');
+      }
+      throw error;
+    }
     await this.audit(user, 'lead.create', 'marketing.lead', result.rows[0].id, { dataClass, netLevel });
     return { data: result.rows[0] };
   }
