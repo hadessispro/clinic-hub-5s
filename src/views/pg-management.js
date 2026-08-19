@@ -30,6 +30,8 @@ let pgLeadNetLevel = '';
 let pgLeadStatus = '';
 let pgLeadBranch = '';
 let pgLeadAssignment = '';
+let pgLeadDateFrom = '';
+let pgLeadDateTo = '';
 const PG_LEAD_PAGE_SIZE = 25;
 
 function today() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }); }
@@ -52,6 +54,7 @@ export async function renderView() {
     data_class: pgLeadDataClass || undefined, net_level: pgLeadNetLevel || undefined,
     status: pgLeadStatus || undefined, branch_id: pgLeadBranch || undefined,
     assignment: pgLeadAssignment || undefined,
+    date_from: pgLeadDateFrom || undefined, date_to: pgLeadDateTo || undefined,
   });
   const loaded = await Promise.all([
     getPgAccounts(),
@@ -170,6 +173,8 @@ export async function renderView() {
         <label class="form-field"><span>Trạng thái</span><select name="status"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([value, label]) => `<option value="${value}"${pgLeadStatus === value ? ' selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select></label>
         <label class="form-field"><span>Chi nhánh</span><select name="branchId"><option value="">Cả hai chi nhánh</option><option value="pham-van-chieu"${pgLeadBranch === 'pham-van-chieu' ? ' selected' : ''}>Phạm Văn Chiêu</option><option value="le-van-tho"${pgLeadBranch === 'le-van-tho' ? ' selected' : ''}>Lê Văn Thọ</option></select></label>
         <label class="form-field"><span>Phân bổ Telesale</span><select name="assignment"><option value="">Tất cả</option><option value="unassigned"${pgLeadAssignment === 'unassigned' ? ' selected' : ''}>Chưa gán Telesale</option><option value="assigned"${pgLeadAssignment === 'assigned' ? ' selected' : ''}>Đã gán Telesale</option></select></label>
+        <label class="form-field"><span>Từ ngày PG nhập</span><input name="dateFrom" type="date" value="${escapeHTML(pgLeadDateFrom)}" max="${escapeHTML(pgLeadDateTo || today())}"></label>
+        <label class="form-field"><span>Đến ngày PG nhập</span><input name="dateTo" type="date" value="${escapeHTML(pgLeadDateTo)}" min="${escapeHTML(pgLeadDateFrom)}" max="${today()}"></label>
         <button class="secondary-button pg-lead-reset" type="button" data-reset-pg-leads><i class="ri-refresh-line"></i> Xóa lọc</button>
       </form>
       <div class="pg-lead-suggestions" aria-label="Lọc nhanh"><span>Gợi ý nhanh:</span><button type="button" data-pg-lead-preset="unassigned-new">PG mới nhập · chưa gán</button><button type="button" data-pg-lead-preset="net">Data net của PG</button><button type="button" data-pg-lead-preset="raw">Data thô của PG</button><button type="button" data-pg-lead-preset="all">Toàn bộ data PG</button></div>
@@ -228,6 +233,12 @@ export function initView() {
     pgLeadStatus = String(data.status || '');
     pgLeadBranch = String(data.branchId || '');
     pgLeadAssignment = String(data.assignment || '');
+    pgLeadDateFrom = String(data.dateFrom || '');
+    pgLeadDateTo = String(data.dateTo || '');
+    if (pgLeadDateFrom && pgLeadDateTo && pgLeadDateFrom > pgLeadDateTo) {
+      showToast('Từ ngày PG nhập không được sau Đến ngày.', true);
+      return;
+    }
     if (resetPage) pgLeadPage = 1;
     await navigateTo('pg-management');
   };
@@ -247,12 +258,12 @@ export function initView() {
     await navigateTo('pg-management');
   });
   document.querySelector('[data-reset-pg-leads]')?.addEventListener('click', async () => {
-    pgLeadSearch = ''; pgLeadCode = ''; pgLeadDataClass = ''; pgLeadNetLevel = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadAssignment = ''; pgLeadPage = 1;
+    pgLeadSearch = ''; pgLeadCode = ''; pgLeadDataClass = ''; pgLeadNetLevel = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadAssignment = ''; pgLeadDateFrom = ''; pgLeadDateTo = ''; pgLeadPage = 1;
     await navigateTo('pg-management');
   });
   document.querySelectorAll('[data-pg-lead-preset]').forEach((button) => button.addEventListener('click', async () => {
     const preset = button.dataset.pgLeadPreset;
-    pgLeadSearch = ''; pgLeadCode = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadNetLevel = '';
+    pgLeadSearch = ''; pgLeadCode = ''; pgLeadStatus = ''; pgLeadBranch = ''; pgLeadNetLevel = ''; pgLeadDateFrom = ''; pgLeadDateTo = '';
     if (preset === 'unassigned-new') { pgLeadDataClass = ''; pgLeadStatus = 'new'; pgLeadAssignment = 'unassigned'; }
     else if (preset === 'net') { pgLeadDataClass = 'net'; pgLeadAssignment = ''; }
     else if (preset === 'raw') { pgLeadDataClass = 'raw'; pgLeadAssignment = ''; }
