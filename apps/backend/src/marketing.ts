@@ -537,9 +537,15 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const client = await this.infrastructure.postgres.connect();
     try {
       await client.query('begin');
-      const result = await client.query<{ id: string }>(
+      const result = await client.query<{
+        id: string;
+        previous_telesale_code: string | null;
+        previous_assigned_by_code: string | null;
+        previous_assigned_at: string | null;
+      }>(
         `with picked as (
-           select id from marketing.leads
+           select id, assigned_telesale_code, assigned_by_code, assigned_at
+           from marketing.leads
            where id::text=any($1::text[])
              and ($2='all' or data_class=$2)
            order by created_at desc
@@ -549,12 +555,24 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
          update marketing.leads l
             set assigned_telesale_code=$4,assigned_by_code=$5,assigned_at=now(),updated_at=now()
            from picked p where l.id=p.id
-         returning l.id::text id`,
+         returning l.id::text id,
+                   p.assigned_telesale_code previous_telesale_code,
+                   p.assigned_by_code previous_assigned_by_code,
+                   p.assigned_at::text previous_assigned_at`,
         [leadIds, dataClass, quantity, telesaleCode, user.employeeCode],
       );
       await client.query('commit');
       await this.audit(user, 'lead.bulk_assign', 'marketing.lead', undefined, {
-        telesaleCode, dataClass, requested: Math.min(quantity, leadIds.length), assigned: result.rows.length,
+        telesaleCode,
+        dataClass,
+        requested: Math.min(quantity, leadIds.length),
+        assigned: result.rows.length,
+        changes: result.rows.map((row) => ({
+          leadId: row.id,
+          previousTelesaleCode: row.previous_telesale_code,
+          previousAssignedByCode: row.previous_assigned_by_code,
+          previousAssignedAt: row.previous_assigned_at,
+        })),
       });
       return { data: { assigned: result.rows.length, leadIds: result.rows.map((row) => row.id), telesaleCode } };
     } catch (error) {

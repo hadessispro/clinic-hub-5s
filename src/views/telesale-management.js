@@ -149,9 +149,6 @@ export async function renderView() {
         <div class="tsm-bulk-controls">
           <label><span>Telesale nhận data</span><select id="tsmBulkTelesale"><option value="">Chọn Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, false)).join('')}</select></label>
           <label><span>Loại data</span><select id="tsmBulkDataClass"><option value="all">Data thô và Data net</option><option value="raw">Chỉ Data thô</option><option value="net">Chỉ Data net</option></select></label>
-          <label><span>Số lượng nhanh</span><input id="tsmBulkQuantity" type="number" min="1" max="${PAGE_SIZE}" value="10" inputmode="numeric"></label>
-          <div class="tsm-bulk-presets" aria-label="Chọn nhanh số lượng"><button type="button" data-bulk-quantity="10">10</button><button type="button" data-bulk-quantity="20">20</button><button type="button" data-bulk-quantity="50">50</button></div>
-          <button type="button" class="secondary-button" id="tsmSelectQuantity"><i class="ri-list-check-2"></i> Chọn theo số lượng</button>
           <button type="button" class="secondary-button" id="tsmClearSelection"><i class="ri-close-circle-line"></i> Bỏ chọn</button>
           <button type="button" class="primary-button" id="tsmConfirmBulk"><i class="ri-user-shared-line"></i> Xác nhận chia data</button>
         </div>
@@ -326,25 +323,6 @@ export function initView() {
       input.closest('tr')?.classList.toggle('is-selected', input.checked);
     });
     updateSelectionUi();
-  });
-  document.querySelectorAll('[data-bulk-quantity]').forEach((button) => button.addEventListener('click', () => {
-    const quantity = document.getElementById('tsmBulkQuantity');
-    if (quantity) quantity.value = button.dataset.bulkQuantity || '10';
-  }));
-  document.getElementById('tsmSelectQuantity')?.addEventListener('click', () => {
-    const quantity = Number(document.getElementById('tsmBulkQuantity')?.value || 0);
-    const dataClass = document.getElementById('tsmBulkDataClass')?.value || 'all';
-    if (!Number.isInteger(quantity) || quantity < 1) { showToast('Cần nhập số lượng hồ sơ muốn chọn.', true); return; }
-    const eligible = leads.filter((lead) => dataClass === 'all' || lead.data_class === dataClass).slice(0, quantity);
-    if (!eligible.length) { showToast('Trang hiện tại không có hồ sơ đúng loại data đã chọn.', true); return; }
-    selectedLeadIds.clear();
-    eligible.forEach((lead) => selectedLeadIds.add(String(lead.id)));
-    visibleLeadChecks.forEach((input) => {
-      input.checked = selectedLeadIds.has(input.value);
-      input.closest('tr')?.classList.toggle('is-selected', input.checked);
-    });
-    updateSelectionUi();
-    showToast(`Đã tích nhanh ${eligible.length} hồ sơ trên trang hiện tại.`);
   });
   document.getElementById('tsmClearSelection')?.addEventListener('click', () => {
     selectedLeadIds.clear();
