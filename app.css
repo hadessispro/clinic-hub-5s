@@ -6583,6 +6583,79 @@ body.dialog-open {
   width: auto;
 }
 
+.login-mode-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 8px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.8rem;
+}
+
+.login-mode-switch strong {
+  color: var(--teal);
+}
+
+.pg-register-form[hidden],
+.login-mode-switch[hidden],
+.login-trust-row[hidden],
+.login-privacy[hidden] {
+  display: none !important;
+}
+
+.pg-register-intro {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.pg-register-intro div,
+.pg-register-intro small {
+  display: block;
+}
+
+.pg-register-intro small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.pg-register-back {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--teal-dark);
+  background: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.pg-register-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.pg-register-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 620px) {
+  .pg-register-grid { grid-template-columns: 1fr; }
+  .pg-register-wide { grid-column: auto; }
+}
+
 .tsm-ledger-actions {
   display: inline-flex;
   align-items: center;

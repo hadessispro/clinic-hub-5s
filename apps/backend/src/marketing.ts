@@ -260,7 +260,14 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       await client.query(
         `update app.records set payload=payload || $2::jsonb,updated_at=now(),version=version+1
          where entity_type='profiles' and record_key=$1`,
-        [row.record_key, JSON.stringify({ full_name: fullName, active, updated_at: new Date().toISOString() })],
+        [row.record_key, JSON.stringify({
+          full_name: fullName,
+          active,
+          ...(active && row.payload.registration_status === 'pending_approval' ? {
+            registration_status: 'approved', approved_by_code: user.employeeCode, approved_at: new Date().toISOString(),
+          } : {}),
+          updated_at: new Date().toISOString(),
+        })],
       );
       await client.query(
         `update app.records set payload=payload || $2::jsonb,updated_at=now(),version=version+1
@@ -275,7 +282,13 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
           [row.record_key, credentials.salt, credentials.hash, active, email],
         );
       } else {
-        await client.query('update app.local_accounts set active=$2,email=coalesce($3,email),updated_at=now() where profile_key=$1', [row.record_key, active, email]);
+        await client.query(
+          `update app.local_accounts set active=$2,email=coalesce($3,email),
+             failed_attempts=case when $2 then 0 else failed_attempts end,
+             locked_until=case when $2 then null else locked_until end,updated_at=now()
+           where profile_key=$1`,
+          [row.record_key, active, email],
+        );
       }
       await client.query('commit');
     } catch (error) {

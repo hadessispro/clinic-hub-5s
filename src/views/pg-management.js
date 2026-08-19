@@ -150,8 +150,8 @@ export async function renderView() {
           <td><strong>${escapeHTML(row.employee?.full_name || row.profile?.full_name || '')}</strong><br><span class="subtle">${escapeHTML(code)}</span></td>
           <td>${escapeHTML(row.employee?.email || '')}<br><span class="subtle">${escapeHTML(row.employee?.phone || '')}</span></td>
           <td>${escapeHTML(row.profile?.branch_id || '')}</td><td>${row.last_login_at ? new Date(row.last_login_at).toLocaleString('vi-VN') : 'Chưa đăng nhập'}</td>
-          <td><span class="pill">${row.login_active ? 'Đang hoạt động' : 'Đã khóa'}</span></td>
-          <td><div class="button-row pg-account-actions"><button class="secondary-button" data-edit-pg="${escapeHTML(code)}"><i class="ri-edit-line"></i> Sửa</button><button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}"><i class="ri-lock-line"></i> ${row.login_active ? 'Khóa' : 'Mở khóa'}</button><button class="danger-button" data-delete-pg="${escapeHTML(code)}"><i class="ri-delete-bin-line"></i> Xóa</button></div></td>
+          <td><span class="pill">${row.profile?.registration_status === 'pending_approval' ? 'Chờ duyệt' : (row.login_active ? 'Đang hoạt động' : 'Đã khóa')}</span></td>
+          <td><div class="button-row pg-account-actions"><button class="secondary-button" data-edit-pg="${escapeHTML(code)}"><i class="ri-edit-line"></i> Sửa</button><button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}"><i class="ri-${row.profile?.registration_status === 'pending_approval' ? 'check-line' : 'lock-line'}"></i> ${row.profile?.registration_status === 'pending_approval' ? 'Duyệt' : (row.login_active ? 'Khóa' : 'Mở khóa')}</button><button class="danger-button" data-delete-pg="${escapeHTML(code)}"><i class="ri-delete-bin-line"></i> Xóa</button></div></td>
         </tr>`; }).join('') : '<tr><td colspan="6">Chưa có tài khoản PG.</td></tr>'}
       </tbody></table></div>
     </section>` : ''}
