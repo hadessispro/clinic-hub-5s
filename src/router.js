@@ -62,6 +62,38 @@ const viewTitles = {
 
 let renderRequestId = 0;
 
+const STALE_MODULE_RECOVERY_KEY = 'clinic:stale-module-recovery';
+
+function isStaleModuleError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return message.includes('failed to fetch dynamically imported module')
+    || message.includes('error loading dynamically imported module')
+    || message.includes('importing a module script failed')
+    || message.includes('failed to fetch module');
+}
+
+async function recoverFromStaleModule(error) {
+  if (!isStaleModuleError(error)) return false;
+
+  const now = Date.now();
+  const lastRecovery = Number(sessionStorage.getItem(STALE_MODULE_RECOVERY_KEY) || 0);
+  // Avoid an endless refresh loop if the server is genuinely unavailable.
+  if (now - lastRecovery < 60_000) return false;
+  sessionStorage.setItem(STALE_MODULE_RECOVERY_KEY, String(now));
+
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration?.();
+    await registration?.update?.();
+  } catch (updateError) {
+    console.warn('[Router] Service worker update before module recovery failed:', updateError);
+  }
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set('_app_refresh', String(now));
+  window.location.replace(nextUrl.toString());
+  return true;
+}
+
 export async function navigateTo(viewName) {
   const { role } = store.getState();
   
@@ -137,6 +169,7 @@ store.subscribe(async (state) => {
     // that stale failure overwrite the authenticated screen.
     if (requestId !== renderRequestId || store.getState().currentView !== currentView) return;
     console.error(`[Router] Error loading view "${currentView}":`, error);
+    if (await recoverFromStaleModule(error)) return;
     viewContainer.innerHTML = `
       <div class="empty-state error">
         <strong>Lỗi tải trang</strong>

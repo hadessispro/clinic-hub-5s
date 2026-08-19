@@ -325,6 +325,13 @@ function closeMobileNavigation() {
 }
 
 // Start application
+// Remove the one-time cache-busting query after a stale lazy module recovery.
+// Keeping the URL clean also prevents users from sharing an internal refresh token.
+const startupUrl = new URL(window.location.href);
+if (startupUrl.searchParams.has('_app_refresh')) {
+  startupUrl.searchParams.delete('_app_refresh');
+  window.history.replaceState(window.history.state, '', `${startupUrl.pathname}${startupUrl.search}${startupUrl.hash}`);
+}
 bootstrap();
 
 // Cache the app shell after the first successful online visit so an existing
