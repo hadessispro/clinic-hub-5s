@@ -37,7 +37,7 @@ export class PgRegistrationService {
           and payload->>'role'=any($1::text[])
           and coalesce((payload->>'active')::boolean,true)=true
           and coalesce(payload->>'id','')<>''`,
-      [['admin', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing']],
+      [['admin_marketing']],
     );
     const createdAt = new Date().toISOString();
     for (const approver of approvers.rows) {
@@ -180,7 +180,7 @@ export class PgRegistrationService {
         fullName,
         email,
         status: 'pending_approval',
-        message: 'Đăng ký thành công. Support hoặc Admin sẽ duyệt tài khoản trước khi bạn đăng nhập.',
+        message: 'Đăng ký thành công. Admin Marketing sẽ duyệt tài khoản trước khi bạn đăng nhập.',
       },
     };
   }

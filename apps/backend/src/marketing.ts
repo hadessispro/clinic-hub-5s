@@ -12,6 +12,7 @@ type ActorRequest = { user: AuthUser };
 
 const adminRoles = new Set(['admin', 'admin_it', 'superadmin', 'admin_marketing']);
 const supportRoles = new Set([...adminRoles, 'support_marketing']);
+const pgApprovalRoles = new Set(['admin_marketing']);
 const managerRoles = new Set([...adminRoles, 'telesale_leader']);
 const reportRoles = new Set([...managerRoles, 'support_marketing']);
 const dataClasses = new Set(['raw', 'net']);
@@ -196,10 +197,13 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const exists = await this.infrastructure.postgres.query(
       `select 1 from app.records where deleted_at is null and (
         (entity_type='profiles' and lower(payload->>'employee_code')=lower($1)) or
-        (entity_type='employees' and (lower(payload->>'email')=lower($2) or lower(payload->>'code')=lower($1)))
-      ) limit 1`, [employeeCode, email],
+        (entity_type='employees' and (
+          lower(payload->>'email')=lower($2) or lower(payload->>'code')=lower($1) or
+          right(regexp_replace(coalesce(payload->>'phone',''),'\\D','','g'),9)=right($3,9)
+        ))
+      ) limit 1`, [employeeCode, email, phone],
     );
-    if (exists.rowCount) throw new BadRequestException('Mã PG hoặc email đã tồn tại.');
+    if (exists.rowCount) throw new ConflictException('Mã PG, email hoặc số điện thoại đã tồn tại.');
 
     const id = randomUUID();
     const profileKey = id;
@@ -208,12 +212,13 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const employee = {
       id, code: employeeCode, employee_number: employeeCode, full_name: fullName, email, phone,
       department: 'marketing', title: 'Nhân viên PG', role: 'pg_staff', branch_id: branchId,
-      status: 'active', created_by_code: user.employeeCode, created_at: now, updated_at: now,
+      status: 'pending_approval', created_by_code: user.employeeCode, created_at: now, updated_at: now,
     };
     const profile = {
       id, employee_code: employeeCode, employee_number: employeeCode, full_name: fullName,
-      role: 'pg_staff', department: 'marketing', branch_id: branchId, active: true,
-      parent_support_code: user.employeeCode, created_at: now, updated_at: now,
+      role: 'pg_staff', department: 'marketing', branch_id: branchId, active: false,
+      registration_status: 'pending_approval', registration_source: user.role === 'support_marketing' ? 'support_created' : 'manager_created',
+      parent_support_code: user.employeeCode, registered_at: now, created_at: now, updated_at: now,
     };
     const credentials = await hashPassword(password);
     const client = await this.infrastructure.postgres.connect();
@@ -225,8 +230,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         [employeeCode, JSON.stringify(employee), profileKey, JSON.stringify(profile)],
       );
       await client.query(
-        `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
+        `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash,active)
+         values ($1,$2,$3,$4,$5,$6,$7,false)`,
         [id, profileKey, email, employeeCode, branchId, credentials.salt, credentials.hash],
       );
       await client.query('commit');
@@ -237,7 +242,19 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       client.release();
     }
     await this.audit(user, 'pg.create', 'profile', profileKey, { employeeCode });
-    return { data: { id, employeeCode, fullName, email, branchId } };
+    try {
+      await this.notifyRoles(
+        ['admin_marketing'],
+        'Có tài khoản PG chờ duyệt',
+        `${fullName} (${employeeCode}) vừa được ${user.employeeCode} tạo và đang chờ Admin Marketing duyệt.`,
+      );
+    } catch (error) {
+      // The account is already committed. Do not make Support retry and create
+      // a duplicate just because notification delivery is temporarily down.
+      console.warn('[PG account] Could not notify Admin Marketing.', error);
+    }
+    await this.infrastructure.markDataChanged(['profiles', 'employees', 'marketing.pg_accounts', 'notifications']);
+    return { data: { id, employeeCode, fullName, email, branchId, status: 'pending_approval' } };
   }
 
   async updatePgAccount(user: AuthUser, code: string, input: JsonMap) {
@@ -248,6 +265,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     );
     const row = result.rows[0];
     if (!row) throw new BadRequestException('Không tìm thấy tài khoản PG.');
+    if (input.active !== undefined && !pgApprovalRoles.has(user.role)) {
+      throw new ForbiddenException('Chỉ Admin Marketing được duyệt, khóa hoặc mở khóa tài khoản PG.');
+    }
     const active = input.active === undefined ? row.payload.active !== false : Boolean(input.active);
     const fullName = String(input.fullName || row.payload.full_name || '').trim();
     const email = input.email ? String(input.email).trim().toLowerCase() : null;
