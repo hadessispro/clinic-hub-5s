@@ -383,6 +383,21 @@ export async function distributeRawLeads(quantity) {
   return payload.data;
 }
 
+export async function bulkAssignMarketingLeads({ leadIds, telesaleCode, dataClass = 'all', quantity } = {}) {
+  if (!useVps) throw new Error('Chức năng chia nhanh data chỉ khả dụng trên VPS.');
+  const payload = await vpsRequest('/leads/bulk-assign', {
+    method: 'POST',
+    body: JSON.stringify({
+      leadIds: Array.isArray(leadIds) ? leadIds : [],
+      telesaleCode,
+      dataClass,
+      quantity: Number(quantity || 0),
+    }),
+  });
+  notifyDataChange('marketing_leads');
+  return payload.data;
+}
+
 export async function getMarketingReports() {
   if (!useVps) return { totals: {}, pg: [], telesale: [] };
   const payload = await vpsRequest('/reports');

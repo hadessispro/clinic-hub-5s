@@ -1,4 +1,4 @@
-import { createMarketingLead, distributeRawLeads, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
+import { bulkAssignMarketingLeads, createMarketingLead, distributeRawLeads, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { leadStatusPill, option } from '../components/shared.js';
@@ -20,6 +20,7 @@ let pgUnhandledOnly = false;
 let customerSearch = '';
 let currentPage = 1;
 let renderedLeads = new Map();
+const selectedLeadIds = new Set();
 const PAGE_SIZE = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches ? 20 : 50;
 const BASIC_SERVICES = ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'];
 const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
@@ -79,8 +80,9 @@ export async function renderView() {
   }).join('') || '<div class="tsm-empty">Chưa có tài khoản Telesale Staff đang hoạt động.</div>';
 
   const leadRows = leads.map((lead, index) => `<tr data-tsm-lead-row="${escapeHTML(lead.id)}">
-    <td data-label="STT">${(currentPage - 1) * PAGE_SIZE + index + 1}</td>
-    <td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || '')}</small></td>
+    <td class="tsm-select-cell" data-label="Chọn"><input class="tsm-lead-check" type="checkbox" value="${escapeHTML(lead.id)}" aria-label="Chọn hồ sơ ${escapeHTML(lead.full_name || '')}" ${selectedLeadIds.has(String(lead.id)) ? 'checked' : ''}></td>
+    <td class="tsm-index-cell" data-label="STT">${(currentPage - 1) * PAGE_SIZE + index + 1}</td>
+    <td class="tsm-customer-cell" data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || '')}</small></td>
     <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</span></td>
     <td data-label="Dịch vụ">${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
     <td data-label="Chi nhánh">${escapeHTML(branchName(lead.branch_id))}</td>
@@ -92,7 +94,7 @@ export async function renderView() {
     <td data-label="Nguồn nhập"><strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong><small>${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small></td>
     <td data-label="Tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
     <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td>
-  </tr>`).join('') || '<tr><td colspan="10" class="tsm-empty">Không có hồ sơ phù hợp với bộ lọc.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="11" class="tsm-empty">Không có hồ sơ phù hợp với bộ lọc.</td></tr>';
 
   return `<div class="tsm-page">
     <header class="tsm-header">
@@ -142,6 +144,18 @@ export async function renderView() {
           <button type="button" class="primary-button" id="tsmDistributeRaw" ${unassignedRawTotal < 1 ? 'disabled' : ''}><i class="ri-shuffle-line"></i><span>Phân bổ ngẫu nhiên, chia đều</span></button>
         </div>
       </div>
+      <div class="tsm-bulk-assign" aria-label="Chia nhanh data đã chọn">
+        <div class="tsm-bulk-title"><i class="ri-checkbox-multiple-line"></i><span><strong>Chia nhanh data có chọn</strong><small>Tích một, nhiều hoặc toàn bộ hồ sơ trên trang rồi giao cùng lúc.</small></span><b id="tsmSelectedCount">${selectedLeadIds.size} đã chọn</b></div>
+        <div class="tsm-bulk-controls">
+          <label><span>Telesale nhận data</span><select id="tsmBulkTelesale"><option value="">Chọn Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, false)).join('')}</select></label>
+          <label><span>Loại data</span><select id="tsmBulkDataClass"><option value="all">Data thô và Data net</option><option value="raw">Chỉ Data thô</option><option value="net">Chỉ Data net</option></select></label>
+          <label><span>Số lượng nhanh</span><input id="tsmBulkQuantity" type="number" min="1" max="${PAGE_SIZE}" value="10" inputmode="numeric"></label>
+          <div class="tsm-bulk-presets" aria-label="Chọn nhanh số lượng"><button type="button" data-bulk-quantity="10">10</button><button type="button" data-bulk-quantity="20">20</button><button type="button" data-bulk-quantity="50">50</button></div>
+          <button type="button" class="secondary-button" id="tsmSelectQuantity"><i class="ri-list-check-2"></i> Chọn theo số lượng</button>
+          <button type="button" class="secondary-button" id="tsmClearSelection"><i class="ri-close-circle-line"></i> Bỏ chọn</button>
+          <button type="button" class="primary-button" id="tsmConfirmBulk"><i class="ri-user-shared-line"></i> Xác nhận chia data</button>
+        </div>
+      </div>
       <div class="tsm-filters">
         <label class="tsm-customer-search"><span>Tìm nhanh khách hàng / SĐT</span><div class="tsm-search-control"><i class="ri-search-line"></i><input type="search" id="tsmCustomerSearch" value="${escapeHTML(customerSearch)}" placeholder="Nhập tên hoặc số điện thoại" autocomplete="off" inputmode="search"></div></label>
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
@@ -153,7 +167,7 @@ export async function renderView() {
         <label><span>Trạng thái</span><select id="tsmStatus"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([key, label]) => option(key, label, statusFilter === key)).join('')}</select></label>
         <button type="button" class="secondary-button" id="tsmResetFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
-      <div class="tsm-table-wrap"><table class="tsm-table" data-auto-pagination="off"><thead><tr><th>STT</th><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Chi nhánh</th><th>Telesale phụ trách</th><th>Trạng thái</th><th>Nguồn nhập</th><th>Ngày tiếp nhận</th><th>Hồ sơ</th></tr></thead><tbody>${leadRows}</tbody></table></div>
+      <div class="tsm-table-wrap"><table class="tsm-table" data-auto-pagination="off"><thead><tr><th class="tsm-select-head"><input id="tsmSelectPage" type="checkbox" aria-label="Chọn tất cả hồ sơ trên trang" ${leads.length && leads.every((lead) => selectedLeadIds.has(String(lead.id))) ? 'checked' : ''}></th><th>STT</th><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Chi nhánh</th><th>Telesale phụ trách</th><th>Trạng thái</th><th>Nguồn nhập</th><th>Ngày tiếp nhận</th><th>Hồ sơ</th></tr></thead><tbody>${leadRows}</tbody></table></div>
       <footer class="tsm-pagination"><span>Trang ${currentPage}/${totalPages} · ${number(meta.total)} hồ sơ</span><div><button type="button" class="secondary-button" id="tsmPrev" ${currentPage <= 1 ? 'disabled' : ''}><i class="ri-arrow-left-s-line"></i> Trước</button><button type="button" class="secondary-button" id="tsmNext" ${currentPage >= totalPages ? 'disabled' : ''}>Sau <i class="ri-arrow-right-s-line"></i></button></div></footer>
     </section>
     ${leadConsultationDrawer()}
@@ -289,6 +303,75 @@ export function initView() {
       showToast(error.message || 'Không thể phân bổ Data thô.', true);
     }
   });
+  const visibleLeadChecks = [...document.querySelectorAll('.tsm-lead-check')];
+  const selectedCount = document.getElementById('tsmSelectedCount');
+  const selectPage = document.getElementById('tsmSelectPage');
+  const updateSelectionUi = () => {
+    if (selectedCount) selectedCount.textContent = `${selectedLeadIds.size} đã chọn`;
+    if (selectPage) {
+      const checked = visibleLeadChecks.filter((input) => input.checked).length;
+      selectPage.checked = visibleLeadChecks.length > 0 && checked === visibleLeadChecks.length;
+      selectPage.indeterminate = checked > 0 && checked < visibleLeadChecks.length;
+    }
+  };
+  visibleLeadChecks.forEach((input) => input.addEventListener('change', () => {
+    if (input.checked) selectedLeadIds.add(input.value); else selectedLeadIds.delete(input.value);
+    input.closest('tr')?.classList.toggle('is-selected', input.checked);
+    updateSelectionUi();
+  }));
+  selectPage?.addEventListener('change', () => {
+    visibleLeadChecks.forEach((input) => {
+      input.checked = selectPage.checked;
+      if (input.checked) selectedLeadIds.add(input.value); else selectedLeadIds.delete(input.value);
+      input.closest('tr')?.classList.toggle('is-selected', input.checked);
+    });
+    updateSelectionUi();
+  });
+  document.querySelectorAll('[data-bulk-quantity]').forEach((button) => button.addEventListener('click', () => {
+    const quantity = document.getElementById('tsmBulkQuantity');
+    if (quantity) quantity.value = button.dataset.bulkQuantity || '10';
+  }));
+  document.getElementById('tsmSelectQuantity')?.addEventListener('click', () => {
+    const quantity = Number(document.getElementById('tsmBulkQuantity')?.value || 0);
+    const dataClass = document.getElementById('tsmBulkDataClass')?.value || 'all';
+    if (!Number.isInteger(quantity) || quantity < 1) { showToast('Cần nhập số lượng hồ sơ muốn chọn.', true); return; }
+    const eligible = leads.filter((lead) => dataClass === 'all' || lead.data_class === dataClass).slice(0, quantity);
+    if (!eligible.length) { showToast('Trang hiện tại không có hồ sơ đúng loại data đã chọn.', true); return; }
+    selectedLeadIds.clear();
+    eligible.forEach((lead) => selectedLeadIds.add(String(lead.id)));
+    visibleLeadChecks.forEach((input) => {
+      input.checked = selectedLeadIds.has(input.value);
+      input.closest('tr')?.classList.toggle('is-selected', input.checked);
+    });
+    updateSelectionUi();
+    showToast(`Đã tích nhanh ${eligible.length} hồ sơ trên trang hiện tại.`);
+  });
+  document.getElementById('tsmClearSelection')?.addEventListener('click', () => {
+    selectedLeadIds.clear();
+    visibleLeadChecks.forEach((input) => { input.checked = false; input.closest('tr')?.classList.remove('is-selected'); });
+    updateSelectionUi();
+  });
+  document.getElementById('tsmConfirmBulk')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const telesaleCode = document.getElementById('tsmBulkTelesale')?.value || '';
+    const dataClass = document.getElementById('tsmBulkDataClass')?.value || 'all';
+    const quantity = selectedLeadIds.size;
+    if (!telesaleCode) { showToast('Cần chọn Telesale nhận data.', true); return; }
+    if (!selectedLeadIds.size) { showToast('Cần tích chọn ít nhất một hồ sơ.', true); return; }
+    button.disabled = true;
+    try {
+      const result = await bulkAssignMarketingLeads({ leadIds: [...selectedLeadIds], telesaleCode, dataClass, quantity });
+      const assigned = Number(result?.assigned || 0);
+      (result?.leadIds || []).forEach((id) => selectedLeadIds.delete(String(id)));
+      showToast(assigned ? `Đã giao ${assigned} hồ sơ cho Telesale đã chọn.` : 'Không có hồ sơ phù hợp để giao.', !assigned);
+      rerender();
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || 'Không thể chia nhanh data.', true);
+    }
+  });
+  visibleLeadChecks.forEach((input) => input.closest('tr')?.classList.toggle('is-selected', input.checked));
+  updateSelectionUi();
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
   document.getElementById('tsmResetFilters')?.addEventListener('click', () => { customerSearch = ''; selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
   document.getElementById('tsmPrev')?.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); rerender(); });

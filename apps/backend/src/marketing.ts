@@ -514,6 +514,55 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     } finally { client.release(); }
   }
 
+  async bulkAssignLeads(user: AuthUser, input: JsonMap) {
+    requireRole(user, managerRoles);
+    const telesaleCode = String(input.telesaleCode || '').trim();
+    const dataClass = String(input.dataClass || 'all').trim();
+    const leadIds = [...new Set((Array.isArray(input.leadIds) ? input.leadIds : [])
+      .map((id) => String(id || '').trim()).filter(Boolean))];
+    const requestedQuantity = Number(input.quantity || leadIds.length || 0);
+    const quantity = Math.min(Math.max(Number.isFinite(requestedQuantity) ? Math.trunc(requestedQuantity) : leadIds.length, 1), 5000);
+    if (!telesaleCode) throw new BadRequestException('Cần chọn Telesale nhận data.');
+    if (!leadIds.length) throw new BadRequestException('Cần tích chọn ít nhất một hồ sơ.');
+    if (!['all', 'raw', 'net'].includes(dataClass)) throw new BadRequestException('Phân loại data không hợp lệ.');
+
+    const target = await this.infrastructure.postgres.query(
+      `select 1 from app.records where entity_type='profiles' and deleted_at is null
+       and payload->>'role' in ('telesale_staff','telesale_leader')
+       and coalesce((payload->>'active')::boolean,true)=true
+       and lower(payload->>'employee_code')=lower($1) limit 1`, [telesaleCode],
+    );
+    if (!target.rowCount) throw new BadRequestException('Tài khoản nhận data không phải Telesale đang hoạt động.');
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const result = await client.query<{ id: string }>(
+        `with picked as (
+           select id from marketing.leads
+           where id::text=any($1::text[])
+             and ($2='all' or data_class=$2)
+           order by created_at desc
+           for update skip locked
+           limit $3
+         )
+         update marketing.leads l
+            set assigned_telesale_code=$4,assigned_by_code=$5,assigned_at=now(),updated_at=now()
+           from picked p where l.id=p.id
+         returning l.id::text id`,
+        [leadIds, dataClass, quantity, telesaleCode, user.employeeCode],
+      );
+      await client.query('commit');
+      await this.audit(user, 'lead.bulk_assign', 'marketing.lead', undefined, {
+        telesaleCode, dataClass, requested: Math.min(quantity, leadIds.length), assigned: result.rows.length,
+      });
+      return { data: { assigned: result.rows.length, leadIds: result.rows.map((row) => row.id), telesaleCode } };
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally { client.release(); }
+  }
+
   async updateLead(user: AuthUser, leadId: string, input: JsonMap) {
     const own = user.role === 'telesale_staff';
     if (!own && !managerRoles.has(user.role)) throw new ForbiddenException();
@@ -1040,6 +1089,7 @@ export class MarketingController {
   @Delete('/leads/:id') deleteLead(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteLead(request.user, id); }
   @Post('/leads/:id/assign-net') assignNet(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.assignNetLead(request.user, id, String(body.telesaleCode || '')); }
   @Post('/leads/distribute-raw') distributeRaw(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.distributeRaw(request.user, Number(body.quantity || 0)); }
+  @Post('/leads/bulk-assign') bulkAssign(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.bulkAssignLeads(request.user, body); }
   @Post('/leads/:id/calls') addCall(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.addCallLog(request.user, id, body); }
   @Get('/leads/:id/calls') listCalls(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.listCallLogs(request.user, id); }
   @Get('/reports') reports(@Req() request: ActorRequest) { return this.service.reports(request.user); }
