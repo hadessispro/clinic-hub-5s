@@ -33,6 +33,13 @@ function cleanPhone(value: unknown) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function normalizeLeadPhone(value: unknown) {
+  const digits = cleanPhone(value);
+  if (digits.startsWith('0084')) return `0${digits.slice(4)}`;
+  if (digits.startsWith('84')) return `0${digits.slice(2)}`;
+  return digits;
+}
+
 function clinicDate(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -307,7 +314,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const dataClass = String(input.dataClass || input.data_class || 'raw');
     const netLevel = input.netLevel || input.net_level ? String(input.netLevel || input.net_level) : null;
     const serviceType = String(input.serviceType || input.service_interest || '').trim() || null;
-    const phone = cleanPhone(input.phone) || null;
+    const phone = normalizeLeadPhone(input.phone) || null;
     const appointmentAt = input.appointmentAt || input.appointment_at ? new Date(String(input.appointmentAt || input.appointment_at)) : null;
     if (!dataClasses.has(dataClass)) throw new BadRequestException('Loại data không hợp lệ.');
     if (!phone || phone.length < 8) {
@@ -326,8 +333,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (!customerName) throw new BadRequestException('Cần nhập tên khách hàng.');
     const duplicate = await this.infrastructure.postgres.query<{ id: string }>(
       `select id from marketing.leads
-       where length(regexp_replace(coalesce(phone,''),'\\D','','g')) >= 8
-         and regexp_replace(phone,'\\D','','g')=$1
+       where length(marketing.normalize_lead_phone(phone)) >= 8
+         and marketing.normalize_lead_phone(phone)=$1
        limit 1`,
       [phone],
     );
