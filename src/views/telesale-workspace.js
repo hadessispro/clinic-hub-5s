@@ -1,4 +1,4 @@
-import { getMarketingLeads, exportLeadsToCSV } from '../services/marketing.js';
+import { getMarketingLeads, exportLeadsToCSV, getTelesaleDailySummary } from '../services/marketing.js';
 import { LEAD_STATUS } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { leadStatusPill, pill, option, emptyState } from '../components/shared.js';
@@ -34,8 +34,15 @@ export async function renderView(state) {
     service_type: telesaleServiceType || undefined,
     search: telesaleSearch || undefined,
   };
-  const leads = await getMarketingLeads(filters);
+  const [leads, quickSummary] = await Promise.all([
+    getMarketingLeads(filters),
+    isLeaderOrAdmin ? Promise.resolve(null) : getTelesaleDailySummary({
+      date_from: telesaleDateFrom || undefined,
+      date_to: telesaleDateTo || undefined,
+    }),
+  ]);
   cachedLeads = leads;
+  const quickTotals = quickSummary?.totals || {};
   const serviceOptions = telesaleServiceGroup === 'advanced' ? ADVANCED_SERVICES : telesaleServiceGroup === 'basic' ? BASIC_SERVICES : [];
 
   const leadsListHtml = leads.length
@@ -143,6 +150,14 @@ export async function renderView(state) {
         <div class="telesale-filter-select"><select id="filterTelesaleServiceType"${telesaleServiceGroup ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></div>
         <button type="button" class="secondary-button" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
+
+      ${!isLeaderOrAdmin ? `<section class="tsm-kpis telesale-own-kpis" aria-label="Thống kê nhanh data cá nhân">
+        <article><i class="ri-database-2-line"></i><div><small>Tổng data</small><strong>${Number(quickTotals.total_data || 0).toLocaleString('vi-VN')}</strong><span>${telesaleDateFrom || telesaleDateTo ? 'Được giao trong khoảng đã lọc' : 'Toàn bộ data được giao'}</span></div></article>
+        <article><i class="ri-checkbox-circle-line"></i><div><small>Đã xử lý</small><strong>${Number(quickTotals.processed_total || 0).toLocaleString('vi-VN')}</strong><span>Đã đổi trạng thái và lưu</span></div></article>
+        <article><i class="ri-time-line"></i><div><small>Chưa xử lý</small><strong>${Number(quickTotals.unprocessed_total || 0).toLocaleString('vi-VN')}</strong><span>Chưa có cập nhật của bạn</span></div></article>
+        <article><i class="ri-hospital-line"></i><div><small>Tổng khách đến</small><strong>${Number(quickTotals.visited_total || 0).toLocaleString('vi-VN')}</strong><span>Đã đến hoặc chốt thành công</span></div></article>
+        <article><i class="ri-user-unfollow-line"></i><div><small>Tổng khách KCL</small><strong>${Number(quickTotals.low_quality_total || 0).toLocaleString('vi-VN')}</strong><span>Khách không chất lượng</span></div></article>
+      </section>` : ''}
 
       <div class="telesale-card-grid" id="telesaleCardView"${telesaleViewMode === 'sheet' ? ' hidden' : ''}>
         ${leadsListHtml}

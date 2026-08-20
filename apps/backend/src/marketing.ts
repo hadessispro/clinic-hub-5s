@@ -182,14 +182,20 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return { data: result.rows };
   }
 
-  async telesaleDailySummary(user: AuthUser, reportDate?: string) {
-    requireRole(user, managerRoles);
-    const day = String(reportDate || clinicDate()).trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Ngày báo cáo không hợp lệ.');
+  async telesaleDailySummary(user: AuthUser, reportDate?: string, dateFrom?: string, dateTo?: string) {
+    requireRole(user, new Set([...managerRoles, 'telesale_staff']));
+    const day = String(reportDate || '').trim();
+    const from = String(dateFrom || day || '').trim();
+    const to = String(dateTo || day || '').trim();
+    for (const value of [from, to]) {
+      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new BadRequestException('Ngày báo cáo không hợp lệ.');
+    }
+    if (from && to && from > to) throw new BadRequestException('Khoảng ngày báo cáo không hợp lệ.');
+    const employeeScope = user.role === 'telesale_staff' ? user.employeeCode : '';
     const result = await this.infrastructure.postgres.query(
       `with bounds as (
-         select ($1::date::timestamp at time zone 'Asia/Ho_Chi_Minh') started_at,
-                (($1::date + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh') ended_at
+         select case when nullif($1,'') is null then null else ($1::date::timestamp at time zone 'Asia/Ho_Chi_Minh') end started_at,
+                case when nullif($2,'') is null then null else (($2::date + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh') end ended_at
        ), staff as (
          select p.payload->>'employee_code' employee_code,
                 coalesce(e.payload->>'full_name',p.payload->>'full_name',p.payload->>'employee_code') full_name,
@@ -200,41 +206,42 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
          where p.entity_type='profiles' and p.deleted_at is null
            and p.payload->>'role' in ('telesale_staff','telesale_leader')
            and coalesce((p.payload->>'active')::boolean,true)=true
+           and (nullif($3,'') is null or lower(p.payload->>'employee_code')=lower($3))
+       ), cohort as (
+         select l.*,
+                exists (
+                  select 1 from marketing.audit_log a
+                  where a.entity_type='marketing.lead' and a.action='lead.update'
+                    and a.entity_id=l.id::text
+                    and lower(a.actor_code)=lower(l.assigned_telesale_code)
+                    and a.created_at>=coalesce(l.assigned_at,l.created_at)
+                ) processed_by_owner
+         from marketing.leads l cross join bounds b
+         where l.assigned_telesale_code is not null
+           and (b.started_at is null or l.assigned_at>=b.started_at)
+           and (b.ended_at is null or l.assigned_at<b.ended_at)
        ), owned as (
-         select assigned_telesale_code employee_code,count(*)::int assigned_total,
-                count(*) filter(where status not in ('converted','appointment_cancelled','low_quality','cancelled'))::int assigned_active,
+         select assigned_telesale_code employee_code,
+                count(*)::int total_data,
+                count(*) filter(where processed_by_owner)::int processed_total,
+                count(*) filter(where not processed_by_owner)::int unprocessed_total,
+                count(*) filter(where status in ('visited','converted'))::int visited_total,
                 count(*) filter(where status='low_quality')::int low_quality_total
-         from marketing.leads where assigned_telesale_code is not null group by assigned_telesale_code
-       ), calls as (
-         select c.telesale_code employee_code,count(distinct c.lead_id)::int handled_today,count(*)::int calls_today
-         from marketing.call_logs c cross join bounds b
-         where c.created_at>=b.started_at and c.created_at<b.ended_at group by c.telesale_code
-       ), changes as (
-         select a.actor_code employee_code,count(distinct a.entity_id)::int status_changes_today,
-                count(distinct a.entity_id) filter(where a.detail->>'status'='appointment_booked')::int appointments_today,
-                count(distinct a.entity_id) filter(where a.detail->>'status' in ('visited','converted'))::int visited_today,
-                count(distinct a.entity_id) filter(where a.detail->>'status'='low_quality')::int low_quality_today
-         from marketing.audit_log a cross join bounds b
-         where a.entity_type='marketing.lead' and a.action='lead.update'
-           and a.created_at>=b.started_at and a.created_at<b.ended_at group by a.actor_code
+         from cohort group by assigned_telesale_code
        )
-       select s.*,coalesce(o.assigned_total,0) assigned_total,coalesce(o.assigned_active,0) assigned_active,
-              coalesce(c.handled_today,0) handled_today,coalesce(c.calls_today,0) calls_today,
-              coalesce(ch.status_changes_today,0) status_changes_today,
-              coalesce(ch.appointments_today,0) appointments_today,coalesce(ch.visited_today,0) visited_today,
-              coalesce(ch.low_quality_today,0) low_quality_today,coalesce(o.low_quality_total,0) low_quality_total
+       select s.*,coalesce(o.total_data,0) total_data,coalesce(o.processed_total,0) processed_total,
+              coalesce(o.unprocessed_total,0) unprocessed_total,coalesce(o.visited_total,0) visited_total,
+              coalesce(o.low_quality_total,0) low_quality_total
        from staff s
        left join owned o on lower(o.employee_code)=lower(s.employee_code)
-       left join calls c on lower(c.employee_code)=lower(s.employee_code)
-       left join changes ch on lower(ch.employee_code)=lower(s.employee_code)
-       order by lower(s.full_name)`, [day],
+       order by lower(s.full_name)`, [from, to, employeeScope],
     );
-    const keys = ['assigned_total','assigned_active','handled_today','calls_today','status_changes_today','appointments_today','visited_today','low_quality_today','low_quality_total'];
+    const keys = ['total_data','processed_total','unprocessed_total','visited_total','low_quality_total'];
     const totals = result.rows.reduce<Record<string, number>>((sum, row) => {
       for (const key of keys) sum[key] = (sum[key] || 0) + Number(row[key] || 0);
       return sum;
     }, {});
-    return { data: { date: day, totals, staff: result.rows } };
+    return { data: { date: day || null, date_from: from || null, date_to: to || null, totals, staff: result.rows } };
   }
 
   async createPgAccount(user: AuthUser, input: JsonMap) {
@@ -1216,7 +1223,12 @@ export class MarketingController {
 
   @Get('/pg-accounts') listPg(@Req() request: ActorRequest) { return this.service.listPgAccounts(request.user); }
   @Get('/telesale-accounts') listTelesale(@Req() request: ActorRequest) { return this.service.listTelesaleAccounts(request.user); }
-  @Get('/telesale-daily-summary') telesaleDailySummary(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.telesaleDailySummary(request.user, date); }
+  @Get('/telesale-daily-summary') telesaleDailySummary(
+    @Req() request: ActorRequest,
+    @Query('date') date?: string,
+    @Query('date_from') dateFrom?: string,
+    @Query('date_to') dateTo?: string,
+  ) { return this.service.telesaleDailySummary(request.user, date, dateFrom, dateTo); }
   @Post('/pg-accounts') createPg(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createPgAccount(request.user, body); }
   @Patch('/pg-accounts/:code') updatePg(@Req() request: ActorRequest, @Param('code') code: string, @Body() body: JsonMap) { return this.service.updatePgAccount(request.user, code, body); }
   @Delete('/pg-accounts/:code') deletePg(@Req() request: ActorRequest, @Param('code') code: string) { return this.service.deletePgAccount(request.user, code); }

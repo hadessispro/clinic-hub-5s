@@ -468,44 +468,49 @@ export async function getMarketingLeadPage(filters = {}) {
 }
 
 /** Tổng hợp nhanh theo ngày cho Quản lý Telesale. */
-export async function getTelesaleDailySummary(reportDate) {
+export async function getTelesaleDailySummary(reportFilter = '') {
+  const filter = typeof reportFilter === 'string' ? { date: reportFilter } : (reportFilter || {});
+  const day = String(filter.date || '').trim();
+  const dateFrom = String(filter.date_from || '').trim();
+  const dateTo = String(filter.date_to || '').trim();
   if (useVps) {
-    const day = String(reportDate || '').trim();
-    const payload = await vpsRequest(`/telesale-daily-summary${day ? `?date=${encodeURIComponent(day)}` : ''}`);
-    return payload.data || { date: day, totals: {}, staff: [] };
+    const query = new URLSearchParams();
+    if (day) query.set('date', day);
+    if (dateFrom) query.set('date_from', dateFrom);
+    if (dateTo) query.set('date_to', dateTo);
+    const payload = await vpsRequest(`/telesale-daily-summary${query.size ? `?${query}` : ''}`);
+    return payload.data || { date: day || null, date_from: dateFrom || null, date_to: dateTo || null, totals: {}, staff: [] };
   }
   const [accounts, leads] = await Promise.all([getTelesaleAccounts(), getMarketingLeads()]);
-  const day = String(reportDate || '').trim();
-  const isSameDay = (value) => {
-    if (!value || !day) return false;
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) === day;
+  const inAssignmentRange = (value) => {
+    if (!day && !dateFrom && !dateTo) return true;
+    if (!value) return false;
+    const assignedDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value));
+    const from = dateFrom || day;
+    const to = dateTo || day;
+    return (!from || assignedDay >= from) && (!to || assignedDay <= to);
   };
-  const closed = new Set(['converted', 'appointment_cancelled', 'low_quality', 'cancelled', 'lost']);
   const visited = new Set(['arrived', 'visited', 'converted']);
   const staff = accounts.filter((item) => item.active !== false && ['telesale_staff', 'telesale_leader'].includes(item.role)).map((member) => {
-    const owned = leads.filter((lead) => lead.assigned_telesale_id === member.employee_code);
-    const changed = owned.filter((lead) => isSameDay(lead.updated_at));
+    const owned = leads.filter((lead) => lead.assigned_telesale_id === member.employee_code && inAssignmentRange(lead.assigned_at));
+    const processed = owned.filter((lead) => lead.status && lead.status !== 'new');
     return {
       ...member,
       full_name: member.name,
-      assigned_total: owned.length,
-      assigned_active: owned.filter((lead) => !closed.has(lead.status)).length,
-      handled_today: changed.length,
-      status_changes_today: changed.length,
-      calls_today: 0,
-      appointments_today: changed.filter((lead) => lead.status === 'appointment_booked').length,
-      visited_today: changed.filter((lead) => visited.has(lead.status)).length,
-      low_quality_today: changed.filter((lead) => lead.status === 'low_quality').length,
+      total_data: owned.length,
+      processed_total: processed.length,
+      unprocessed_total: owned.length - processed.length,
+      visited_total: owned.filter((lead) => visited.has(lead.status)).length,
       low_quality_total: owned.filter((lead) => lead.status === 'low_quality').length,
     };
   });
   const totals = staff.reduce((sum, row) => {
-    for (const key of ['assigned_total', 'assigned_active', 'handled_today', 'status_changes_today', 'calls_today', 'appointments_today', 'visited_today', 'low_quality_today', 'low_quality_total']) {
+    for (const key of ['total_data', 'processed_total', 'unprocessed_total', 'visited_total', 'low_quality_total']) {
       sum[key] = (sum[key] || 0) + Number(row[key] || 0);
     }
     return sum;
   }, {});
-  return { date: day, totals, staff };
+  return { date: day || null, date_from: dateFrom || null, date_to: dateTo || null, totals, staff };
 }
 
 export async function createPgAccount(input) {

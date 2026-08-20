@@ -11,7 +11,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Mi
 let selectedTelesale = '';
 let dateFrom = '';
 let dateTo = '';
-let reportDate = today();
+let reportDate = '';
 let statusFilter = '';
 let dataClassFilter = '';
 let serviceGroupFilter = '';
@@ -70,10 +70,10 @@ export async function renderView() {
     return `<button type="button" class="tsm-staff-row ${active ? 'is-active' : ''}" data-team-member="${escapeHTML(member.employee_code)}">
       <span class="tsm-avatar">${escapeHTML((member.full_name || member.employee_code || '?').trim().slice(0, 1).toUpperCase())}</span>
       <span class="tsm-person"><strong>${escapeHTML(member.full_name || member.employee_code)}</strong><small>${escapeHTML(member.employee_code)}</small></span>
-      <span><b>${number(member.assigned_total)}</b><small>đang quản lý</small></span>
-      <span><b>${number(member.handled_today)}</b><small>đã xử lý</small></span>
-      <span><b>${number(member.status_changes_today)}</b><small>đổi trạng thái</small></span>
-      <span><b>${number(member.visited_today)}</b><small>khách đến</small></span>
+      <span><b>${number(member.total_data)}</b><small>tổng data</small></span>
+      <span><b>${number(member.processed_total)}</b><small>đã xử lý</small></span>
+      <span><b>${number(member.unprocessed_total)}</b><small>chưa xử lý</small></span>
+      <span><b>${number(member.visited_total)}</b><small>khách đến</small></span>
       <span><b>${number(member.low_quality_total)}</b><small>khách KCL</small></span>
       <i class="ri-arrow-right-s-line"></i>
     </button>`;
@@ -99,7 +99,7 @@ export async function renderView() {
   return `<div class="tsm-page">
     <header class="tsm-header">
       <div><p class="eyebrow">TRUNG TÂM ĐIỀU HÀNH TELESALE</p><h3>Quản lý đội ngũ & phân bổ hồ sơ</h3><span>Theo dõi khối lượng, hiệu suất trong ngày và điều chuyển data đúng người phụ trách.</span></div>
-      <div class="tsm-header-actions"><button type="button" class="secondary-button" id="tsmToggleIntake"><i class="ri-add-line"></i> Tiếp nhận data mới</button><button type="button" class="primary-button" id="tsmExport"><i class="ri-file-excel-2-line"></i> Xuất Excel</button><label class="tsm-report-date"><span>Ngày báo cáo</span><input type="date" id="tsmReportDate" value="${escapeHTML(reportDate)}"></label></div>
+      <div class="tsm-header-actions"><button type="button" class="secondary-button" id="tsmToggleIntake"><i class="ri-add-line"></i> Tiếp nhận data mới</button><button type="button" class="primary-button" id="tsmExport"><i class="ri-file-excel-2-line"></i> Xuất Excel</button><label class="tsm-report-date"><span>Ngày được giao</span><input type="date" id="tsmReportDate" value="${escapeHTML(reportDate)}" title="Để trống để xem toàn bộ dữ liệu"></label></div>
     </header>
 
     <section class="panel tsm-intake" id="tsmIntakePanel" hidden style="display:none">
@@ -119,16 +119,16 @@ export async function renderView() {
     </section>
 
     <section class="tsm-kpis">
-      <article><i class="ri-folder-user-line"></i><div><small>Tổng hồ sơ đang giao</small><strong>${number(totals.assigned_total)}</strong><span>${number(totals.assigned_active)} hồ sơ đang mở</span></div></article>
-      <article><i class="ri-customer-service-2-line"></i><div><small>Đã xử lý trong ngày</small><strong>${number(totals.handled_today)}</strong><span>${number(totals.calls_today)} lượt chăm sóc</span></div></article>
-      <article><i class="ri-refresh-line"></i><div><small>Đổi trạng thái</small><strong>${number(totals.status_changes_today)}</strong><span>${number(totals.appointments_today)} khách đã hẹn</span></div></article>
-      <article><i class="ri-hospital-line"></i><div><small>Khách đến chi nhánh</small><strong>${number(totals.visited_today)}</strong><span>Ghi nhận trong ngày chọn</span></div></article>
-      <article><i class="ri-user-unfollow-line"></i><div><small>Khách không chất lượng</small><strong>${number(totals.low_quality_total)}</strong><span>${number(totals.low_quality_today)} KCL trong ngày chọn</span></div></article>
+      <article><i class="ri-database-2-line"></i><div><small>Tổng data</small><strong>${number(totals.total_data)}</strong><span>${reportDate ? 'Được giao trong ngày chọn' : 'Toàn bộ data đang giao'}</span></div></article>
+      <article><i class="ri-checkbox-circle-line"></i><div><small>Đã xử lý</small><strong>${number(totals.processed_total)}</strong><span>Đã đổi trạng thái và lưu</span></div></article>
+      <article><i class="ri-time-line"></i><div><small>Chưa xử lý</small><strong>${number(totals.unprocessed_total)}</strong><span>Chưa có cập nhật từ Telesale</span></div></article>
+      <article><i class="ri-hospital-line"></i><div><small>Tổng khách đến</small><strong>${number(totals.visited_total)}</strong><span>Đã đến hoặc chốt thành công</span></div></article>
+      <article><i class="ri-user-unfollow-line"></i><div><small>Tổng khách KCL</small><strong>${number(totals.low_quality_total)}</strong><span>Khách không chất lượng</span></div></article>
     </section>
 
     <section class="panel tsm-team-panel">
       <div class="section-title"><div><h3>Hiệu suất từng Telesale</h3><p class="subtle">Chọn nhân viên để lọc ngay danh sách hồ sơ đang phụ trách.</p></div><button type="button" class="secondary-button" id="tsmClearMember">Xem toàn đội</button></div>
-      <div class="tsm-team-head"><span>Nhân viên</span><span>Kho hồ sơ</span><span>Hôm nay</span><span>Cập nhật</span><span>Khách đến</span><span>Khách KCL</span></div>
+      <div class="tsm-team-head"><span>Nhân viên</span><span>Tổng data</span><span>Đã xử lý</span><span>Chưa xử lý</span><span>Khách đến</span><span>Khách KCL</span></div>
       <div class="tsm-team-list">${staffRows}</div>
     </section>
 
@@ -238,7 +238,7 @@ export function initView() {
       if (status) status.innerHTML = leadStatusPill(lead.status);
     },
   });
-  document.getElementById('tsmReportDate')?.addEventListener('change', (event) => { reportDate = event.target.value || today(); rerender(); });
+  document.getElementById('tsmReportDate')?.addEventListener('change', (event) => { reportDate = event.target.value || ''; rerender(); });
   const customerSearchInput = document.getElementById('tsmCustomerSearch');
   let customerSearchTimer;
   customerSearchInput?.addEventListener('input', () => {
