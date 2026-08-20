@@ -121,11 +121,14 @@ export async function renderView(state) {
 
       <!-- Filter Toolbar -->
       <div class="telesale-filter-toolbar">
-        <div class="telesale-filter-search">
-          <input id="searchTelesaleInput" value="${escapeHTML(telesaleSearch)}" placeholder="🔍 Tìm nhanh tên hoặc số điện thoại khách hàng..." autocomplete="off" inputmode="search" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 12px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none;" />
-        </div>
-        <div class="telesale-filter-select">
-          <select id="filterTelesaleStatus" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none; cursor:pointer; font-weight:600;">
+        <div class="telesale-filter-main">
+          <label class="telesale-filter-field telesale-filter-search">
+            <span>Tìm khách hàng</span>
+            <span class="telesale-search-input"><i class="ri-search-line" aria-hidden="true"></i><input id="searchTelesaleInput" value="${escapeHTML(telesaleSearch)}" placeholder="Nhập tên hoặc số điện thoại..." autocomplete="off" inputmode="search" /></span>
+          </label>
+          <label class="telesale-filter-field">
+            <span>Trạng thái</span>
+            <select id="filterTelesaleStatus">
             <option value="">Tất cả Trạng thái</option>
             <option value="new">Mới nạp</option>
             <option value="contacted">Đã liên hệ</option>
@@ -134,21 +137,31 @@ export async function renderView(state) {
             <option value="cancelled">Hủy/Thất bại</option>
             <option value="appointment_cancelled">Khách hủy hẹn</option>
             <option value="low_quality">Khách không chất lượng (KCL)</option>
-          </select>
-        </div>
-        <div class="telesale-filter-select">
-          <select id="filterTelesaleBranch" style="width:100%; height:38px; box-sizing:border-box; font-size:0.83rem; padding:0 10px; border-radius:8px; border:1px solid #cbd5e1; background:#ffffff; color:#0f172a; outline:none; cursor:pointer; font-weight:600;">
+            </select>
+          </label>
+          <label class="telesale-filter-field">
+            <span>Chi nhánh</span>
+            <select id="filterTelesaleBranch">
             <option value="">Tất cả Chi nhánh</option>
             <option value="le-van-tho">5S Lê Văn Thọ</option>
             <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
-          </select>
+            </select>
+          </label>
+          <label class="telesale-filter-field">
+            <span>Phân loại data</span>
+            <select id="filterTelesaleDataClass"><option value="">Tất cả data</option><option value="raw"${telesaleDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${telesaleDataClass === 'net' ? ' selected' : ''}>Data net</option></select>
+          </label>
         </div>
-        <div class="telesale-date-filter"><label>Từ ngày<input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label></div>
-        <div class="telesale-date-filter"><label>Đến ngày<input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label></div>
-        <div class="telesale-filter-select"><select id="filterTelesaleDataClass"><option value="">Tất cả data</option><option value="raw"${telesaleDataClass === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${telesaleDataClass === 'net' ? ' selected' : ''}>Data net</option></select></div>
-        <div class="telesale-filter-select"><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></div>
-        <div class="telesale-filter-select"><select id="filterTelesaleServiceType"${telesaleServiceGroup ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></div>
-        <button type="button" class="secondary-button" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
+        <div class="telesale-filter-advanced">
+          <div class="telesale-filter-period">
+            <span class="telesale-filter-caption">Ngày được giao</span>
+            <label class="telesale-filter-field"><span>Từ ngày</span><input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label>
+            <label class="telesale-filter-field"><span>Đến ngày</span><input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label>
+          </div>
+          <label class="telesale-filter-field"><span>Nhóm dịch vụ</span><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
+          <label class="telesale-filter-field"><span>Dịch vụ cụ thể</span><select id="filterTelesaleServiceType"${telesaleServiceGroup ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></label>
+          <button type="button" class="secondary-button telesale-filter-reset" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa bộ lọc</button>
+        </div>
       </div>
 
       ${!isLeaderOrAdmin ? `<section class="tsm-kpis telesale-own-kpis" aria-label="Thống kê nhanh data cá nhân">

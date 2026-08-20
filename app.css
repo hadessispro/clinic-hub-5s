@@ -718,25 +718,58 @@ select {
 
 .telesale-filter-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(5, minmax(130px, 1fr)) auto;
-  align-items: end;
-  gap: 9px;
+  gap: 11px;
   margin-top: 12px;
-  padding: 12px;
-  border: 1px solid #dce7e4;
-  border-radius: 12px;
-  background: #f3f7f6;
+  padding: 13px;
+  border: 1px solid #d9e7e3;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f6faf8, #f1f7f5);
 }
 
-.telesale-filter-toolbar > div { min-width: 0; }
-.telesale-filter-search,
-.telesale-filter-select { display: flex; align-items: end; }
+.telesale-filter-main,
+.telesale-filter-advanced { display: grid; min-width: 0; gap: 10px; align-items: end; }
+.telesale-filter-main { grid-template-columns: minmax(280px, 2fr) repeat(3, minmax(150px, 1fr)); }
+.telesale-filter-advanced {
+  grid-template-columns: minmax(300px, 1.45fr) minmax(190px, 1fr) minmax(190px, 1fr) auto;
+  padding-top: 11px;
+  border-top: 1px solid #dde9e5;
+}
+.telesale-filter-field { display: grid; min-width: 0; gap: 5px; margin: 0; }
+.telesale-filter-field > span,
+.telesale-filter-caption {
+  color: #5d746e;
+  font-size: .66rem;
+  font-weight: 850;
+  letter-spacing: .035em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.telesale-search-input { position: relative; display: block; }
+.telesale-search-input > i { position: absolute; z-index: 1; top: 50%; left: 12px; color: #087f70; font-size: 1rem; transform: translateY(-50%); pointer-events: none; }
+.telesale-search-input > input { padding-left: 36px !important; }
 .telesale-filter-toolbar input,
 .telesale-filter-toolbar select,
-.telesale-filter-toolbar button { min-height: 40px; }
+.telesale-filter-toolbar button { min-height: 42px; }
 .telesale-filter-toolbar input,
-.telesale-filter-toolbar select { width: 100%; }
-.telesale-filter-toolbar #resetTelesaleAdvancedFilters { white-space: nowrap; }
+.telesale-filter-toolbar select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid #cbdcd7;
+  border-radius: 10px;
+  outline: none;
+  color: #183b34;
+  background-color: #fff;
+  font: 650 .79rem var(--font);
+}
+.telesale-filter-toolbar input:focus,
+.telesale-filter-toolbar select:focus { border-color: #48aa9c; box-shadow: 0 0 0 3px rgba(13, 143, 125, .1); }
+.telesale-filter-toolbar select:disabled { color: #879a94; background-color: #edf3f1; cursor: not-allowed; }
+.telesale-filter-period { display: grid; grid-template-columns: 1fr 1fr; min-width: 0; gap: 7px; }
+.telesale-filter-period > .telesale-filter-caption { grid-column: 1 / -1; }
+.telesale-filter-reset { align-self: end; min-width: 126px; padding-inline: 14px; white-space: nowrap; }
 
 .workspace-view-toggle {
   padding: 3px;
@@ -756,27 +789,6 @@ select {
   border-color: #91cfc4;
   color: #fff;
   background: var(--teal);
-}
-
-.telesale-date-filter label {
-  display: grid;
-  gap: 3px;
-  color: #60736d;
-  font-size: .67rem;
-  font-weight: 800;
-}
-
-.telesale-date-filter input,
-#filterTelesaleDataClass {
-  width: 100%;
-  min-width: 145px;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  color: #0f172a;
-  background: #fff;
-  font: 600 .8rem var(--font);
 }
 
 .telesale-sheet-wrap[hidden],
@@ -804,11 +816,11 @@ select {
   .telesale-workspace-actions { width: 100%; justify-content: space-between; }
   .workspace-view-toggle { flex: 1; }
   .workspace-view-toggle .secondary-button { flex: 1; }
-  .telesale-filter-toolbar { grid-template-columns: 1fr 1fr; padding: 10px; }
-  .telesale-filter-search { grid-column: 1 / -1; }
-  .telesale-date-filter { flex: 1 1 calc(50% - 6px); }
-  .telesale-date-filter input { min-width: 0; }
-  #resetTelesaleAdvancedFilters { width: 100%; }
+  .telesale-filter-toolbar { gap: 10px; padding: 11px; }
+  .telesale-filter-main,
+  .telesale-filter-advanced { grid-template-columns: 1fr; gap: 9px; }
+  .telesale-filter-period { grid-template-columns: 1fr 1fr; }
+  .telesale-filter-reset { width: 100%; }
   .telesale-sheet-wrap { overflow: visible; border: 0; background: transparent; }
   .workspace-lead-table,
   .workspace-lead-table tbody { display: block; width: 100%; min-width: 0; }
@@ -828,13 +840,15 @@ select {
 }
 
 @media (min-width: 761px) and (max-width: 1320px) {
-  .telesale-filter-toolbar { grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(140px, 1fr)); }
-  .telesale-filter-toolbar #resetTelesaleAdvancedFilters { width: 100%; }
+  .telesale-filter-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .telesale-filter-search { grid-column: 1 / -1; }
+  .telesale-filter-advanced { grid-template-columns: minmax(280px, 1.4fr) minmax(180px, 1fr) minmax(180px, 1fr); }
+  .telesale-filter-reset { grid-column: 3; width: 100%; }
 }
 
 @media (max-width: 430px) {
-  .telesale-filter-toolbar { grid-template-columns: 1fr; }
-  .telesale-filter-toolbar > * { grid-column: 1; }
+  .telesale-filter-period { grid-template-columns: 1fr; }
+  .telesale-filter-period > .telesale-filter-caption { grid-column: 1; }
   .workspace-lead-table tr { grid-template-columns: 1fr; }
   .workspace-lead-table td { grid-column: 1 !important; }
 }
@@ -6925,6 +6939,18 @@ body.dialog-open {
   .tsm-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
   .tsm-team-head,.tsm-staff-row{grid-template-columns:42px minmax(220px,1.5fr) repeat(5,minmax(82px,.65fr)) 22px}
 }
+
+/* Personal telesale summary: compact, readable and visually distinct by metric. */
+.telesale-own-kpis { gap: 10px; margin-top: 12px; }
+.telesale-own-kpis article { min-height: 92px; padding: 13px 14px; border-radius: 14px; box-shadow: 0 4px 16px rgba(15, 92, 83, .045); }
+.telesale-own-kpis i { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 12px; }
+.telesale-own-kpis strong { font-size: 1.42rem; }
+.telesale-own-kpis article:nth-child(2) i { color: #087c67; background: #def5e9; }
+.telesale-own-kpis article:nth-child(3) i { color: #a06a05; background: #fff1d5; }
+.telesale-own-kpis article:nth-child(4) i { color: #08758d; background: #ddf5f7; }
+.telesale-own-kpis article:nth-child(5) i { color: #b54747; background: #fde9e7; }
+@media(max-width:760px){.telesale-own-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.telesale-own-kpis article{min-height:104px}.telesale-own-kpis article:last-child{grid-column:1/-1}}
+@media(max-width:390px){.telesale-own-kpis{grid-template-columns:1fr}.telesale-own-kpis article,.telesale-own-kpis article:last-child{grid-column:1;min-height:88px}}
 
 /* Keep bulk-selection cells semantic after the legacy responsive table rules. */
 .tsm-table .tsm-select-cell{width:44px;text-align:center!important}.tsm-table .tsm-index-cell{width:50px;color:#78908a}.tsm-table .tsm-customer-cell strong,.tsm-table .tsm-customer-cell small{display:block}.tsm-table .tsm-customer-cell small{margin-top:3px;color:#0781b9}
