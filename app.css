@@ -6940,15 +6940,18 @@ body.dialog-open {
   .tsm-team-head,.tsm-staff-row{grid-template-columns:42px minmax(220px,1.5fr) repeat(5,minmax(82px,.65fr)) 22px}
 }
 
-/* Personal telesale summary: compact, readable and visually distinct by metric. */
+/* Shared Telesale KPI palette: staff and managers use one semantic color system. */
+.tsm-kpis article:nth-child(1) i { color: #087f70; background: #e0f5ef; }
+.tsm-kpis article:nth-child(2) i { color: #087c67; background: #def5e9; }
+.tsm-kpis article:nth-child(3) i { color: #a06a05; background: #fff1d5; }
+.tsm-kpis article:nth-child(4) i { color: #08758d; background: #ddf5f7; }
+.tsm-kpis article:nth-child(5) i { color: #b54747; background: #fde9e7; }
+
+/* Personal telesale summary: compact, readable and aligned with manager KPIs. */
 .telesale-own-kpis { gap: 10px; margin-top: 12px; }
 .telesale-own-kpis article { min-height: 92px; padding: 13px 14px; border-radius: 14px; box-shadow: 0 4px 16px rgba(15, 92, 83, .045); }
 .telesale-own-kpis i { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 12px; }
 .telesale-own-kpis strong { font-size: 1.42rem; }
-.telesale-own-kpis article:nth-child(2) i { color: #087c67; background: #def5e9; }
-.telesale-own-kpis article:nth-child(3) i { color: #a06a05; background: #fff1d5; }
-.telesale-own-kpis article:nth-child(4) i { color: #08758d; background: #ddf5f7; }
-.telesale-own-kpis article:nth-child(5) i { color: #b54747; background: #fde9e7; }
 @media(max-width:760px){.telesale-own-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.telesale-own-kpis article{min-height:104px}.telesale-own-kpis article:last-child{grid-column:1/-1}}
 @media(max-width:390px){.telesale-own-kpis{grid-template-columns:1fr}.telesale-own-kpis article,.telesale-own-kpis article:last-child{grid-column:1;min-height:88px}}
 
