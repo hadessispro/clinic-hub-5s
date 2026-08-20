@@ -119,6 +119,14 @@ store.subscribe(async (state) => {
   const viewTitle = document.getElementById('viewTitle');
   
   if (!viewContainer) return;
+
+  // Do not let a render from the previous account remain behind the login
+  // screen while authentication is being replaced.
+  if (!state.user || !state.profile) {
+    document.body.classList.remove('has-open-drawer', 'app-modal-open');
+    viewContainer.replaceChildren();
+    return;
+  }
   
   const currentView = state.currentView;
   

@@ -36,12 +36,13 @@ class Store {
     }
   }
 
-  updateUser(authInfo) {
+  updateUser(authInfo, currentView) {
     this.state.user = authInfo.user;
     this.state.profile = authInfo.profile;
     this.state.role = authInfo.profile?.role || null;
     this.state.employeeCode = authInfo.profile?.employee_code || null;
     this.state.department = authInfo.profile?.department || null;
+    if (currentView) this.state.currentView = currentView;
     this.notify();
   }
 

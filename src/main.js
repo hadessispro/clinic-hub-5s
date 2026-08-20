@@ -25,6 +25,7 @@ let pendingAttendanceSync = null;
 let vpsChangeSub = null;
 let marketingSub = null;
 let deferredRealtimeRefresh = false;
+let authTransitionId = 0;
 
 function hasBlockingInteraction() {
   const active = document.activeElement;
@@ -113,14 +114,26 @@ async function bootstrap() {
 
   // 2. Listen to authentication changes
   onAuthChange(async (authInfo) => {
-    store.updateUser(authInfo);
-    
+    const transitionId = ++authTransitionId;
     const mainNav = document.getElementById('mainNav');
     
     if (authInfo.user && authInfo.profile) {
+      const role = authInfo.profile.role || 'staff';
+      const currentView = store.getState().currentView;
+      const requestedView = hasEnteredApp ? currentView : getDefaultView(role);
+      const safeView = canAccessView(role, requestedView)
+        ? requestedView
+        : getDefaultView(role);
+
+      // Commit identity, permissions and target view in one store update.
+      // Otherwise the new role briefly renders the previous account's view.
+      if (mainNav) mainNav.innerHTML = renderSidebar(role);
+      store.updateUser(authInfo, safeView);
+      hasEnteredApp = true;
+
       // User is authenticated
       hideLogin();
-      document.body.dataset.role = authInfo.profile.role || 'staff';
+      document.body.dataset.role = role;
       const activeBranchId = getEffectiveBranchId(authInfo.profile);
       setActiveBranch(activeBranchId);
       store.updateSettings(branchSettings());
@@ -146,27 +159,36 @@ async function bootstrap() {
         if (isOpsRole(authInfo.profile.role)) {
           try {
             const cloudSettings = await loadSettings();
+            if (transitionId !== authTransitionId) return;
             if (cloudSettings) store.updateSettings(cloudSettings);
           } catch (err) {
             console.warn('[Clinic Hub] Failed to load cloud settings on boot:', err);
           }
         }
 
+        if (transitionId !== authTransitionId) return;
+
         // Public-to-authenticated branch configuration is authoritative for GPS.
         try {
           const locationSettings = await loadClinicLocation(activeBranchId);
+          if (transitionId !== authTransitionId) return;
           if (locationSettings) store.updateSettings(locationSettings);
         } catch (err) {
           console.warn('[Clinic Hub] Failed to load branch location:', err);
         }
 
+        if (transitionId !== authTransitionId) return;
+
         // Load notifications
         try {
           const notifs = await getNotifications();
+          if (transitionId !== authTransitionId) return;
           store.setNotifications(notifs);
         } catch (err) {
           console.warn('[Clinic Hub] Failed to load notifications:', err);
         }
+
+        if (transitionId !== authTransitionId) return;
 
         // Setup realtime notifications subscription
         if (notifSub) notifSub.unsubscribe();
@@ -204,23 +226,15 @@ async function bootstrap() {
       }
       
       // Render the sidebar menu dynamically based on their role permissions
-      if (mainNav) {
-        mainNav.innerHTML = renderSidebar(authInfo.profile.role);
-      }
       
       // Nhân viên vào thẳng màn hình chấm công trong lần mở ứng dụng đầu tiên.
-      const state = store.getState();
-      const requestedView = hasEnteredApp ? state.currentView : getDefaultView(authInfo.profile.role);
-      const safeView = canAccessView(authInfo.profile.role, requestedView)
-        ? requestedView
-        : getDefaultView(authInfo.profile.role);
-      navigateTo(safeView);
-      hasEnteredApp = true;
     } else {
       // User is logged out
+      store.updateUser(authInfo, 'dashboard');
       showLogin();
       hasEnteredApp = false;
       delete document.body.dataset.role;
+      if (mainNav) mainNav.replaceChildren();
       destroySmartChat();
       destroyPushNotifications();
       vpsChangeSub?.unsubscribe();
