@@ -469,6 +469,11 @@ export async function getMarketingLeadPage(filters = {}) {
 
 /** Tổng hợp nhanh theo ngày cho Quản lý Telesale. */
 export async function getTelesaleDailySummary(reportDate) {
+  if (useVps) {
+    const day = String(reportDate || '').trim();
+    const payload = await vpsRequest(`/telesale-daily-summary${day ? `?date=${encodeURIComponent(day)}` : ''}`);
+    return payload.data || { date: day, totals: {}, staff: [] };
+  }
   const [accounts, leads] = await Promise.all([getTelesaleAccounts(), getMarketingLeads()]);
   const day = String(reportDate || '').trim();
   const isSameDay = (value) => {

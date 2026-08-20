@@ -182,6 +182,61 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return { data: result.rows };
   }
 
+  async telesaleDailySummary(user: AuthUser, reportDate?: string) {
+    requireRole(user, managerRoles);
+    const day = String(reportDate || clinicDate()).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Ngày báo cáo không hợp lệ.');
+    const result = await this.infrastructure.postgres.query(
+      `with bounds as (
+         select ($1::date::timestamp at time zone 'Asia/Ho_Chi_Minh') started_at,
+                (($1::date + 1)::timestamp at time zone 'Asia/Ho_Chi_Minh') ended_at
+       ), staff as (
+         select p.payload->>'employee_code' employee_code,
+                coalesce(e.payload->>'full_name',p.payload->>'full_name',p.payload->>'employee_code') full_name,
+                p.payload->>'role' role,coalesce((p.payload->>'active')::boolean,true) active
+         from app.records p
+         left join app.records e on e.entity_type='employees' and e.deleted_at is null
+           and lower(e.payload->>'code')=lower(p.payload->>'employee_code')
+         where p.entity_type='profiles' and p.deleted_at is null
+           and p.payload->>'role' in ('telesale_staff','telesale_leader')
+           and coalesce((p.payload->>'active')::boolean,true)=true
+       ), owned as (
+         select assigned_telesale_code employee_code,count(*)::int assigned_total,
+                count(*) filter(where status not in ('converted','appointment_cancelled','low_quality','cancelled'))::int assigned_active,
+                count(*) filter(where status='low_quality')::int low_quality_total
+         from marketing.leads where assigned_telesale_code is not null group by assigned_telesale_code
+       ), calls as (
+         select c.telesale_code employee_code,count(distinct c.lead_id)::int handled_today,count(*)::int calls_today
+         from marketing.call_logs c cross join bounds b
+         where c.created_at>=b.started_at and c.created_at<b.ended_at group by c.telesale_code
+       ), changes as (
+         select a.actor_code employee_code,count(distinct a.entity_id)::int status_changes_today,
+                count(distinct a.entity_id) filter(where a.detail->>'status'='appointment_booked')::int appointments_today,
+                count(distinct a.entity_id) filter(where a.detail->>'status' in ('visited','converted'))::int visited_today,
+                count(distinct a.entity_id) filter(where a.detail->>'status'='low_quality')::int low_quality_today
+         from marketing.audit_log a cross join bounds b
+         where a.entity_type='marketing.lead' and a.action='lead.update'
+           and a.created_at>=b.started_at and a.created_at<b.ended_at group by a.actor_code
+       )
+       select s.*,coalesce(o.assigned_total,0) assigned_total,coalesce(o.assigned_active,0) assigned_active,
+              coalesce(c.handled_today,0) handled_today,coalesce(c.calls_today,0) calls_today,
+              coalesce(ch.status_changes_today,0) status_changes_today,
+              coalesce(ch.appointments_today,0) appointments_today,coalesce(ch.visited_today,0) visited_today,
+              coalesce(ch.low_quality_today,0) low_quality_today,coalesce(o.low_quality_total,0) low_quality_total
+       from staff s
+       left join owned o on lower(o.employee_code)=lower(s.employee_code)
+       left join calls c on lower(c.employee_code)=lower(s.employee_code)
+       left join changes ch on lower(ch.employee_code)=lower(s.employee_code)
+       order by lower(s.full_name)`, [day],
+    );
+    const keys = ['assigned_total','assigned_active','handled_today','calls_today','status_changes_today','appointments_today','visited_today','low_quality_today','low_quality_total'];
+    const totals = result.rows.reduce<Record<string, number>>((sum, row) => {
+      for (const key of keys) sum[key] = (sum[key] || 0) + Number(row[key] || 0);
+      return sum;
+    }, {});
+    return { data: { date: day, totals, staff: result.rows } };
+  }
+
   async createPgAccount(user: AuthUser, input: JsonMap) {
     requireRole(user, supportRoles);
     const fullName = String(input.fullName || '').trim();
@@ -1161,6 +1216,7 @@ export class MarketingController {
 
   @Get('/pg-accounts') listPg(@Req() request: ActorRequest) { return this.service.listPgAccounts(request.user); }
   @Get('/telesale-accounts') listTelesale(@Req() request: ActorRequest) { return this.service.listTelesaleAccounts(request.user); }
+  @Get('/telesale-daily-summary') telesaleDailySummary(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.telesaleDailySummary(request.user, date); }
   @Post('/pg-accounts') createPg(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createPgAccount(request.user, body); }
   @Patch('/pg-accounts/:code') updatePg(@Req() request: ActorRequest, @Param('code') code: string, @Body() body: JsonMap) { return this.service.updatePgAccount(request.user, code, body); }
   @Delete('/pg-accounts/:code') deletePg(@Req() request: ActorRequest, @Param('code') code: string) { return this.service.deletePgAccount(request.user, code); }
