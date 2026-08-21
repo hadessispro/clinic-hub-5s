@@ -53,6 +53,13 @@ function historyHtml(logs) {
 
 function consultationForm(lead) {
   const lowQualityReason = lead.low_quality_reason || lead.customer_profile?.lowQualityReason || '';
+  const callStatusByLeadStatus = {
+    new: 'not_consulted',
+    contacted: 'not_appointment_booked',
+    appointment_booked: 'appointment_booked',
+    cancelled: 'rejected',
+  };
+  const currentCallStatus = callStatusByLeadStatus[lead.status] || 'interested';
   return `<section class="lead-dossier-section lead-consultation-form-section">
     <div class="lead-dossier-section-title"><h4>Cập nhật tư vấn</h4><span>Lưu ngay vào hồ sơ khách hàng</span></div>
     <form id="leadConsultationForm" class="lead-dossier-form" data-lead-id="${safe(lead.id)}">
@@ -60,7 +67,7 @@ function consultationForm(lead) {
         <select name="status" required>${Object.entries(LEAD_STATUS).map(([value, label]) => `<option value="${escapeHTML(value)}" ${lead.status === value ? 'selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select>
       </label>
       <label>Kết quả tư vấn
-        <select name="call_status" required>${Object.entries(CALL_STATUS).map(([value, label]) => `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`).join('')}</select>
+        <select name="call_status" required>${Object.entries(CALL_STATUS).map(([value, label]) => `<option value="${escapeHTML(value)}" ${currentCallStatus === value ? 'selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select>
       </label>
       <label class="full" data-consultation-appointment hidden>Ngày giờ hẹn khám
         <input type="datetime-local" name="appointment_date">
@@ -121,6 +128,8 @@ export function initLeadConsultationDrawer({ getLead, onSaved } = {}) {
     };
     const syncCustomerStatus = () => {
       const statusByResult = {
+        not_consulted: 'new',
+        not_appointment_booked: 'contacted',
         interested: 'contacted',
         appointment_booked: 'appointment_booked',
         busy: 'contacted',

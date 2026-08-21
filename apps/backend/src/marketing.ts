@@ -23,7 +23,15 @@ const netServices: Record<string, Set<string>> = {
 const rawServices = new Set(['Cạo vôi răng', 'Thăm khám răng']);
 const leadStatuses = new Set(['new', 'contacted', 'appointment_booked', 'visited', 'converted', 'appointment_cancelled', 'low_quality', 'cancelled']);
 const lowQualityReasons = new Set(['subscriber_unavailable', 'wrong_phone', 'wrong_person', 'duplicate', 'spam', 'other']);
-const callStatuses = new Set(['interested', 'appointment_booked', 'busy', 'no_answer', 'rejected']);
+const callStatuses = new Set([
+  'not_consulted',
+  'not_appointment_booked',
+  'interested',
+  'appointment_booked',
+  'busy',
+  'no_answer',
+  'rejected',
+]);
 
 function requireRole(user: AuthUser, roles: Set<string>) {
   if (!roles.has(user.role)) throw new ForbiddenException('Tài khoản không có quyền thực hiện thao tác này.');
@@ -743,7 +751,13 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        values ($1,$2,$3,$4,$5) returning *`,
       [leadId, user.employeeCode, status, input.note || null, appointmentAt?.toISOString() || null],
     );
-    const leadStatus = status === 'appointment_booked' ? 'appointment_booked' : status === 'rejected' ? 'cancelled' : 'contacted';
+    const leadStatus = status === 'not_consulted'
+      ? 'new'
+      : status === 'appointment_booked'
+        ? 'appointment_booked'
+        : status === 'rejected'
+          ? 'cancelled'
+          : 'contacted';
     await this.infrastructure.postgres.query('update marketing.leads set status=$2,updated_at=now() where id=$1', [leadId, leadStatus]);
     return { data: result.rows[0] };
   }

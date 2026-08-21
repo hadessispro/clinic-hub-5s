@@ -106,6 +106,8 @@ export const LOW_QUALITY_REASONS = {
 };
 
 export const CALL_STATUS = {
+  not_consulted: 'Chưa tư vấn',
+  not_appointment_booked: 'Chưa chốt hẹn',
   interested: 'Quan tâm/Tư vấn',
   appointment_booked: 'Chốt hẹn khám',
   busy: 'Máy bận',

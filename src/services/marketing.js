@@ -220,7 +220,7 @@ export async function addTelesaleCallLog(logData) {
     if (error) throw error;
     
     // Auto update lead status
-    let leadStatus = 'contacted';
+    let leadStatus = logData.call_status === 'not_consulted' ? 'new' : 'contacted';
     if (logData.call_status === 'appointment_booked') leadStatus = 'appointment_booked';
     else if (logData.call_status === 'rejected') leadStatus = 'cancelled';
     await updateMarketingLead(logData.lead_id, { status: leadStatus });
@@ -232,7 +232,7 @@ export async function addTelesaleCallLog(logData) {
     logs.unshift(newLog);
     setLocalData(CALL_LOGS_STORAGE_KEY, logs);
 
-    let leadStatus = 'contacted';
+    let leadStatus = logData.call_status === 'not_consulted' ? 'new' : 'contacted';
     if (logData.call_status === 'appointment_booked') leadStatus = 'appointment_booked';
     else if (logData.call_status === 'rejected') leadStatus = 'cancelled';
     await updateMarketingLead(logData.lead_id, { status: leadStatus });
