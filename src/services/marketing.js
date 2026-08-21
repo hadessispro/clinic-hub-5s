@@ -406,7 +406,10 @@ export async function getMarketingReports() {
 
 export async function getPgAccounts() {
   if (!useVps) return [];
-  const payload = await vpsRequest('/pg-accounts');
+  // PG accounts are changed frequently by Support/Admin. Bypass both the
+  // browser cache and intermediary cache so a new account is visible straight
+  // after a successful create/update/delete operation.
+  const payload = await vpsRequest(`/pg-accounts?_=${Date.now()}`, { cache: 'no-store' });
   return payload.data || [];
 }
 
@@ -515,6 +518,7 @@ export async function getTelesaleDailySummary(reportFilter = '') {
 
 export async function createPgAccount(input) {
   const payload = await vpsRequest('/pg-accounts', { method: 'POST', body: JSON.stringify(input) });
+  notifyDataChange('marketing.pg_accounts');
   return payload.data;
 }
 

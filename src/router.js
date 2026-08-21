@@ -61,6 +61,12 @@ const viewTitles = {
 };
 
 let renderRequestId = 0;
+// The previous implementation started rendering asynchronously but returned
+// from navigateTo immediately. Callers that had just saved data could show a
+// success toast while the old screen was still mounted, which looked like the
+// new record only appeared after a browser reload. Keep the current render
+// promise so mutations can await a completed, fresh view.
+let activeRender = Promise.resolve();
 
 const STALE_MODULE_RECOVERY_KEY = 'clinic:stale-module-recovery';
 
@@ -110,10 +116,11 @@ export async function navigateTo(viewName) {
 
   // 2. Update store state
   store.setView(targetView);
+  return activeRender;
 }
 
 // Listen to state changes to trigger rendering of views
-store.subscribe(async (state) => {
+async function renderCurrentView(state) {
   const requestId = ++renderRequestId;
   const viewContainer = document.getElementById('appView');
   const viewTitle = document.getElementById('viewTitle');
@@ -186,4 +193,8 @@ store.subscribe(async (state) => {
       </div>
     `;
   }
+}
+
+store.subscribe((state) => {
+  activeRender = renderCurrentView(state);
 });

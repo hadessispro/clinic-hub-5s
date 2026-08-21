@@ -211,7 +211,7 @@ async function bootstrap() {
           marketingSub?.();
           marketingSub = subscribeToRealtime((change) => {
             const currentState = store.getState();
-            if (['marketing-leads', 'telesale-workspace', 'telesale-management', 'marketing-analytics', 'dashboard'].includes(currentState.currentView)) {
+            if (['marketing-leads', 'telesale-workspace', 'telesale-management', 'marketing-analytics', 'pg-management', 'dashboard'].includes(currentState.currentView)) {
               console.log('[Realtime Auto-Refresh] Updating active view:', currentState.currentView);
               refreshActiveViewFromRealtime({ ...(change || {}), source: 'marketing-realtime' });
             }
