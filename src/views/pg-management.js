@@ -51,7 +51,6 @@ export async function renderView() {
   const isSupportMarketing = currentRole === 'support_marketing';
   const adminOperations = !isSupportMarketing;
   const canCreatePg = ['support_marketing', 'admin_marketing', 'admin', 'admin_it', 'superadmin'].includes(currentRole);
-  const canApprovePg = currentRole === 'admin_marketing';
   const pgLeadRequest = getMarketingLeadPage({
     page: pgLeadPage, page_size: PG_LEAD_PAGE_SIZE, pg_only: true,
     search: pgLeadSearch || undefined, pg_code: pgLeadCode || undefined,
@@ -105,7 +104,7 @@ export async function renderView() {
 
     ${canCreatePg ? `<div class="grid">
       <section class="panel">
-        <div class="section-title"><div><h3>Tạo tài khoản PG</h3><p class="subtle">Tài khoản chưa thể đăng nhập cho đến khi Admin Marketing duyệt.</p></div><span class="pill">Chờ Admin Marketing duyệt</span></div>
+        <div class="section-title"><div><h3>Tạo tài khoản PG</h3><p class="subtle">Tạo xong kích hoạt ngay; Support có thể giao vị trí và ca làm việc cho PG.</p></div><span class="pill">Kích hoạt ngay</span></div>
         <form id="pgAccountForm" class="form-grid two pg-compact-form" autocomplete="off">
           <label class="form-field"><span>Họ tên</span><input name="fullName" required placeholder="Nguyễn Văn A"></label>
           <label class="form-field"><span>Mã PG</span><input name="employeeCode" placeholder="PG-001"></label>
@@ -113,7 +112,7 @@ export async function renderView() {
           <label class="form-field"><span>Số điện thoại</span><input name="pgPhone" autocomplete="off" data-1p-ignore required inputmode="numeric"></label>
           <label class="form-field"><span>Mật khẩu ban đầu</span><input name="pgPassword" type="password" autocomplete="new-password" data-1p-ignore minlength="8" placeholder="Mặc định dùng SĐT"></label>
           <label class="form-field"><span>Chi nhánh quản lý</span><select name="branchId"><option value="pham-van-chieu">Phạm Văn Chiêu</option><option value="le-van-tho">Lê Văn Thọ</option></select></label>
-          <button class="primary-button full" type="submit">Tạo và gửi Admin Marketing duyệt</button>
+          <button class="primary-button full" type="submit">Tạo và kích hoạt tài khoản PG</button>
         </form>
       </section>
 
@@ -155,7 +154,7 @@ export async function renderView() {
           <td>${escapeHTML(row.employee?.email || '')}<br><span class="subtle">${escapeHTML(row.employee?.phone || '')}</span></td>
           <td>${escapeHTML(row.profile?.branch_id || '')}</td><td>${row.last_login_at ? new Date(row.last_login_at).toLocaleString('vi-VN') : 'Chưa đăng nhập'}</td>
           <td><span class="pill">${row.profile?.registration_status === 'pending_approval' ? 'Chờ duyệt' : (row.login_active ? 'Đang hoạt động' : 'Đã khóa')}</span></td>
-          <td><div class="button-row pg-account-actions">${adminOperations ? `<button class="secondary-button" data-edit-pg="${escapeHTML(code)}"><i class="ri-edit-line"></i> Sửa</button>` : ''}${row.profile?.registration_status === 'pending_approval' ? (canApprovePg ? `<button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="0"><i class="ri-check-line"></i> Duyệt</button>` : '<span class="pill">Chờ Admin Marketing</span>') : (adminOperations ? `<button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}"><i class="ri-lock-line"></i> ${row.login_active ? 'Khóa' : 'Mở khóa'}</button>` : '<span class="subtle">Chỉ xem</span>')}${adminOperations ? `<button class="danger-button" data-delete-pg="${escapeHTML(code)}"><i class="ri-delete-bin-line"></i> Xóa</button>` : ''}</div></td>
+          <td><div class="button-row pg-account-actions">${adminOperations ? `<button class="secondary-button" data-edit-pg="${escapeHTML(code)}"><i class="ri-edit-line"></i> Sửa</button>` : ''}${row.profile?.registration_status === 'pending_approval' ? (currentRole === 'admin_marketing' ? `<button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="0"><i class="ri-check-line"></i> Duyệt đăng ký tự do</button>` : '<span class="pill">Đăng ký tự do chờ duyệt</span>') : (adminOperations ? `<button class="secondary-button" data-toggle-pg="${escapeHTML(code)}" data-active="${row.login_active ? '1' : '0'}"><i class="ri-lock-line"></i> ${row.login_active ? 'Khóa' : 'Mở khóa'}</button>` : '<span class="subtle">Chỉ xem</span>')}${adminOperations ? `<button class="danger-button" data-delete-pg="${escapeHTML(code)}"><i class="ri-delete-bin-line"></i> Xóa</button>` : ''}</div></td>
         </tr>`; }).join('') : '<tr><td colspan="6">Chưa có tài khoản PG.</td></tr>'}
       </tbody></table></div>
     </section>` : ''}
@@ -280,7 +279,7 @@ export function initView() {
     data.email = data.pgEmail; data.phone = data.pgPhone; data.password = data.pgPassword;
     delete data.pgEmail; delete data.pgPhone; delete data.pgPassword;
     if (!data.password) data.password = data.phone;
-    try { await createPgAccount(data); await refresh('Đã tạo tài khoản PG và gửi Admin Marketing duyệt.'); } catch (error) { showToast(error.message, true); }
+    try { await createPgAccount(data); await refresh('Đã tạo và kích hoạt tài khoản PG. PG có thể đăng nhập ngay.'); } catch (error) { showToast(error.message, true); }
   });
   const siteForm = document.getElementById('pgSiteForm');
   const locationResults = document.getElementById('pgLocationResults');
