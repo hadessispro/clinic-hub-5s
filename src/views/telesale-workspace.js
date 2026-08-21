@@ -111,11 +111,9 @@ export async function renderView(state) {
             <button type="button" data-workspace-view="cards" class="secondary-button${telesaleViewMode === 'cards' ? ' is-active' : ''}"><i class="ri-layout-grid-line"></i> Thẻ</button>
             <button type="button" data-workspace-view="sheet" class="secondary-button${telesaleViewMode === 'sheet' ? ' is-active' : ''}"><i class="ri-table-line"></i> Bảng</button>
           </div>
-        ${isLeaderOrAdmin ? `
-          <button type="button" id="btnExportTelesaleCSV" class="primary-button" style="background:#107c41; color:#ffffff; border:0; font-size:0.82rem; padding:6px 14px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; min-height:34px; cursor:pointer; font-weight:600;">
-            <i class="ri-file-excel-2-line" style="font-size:1.05rem;"></i> Xuất Data Excel (CSV)
+          <button type="button" id="btnExportTelesaleCSV" class="primary-button telesale-export-button">
+            <i class="ri-file-excel-2-line" aria-hidden="true"></i> Xuất danh sách Excel
           </button>
-        ` : ''}
         </div>
       </div>
 
@@ -213,12 +211,23 @@ export function initView() {
   const btnExport = document.getElementById('btnExportTelesaleCSV');
   if (btnExport) {
     btnExport.addEventListener('click', () => {
-      if (!cachedLeads || !cachedLeads.length) {
+      const query = (document.getElementById('searchTelesaleInput')?.value || '').trim().toLocaleLowerCase('vi');
+      const status = document.getElementById('filterTelesaleStatus')?.value || '';
+      const branch = document.getElementById('filterTelesaleBranch')?.value || '';
+      const exportRows = (cachedLeads || []).filter((lead) => {
+        const matchesQuery = !query
+          || String(lead.full_name || '').toLocaleLowerCase('vi').includes(query)
+          || String(lead.phone || '').includes(query);
+        return matchesQuery && (!status || lead.status === status) && (!branch || lead.branch_id === branch);
+      });
+      if (!exportRows.length) {
         showToast("Không có dữ liệu Lead để xuất!", true);
         return;
       }
-      exportLeadsToCSV(cachedLeads, 'Bao_cao_Telesale_Lead.csv');
-      showToast("✅ Đã xuất báo cáo Telesale sang file Excel (CSV) thành công!");
+      const employeeCode = String(profile.employee_code || profile.id || 'Telesale').replace(/[^a-zA-Z0-9_-]+/g, '_');
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+      exportLeadsToCSV(exportRows, `Khach_hang_${employeeCode}_${today}.csv`);
+      showToast(`Đã xuất ${exportRows.length.toLocaleString('vi-VN')} khách hàng theo bộ lọc hiện tại.`);
     });
   }
 

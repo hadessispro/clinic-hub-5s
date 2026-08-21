@@ -308,11 +308,14 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     'STT',
     'Họ tên khách hàng',
     'Số điện thoại',
+    'Phân loại data',
     'Nguồn Lead',
     'Dịch vụ quan tâm',
     'Chi nhánh đăng ký',
     'Mã Telesale phụ trách',
+    'PG/Nguồn nhập',
     'Trạng thái',
+    'Lịch hẹn',
     'Ghi chú nhu cầu',
     'Thời gian nạp Lead'
   ];
@@ -332,13 +335,16 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     index + 1,
     `"${(l.full_name || '').replace(/"/g, '""')}"`,
     `"${(l.phone || '').replace(/"/g, '""')}"`,
+    `"${(l.data_class === 'net' ? `Data net - ${l.net_level === 'advanced' ? 'Chuyên sâu' : 'Cơ bản'}` : 'Data thô').replace(/"/g, '""')}"`,
     `"${(l.source || '').replace(/"/g, '""')}"`,
     `"${(l.service_interest || '').replace(/"/g, '""')}"`,
     `"${l.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu'}"`,
     `"${(l.assigned_telesale_id || 'Chưa gán').replace(/"/g, '""')}"`,
+    `"${(l.created_by_name || l.created_by_pg || l.source || '').replace(/"/g, '""')}"`,
     `"${(statusMap[l.status] || l.status || '').replace(/"/g, '""')}"`,
+    `"${(l.appointment_date ? new Date(l.appointment_date).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '').replace(/"/g, '""')}"`,
     `"${(l.notes || '').replace(/"/g, '""')}"`,
-    `"${new Date(l.created_at || Date.now()).toLocaleString('vi-VN')}"`
+    `"${new Date(l.created_at || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}"`
   ]);
 
   const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
