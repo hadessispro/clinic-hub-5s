@@ -7,7 +7,6 @@ self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
   self.skipWaiting();
 });
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
@@ -22,6 +21,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Operational API data must never come from the PWA asset cache. Returning
+  // an old /marketing/leads response can make a persisted Telesale assignment
+  // appear to have disappeared even though PostgreSQL already contains it.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(request, { cache: 'no-store' }));
+    return;
+  }
 
   if (request.mode === 'navigate' || request.destination === 'script' || request.destination === 'style') {
     event.respondWith(

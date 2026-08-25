@@ -47,6 +47,7 @@ async function api(path, options = {}) {
   try {
     const response = await fetch(`/api/v2${path}`, {
       ...options,
+      cache: options.cache || 'no-store',
       signal: controller.signal,
       headers: {
         ...(options.body !== undefined && options.body !== null ? { 'Content-Type': 'application/json' } : {}),
@@ -180,7 +181,7 @@ export const localClient = {
   removeChannel() {},
 };
 
-export function subscribeToVpsChanges(callback, intervalMs = 2000) {
+export function subscribeToVpsChanges(callback, intervalMs = 1000) {
   let stopped = false;
   let running = false;
   let version = null;
