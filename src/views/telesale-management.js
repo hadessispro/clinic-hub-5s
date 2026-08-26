@@ -159,8 +159,8 @@ export async function renderView() {
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
         <label><span>Đến ngày</span><input type="date" id="tsmDateTo" value="${escapeHTML(dateTo)}"></label>
         <label><span>Phân loại data</span><select id="tsmDataClassFilter"><option value="">Tất cả data</option><option value="raw"${dataClassFilter === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${dataClassFilter === 'net' ? ' selected' : ''}>Data net</option></select></label>
-        <label><span>Nhóm dịch vụ</span><select id="tsmServiceGroupFilter"><option value="">Tất cả dịch vụ</option><option value="basic"${serviceGroupFilter === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${serviceGroupFilter === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
-        <label><span>Dịch vụ cụ thể</span><select id="tsmServiceTypeFilter"${serviceGroupFilter ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, serviceTypeFilter === serviceName)).join('')}</select></label>
+        <label><span>Nhóm dịch vụ</span><select id="tsmServiceGroupFilter"><option value="">Tất cả dịch vụ</option><option value="raw"${serviceGroupFilter === 'raw' ? ' selected' : ''}>Data thô</option><option value="basic"${serviceGroupFilter === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${serviceGroupFilter === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
+        <label><span>Dịch vụ cụ thể</span><select id="tsmServiceTypeFilter"${['basic', 'advanced'].includes(serviceGroupFilter) ? '' : ' disabled'}><option value="">${serviceGroupFilter === 'raw' ? 'Không áp dụng cho Data thô' : 'Tất cả trong nhóm'}</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, serviceTypeFilter === serviceName)).join('')}</select></label>
         <label><span>Trạng thái</span><select id="tsmStatus"><option value="">Tất cả trạng thái</option>${Object.entries(LEAD_STATUS).map(([key, label]) => option(key, label, statusFilter === key)).join('')}</select></label>
         <button type="button" class="secondary-button" id="tsmResetFilters"><i class="ri-restart-line"></i> Xóa lọc</button>
       </div>
@@ -263,6 +263,7 @@ export function initView() {
   document.getElementById('tsmDataClassFilter')?.addEventListener('change', (event) => {
     dataClassFilter = event.target.value;
     if (dataClassFilter === 'raw' && serviceGroupFilter === 'advanced') { serviceGroupFilter = ''; serviceTypeFilter = ''; }
+    if (dataClassFilter === 'net' && serviceGroupFilter === 'raw') { serviceGroupFilter = ''; serviceTypeFilter = ''; }
     currentPage = 1;
     rerender();
   });
@@ -270,6 +271,7 @@ export function initView() {
     serviceGroupFilter = event.target.value;
     serviceTypeFilter = '';
     if (serviceGroupFilter === 'advanced') dataClassFilter = 'net';
+    if (serviceGroupFilter === 'raw') dataClassFilter = 'raw';
     currentPage = 1;
     rerender();
   });

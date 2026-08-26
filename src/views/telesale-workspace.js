@@ -156,8 +156,8 @@ export async function renderView(state) {
             <label class="telesale-filter-field"><span>Từ ngày</span><input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label>
             <label class="telesale-filter-field"><span>Đến ngày</span><input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label>
           </div>
-          <label class="telesale-filter-field"><span>Nhóm dịch vụ</span><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
-          <label class="telesale-filter-field"><span>Dịch vụ cụ thể</span><select id="filterTelesaleServiceType"${telesaleServiceGroup ? '' : ' disabled'}><option value="">Tất cả trong nhóm</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></label>
+          <label class="telesale-filter-field"><span>Nhóm dịch vụ</span><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="raw"${telesaleServiceGroup === 'raw' ? ' selected' : ''}>Data thô</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
+          <label class="telesale-filter-field"><span>Dịch vụ cụ thể</span><select id="filterTelesaleServiceType"${['basic', 'advanced'].includes(telesaleServiceGroup) ? '' : ' disabled'}><option value="">${telesaleServiceGroup === 'raw' ? 'Không áp dụng cho Data thô' : 'Tất cả trong nhóm'}</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></label>
           <button type="button" class="secondary-button telesale-filter-reset" id="resetTelesaleAdvancedFilters"><i class="ri-restart-line"></i> Xóa bộ lọc</button>
         </div>
       </div>
@@ -330,6 +330,7 @@ export function initView() {
   dataClassSelect?.addEventListener('change', () => {
     telesaleDataClass = dataClassSelect.value;
     if (telesaleDataClass === 'raw' && telesaleServiceGroup === 'advanced') { telesaleServiceGroup = ''; telesaleServiceType = ''; }
+    if (telesaleDataClass === 'net' && telesaleServiceGroup === 'raw') { telesaleServiceGroup = ''; telesaleServiceType = ''; }
     telesalePage = 1;
     navigateTo('telesale-workspace');
   });
@@ -337,6 +338,7 @@ export function initView() {
     telesaleServiceGroup = serviceGroupSelect.value;
     telesaleServiceType = '';
     if (telesaleServiceGroup === 'advanced') telesaleDataClass = 'net';
+    if (telesaleServiceGroup === 'raw') telesaleDataClass = 'raw';
     telesalePage = 1;
     navigateTo('telesale-workspace');
   });

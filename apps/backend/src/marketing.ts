@@ -471,7 +471,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
     }
     const serviceGroup = String(query.serviceGroup || '').trim().toLowerCase();
-    if (serviceGroup === 'basic') {
+    if (serviceGroup === 'raw') {
+      where.push(`l.data_class='raw'`);
+    } else if (serviceGroup === 'basic') {
       params.push(Array.from(netServices.basic));
       where.push(`exists (select 1 from unnest($${params.length}::text[]) service_name
         where coalesce(l.service_type,'') ilike '%' || service_name || '%')`);
