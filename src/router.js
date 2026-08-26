@@ -29,6 +29,7 @@ const viewImports = {
   'pg-locations': () => import('./views/pg-locations.js'),
   'pg-workflow': () => import('./views/pg-workflow.js'),
   'pg-attendance': () => import('./views/pg-attendance.js'),
+  'gift-inventory': () => import('./views/gift-inventory.js'),
 };
 
 const viewTitles = {
@@ -58,6 +59,7 @@ const viewTitles = {
   'pg-locations': 'Địa điểm chấm công PG',
   'pg-workflow': 'Điều phối & hỗ trợ PG',
   'pg-attendance': 'Chấm công PG',
+  'gift-inventory': 'Kho quà tặng khách hàng',
 };
 
 let renderRequestId = 0;

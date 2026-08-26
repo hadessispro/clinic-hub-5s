@@ -7,11 +7,11 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
-  support_marketing: ['dashboard', 'pg-management', 'pg-locations', 'pg-workflow', 'chat', 'tasks'],
-  pg_staff: ['marketing-leads', 'attendance', 'pg-workflow'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks'],
+  pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
   telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   superadmin: [],
@@ -105,6 +105,7 @@ const NAV_ITEMS = [
     { view: 'pg-management', label: 'Quản lý PG', icon: 'ri-user-location-line' },
     { view: 'pg-locations', label: 'Địa điểm PG', icon: 'ri-map-pin-2-line' },
     { view: 'pg-workflow', label: 'Điều phối PG', icon: 'ri-route-line' },
+    { view: 'gift-inventory', label: 'Kho quà tặng', icon: 'ri-gift-2-line' },
   ]},
 ];
 
@@ -115,7 +116,6 @@ export function canAccessView(role, view) {
   if (!role || !ROLE_VIEWS[role]) return false;
   return ROLE_VIEWS[role].includes(view);
 }
-
 /** Check if a role can perform a specific action */
 export function canPerform(role, action) {
   if (!role || !ROLE_ACTIONS[role]) return false;
