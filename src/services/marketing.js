@@ -404,6 +404,13 @@ export async function bulkAssignMarketingLeads({ leadIds, telesaleCode, dataClas
   return payload.data;
 }
 
+export async function confirmPgLeadArrival(leadId) {
+  if (!useVps) throw new Error('Xác nhận khách đến chỉ khả dụng trên VPS.');
+  const payload = await vpsRequest(`/leads/${encodeURIComponent(leadId)}/confirm-pg-arrival`, { method: 'POST' });
+  notifyDataChange('marketing_leads');
+  return payload.data;
+}
+
 export async function getMarketingReports() {
   if (!useVps) return { totals: {}, pg: [], telesale: [] };
   const payload = await vpsRequest('/reports');
@@ -436,7 +443,7 @@ export async function getMarketingLeadPage(filters = {}) {
       net_level: 'netLevel', pg_unhandled_only: 'pgUnassignedOnly', branch_id: 'branchId',
       pg_code: 'pgCode', search: 'search', assignment: 'assignment', pg_only: 'pgOnly',
       date_from: 'dateFrom', date_to: 'dateTo', service_group: 'serviceGroup',
-      service_type: 'serviceType',
+      service_type: 'serviceType', commission_status: 'commissionStatus',
     };
     Object.entries(mappings).forEach(([key, target]) => {
       if (filters[key]) query.set(target, filters[key] === true ? 'true' : String(filters[key]));

@@ -467,7 +467,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     } else if (!reportRoles.has(user.role)) {
       throw new ForbiddenException();
     }
-    for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code']] as const) {
+    for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code'], ['commissionStatus', 'pg_commission_status']] as const) {
       if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
     }
     const serviceGroup = String(query.serviceGroup || '').trim().toLowerCase();
@@ -725,6 +725,34 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return { data: result.rows[0] };
   }
 
+  async confirmPgArrival(user: AuthUser, leadId: string) {
+    requireRole(user, supportRoles);
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.leads
+          set pg_arrival_confirmed_at=now(),pg_arrival_confirmed_by=$2,
+              pg_commission_status='eligible',
+              status=case when status='converted' then status else 'visited' end,
+              updated_at=now()
+        where id=$1 and nullif(trim(created_by_pg_code),'') is not null
+          and pg_arrival_confirmed_at is null
+        returning *`,
+      [leadId, user.employeeCode],
+    );
+    if (!result.rows[0]) {
+      const existing = await this.infrastructure.postgres.query(
+        `select * from marketing.leads where id=$1 and nullif(trim(created_by_pg_code),'') is not null limit 1`, [leadId],
+      );
+      if (!existing.rows[0]) throw new BadRequestException('Không tìm thấy data do PG nhập.');
+      if (existing.rows[0].pg_arrival_confirmed_at) return { data: existing.rows[0], duplicate: true };
+      throw new BadRequestException('Không thể xác nhận khách đến.');
+    }
+    await this.audit(user, 'pg.arrival_confirm', 'marketing.lead', leadId, {
+      pgCode: result.rows[0].created_by_pg_code,
+      commissionStatus: 'eligible',
+    });
+    return { data: result.rows[0], duplicate: false };
+  }
+
   async deleteLead(user: AuthUser, leadId: string) {
     requireRole(user, managerRoles);
     const result = await this.infrastructure.postgres.query('delete from marketing.leads where id=$1 returning id', [leadId]);
@@ -832,7 +860,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        count(*) filter(where data_class='net')::int net_count,
        count(*) filter(where status='converted')::int converted,
        count(*) filter(where status='low_quality')::int low_quality,
-       count(*) filter(where status='appointment_cancelled')::int appointment_cancelled
+       count(*) filter(where status='appointment_cancelled')::int appointment_cancelled,
+       count(*) filter(where pg_arrival_confirmed_at is not null)::int pg_arrival_confirmed,
+       count(*) filter(where pg_commission_status='eligible')::int pg_commission_eligible
        from marketing.leads`,
     );
     return { data: { totals: totals.rows[0], pg: pg.rows, telesale: telesale.rows } };
@@ -1240,6 +1270,7 @@ export class MarketingController {
   @Get('/leads') listLeads(@Req() request: ActorRequest, @Query() query: JsonMap) { return this.service.listLeads(request.user, query); }
   @Post('/leads') createLead(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createLead(request.user, body); }
   @Patch('/leads/:id') updateLead(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.updateLead(request.user, id, body); }
+  @Post('/leads/:id/confirm-pg-arrival') confirmPgArrival(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.confirmPgArrival(request.user, id); }
   @Delete('/leads/:id') deleteLead(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteLead(request.user, id); }
   @Post('/leads/:id/assign-net') assignNet(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.assignNetLead(request.user, id, String(body.telesaleCode || '')); }
   @Post('/leads/distribute-raw') distributeRaw(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.distributeRaw(request.user, Number(body.quantity || 0)); }
