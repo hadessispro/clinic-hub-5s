@@ -4777,6 +4777,17 @@ body.dialog-open {
   font-weight: 800;
 }
 
+/* Luot cham cong may chu da tu choi: khong the tu sua, can quan ly can thiep. */
+.attendance-sync-banner.is-rejected {
+  border-color: rgba(190, 49, 49, 0.36);
+  color: #7d1d1d;
+  background: #fdeceb;
+}
+
+.attendance-sync-banner.is-rejected button {
+  background: #a32626;
+}
+
 .checkin-dialog[hidden] {
   display: none;
 }

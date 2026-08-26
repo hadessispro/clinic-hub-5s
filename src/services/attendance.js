@@ -39,7 +39,7 @@ function queueKey(userId) {
   return userId ? `${QUEUE_PREFIX}:${userId}` : null;
 }
 
-export function getOfflineQueue(userId) {
+function readQueue(userId) {
   const key = queueKey(userId);
   if (!key) return [];
   try {
@@ -51,6 +51,26 @@ export function getOfflineQueue(userId) {
   }
 }
 
+/** Ban ghi con cho gui len may chu. */
+export function getOfflineQueue(userId) {
+  return readQueue(userId).filter((item) => !item.rejectedAt);
+}
+
+/**
+ * Ban ghi may chu da tu choi vinh vien: ngoai ban kinh, GPS qua kem, khong co
+ * ca hop le. Gui lai bao nhieu lan cung hong, nen phai tach ra de nhan vien
+ * thay ly do va bao quan ly bo sung cong thu cong.
+ */
+export function getRejectedQueue(userId) {
+  return readQueue(userId).filter((item) => !!item.rejectedAt);
+}
+
+export function discardRejectedAttendance(userId) {
+  const remaining = getOfflineQueue(userId);
+  writeOfflineQueue(userId, remaining);
+  return remaining;
+}
+
 function writeOfflineQueue(userId, queue) {
   const key = queueKey(userId);
   if (!key) throw new Error('Không xác định được tài khoản đang chấm công.');
@@ -59,7 +79,7 @@ function writeOfflineQueue(userId, queue) {
 }
 
 function saveToOfflineQueue(record, userId) {
-  const queue = getOfflineQueue(userId);
+  const queue = readQueue(userId);
   const duplicate = queue.find((item) =>
     item.clientEventId === record.clientEventId
     || (item.employee === record.employee && item.date === record.date && item.type === record.type)
@@ -185,28 +205,43 @@ export async function syncOfflineAttendance(userId) {
     const { data } = await supabase.auth.getSession();
     activeUserId = data.session?.user?.id;
   }
-  if (!activeUserId || !navigator.onLine) return 0;
+  const empty = { synced: 0, rejected: 0, pending: 0 };
+  if (!activeUserId || !navigator.onLine) return empty;
 
-  const queue = getOfflineQueue(activeUserId);
-  if (!queue.length) return 0;
+  const stored = readQueue(activeUserId);
+  const alreadyRejected = stored.filter((item) => item.rejectedAt);
+  const queue = stored.filter((item) => !item.rejectedAt);
+  if (!queue.length) return { ...empty, rejected: alreadyRejected.length };
 
-  let successCount = 0;
-  const failedQueue = [];
+  let synced = 0;
+  const remaining = [];
   for (let index = 0; index < queue.length; index += 1) {
     const record = queue[index];
     try {
       await submitAttendance({ ...record, capturedOffline: true });
-      successCount += 1;
+      synced += 1;
     } catch (error) {
       console.error('[Attendance] Offline sync failed:', error);
-      failedQueue.push(record);
       if (isNetworkError(error)) {
-        failedQueue.push(...queue.slice(index + 1));
+        // Mang chap chon: giu nguyen ban ghi nay va toan bo phan con lai.
+        remaining.push(record, ...queue.slice(index + 1));
         break;
       }
+      // May chu tu choi vi ban than ban ghi sai. Thu lai cung se hong y het,
+      // nen danh dau de dung vong lap gui lai vo han moi lan co mang.
+      remaining.push({
+        ...record,
+        rejectedAt: new Date().toISOString(),
+        syncError: String(error?.message || 'May chu tu choi luot cham cong nay.'),
+      });
     }
   }
 
-  writeOfflineQueue(activeUserId, failedQueue);
-  return successCount;
+  const nextQueue = [...alreadyRejected, ...remaining];
+  writeOfflineQueue(activeUserId, nextQueue);
+  return {
+    synced,
+    rejected: nextQueue.filter((item) => item.rejectedAt).length,
+    pending: nextQueue.filter((item) => !item.rejectedAt).length,
+  };
 }

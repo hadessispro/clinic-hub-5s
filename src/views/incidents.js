@@ -1,6 +1,7 @@
 import { getIncidents, createIncident, updateIncident } from '../services/incidents.js';
 import { getAssetAudits, createAssetAudit, updateAssetAudit } from '../services/assets.js';
 import { getEmployees } from '../services/employees.js';
+import { DEPARTMENTS } from '../constants.js';
 import { uploadFile } from '../services/storage.js';
 import { todayISO, addDaysISO, escapeHTML, formatShortDate, smartMatch, departmentName } from '../utils.js';
 import { pill, statusPill, option, emptyState } from '../components/shared.js';

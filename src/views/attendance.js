@@ -1,4 +1,4 @@
-import { clockIn, clockOut, getAttendance, getOfflineQueue, syncOfflineAttendance } from '../services/attendance.js';
+import { clockIn, clockOut, discardRejectedAttendance, getAttendance, getOfflineQueue, getRejectedQueue, syncOfflineAttendance } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
 import { getEmployeeAllowedShifts } from '../services/schedule.js';
 import {
@@ -289,6 +289,7 @@ export async function renderView(state) {
     : localBranchSettings;
   const workDate = clinicDateISO(new Date(), settings.timeZone);
   const offlineQueue = getOfflineQueue(state.user?.id);
+  const rejectedQueue = getRejectedQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
   const [employees, remoteRecords, pendingProofs, allowedShiftRows] = await Promise.all([
@@ -382,6 +383,16 @@ export async function renderView(state) {
         <div class="attendance-sync-banner">
           <div><strong>${pendingCount} mục đang chờ đồng bộ</strong><span>Bản ghi và ảnh chấm công vẫn an toàn trên điện thoại này.</span></div>
           <button type="button" data-action="sync-attendance" ${navigator.onLine ? '' : 'disabled'}>Đồng bộ ngay</button>
+        </div>
+      ` : ''}
+
+      ${rejectedQueue.length ? `
+        <div class="attendance-sync-banner is-rejected">
+          <div>
+            <strong>${rejectedQueue.length} lượt chấm công bị máy chủ từ chối</strong>
+            <span>${escapeHTML(rejectedQueue[0].syncError || 'Bản ghi không hợp lệ.')}${rejectedQueue.length > 1 ? ` (và ${rejectedQueue.length - 1} lượt khác)` : ''} Hãy báo quản lý để bổ sung công thủ công.</span>
+          </div>
+          <button type="button" data-action="discard-rejected">Đã hiểu, xóa</button>
         </div>
       ` : ''}
 
@@ -662,6 +673,16 @@ async function captureLocation() {
   }
 }
 
+function syncNetworkBadge() {
+  const node = document.querySelector('[data-network-status]');
+  if (!node) {
+    window.removeEventListener('clinic:network-change', syncNetworkBadge);
+    return;
+  }
+  node.className = `network-status ${navigator.onLine ? 'is-online' : 'is-offline'}`;
+  node.innerHTML = `<span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}`;
+}
+
 function openDialog() {
   const dialog = document.getElementById('checkinDialog');
   if (!dialog || context.todayCheckin) return;
@@ -681,6 +702,10 @@ function closeDialog() {
   lastLocation = null;
   currentEventId = null;
   resetCapturedPhoto();
+  // Bao cho main.js biet overlay da dong de lan refresh realtime bi hoan
+  // trong luc cham cong duoc ap dung ngay, khong phai cho mot su kien
+  // focusout tinh co nao do.
+  window.dispatchEvent(new CustomEvent('clinic:overlay-closed', { detail: { overlay: 'attendance-checkin' } }));
 }
 
 async function confirmCheckin(button) {
@@ -900,10 +925,18 @@ export function initView() {
       const button = event.target.closest('button');
       button.disabled = true;
       button.textContent = 'Đang đồng bộ…';
-      const count = await syncOfflineAttendance(context.state.user?.id);
+      const result = await syncOfflineAttendance(context.state.user?.id);
       const proofResult = await syncPendingProofs(context.state.user?.id);
-      const total = count + proofResult.synced;
+      const total = result.synced + proofResult.synced;
+      if (result.rejected > 0) {
+        showToast(`${result.rejected} lượt chấm công bị máy chủ từ chối và đã dừng gửi lại.`, true);
+      }
       showToast(total ? `Đã đồng bộ ${total} bản ghi và ảnh chấm công.` : 'Chưa có dữ liệu nào được đồng bộ.');
+      navigateTo('attendance');
+    }
+    if (action === 'discard-rejected') {
+      discardRejectedAttendance(context.state.user?.id);
+      showToast('Đã xóa các lượt chấm công bị từ chối khỏi thiết bị.');
       navigateTo('attendance');
     }
   });
@@ -928,10 +961,9 @@ export function initView() {
     if (event.key === 'Escape') closeDialog();
   });
 
-  window.addEventListener('clinic:network-change', () => {
-    const node = document.querySelector('[data-network-status]');
-    if (!node) return;
-    node.className = `network-status ${navigator.onLine ? 'is-online' : 'is-offline'}`;
-    node.innerHTML = `<span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}`;
-  }, { once: true });
+  // once:true khien badge chi doi dung mot lan roi ket o trang thai sai. Dung
+  // mot handler co dinh va go truoc khi gan lai de khong ro listener qua moi
+  // lan render.
+  window.removeEventListener('clinic:network-change', syncNetworkBadge);
+  window.addEventListener('clinic:network-change', syncNetworkBadge);
 }

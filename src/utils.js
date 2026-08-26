@@ -1,3 +1,5 @@
+import { clinicDateISO } from './branch.js';
+
 /* ── XSS Protection ── */
 export function escapeHTML(str) {
   if (str == null) return '';
@@ -49,9 +51,11 @@ export function formatDate(dateStr) {
   } catch { return dateStr; }
 }
 
+// Ngay lam viec luon tinh theo mui gio phong kham. toISOString() tra ve ngay
+// UTC, nen trong khung 00:00-07:00 gio Viet Nam no lui lai mot ngay - dung luc
+// ca som nhat dang check-in, va dashboard se query nham ngay hom truoc.
 export function toISODate(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  return d.toISOString().slice(0, 10);
+  return clinicDateISO(date instanceof Date ? date : new Date(date));
 }
 
 export function addDaysISO(days) {

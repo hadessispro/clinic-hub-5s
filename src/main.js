@@ -30,8 +30,14 @@ let authTransitionId = 0;
 function hasBlockingInteraction() {
   const active = document.activeElement;
   const isEditing = active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
+  // dialog-open la dialog cham cong. Bo sot no nghia la bat ky thay doi du lieu
+  // nao trong phong kham - poll revision chay moi giay - cung dung giua luong
+  // check-in: renderView goi stopWorkplaceCamera(), xoa lastLocation va
+  // capturedPhoto, roi innerHTML= pha luon dialog. Nhan vien mat GPS va anh
+  // vua chup, phai lam lai tu dau.
   const hasOverlay = document.body.classList.contains('has-open-drawer')
-    || document.body.classList.contains('app-modal-open');
+    || document.body.classList.contains('app-modal-open')
+    || document.body.classList.contains('dialog-open');
   return isEditing || hasOverlay;
 }
 
@@ -55,12 +61,12 @@ window.addEventListener('clinic:overlay-closed', () => {
 initErrorMonitoring();
 
 async function syncAllPendingAttendance(userId) {
-  if (!userId || !navigator.onLine) return { attendance: 0, proofs: 0 };
+  if (!userId || !navigator.onLine) return { attendance: 0, proofs: 0, rejected: 0 };
   if (pendingAttendanceSync) return pendingAttendanceSync;
   pendingAttendanceSync = (async () => {
     const attendance = await syncOfflineAttendance(userId);
     const proofResult = await syncPendingProofs(userId);
-    return { attendance, proofs: proofResult.synced };
+    return { attendance: attendance.synced, proofs: proofResult.synced, rejected: attendance.rejected };
   })();
   try {
     return await pendingAttendanceSync;
