@@ -1076,7 +1076,12 @@ select {
 .pg-lead-filter-grid select, .pg-lead-filter-grid input { width: 100%; height: 42px; min-width: 0; border: 1px solid #cadbd6; border-radius: 10px; background: #fff; color: #17312e; font: inherit; }
 .pg-lead-search-input { position: relative; }
 .pg-lead-search-input i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #087f70; pointer-events: none; }
-.pg-lead-search-input input { padding-left: 36px; }
+/* Chua cho icon kinh lup dat tuyet doi o left:12px.
+   Phai dung 2 class de thang `.form-field input { padding: 9px 10px }` khai bao
+   o duoi (cung specificity 0,1,1 nhung dung sau nen thang theo thu tu, va la
+   shorthand nen reset luon padding-left). Nang specificity thay vi dung
+   !important de khong phu thuoc vi tri trong file. */
+.form-field .pg-lead-search-input input { padding-left: 36px; }
 .pg-lead-reset { height: 42px; white-space: nowrap; }
 .pg-lead-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; color: #627a73; font-size: .78rem; }
 .pg-lead-suggestions > span { font-weight: 800; color: #416259; }
