@@ -11,3 +11,13 @@ Thumbs.db
 .vercel
 .env*
 .env.vps
+
+# Du lieu tai chinh ke toan noi bo. TUYET DOI khong commit len GitHub.
+# Quy tac 9 cua du an: khong commit dump database, du lieu tai khoan, thong tin
+# khach hang. So sach ke toan cong ty thuoc dung nhom do.
+Gui Bao/
+gui-bao/
+*.xlsx
+*.xls
+*.xlsm
+!docs/**/*.xlsx
