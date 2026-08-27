@@ -392,7 +392,12 @@ app.get(`${BASE}/api/van-hanh`, guard, doc('xem_so_lieu_van_hanh',
 /* ── Danh mục ──────────────────────────────────────────────────────────── */
 
 app.get(`${BASE}/api/tai-khoan`, guard, async (req) => q.accounts(req.query.tim));
-app.get(`${BASE}/api/doi-tac`, guard, async (req) => q.partners(req.query.tim, req.query.loai));
+// Tách hai nhóm vì hai nhóm này khác nhau về mọi mặt: khách hàng thì hàng
+// nghìn, mã sinh tự động, ghi ở TK 131; đối tác thì hàng trăm, mã do kế toán
+// đặt, ghi ở TK 331. Trộn chung một danh sách 6.662 dòng thì tìm nhà cung cấp
+// nào cũng phải lội qua sáu nghìn cái tên bệnh nhân.
+app.get(`${BASE}/api/doi-tac`, guard, async (req) =>
+  q.partners(req.query.tim, req.query.loai, req.query.nhom));
 app.get(`${BASE}/api/khoan-muc`, guard, async () => q.costItems());
 app.get(`${BASE}/api/ky`, guard, async () => q.periods());
 app.get(`${BASE}/api/lo-nhap`, guard, async () => q.batches());
@@ -667,6 +672,9 @@ app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoa
   if (!r) return fail(reply, 404, 'Không có tài khoản này.');
   return r;
 }));
+
+app.get(`${BASE}/api/bc/chi-phi-khoan-muc`, guard, doc('xem_chi_phi_theo_khoan_muc', (req) =>
+  bc.chiPhiTheoKhoanMuc({ period: req.query.ky })));
 
 app.get(`${BASE}/api/bc/dau-ky`, guard, async () => bc.trangThaiDauKy());
 

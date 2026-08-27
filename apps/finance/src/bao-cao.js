@@ -289,6 +289,52 @@ async function dongTien({ period }) {
   };
 }
 
+/* ── Tổng hợp chi phí theo khoản mục ───────────────────────────────────────
+   Nguồn Excel: Tong_hop_chi_phi_theo_khoan_muc_chi_phi.xlsx
+   Cột gốc: Mã khoản mục CP, Tên khoản mục chi phí, Kỳ trước, Kỳ này, Lũy kế
+
+   Quy tắc cộng đã kiểm chứng bằng cách đối chiếu hai file thật, xem phần giải
+   thích ở đầu migration 028: chỉ cộng phát sinh Nợ của TÀI KHOẢN CHI PHÍ.
+   Mã khoản mục gắn trên tài khoản công nợ hay tài khoản tiền là để truy vết
+   dòng tiền, cộng vào là tính một khoản chi hai lần. */
+
+async function chiPhiTheoKhoanMuc({ period }) {
+  const [tongHop, ganThieu, theoThang] = await Promise.all([
+    rows(
+      `select cost_item_code as ma, max(cost_item_name) as ten, max(branch_code) as chi_nhanh,
+              coalesce(sum(chi_phi), 0)::text  as ky_nay,
+              coalesce(sum(no_khac), 0)::text  as no_ngoai_chi_phi,
+              sum(so_dong)::int                as so_dong,
+              sum(so_dong_chi_phi)::int        as so_dong_chi_phi
+       from finance.v_chi_phi_theo_khoan_muc
+       where ($1::text is null or period_code = $1)
+       group by cost_item_code
+       order by coalesce(sum(chi_phi), 0) desc, cost_item_code`,
+      [period || null],
+    ),
+    rows(
+      `select cost_item_code as ma, cost_item_name as ten, so_dong::int,
+              tong_no::text, cac_tai_khoan
+       from finance.v_khoan_muc_gan_thieu order by tong_no desc`,
+    ),
+    rows(
+      `select period_code as ky, coalesce(sum(chi_phi), 0)::text as chi_phi
+       from finance.v_chi_phi_theo_khoan_muc group by 1 order by 1`,
+    ),
+  ]);
+  // Lũy kế từ đầu năm, đúng cột thứ ba của file gốc.
+  const luyKe = await rows(
+    `select cost_item_code as ma, coalesce(sum(chi_phi), 0)::text as luy_ke
+     from finance.v_chi_phi_theo_khoan_muc group by 1`,
+  );
+  const theoMa = new Map(luyKe.map((r) => [r.ma, r.luy_ke]));
+  return {
+    dong: tongHop.map((r) => ({ ...r, luy_ke: theoMa.get(r.ma) || '0' })),
+    gan_thieu: ganThieu,
+    theo_thang: theoThang,
+  };
+}
+
 /* ── B01-DN · Báo cáo tình hình tài chính ──────────────────────────────────
    Nguồn Excel: B01_dn_bao_cao_tinh_hinh_tai_chinh.xlsx
 
@@ -494,7 +540,7 @@ async function trangThaiDauKy() {
 }
 
 module.exports = {
-  soQuyTienMat, taiKhoanNganHang, soNganHang,
+  chiPhiTheoKhoanMuc, soQuyTienMat, taiKhoanNganHang, soNganHang,
   tongHopCongNo, chiTietCongNo, dongTien,
   baoCaoTinhHinhTaiChinh, soChiTietTaiKhoan, trangThaiDauKy,
 };

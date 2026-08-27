@@ -35,6 +35,9 @@ function loiNguoiDung(msg) {
 /* ── Nhận diện loại file ───────────────────────────────────────────────── */
 
 const LOAI = {
+  // Mẫu chuẩn từ 27/08/2026: bản kết xuất có thêm Ngày hóa đơn, Mã KMCP,
+  // Tên KMCP, Hợp đồng mua, Hợp đồng bán. Bản cũ thiếu năm cột đó vẫn nhận
+  // được, vì tiêu chí nhận diện chỉ gồm bốn cột luôn có mặt.
   nhat_ky: {
     ten: 'Sổ nhật ký chung',
     dau: ['Ngày hạch toán', 'Tài khoản', 'Phát sinh Nợ', 'Phát sinh Có'],
@@ -165,6 +168,11 @@ function docSheet(sheet, nd, kq) {
         no: so(c(r, 'Phát sinh Nợ')), co: so(c(r, 'Phát sinh Có')),
         ma_doi_tuong: chu(c(r, 'Mã đối tượng')) || null,
         ten_doi_tuong: chu(c(r, 'Tên đối tượng')) || null,
+        ngay_hoa_don: ngay(c(r, 'Ngày hóa đơn')),
+        ma_kmcp: chu(c(r, 'Mã KMCP')) || null,
+        ten_kmcp: chu(c(r, 'Tên KMCP')) || null,
+        hop_dong_mua: chu(c(r, 'Hợp đồng mua')) || null,
+        hop_dong_ban: chu(c(r, 'Hợp đồng bán')) || null,
         hop_ly: !/không hợp lý/i.test(chu(c(r, 'CP hợp lý/không hợp lý'))),
       });
     } else if (kq.loai === 'tai_khoan') {
@@ -313,6 +321,34 @@ async function kiemTra(doc) {
   const laTK = [...new Set(doc.dong.map((d) => d.tai_khoan).filter((m) => m && !maTK.has(m)))];
   if (laTK.length) hong('Danh mục tài khoản', `${laTK.length} tài khoản chưa có trong hệ thống: ${laTK.slice(0, 8).join(', ')}. Nhập Hệ thống tài khoản trước.`);
   else dat('Danh mục tài khoản', 'Mọi tài khoản trong nhật ký đều có trong danh mục.');
+
+  const coKM = doc.dong.filter((d) => d.ma_kmcp);
+  if (coKM.length) {
+    const maKM = [...new Set(coKM.map((d) => d.ma_kmcp))];
+    const daCoKM = new Set((await rows_('select code from finance.cost_items')).map((r) => r.code));
+    const laKM = maKM.filter((m) => !daCoKM.has(m));
+    dat('Khoản mục chi phí',
+      `${coKM.length.toLocaleString('vi-VN')} dòng có gắn khoản mục, ${maKM.length} mã khác nhau.`
+      + (laKM.length ? ` ${laKM.length} mã chưa có trong danh mục và sẽ được tạo tự động: ${laKM.join(', ')}.` : ''));
+    if (laKM.length) {
+      canh.push(`${laKM.length} mã khoản mục chưa có trong danh mục: ${laKM.join(', ')}. `
+        + 'Máy sẽ tạo với tên lấy từ cột Tên KMCP và đánh dấu là tự tạo, kế toán nên rà lại.');
+    }
+    // Khoản mục chỉ gắn ở tài khoản không phải chi phí thì không bao giờ lên
+    // báo cáo chi phí. Nói ngay lúc nhập, đừng để kế toán tự phát hiện sau.
+    const theoKM = new Map();
+    for (const d of coKM) {
+      if (!theoKM.has(d.ma_kmcp)) theoKM.set(d.ma_kmcp, { cp: 0, khac: 0 });
+      const g = theoKM.get(d.ma_kmcp);
+      if (/^[68]/.test(d.tai_khoan)) g.cp += d.no; else g.khac += d.no;
+    }
+    const ganThieu = [...theoKM].filter(([, g]) => g.cp === 0 && g.khac !== 0).map(([m]) => m);
+    if (ganThieu.length) {
+      canh.push(`${ganThieu.length} khoản mục chỉ được gắn ở tài khoản công nợ hoặc tài khoản `
+        + `tiền, không gắn ở tài khoản chi phí: ${ganThieu.join(', ')}. Chi phí của chúng sẽ `
+        + 'KHÔNG lên Tổng hợp chi phí theo khoản mục.');
+    }
+  }
 
   const thieuCT = doc.dong.filter((d) => !d.so_chung_tu);
   if (thieuCT.length) hong('Số chứng từ', `${thieuCT.length} dòng không có số chứng từ.`);
@@ -472,6 +508,20 @@ async function ghiNhatKy(c, batchId, dong) {
     );
   }
 
+  // Khoản mục xuất hiện trong nhật ký mà chưa có trong danh mục thì tạo luôn,
+  // cùng lý do với đối tượng công nợ: một mã lạ không được phép chặn cả lô.
+  const km = new Map();
+  dong.forEach((d) => {
+    if (d.ma_kmcp && !km.has(d.ma_kmcp)) km.set(d.ma_kmcp, d.ten_kmcp || d.ma_kmcp);
+  });
+  for (const [ma, ten] of km) {
+    await c.query(
+      `insert into finance.cost_items(code, name, branch_code, auto_created)
+       values ($1, $2, $3, true) on conflict (code) do nothing`,
+      [ma, ten, ma.includes('.') ? ma.split('.')[1] : null],
+    );
+  }
+
   const ct = new Map();
   for (const d of dong) {
     const ngayISO = String(d.ngay_hach_toan).slice(0, 10);
@@ -502,10 +552,14 @@ async function ghiNhatKy(c, batchId, dong) {
       await c.query(
         `insert into finance.journal_lines
            (voucher_id, line_no, account_code, contra_account_code, debit, credit,
-            partner_code, description, is_deductible, source_sheet, source_row)
-         values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [vid, stt, d.tai_khoan, d.doi_ung, d.no, d.co, d.ma_doi_tuong,
-         d.dien_giai, d.hop_ly !== false, d.sheet, d.dong],
+            partner_code, cost_item_code, description, is_deductible,
+            invoice_date, contract_buy, contract_sell, source_sheet, source_row)
+         values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 $11::date, $12, $13, $14, $15)`,
+        [vid, stt, d.tai_khoan, d.doi_ung, d.no, d.co, d.ma_doi_tuong, d.ma_kmcp,
+         d.dien_giai, d.hop_ly !== false,
+         d.ngay_hoa_don ? String(d.ngay_hoa_don).slice(0, 10) : null,
+         d.hop_dong_mua, d.hop_dong_ban, d.sheet, d.dong],
       );
       ghi += 1;
     }

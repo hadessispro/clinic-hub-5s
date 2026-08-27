@@ -289,6 +289,7 @@ const MAN = [
   { ma: 'bc-so-ngan-hang', ten: 'Sổ tiền gửi ngân hàng', icon: 'M3 10l9-6 9 6M5 10v9M19 10v9M3 19h18' },
   { ma: 'bc-tong-hop-cong-no', ten: 'Tổng hợp công nợ', icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
   { ma: 'cong-no', ten: 'Công nợ theo đối tượng', icon: 'M3 7h18v12H3zM3 11h18M7 15h4' },
+  { ma: 'bc-chi-phi-khoan-muc', ten: 'Chi phí theo khoản mục', icon: 'M5 4h14v16H5zM9 8h6M9 12h6M9 16h6' },
   { ma: 'bc-dong-tien', ten: 'Dòng tiền', icon: 'M4 16l5-5 4 3 7-8M14 6h7v7' },
   { ma: 'bc-b01', ten: 'B01 · Tình hình tài chính', icon: 'M6 3h9l4 4v14H6zM10 12h6M10 16h6M10 8h3' },
   { ma: 'bc-khong-dung-duoc', ten: 'Ba báo cáo cần thêm dữ liệu', icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v5M12 16v.5' },
@@ -297,7 +298,8 @@ const MAN = [
   { ma: 'lo-nhap', ten: 'Các lô đã nhập', icon: 'M3 5h18v4H3zM3 11h18v4H3zM3 17h18v3H3' },
   { nhom: 'Danh mục' },
   { ma: 'dm-tai-khoan', ten: 'Hệ thống tài khoản', icon: 'M4 6h16M4 12h16M4 18h10' },
-  { ma: 'dm-doi-tac', ten: 'Đối tượng công nợ', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 20a8 8 0 0116 0' },
+  { ma: 'dm-khach-hang', ten: 'Đối tượng khách hàng', icon: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 20a8 8 0 0116 0' },
+  { ma: 'dm-doi-tac', ten: 'Đối tượng đối tác', icon: 'M8 11a3 3 0 100-6 3 3 0 000 6zM16 11a3 3 0 100-6 3 3 0 000 6zM2 19a6 6 0 0112 0M12 19a6 6 0 0110 0' },
   { ma: 'dm-khoan-muc', ten: 'Khoản mục chi phí', icon: 'M5 4h14v16l-7-4-7 4z' },
   { nhom: 'Kiểm soát' },
   { ma: 'soat-loi', ten: 'Soát lỗi', icon: 'M12 3l9 16H3zM12 9v5M12 16.5v.5' },
@@ -1476,29 +1478,6 @@ function formTaiKhoan(r, lam) {
   });
 }
 
-VE['dm-doi-tac'] = manDanhMuc({
-  tieuDe: 'Đối tượng công nợ',
-  mo: 'Khách hàng, nhà cung cấp và nhân viên. Tiền tố mã cho biết loại: NCC là nhà cung cấp, '
-    + 'NV là nhân viên, còn lại là khách hàng.',
-  duong: 'doi-tac',
-  timGoiY: 'mã hoặc tên đối tượng',
-  cot: [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'Loại' }, { ten: 'Mã số thuế' },
-        { ten: 'Trạng thái' }, { ten: '' }],
-  dong: (r, lam) => el('tr', {},
-    el('td', { class: 'ma' }, r.code),
-    el('td', {}, r.name),
-    el('td', { class: 'mo' }, LOAI_DOI_TAC[r.kind] || r.kind),
-    el('td', { class: 'ma mo' }, r.tax_code || '—'),
-    el('td', {}, el('span', { class: `the-nhan ${r.is_active ? 'duong' : ''}` },
-      r.is_active ? 'đang dùng' : 'ngừng dùng')),
-    el('td', {}, ghiSoDuoc() ? el('div', { class: 'dong-thanh' },
-      el('button', { class: 'nut nho', onclick: () => formDoiTac(r, lam) }, 'Sửa'),
-      el('button', { class: 'nut nho nguy', onclick: () => xoaDanhMuc('doi-tac', r.code, lam, 'đối tượng') }, 'Xóa'),
-    ) : null),
-  ),
-  form: (r, lam) => formDoiTac(r, lam),
-});
-
 function formDoiTac(r, lam) {
   formDanhMuc({
     tieuDe: r ? `Sửa đối tượng ${r.code}` : 'Thêm đối tượng',
@@ -1518,19 +1497,28 @@ function formDoiTac(r, lam) {
 
 VE['dm-khoan-muc'] = manDanhMuc({
   tieuDe: 'Khoản mục chi phí',
-  mo: 'Mã dạng DN, DN.LVT, DN.PVC. Hậu tố chính là mã chi nhánh.',
+  mo: 'Mã dạng DN, DN.LVT, DN.PVC. Hậu tố chính là mã chi nhánh. Cột Chi phí đã gắn chỉ '
+    + 'cộng phát sinh Nợ của tài khoản chi phí, đúng quy tắc của file tổng hợp.',
   duong: 'khoan-muc',
   timGoiY: 'mã hoặc tên khoản mục',
-  cot: [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'Chi nhánh' }, { ten: 'Trạng thái' }, { ten: '' }],
+  cot: [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'Chi nhánh' }, { ten: 'Số dòng', tien: true },
+        { ten: 'Chi phí đã gắn', tien: true }, { ten: 'Trạng thái' }, { ten: '' }],
   dong: (r, lam) => el('tr', {},
     el('td', { class: 'ma' }, r.code),
-    el('td', {}, r.name),
+    el('td', {}, r.name,
+      r.auto_created
+        ? el('span', { class: 'the-nhan cho cach-trai' }, 'máy tự tạo, nên rà lại') : null),
     el('td', { class: 'mo' }, r.branch_code || '—'),
+    el('td', { class: 'tien mo' }, r.so_dong ? dinhDangSo.format(r.so_dong) : '—'),
+    el('td', { class: 'tien' }, Number(r.chi_phi) ? tien(r.chi_phi) : '—'),
     el('td', {}, el('span', { class: `the-nhan ${r.is_active ? 'duong' : ''}` },
       r.is_active ? 'đang dùng' : 'ngừng dùng')),
     el('td', {}, ghiSoDuoc() ? el('div', { class: 'dong-thanh' },
       el('button', { class: 'nut nho', onclick: () => formKhoanMuc(r, lam) }, 'Sửa'),
-      el('button', { class: 'nut nho nguy', onclick: () => xoaDanhMuc('khoan-muc', r.code, lam, 'khoản mục') }, 'Xóa'),
+      !r.so_dong ? el('button', {
+        class: 'nut nho nguy',
+        onclick: () => xoaDanhMuc('khoan-muc', r.code, lam, 'khoản mục'),
+      }, 'Xóa') : null,
     ) : null),
   ),
   form: (r, lam) => formKhoanMuc(r, lam),
@@ -2564,6 +2552,194 @@ VE['bc-khong-dung-duoc'] = async (than) => {
       + 'chạy từ đó, và bút toán hằng tháng sinh ra tự động thay vì nhập tay.'),
   );
 };
+
+/* ── Tổng hợp chi phí theo khoản mục ───────────────────────────────────────
+   Quy tắc cộng đã kiểm chứng bằng cách đối chiếu hai file thật: chỉ cộng phát
+   sinh Nợ của TÀI KHOẢN CHI PHÍ. Mã khoản mục gắn trên tài khoản công nợ hay
+   tài khoản tiền là để truy vết dòng tiền, cộng vào là tính chi hai lần. */
+
+VE['bc-chi-phi-khoan-muc'] = async (than) => {
+  const d = await goi(`/bc/chi-phi-khoan-muc${S.ky ? `?ky=${encodeURIComponent(S.ky)}` : ''}`);
+  const tongKyNay = d.dong.reduce((s, r) => s + Number(r.ky_nay), 0);
+  const tongNgoai = d.dong.reduce((s, r) => s + Number(r.no_ngoai_chi_phi), 0);
+  const coSo = d.dong.filter((r) => Number(r.ky_nay) > 0);
+
+  than.replaceChildren(
+    dauTrang('Tổng hợp chi phí theo khoản mục',
+      'Chi phí gom theo mã khoản mục, lấy từ cột Mã KMCP trên sổ nhật ký chung.',
+      chonKy(() => ve())),
+
+    nhanNguon('Tong_hop_chi_phi_theo_khoan_muc_chi_phi.xlsx'),
+
+    el('div', { class: 'bao' },
+      el('strong', {}, 'Quy tắc cộng: '),
+      'chỉ cộng phát sinh Nợ của tài khoản chi phí nhóm 6 và 8. Đây là quy tắc suy ra từ '
+      + 'chính hai file của bạn: khoản mục MK có tổng phát sinh Nợ 277.037.990 trên mọi tài '
+      + 'khoản, nhưng file tổng hợp ghi 243.344.990, đúng bằng phần trên TK 6416. Phần '
+      + '33.693.000 còn lại nằm ở TK 3311, là vế đối ứng chứ không phải chi phí.'),
+
+    el('div', { class: 'luoi luoi-4 cach-duoi' },
+      theChiSo('Tổng chi phí theo khoản mục', tien(tongKyNay), 'đồng'),
+      theChiSo('Số khoản mục có chi phí', dinhDangSo.format(coSo.length),
+        `${d.dong.length} mã được gắn`),
+      theChiSo('Gắn ngoài tài khoản chi phí', tien(tongNgoai),
+        'không cộng vào tổng trên', tongNgoai ? 'vang' : ''),
+      theChiSo('Khoản mục gắn thiếu', dinhDangSo.format(d.gan_thieu.length),
+        d.gan_thieu.length ? 'không lên được báo cáo' : 'không có cái nào',
+        d.gan_thieu.length ? 'am' : 'duong'),
+    ),
+
+    coSo.length ? el('div', { class: 'luoi luoi-2 cach-duoi' },
+      theBieuDo('Cơ cấu chi phí theo khoản mục', null,
+        window.BD.vanhKhuyen({
+          muc: coSo.map((r) => ({ ten: `${r.ma} · ${r.ten}`, giaTri: r.ky_nay })),
+        })),
+      theBieuDo('Chi phí gắn khoản mục theo tháng', null,
+        window.BD.cotNhom({
+          nhan: d.theo_thang.map((r) => r.ky.replace(/^\d{4}-/, 'T')),
+          chuoi: [{ ten: 'Chi phí', giaTri: d.theo_thang.map((r) => r.chi_phi),
+                    mau: 'var(--xanh)' }],
+          cao: 200,
+        })),
+    ) : null,
+
+    bang(
+      [{ ten: 'Mã khoản mục' }, { ten: 'Tên khoản mục' }, { ten: 'Chi nhánh' },
+       { ten: 'Kỳ này', tien: true }, { ten: 'Lũy kế từ đầu năm', tien: true },
+       { ten: 'Gắn ngoài TK chi phí', tien: true }, { ten: 'Số dòng', tien: true }],
+      d.dong.map((r) => el('tr', {},
+        el('td', { class: 'ma' }, r.ma),
+        el('td', {}, r.ten),
+        el('td', { class: 'mo' }, r.chi_nhanh || '—'),
+        el('td', { class: 'tien' }, tien(r.ky_nay)),
+        el('td', { class: 'tien mo' }, tien(r.luy_ke)),
+        el('td', { class: `tien ${Number(r.no_ngoai_chi_phi) ? 'mo' : ''}` },
+          Number(r.no_ngoai_chi_phi) ? tien(r.no_ngoai_chi_phi) : '—'),
+        el('td', { class: 'tien mo' }, `${r.so_dong_chi_phi}/${r.so_dong}`),
+      )),
+      el('tr', {},
+        el('td', { colspan: '3' }, `Cộng ${dinhDangSo.format(d.dong.length)} khoản mục`),
+        el('td', { class: 'tien' }, tien(tongKyNay)),
+        el('td', { class: 'tien' }, tien(d.dong.reduce((s, r) => s + Number(r.luy_ke), 0))),
+        el('td', { class: 'tien mo' }, tien(tongNgoai)),
+        el('td', {}, ''),
+      ),
+    ),
+
+    d.gan_thieu.length ? el('div', { class: 'the cach-tren' },
+      el('div', { class: 'the-dau' },
+        el('span', {}, 'Khoản mục gắn thiếu'),
+        el('span', { class: 'mo thuong' }, 'chi phí của chúng không lên được báo cáo')),
+      el('div', { class: 'the-than' },
+        el('p', { class: 'ghi-chu cach-duoi' },
+          'Những mã dưới đây chỉ được gắn ở tài khoản công nợ hoặc tài khoản tiền, không '
+          + 'gắn ở dòng tài khoản chi phí. Bút toán ghi nhận chi phí của chúng thiếu mã '
+          + 'khoản mục, nên khoản chi đó không bao giờ xuất hiện trên báo cáo theo khoản mục.'),
+        el('div', { class: 'cuon thap' }, el('table', {},
+          el('thead', {}, el('tr', {},
+            el('th', {}, 'Mã'), el('th', {}, 'Tên'),
+            el('th', { class: 'tien' }, 'Số dòng'),
+            el('th', { class: 'tien' }, 'Tổng phát sinh Nợ'),
+            el('th', {}, 'Chỉ gắn ở các tài khoản'))),
+          el('tbody', {}, ...d.gan_thieu.map((r) => el('tr', {},
+            el('td', { class: 'ma' }, r.ma),
+            el('td', {}, r.ten),
+            el('td', { class: 'tien mo' }, r.so_dong),
+            el('td', { class: 'tien' }, tien(r.tong_no)),
+            el('td', { class: 'ma mo' }, r.cac_tai_khoan),
+          ))),
+        )),
+      ),
+    ) : null,
+  );
+};
+
+/* ── Đối tượng: khách hàng và đối tác, hai màn riêng ───────────────────────
+   Tách vì hai nhóm khác nhau về mọi mặt: khách hàng hàng nghìn, mã sinh tự
+   động, ghi ở TK 131; đối tác hàng trăm, mã do kế toán đặt, ghi ở TK 331.
+   Trộn chung một danh sách sáu nghìn dòng thì tìm một nhà cung cấp phải lội
+   qua sáu nghìn cái tên bệnh nhân. */
+
+function manDoiTuong(nhom, tieuDe, moTa, loaiChon) {
+  const tt = { tim: '', loai: '' };
+  return async (than) => {
+    const oTim = el('input', { value: tt.tim, placeholder: 'mã hoặc tên' });
+    const dem = el('span', { class: 'mo thuong' }, '');
+    const noiDung = el('div', {}, el('div', { class: 'trong' }, 'Đang tải…'));
+
+    const lam = async () => {
+      const p = new URLSearchParams({ nhom });
+      if (tt.tim) p.set('tim', tt.tim);
+      if (tt.loai) p.set('loai', tt.loai);
+      const d = await goi(`/doi-tac?${p}`);
+      const coDu = d.filter((r) => Number(r.con_lai) !== 0);
+      dem.textContent = `${dinhDangSo.format(d.length)} đối tượng`
+        + (coDu.length ? ` · ${coDu.length} còn dư công nợ` : '');
+      noiDung.replaceChildren(bang(
+        [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'Loại' }, { ten: 'Mã số thuế' },
+         { ten: 'Điện thoại' }, { ten: 'Số bút toán', tien: true },
+         { ten: 'Còn lại', tien: true }, { ten: 'Trạng thái' }, { ten: '' }],
+        d.map((r) => el('tr', {},
+          el('td', { class: 'ma' }, r.code),
+          el('td', {}, r.name,
+            r.address ? el('div', { class: 'mo chu-phu' }, String(r.address).slice(0, 70)) : null),
+          el('td', { class: 'mo' }, LOAI_DOI_TAC[r.kind] || r.kind),
+          el('td', { class: 'ma mo' }, r.tax_code || '—'),
+          el('td', { class: 'ma mo' }, r.phone || '—'),
+          el('td', { class: 'tien mo' }, r.so_dong ? dinhDangSo.format(r.so_dong) : '—'),
+          el('td', { class: `tien ${Number(r.con_lai) >= 0 ? 'chu-duong' : 'chu-am'}` },
+            Number(r.con_lai) ? tien(r.con_lai) : '—'),
+          el('td', {}, el('span', { class: `the-nhan ${r.is_active ? 'duong' : ''}` },
+            r.is_active ? 'đang dùng' : 'ngừng dùng')),
+          el('td', {}, el('div', { class: 'dong-thanh' },
+            r.so_dong ? el('button', {
+              class: 'nut nho',
+              onclick: () => moChiTietCongNo(nhom === 'khach_hang' ? 'phai_thu' : 'phai_tra',
+                r.code, r.name),
+            }, 'Công nợ') : null,
+            ghiSoDuoc() ? el('button', {
+              class: 'nut nho', onclick: () => formDoiTac(r, lam),
+            }, 'Sửa') : null,
+            ghiSoDuoc() && !r.so_dong ? el('button', {
+              class: 'nut nho nguy',
+              onclick: () => xoaDanhMuc('doi-tac', r.code, lam, 'đối tượng'),
+            }, 'Xóa') : null,
+          )),
+        )),
+      ));
+    };
+    oTim.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { tt.tim = oTim.value.trim(); lam(); }
+    });
+
+    than.replaceChildren(
+      dauTrang(tieuDe, moTa,
+        el('label', { class: 'o' }, el('span', {}, 'Tìm'), oTim),
+        loaiChon ? el('label', { class: 'o' }, el('span', {}, 'Loại'),
+          el('select', { onchange: (e) => { tt.loai = e.target.value; lam(); } },
+            el('option', { value: '' }, 'Tất cả'),
+            ...loaiChon.map((k) => el('option', { value: k }, LOAI_DOI_TAC[k])))) : null,
+        el('button', {
+          class: 'nut', onclick: () => { tt.tim = oTim.value.trim(); lam(); },
+        }, 'Lọc'),
+        ghiSoDuoc() ? el('button', {
+          class: 'nut chinh', onclick: () => formDoiTac(null, lam),
+        }, '+ Thêm mới') : null),
+      el('div', { class: 'bao' }, dem),
+      noiDung,
+    );
+    await lam();
+  };
+}
+
+VE['dm-khach-hang'] = manDoiTuong('khach_hang', 'Đối tượng khách hàng',
+  'Khách hàng ghi ở tài khoản 131. Mã do phần mềm sinh theo chi nhánh: '
+  + 'APC, PVC, LVT.');
+
+VE['dm-doi-tac'] = manDoiTuong('doi_tac', 'Đối tượng đối tác',
+  'Nhà cung cấp, nhân viên và các đối tượng khác, ghi ở tài khoản 331 và 334. '
+  + 'Mã do kế toán đặt: NCC, NV.',
+  ['supplier', 'employee', 'other']);
 
 /* ── Khởi động ─────────────────────────────────────────────────────────── */
 

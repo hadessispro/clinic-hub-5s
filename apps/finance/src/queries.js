@@ -394,14 +394,35 @@ async function accounts(q) {
   );
 }
 
-async function partners(q, kind) {
+/**
+ * nhom = 'khach_hang' lấy đúng khách hàng, 'doi_tac' lấy nhà cung cấp, nhân
+ * viên và các đối tượng khác. Hai nhóm này khác nhau về mọi mặt nên tách:
+ * khách hàng hàng nghìn, mã sinh tự động, ghi ở TK 131; đối tác hàng trăm,
+ * mã do kế toán đặt, ghi ở TK 331.
+ *
+ * Kèm số dư và số dòng bút toán, vì câu hỏi đầu tiên với một đối tượng bao
+ * giờ cũng là "còn nợ bao nhiêu", không phải "mã số thuế là gì".
+ */
+async function partners(q, kind, nhom) {
+  const loc = nhom === 'khach_hang' ? ['customer']
+    : nhom === 'doi_tac' ? ['supplier', 'employee', 'other']
+      : null;
   return rows(
-    `select code, name, kind, branch_hint, tax_code, is_active
-     from finance.partners
-     where ($1::text is null or code ilike '%' || $1 || '%' or name ilike '%' || $1 || '%')
-       and ($2::text is null or kind = $2)
-     order by code limit 300`,
-    [q || null, kind || null],
+    `select p.code, p.name, p.kind, p.branch_hint, p.tax_code, p.address,
+            p.phone, p.is_active,
+            coalesce(t.so_dong, 0)::int as so_dong,
+            coalesce(t.du, 0)::text     as con_lai
+     from finance.partners p
+     left join (
+       select partner_code, count(*) as so_dong, sum(debit - credit) as du
+       from finance.journal_lines where partner_code is not null group by 1
+     ) t on t.partner_code = p.code
+     where ($1::text is null or p.code ilike '%' || $1 || '%' or p.name ilike '%' || $1 || '%')
+       and ($2::text is null or p.kind = $2)
+       and ($3::text[] is null or p.kind = any($3))
+     order by coalesce(t.so_dong, 0) desc, p.code
+     limit 400`,
+    [q || null, kind || null, loc],
   );
 }
 
@@ -419,7 +440,17 @@ async function periods() {
 
 async function costItems() {
   return rows(
-    `select code, name, branch_code, is_active from finance.cost_items order by code`,
+    `select c.code, c.name, c.branch_code, c.is_active, c.auto_created,
+            coalesce(t.so_dong, 0)::int as so_dong,
+            coalesce(t.chi_phi, 0)::text as chi_phi
+     from finance.cost_items c
+     left join (
+       select cost_item_code,
+              count(*) as so_dong,
+              sum(debit) filter (where account_code similar to '(6|8)%') as chi_phi
+       from finance.journal_lines where cost_item_code is not null group by 1
+     ) t on t.cost_item_code = c.code
+     order by coalesce(t.so_dong, 0) desc, c.code`,
   );
 }
 
