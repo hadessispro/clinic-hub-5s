@@ -647,13 +647,15 @@ app.get(`${BASE}/api/nhap-lieu/:id`, guard, async (req, reply) => {
 /* ── Báo cáo · tất cả dựng lại từ Sổ nhật ký chung ─────────────────────── */
 
 app.get(`${BASE}/api/bc/so-quy`, guard, doc('xem_so_quy_tien_mat', (req) =>
-  bc.soQuyTienMat({ period: req.query.ky, from: req.query.tu_ngay, to: req.query.den_ngay })));
+  bc.soQuyTienMat({ period: req.query.ky, from: req.query.tu_ngay, to: req.query.den_ngay,
+                    gioiHan: req.query.so_dong, boQua: req.query.bo_qua })));
 
 app.get(`${BASE}/api/bc/tai-khoan-ngan-hang`, guard, async () => bc.taiKhoanNganHang());
 
 app.get(`${BASE}/api/bc/so-ngan-hang`, guard, doc('xem_so_ngan_hang', (req) =>
   bc.soNganHang({ account: req.query.tai_khoan, period: req.query.ky,
-                  from: req.query.tu_ngay, to: req.query.den_ngay })));
+                  from: req.query.tu_ngay, to: req.query.den_ngay,
+                  gioiHan: req.query.so_dong, boQua: req.query.bo_qua })));
 
 app.get(`${BASE}/api/bc/tong-hop-cong-no`, guard, doc('xem_tong_hop_cong_no', (req) =>
   bc.tongHopCongNo({ loai: req.query.loai, period: req.query.ky })));
@@ -674,6 +676,7 @@ app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoa
     account: req.params.code, period: req.query.ky,
     from: req.query.tu_ngay, to: req.query.den_ngay,
     gomCon: req.query.gom_con !== 'false',
+    gioiHan: req.query.so_dong, boQua: req.query.bo_qua,
   });
   if (!r) return fail(reply, 404, 'Không có tài khoản này.');
   return r;

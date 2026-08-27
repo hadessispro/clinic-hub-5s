@@ -439,6 +439,48 @@ function theBieuDo(tieuDe, phai, noiDung) {
   );
 }
 
+/**
+ * Thanh phân trang dùng chung.
+ *
+ * Đo ngày 27/08/2026: một màn hình 5.000 dòng bắt trình duyệt dựng 60.468 nút
+ * DOM và mất 2,3 giây mới vẽ xong, trong khi máy chủ chỉ tốn 0,15 giây. Nút
+ * cổ chai nằm ở trình duyệt chứ không ở database, nên chữa bằng cách gửi ít
+ * dòng hơn chứ không phải bằng cách tối ưu truy vấn.
+ */
+function thanhPhanTrang(tt, tong, veLai) {
+  const tu = tong ? tt.bo_qua + 1 : 0;
+  const den = Math.min(tt.bo_qua + tt.so_dong, tong);
+  return el('div', { class: 'dong-thanh cach-tren' },
+    el('button', {
+      class: 'nut', disabled: tt.bo_qua === 0 || null,
+      onclick: () => { tt.bo_qua = 0; veLai(); },
+    }, '« Đầu'),
+    el('button', {
+      class: 'nut', disabled: tt.bo_qua === 0 || null,
+      onclick: () => { tt.bo_qua = Math.max(0, tt.bo_qua - tt.so_dong); veLai(); },
+    }, 'Trang trước'),
+    el('span', { class: 'mo' },
+      `${dinhDangSo.format(tu)}–${dinhDangSo.format(den)} trên ${dinhDangSo.format(tong)} dòng`),
+    el('button', {
+      class: 'nut', disabled: den >= tong || null,
+      onclick: () => { tt.bo_qua += tt.so_dong; veLai(); },
+    }, 'Trang sau'),
+    el('button', {
+      class: 'nut', disabled: den >= tong || null,
+      onclick: () => {
+        tt.bo_qua = Math.max(0, (Math.ceil(tong / tt.so_dong) - 1) * tt.so_dong);
+        veLai();
+      },
+    }, 'Cuối »'),
+    el('label', { class: 'o' }, el('span', {}, 'Mỗi trang'),
+      el('select', {
+        onchange: (e) => { tt.so_dong = Number(e.target.value); tt.bo_qua = 0; veLai(); },
+      }, ...[50, 100, 200, 500].map((n) => el('option', {
+        value: n, selected: tt.so_dong === n || null,
+      }, n)))),
+  );
+}
+
 /* ── Màn: Tổng quan ────────────────────────────────────────────────────── */
 
 const VE = {};
@@ -2142,13 +2184,15 @@ function nhanNguon(nguonExcel) {
 
 /* ── Sổ quỹ tiền mặt ───────────────────────────────────────────────────── */
 
-const SQ = { tu_ngay: '', den_ngay: '' };
+const SQ = { tu_ngay: '', den_ngay: '', bo_qua: 0, so_dong: 100 };
 
 VE['bc-so-quy'] = async (than) => {
   const p = new URLSearchParams();
   if (S.ky) p.set('ky', S.ky);
   if (SQ.tu_ngay) p.set('tu_ngay', SQ.tu_ngay);
   if (SQ.den_ngay) p.set('den_ngay', SQ.den_ngay);
+  p.set('so_dong', SQ.so_dong);
+  p.set('bo_qua', SQ.bo_qua);
   const d = await goi(`/bc/so-quy?${p}`);
 
   const oTu = el('input', { type: 'date', value: SQ.tu_ngay });
@@ -2167,7 +2211,6 @@ VE['bc-so-quy'] = async (than) => {
       }, 'Lọc')),
 
     nhanNguon('So_ke_toan_chi_tiet_quy_tien_mat.xlsx'),
-    canhBaoCatBot(d.dong.length, 5000, d.so_dong),
 
     el('div', { class: 'luoi luoi-4 cach-duoi' },
       theChiSo('Tồn đầu kỳ', tien(d.dau_ky),
@@ -2191,7 +2234,7 @@ VE['bc-so-quy'] = async (than) => {
         el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
         el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
         el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
-        el('td', { class: 'tien mo' }, tien(Number(d.dau_ky) + Number(r.ton))),
+        el('td', { class: 'tien mo' }, tien(r.ton)),
       )),
       el('tr', {},
         el('td', { colspan: '6' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
@@ -2200,18 +2243,22 @@ VE['bc-so-quy'] = async (than) => {
         el('td', { class: 'tien' }, tien(cuoiKy)),
       ),
     ),
+
+    thanhPhanTrang(SQ, d.so_dong, ve),
   );
 };
 
 /* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────── */
 
-const SNH = { tai_khoan: '' };
+const SNH = { tai_khoan: '', bo_qua: 0, so_dong: 100 };
 
 VE['bc-so-ngan-hang'] = async (than) => {
   const ds = await goi('/bc/tai-khoan-ngan-hang');
   if (!SNH.tai_khoan && ds.length) SNH.tai_khoan = ds[0].code;
   const p = new URLSearchParams({ tai_khoan: SNH.tai_khoan || '112' });
   if (S.ky) p.set('ky', S.ky);
+  p.set('so_dong', SNH.so_dong);
+  p.set('bo_qua', SNH.bo_qua);
   const d = await goi(`/bc/so-ngan-hang?${p}`);
   const cuoiKy = Number(d.dau_ky) + Number(d.tong_thu) - Number(d.tong_chi);
   const dangChon = ds.find((x) => x.code === SNH.tai_khoan);
@@ -2228,7 +2275,6 @@ VE['bc-so-ngan-hang'] = async (than) => {
     ),
 
     nhanNguon('So_tien_gui_ngan_hang.xlsx'),
-    canhBaoCatBot(d.dong.length, 5000, d.so_dong),
 
     el('div', { class: 'luoi luoi-4 cach-duoi' },
       theChiSo('Tồn đầu kỳ', tien(d.dau_ky),
@@ -2259,7 +2305,7 @@ VE['bc-so-ngan-hang'] = async (than) => {
         el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
         el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
         el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
-        el('td', { class: 'tien mo' }, tien(Number(d.dau_ky) + Number(r.ton))),
+        el('td', { class: 'tien mo' }, tien(r.ton)),
       )),
       el('tr', {},
         el('td', { colspan: '5' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
@@ -2268,6 +2314,8 @@ VE['bc-so-ngan-hang'] = async (than) => {
         el('td', { class: 'tien' }, tien(cuoiKy)),
       ),
     )),
+
+    thanhPhanTrang(SNH, d.so_dong, ve),
   );
 };
 
@@ -2508,7 +2556,8 @@ VE['bc-b01'] = async (than) => {
    khoản này có 142 cái khai báo sẵn mà chưa dùng tới. Không có cột số liệu
    thì người dùng bấm lần lượt qua 142 bảng rỗng mới tìm ra cái có dữ liệu. */
 
-const SCT = { tai_khoan: '1111', tim: '', chi_co_ps: true, gom_con: true, tu_ngay: '', den_ngay: '' };
+const SCT = { tai_khoan: '1111', tim: '', chi_co_ps: true, gom_con: true,
+              tu_ngay: '', den_ngay: '', bo_qua: 0, so_dong: 100 };
 
 VE['bc-so-chi-tiet'] = async (than) => {
   const cay = await goi('/bc/cay-tai-khoan');
@@ -2539,7 +2588,7 @@ VE['bc-so-chi-tiet'] = async (than) => {
     dem.textContent = `${dinhDangSo.format(ds.length)} trên ${dinhDangSo.format(cay.length)} tài khoản`;
     dsHop.replaceChildren(...ds.map((a) => el('button', {
       class: `tk-muc c${Math.min(a.depth, 4)}${a.code === SCT.tai_khoan ? ' dang-chon' : ''}`,
-      onclick: () => { SCT.tai_khoan = a.code; ve(); },
+      onclick: () => { SCT.tai_khoan = a.code; SCT.bo_qua = 0; ve(); },
       title: `${a.code} · ${a.name}`,
     },
       el('span', { class: 'tk-ma' }, a.code),
@@ -2557,6 +2606,8 @@ VE['bc-so-chi-tiet'] = async (than) => {
     if (S.ky) p.set('ky', S.ky);
     if (SCT.tu_ngay) p.set('tu_ngay', SCT.tu_ngay);
     if (SCT.den_ngay) p.set('den_ngay', SCT.den_ngay);
+    p.set('so_dong', SCT.so_dong);
+    p.set('bo_qua', SCT.bo_qua);
     d = await goi(`/bc/so-chi-tiet/${encodeURIComponent(SCT.tai_khoan)}?${p}`);
   } catch (err) {
     d = { loi: err.message };
@@ -2582,7 +2633,7 @@ VE['bc-so-chi-tiet'] = async (than) => {
       el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
       el('button', {
         class: 'nut chinh',
-        onclick: () => { SCT.tu_ngay = oTu.value; SCT.den_ngay = oDen.value; ve(); },
+        onclick: () => { SCT.tu_ngay = oTu.value; SCT.den_ngay = oDen.value; SCT.bo_qua = 0; ve(); },
       }, 'Lọc')),
 
     nhanNguon('So_chi_tiet_cac_tai_khoan.xlsx'),
@@ -2625,8 +2676,6 @@ VE['bc-so-chi-tiet'] = async (than) => {
             'Tài khoản này không mang bút toán nào của riêng nó. Mọi con số nằm ở các tài '
             + 'khoản con, và sổ dưới đây đã gộp chúng lại.') : null,
 
-          canhBaoCatBot(d.dong.length, 5000, d.so_dong),
-
           el('div', { class: 'luoi luoi-4 cach-duoi' },
             theChiSo('Dư đầu kỳ', tien(d.dau_ky),
               Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ',
@@ -2652,7 +2701,8 @@ VE['bc-so-chi-tiet'] = async (than) => {
                 el('td', { class: 'tien' }, Number(c.ps_no) ? tien(c.ps_no) : '—'),
                 el('td', { class: 'tien' }, Number(c.ps_co) ? tien(c.ps_co) : '—'),
                 el('td', {}, c.so_dong ? el('button', {
-                  class: 'nut nho', onclick: () => { SCT.tai_khoan = c.code; ve(); },
+                  class: 'nut nho',
+                  onclick: () => { SCT.tai_khoan = c.code; SCT.bo_qua = 0; ve(); },
                 }, 'Mở sổ') : null),
               ))),
             )),
@@ -2692,6 +2742,8 @@ VE['bc-so-chi-tiet'] = async (than) => {
             + (S.ky ? ` trong kỳ ${S.ky}` : '')
             + (SCT.tu_ngay || SCT.den_ngay ? ' trong khoảng ngày đang lọc' : '')
             + '. Tài khoản này đã khai báo trong hệ thống tài khoản nhưng chưa phát sinh.')),
+
+          d.dong.length ? thanhPhanTrang(SCT, d.so_dong, ve) : null,
         ),
       ),
     ),

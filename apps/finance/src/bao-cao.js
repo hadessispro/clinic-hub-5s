@@ -26,31 +26,60 @@
  */
 const { rows, one } = require('./db');
 
+/**
+ * Giới hạn số dòng trả về mỗi trang.
+ *
+ * Đo ngày 27/08/2026: trả 5.000 dòng khiến trình duyệt phải dựng 60.468 nút
+ * DOM và mất 2,3 giây mới vẽ xong một màn hình. Cùng lúc đó phía máy chủ chỉ
+ * tốn 0,15 giây, và gói JSON nặng 2,3 MB. Nút cổ chai nằm ở trình duyệt và
+ * đường truyền chứ không nằm ở database.
+ *
+ * Nhật ký chung vốn đã phân trang thì vẽ hết 0,11 giây, nhanh gấp hai mươi
+ * lần. Nên ba sổ nặng còn lại cũng phân trang.
+ *
+ * Số dư lũy kế vẫn phải đúng ở mọi trang: hàm cửa sổ chạy trên TOÀN BỘ tập
+ * dữ liệu đã lọc, cắt trang xảy ra sau. Cắt trước rồi mới cộng dồn thì trang
+ * hai bắt đầu lại từ số dư đầu kỳ, và người đọc không có cách nào biết con số
+ * đó sai.
+ */
+const MOI_TRANG = 100;
+const TRAN_TRANG = 500;
+
+function phanTrang(f) {
+  return {
+    limit: Math.min(Math.max(Number(f.limit) || MOI_TRANG, 1), TRAN_TRANG),
+    offset: Math.max(Number(f.offset) || 0, 0),
+  };
+}
+
 /* ── Sổ kế toán chi tiết quỹ tiền mặt ──────────────────────────────────────
    Nguồn Excel: So_ke_toan_chi_tiet_quy_tien_mat.xlsx
    Cột gốc: Ngày, Số phiếu thu, Số phiếu chi, Diễn giải, TK đối ứng, Số tồn */
 
-async function soQuyTienMat({ period, from, to }) {
+async function soQuyTienMat({ period, from, to, gioiHan, boQua }) {
   const dauKy = await one(
     `select coalesce(sum(o.debit - o.credit), 0)::text as so_du
      from finance.opening_balances o where o.account_code like '111%'`,
   );
+  const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
   const dong = await rows(
-    `select v.posting_date, v.voucher_no, v.voucher_type, v.invoice_no,
-            l.description, l.account_code, l.contra_account_code,
-            l.partner_code, p.name as partner_name,
-            l.debit::text as thu, l.credit::text as chi,
-            sum(l.debit - l.credit) over (order by v.posting_date, v.voucher_no, l.id)::text as ton
-     from finance.journal_lines l
-     join finance.vouchers v on v.id = l.voucher_id
-     left join finance.partners p on p.code = l.partner_code
-     where l.account_code like '111%'
-       and ($1::text is null or v.period_code = $1)
-       and ($2::date is null or v.posting_date >= $2)
-       and ($3::date is null or v.posting_date <= $3)
-     order by v.posting_date, v.voucher_no, l.id
-     limit 5000`,
-    [period || null, from || null, to || null],
+    `select * from (
+       select v.posting_date, v.voucher_no, v.voucher_type, v.invoice_no,
+              l.description, l.account_code, l.contra_account_code,
+              l.partner_code, p.name as partner_name,
+              l.debit::text as thu, l.credit::text as chi,
+              ($4::numeric + sum(l.debit - l.credit)
+                 over (order by v.posting_date, v.voucher_no, l.id))::text as ton,
+              row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       where l.account_code like '111%'
+         and ($1::text is null or v.period_code = $1)
+         and ($2::date is null or v.posting_date >= $2)
+         and ($3::date is null or v.posting_date <= $3)
+     ) t order by stt limit ${limit} offset ${offset}`,
+    [period || null, from || null, to || null, Number(dauKy.so_du) || 0],
   );
   const tong = await one(
     `select coalesce(sum(l.debit), 0)::text  as tong_thu,
@@ -64,7 +93,7 @@ async function soQuyTienMat({ period, from, to }) {
        and ($3::date is null or v.posting_date <= $3)`,
     [period || null, from || null, to || null],
   );
-  return { dau_ky: dauKy.so_du, dong, ...tong };
+  return { dau_ky: dauKy.so_du, dong, ...tong, limit, offset };
 }
 
 /* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────────
@@ -84,27 +113,30 @@ async function taiKhoanNganHang() {
   );
 }
 
-async function soNganHang({ account, period, from, to }) {
+async function soNganHang({ account, period, from, to, gioiHan, boQua }) {
   const ma = account || '112';
   const dauKy = await one(
     `select coalesce(sum(debit - credit), 0)::text as so_du
      from finance.opening_balances where account_code like $1 || '%'`, [ma],
   );
+  const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
   const dong = await rows(
-    `select v.posting_date, v.voucher_no, v.voucher_type, l.description,
-            l.contra_account_code, l.partner_code, p.name as partner_name,
-            l.debit::text as thu, l.credit::text as chi,
-            sum(l.debit - l.credit) over (order by v.posting_date, v.voucher_no, l.id)::text as ton
-     from finance.journal_lines l
-     join finance.vouchers v on v.id = l.voucher_id
-     left join finance.partners p on p.code = l.partner_code
-     where l.account_code like $1 || '%'
-       and ($2::text is null or v.period_code = $2)
-       and ($3::date is null or v.posting_date >= $3)
-       and ($4::date is null or v.posting_date <= $4)
-     order by v.posting_date, v.voucher_no, l.id
-     limit 5000`,
-    [ma, period || null, from || null, to || null],
+    `select * from (
+       select v.posting_date, v.voucher_no, v.voucher_type, l.description,
+              l.contra_account_code, l.partner_code, p.name as partner_name,
+              l.debit::text as thu, l.credit::text as chi,
+              ($5::numeric + sum(l.debit - l.credit)
+                 over (order by v.posting_date, v.voucher_no, l.id))::text as ton,
+              row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       where l.account_code like $1 || '%'
+         and ($2::text is null or v.period_code = $2)
+         and ($3::date is null or v.posting_date >= $3)
+         and ($4::date is null or v.posting_date <= $4)
+     ) t order by stt limit ${limit} offset ${offset}`,
+    [ma, period || null, from || null, to || null, Number(dauKy.so_du) || 0],
   );
   const tong = await one(
     `select coalesce(sum(l.debit), 0)::text  as tong_thu,
@@ -116,7 +148,7 @@ async function soNganHang({ account, period, from, to }) {
        and ($2::text is null or v.period_code = $2)`,
     [ma, period || null],
   );
-  return { tai_khoan: ma, dau_ky: dauKy.so_du, dong, ...tong };
+  return { tai_khoan: ma, dau_ky: dauKy.so_du, dong, ...tong, limit, offset };
 }
 
 /* ── Tổng hợp công nợ ──────────────────────────────────────────────────────
@@ -538,7 +570,7 @@ async function cayTaiKhoan() {
    khoản 111" là gồm cả 1111, 1112, 1113. Nên mặc định gộp con, và vẫn cho tắt
    khi cần soi riêng một cấp. */
 
-async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true }) {
+async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true, gioiHan, boQua }) {
   const tk = await one(
     `select a.code, a.name, a.nature, a.depth,
             exists (select 1 from finance.accounts b
@@ -569,25 +601,26 @@ async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true }) {
   );
   const dauKy = dauRow.dau || 0;
 
+  const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
   const dong = await rows(
-    `select v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type,
-            v.invoice_no, l.invoice_date, l.account_code, l.description,
-            l.contra_account_code, l.partner_code, p.name as partner_name,
-            l.cost_item_code, l.is_deductible,
-            l.debit::text as ps_no, l.credit::text as ps_co,
-            ($6::numeric + sum(l.debit - l.credit)
-               over (order by v.posting_date, v.voucher_no, l.id))::text as so_du
-     from finance.journal_lines l
-     join finance.vouchers v on v.id = l.voucher_id
-     left join finance.partners p on p.code = l.partner_code
-     where l.account_code ${phepSo} $1
-       and ($2::text is null or v.period_code = $2)
-       and ($3::date is null or v.posting_date >= $3)
-       and ($4::date is null or v.posting_date <= $4)
-       and ($5::text is null or l.partner_code = $5)
-     order by v.posting_date, v.voucher_no, l.id
-     limit 5000`,
-    [loc, period || null, from || null, to || null, null, dauKy],
+    `select * from (
+       select v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type,
+              v.invoice_no, l.invoice_date, l.account_code, l.description,
+              l.contra_account_code, l.partner_code, p.name as partner_name,
+              l.cost_item_code, l.is_deductible,
+              l.debit::text as ps_no, l.credit::text as ps_co,
+              ($5::numeric + sum(l.debit - l.credit)
+                 over (order by v.posting_date, v.voucher_no, l.id))::text as so_du,
+              row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       where l.account_code ${phepSo} $1
+         and ($2::text is null or v.period_code = $2)
+         and ($3::date is null or v.posting_date >= $3)
+         and ($4::date is null or v.posting_date <= $4)
+     ) t order by stt limit ${limit} offset ${offset}`,
+    [loc, period || null, from || null, to || null, dauKy],
   );
 
   const tong = await one(
@@ -602,7 +635,8 @@ async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true }) {
     [loc, period || null, from || null, to || null],
   );
 
-  return { ...tk, gom_con: gom, tai_khoan_con: con, dau_ky: String(dauKy), dong, ...tong };
+  return { ...tk, gom_con: gom, tai_khoan_con: con, dau_ky: String(dauKy),
+           dong, ...tong, limit, offset };
 }
 
 /* ── Trạng thái số dư đầu kỳ ───────────────────────────────────────────── */
