@@ -53,7 +53,10 @@ services:
     env_file:
       - .env.vps
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
+      # va revoke, nen de backend chay bang superuser thi buc tuong quanh
+      # schema finance khong con y nghia. Xem migration 024.
+      DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       APP_VERSION: ${APP_VERSION:-shadow}
       UPLOAD_DIR: /data/uploads
@@ -83,6 +86,7 @@ services:
     env_file:
       - .env.vps
     environment:
+      # migrate GIU superuser vi no la service duy nhat chay DDL.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     command: ["node", "apps/backend/dist/migrate.js"]
     depends_on:
@@ -103,7 +107,10 @@ services:
     env_file:
       - .env.vps
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
+      # va revoke, nen de backend chay bang superuser thi buc tuong quanh
+      # schema finance khong con y nghia. Xem migration 024.
+      DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-900}
     command:
@@ -139,7 +146,10 @@ services:
     env_file:
       - .env.vps
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
+      # va revoke, nen de backend chay bang superuser thi buc tuong quanh
+      # schema finance khong con y nghia. Xem migration 024.
+      DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-30}
       BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-50}
     command: ["node", "apps/backend/dist/backup.js"]

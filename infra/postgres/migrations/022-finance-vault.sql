@@ -342,9 +342,16 @@ select id::text                                 as lead_id,
        pg_arrival_confirmed_at
 from marketing.leads;
 
+-- work_date nam o bang phan ca, khong nam o bang cham cong. Phai join.
 create or replace view finance_src.pg_attendance as
-select pg_code, work_date, record_type, status, captured_offline
-from marketing.pg_attendance;
+select a.pg_code,
+       s.work_date,
+       a.record_type,
+       a.status,
+       a.captured_offline,
+       a.captured_at
+from marketing.pg_attendance a
+left join marketing.pg_shift_assignments s on s.id = a.assignment_id;
 
 comment on view finance_src.leads is
   'Không phơi bày tên và số điện thoại khách hàng. Tài chính chỉ cần đếm và '
@@ -384,7 +391,8 @@ alter default privileges in schema finance_src grant select on tables to finance
 -- View trong finance_src đọc bảng gốc, nên role cần quyền nền. Cấp tối thiểu.
 grant usage on schema app, marketing to finance_app;
 grant select on app.records to finance_app;
-grant select on marketing.leads, marketing.pg_attendance to finance_app;
+grant select on marketing.leads, marketing.pg_attendance,
+                marketing.pg_shift_assignments to finance_app;
 
 commit;
 
