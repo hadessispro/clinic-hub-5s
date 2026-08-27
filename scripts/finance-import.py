@@ -118,16 +118,37 @@ def read_accounts(path, rep):
     return rows
 
 
+# Bang Excel xuat tu phan mem ke toan hay co mot dong tong o cuoi: cot so thu
+# tu de trong, cot ma ghi chu "Tong", cac cot con lai rong. Doc nham dong do
+# thanh du lieu la sinh ra mot doi tuong ten rong, va no chi no ra khi database
+# tu choi vi rang buoc not null. Nhan dien tai cho doc.
+DONG_TONG = {'tổng', 'tổng cộng', 'cộng', 'total', 'sum'}
+
+
+def la_dong_tong(r, code, name):
+    """Dong tong: khong co so thu tu, hoac ma la chu 'Tong', hoac khong co ten."""
+    stt = str(r[0]).strip() if r and len(r) > 0 and r[0] is not None else ''
+    if code.strip().lower() in DONG_TONG:
+        return True
+    if not stt and not name:
+        return True
+    return False
+
+
 def read_cost_items(path, rep):
     """Danh_sach_khoan_muc_chi_phi.xlsx · mã dạng DN, DN.LVT, DN.PVC"""
     wb = load_workbook(path, data_only=True, read_only=True)
     sh = wb[wb.sheetnames[0]]
     rows = []
+    bo_qua = []
     for i, r in enumerate(sh.iter_rows(values_only=True), start=1):
         if i <= 3 or r is None or r[1] is None:
             continue
         code = str(r[1]).strip()
         if not code:
+            continue
+        if la_dong_tong(r, code, str(r[2] or '').strip()):
+            bo_qua.append(code or '(trong)')
             continue
         branch = code.split('.')[1] if '.' in code else None
         rows.append({
@@ -137,6 +158,8 @@ def read_cost_items(path, rep):
             'is_active': str(r[4] or '').strip() == 'Đang sử dụng',
         })
     wb.close()
+    if bo_qua:
+        rep.w(f'   bỏ qua {len(bo_qua)} dòng tổng ở khoản mục chi phí: {", ".join(bo_qua)}')
     return rows
 
 
@@ -145,11 +168,15 @@ def read_suppliers(path, rep):
     wb = load_workbook(path, data_only=True, read_only=True)
     sh = wb[wb.sheetnames[0]]
     rows = []
+    bo_qua = []
     for i, r in enumerate(sh.iter_rows(values_only=True), start=1):
         if i <= 3 or r is None or r[1] is None:
             continue
         code = str(r[1]).strip()
         if not code:
+            continue
+        if la_dong_tong(r, code, str(r[2] or '').strip()):
+            bo_qua.append(code or '(trong)')
             continue
         rows.append({
             'code': code,
@@ -160,6 +187,8 @@ def read_suppliers(path, rep):
             'phone': str(r[8] or '').strip() or None,
         })
     wb.close()
+    if bo_qua:
+        rep.w(f'   bỏ qua {len(bo_qua)} dòng tổng ở danh sách nhà cung cấp: {", ".join(bo_qua)}')
     return rows
 
 
@@ -183,6 +212,7 @@ VOUCHER_TYPE = re.compile(r'^([A-Za-zĐđ]+)')
 def read_journal(path, rep):
     wb = load_workbook(path, data_only=True, read_only=True)
     rows = []
+    do = []          # bút toán đỏ: dòng ghi số âm
     sheets = list(wb.sheetnames)
     for sname in sheets:
         for i, r in enumerate(wb[sname].iter_rows(values_only=True), start=1):
@@ -193,8 +223,13 @@ def read_journal(path, rep):
                 continue  # dòng tổng, dòng chú thích
             debit = float(r[7] or 0)
             credit = float(r[8] or 0)
-            if debit > 0 and credit > 0:
+            if debit != 0 and credit != 0:
                 rep.fail(4, f'{sname} dòng {i}: có cả Nợ và Có cùng lúc')
+            if debit < 0 or credit < 0:
+                # Bút toán đỏ: ghi lại bút toán cũ với dấu âm để sửa sai. Hợp
+                # lệ trong kế toán Việt Nam, và cố ý khác bút toán đảo vì nó
+                # không làm phình tổng phát sinh của tài khoản. Giữ nguyên dấu.
+                do.append((sname, i, debit, credit))
             rows.append({
                 'sheet': sname, 'row': i,
                 'posting_date': ngay.date() if isinstance(ngay, datetime) else ngay,
@@ -210,6 +245,10 @@ def read_journal(path, rep):
                 'deductible': 'không hợp lý' not in str(r[11] or '').lower(),
             })
     wb.close()
+    if do:
+        rep.w(f'   bút toán đỏ (ghi số âm): {len(do)} dòng, giữ nguyên dấu')
+        for sname, i, d, c in do[:6]:
+            rep.w(f'      {sname} dòng {i}: Nợ {d:,.0f} Có {c:,.0f}')
     return rows, sheets
 
 
@@ -288,6 +327,21 @@ def main():
 
     # ── tầng 3: nghiệp vụ ───────────────────────────────────────────────────
     rep.w('TẦNG 3 · NGHIỆP VỤ')
+
+    # Mọi dòng danh mục phải có tên. Database có ràng buộc not null trên cột
+    # name, nên nếu để lọt thì cả lô 77 nghìn bút toán bị từ chối ở dòng 630 và
+    # người chạy không hiểu vì sao. Bắt ở đây, nói rõ dòng nào.
+    thieu_ten = ([f'tài khoản {a["code"]}' for a in accounts if not a['name']]
+                 + [f'khoản mục {c["code"]}' for c in costs if not c['name']]
+                 + [f'nhà cung cấp {x["code"]}' for x in suppliers if not x['name']])
+    if thieu_ten:
+        for t in thieu_ten[:10]:
+            rep.w(f'      {t}: thiếu tên')
+        rep.fail(3, f'{len(thieu_ten)} dòng danh mục không có tên. '
+                    'Thường là dòng tổng ở cuối bảng bị đọc nhầm thành dữ liệu.')
+    else:
+        rep.w('   mọi dòng danh mục đều có tên')
+
     acc_codes = {a['code'] for a in accounts}
     unknown_acc = defaultdict(int)
     for r in journal:
