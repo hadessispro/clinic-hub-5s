@@ -16,10 +16,13 @@ const path = require('node:path');
 const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
 const Fastify = require('fastify');
 const fastifyStatic = require('@fastify/static');
+const fastifyMultipart = require('@fastify/multipart');
 
 const db = require('./db');
 const q = require('./queries');
 const auth = require('./auth');
+const crud = require('./crud');
+const nhap = require('./nhap-lieu');
 
 const PORT = Number(process.env.FINANCE_PORT || 4100);
 const BASE = process.env.FINANCE_BASE_PATH || '/vault';
@@ -29,6 +32,10 @@ const app = Fastify({
   trustProxy: true,
   bodyLimit: 2 * 1024 * 1024,
 });
+
+// Nhận file Excel tải lên. 40 MB đủ cho bộ sổ cả năm: file nhật ký thật của
+// năm nay là 4,5 MB, và bản SQL sinh ra từ nó là 36 MB.
+app.register(fastifyMultipart, { limits: { fileSize: 40 * 1024 * 1024, files: 1 } });
 
 /* ── Vệ sinh chung ─────────────────────────────────────────────────────── */
 
@@ -375,6 +382,9 @@ app.get(`${BASE}/api/chi-phi-khong-hop-ly`, guard, doc('xem_chi_phi_khong_hop_ly
 app.get(`${BASE}/api/soat-loi`, guard, doc('soat_loi',
   (req) => q.issues(req.query.ky)));
 
+app.get(`${BASE}/api/bieu-do`, guard, doc('xem_bieu_do',
+  (req) => q.charts(req.query.ky)));
+
 app.get(`${BASE}/api/van-hanh`, guard, doc('xem_so_lieu_van_hanh',
   (req) => q.opsSummary({ canSeeIndividualPay: req.user.role !== 'viewer' })));
 
@@ -498,7 +508,137 @@ app.patch(`${BASE}/api/nguoi-dung/:id`, guardAdmin, async (req, reply) => {
   return r;
 });
 
+/* ── Thêm sửa xóa chứng từ ─────────────────────────────────────────────── */
+
+app.post(`${BASE}/api/chung-tu`, guardWrite, async (req, reply) => {
+  const r = await crud.taoChungTu(req.body || {}, req.user.username);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'tao_chung_tu',
+    target: r.so_chung_tu, rowCount: r.so_dong, ip: clientIp(req),
+  });
+  return reply.code(201).send(r);
+});
+
+app.put(`${BASE}/api/chung-tu/:id`, guardWrite, async (req) => {
+  const r = await crud.suaChungTu(req.params.id, req.body || {}, req.user.username);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'sua_chung_tu',
+    target: req.params.id, rowCount: r.so_dong, ip: clientIp(req),
+  });
+  return r;
+});
+
+app.delete(`${BASE}/api/chung-tu/:id`, guardWrite, async (req) => {
+  const so = await crud.xoaChungTu(req.params.id);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'xoa_chung_tu',
+    target: so, ip: clientIp(req),
+  });
+  return { xong: true, so_chung_tu: so };
+});
+
+/* ── Thêm sửa xóa danh mục ─────────────────────────────────────────────── */
+
+function danhMuc(duong, luu, xoa, ten) {
+  app.post(`${BASE}/api/${duong}`, guardWrite, async (req) => {
+    const r = await luu(req.body || {});
+    await db.audit({
+      actor: req.user.username, actorRole: req.user.role, action: `luu_${ten}`,
+      target: r.code, ip: clientIp(req),
+    });
+    return r;
+  });
+  app.delete(`${BASE}/api/${duong}/:code`, guardWrite, async (req) => {
+    const ma = await xoa(req.params.code);
+    await db.audit({
+      actor: req.user.username, actorRole: req.user.role, action: `xoa_${ten}`,
+      target: ma, ip: clientIp(req),
+    });
+    return { xong: true, code: ma };
+  });
+}
+
+danhMuc('tai-khoan', crud.luuTaiKhoan, crud.xoaTaiKhoan, 'tai_khoan');
+danhMuc('doi-tac',   crud.luuDoiTac,   crud.xoaDoiTac,   'doi_tac');
+danhMuc('khoan-muc', crud.luuKhoanMuc, crud.xoaKhoanMuc, 'khoan_muc');
+
+/* ── Nhập liệu từ Excel ────────────────────────────────────────────────── */
+
+app.post(`${BASE}/api/nhap-lieu/kiem-tra`, guardWrite, async (req, reply) => {
+  const file = await req.file();
+  if (!file) return fail(reply, 400, 'Chưa chọn file.');
+  if (!/\.xlsx?$/i.test(file.filename)) {
+    return fail(reply, 400, 'Chỉ nhận file .xlsx. File .xls đời cũ phải lưu lại dạng .xlsx trước.');
+  }
+  const buffer = await file.toBuffer();
+
+  let doc;
+  try {
+    doc = await nhap.docFile(buffer, file.filename);
+  } catch (err) {
+    return fail(reply, 400, err.message);
+  }
+  const ketQua = await nhap.kiemTra(doc);
+  const batchId = await nhap.luuTam(doc, ketQua, req.user.username);
+
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'tai_len_file_nhap',
+    target: file.filename, rowCount: doc.dong.length,
+    filters: { loai: doc.loai, sha256: doc.sha256.slice(0, 16), loi: ketQua.loi.length },
+    ip: clientIp(req),
+  });
+
+  return {
+    lo: batchId, ten_file: doc.ten_file, loai: doc.loai,
+    ten_loai: nhap.LOAI[doc.loai].ten, sheet: doc.sheet,
+    ...ketQua,
+  };
+});
+
+app.post(`${BASE}/api/nhap-lieu/:id/ghi-so`, guardWrite, async (req) => {
+  const n = await nhap.ghiSo(req.params.id, req.user.username);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'ghi_so_tu_lo_nhap',
+    target: req.params.id, rowCount: n, ip: clientIp(req),
+  });
+  return { xong: true, so_ban_ghi: n };
+});
+
+app.post(`${BASE}/api/nhap-lieu/:id/huy`, guardWrite, async (req) => {
+  await nhap.huy(req.params.id);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'huy_lo_nhap',
+    target: req.params.id, ip: clientIp(req),
+  });
+  return { xong: true };
+});
+
+app.post(`${BASE}/api/nhap-lieu/:id/hoan-tac`, guardAdmin, async (req) => {
+  const n = await nhap.hoanTac(req.params.id, req.user.username);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'hoan_tac_lo_nhap',
+    target: req.params.id, rowCount: n, ip: clientIp(req),
+  });
+  return { xong: true, so_chung_tu_da_xoa: n };
+});
+
+app.get(`${BASE}/api/nhap-lieu/:id`, guard, async (req, reply) => {
+  const lo = await db.one(
+    `select id::text, source_file, left(source_sha256, 16) as van_tay, sheet_names,
+            row_count, status, recon, errors, created_by, created_at,
+            posted_by, posted_at, reverted_at
+     from finance.import_batches where id = $1`, [req.params.id],
+  );
+  if (!lo) return fail(reply, 404, 'Không có lô nhập này.');
+  lo.xem_thu = (await db.rows(
+    'select row_no, raw from finance.import_rows where batch_id = $1 order by id limit 100',
+    [req.params.id],
+  ));
+  return lo;
+});
+
 /* ── Giao diện ─────────────────────────────────────────────────────────── */
+
 
 app.register(fastifyStatic, {
   root: path.join(__dirname, '..', 'public'),

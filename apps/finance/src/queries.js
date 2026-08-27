@@ -289,6 +289,99 @@ async function opsSummary({ canSeeIndividualPay }) {
   };
 }
 
+/* ── Dữ liệu cho biểu đồ ───────────────────────────────────────────────── */
+
+/**
+ * Gom mọi số liệu vẽ biểu đồ vào một lần gọi.
+ *
+ * Cố ý một lần chứ không sáu lần: màn tổng quan mở ra là vẽ hết, sáu lần gọi
+ * thì người dùng nhìn thấy sáu ô trống lần lượt được điền, và mỗi lần gọi lại
+ * là một dòng nữa trong nhật ký truy cập không nói thêm được gì.
+ *
+ * Nhóm tài khoản theo hệ thống tài khoản Thông tư 200:
+ *   511 doanh thu · 521 giảm trừ doanh thu · 632 giá vốn
+ *   641 chi phí bán hàng · 642 chi phí quản lý · 635 chi phí tài chính
+ *   111 tiền mặt · 112 tiền gửi ngân hàng
+ */
+async function charts(periodCode) {
+  const [theoThang, coCauChiPhi, topTaiKhoan, dongTien, chiPhiKhongHopLy] = await Promise.all([
+    rows(
+      `select v.period_code as ky,
+              sum(l.debit)::text  as tong_no,
+              sum(l.credit)::text as tong_co,
+              -- Lay phat sinh MOT VE chu khong lay hieu so. Cuoi ky ke toan ket
+              -- chuyen 511 va 6xx sang 911, nen hieu so No tru Co cua chung
+              -- triet tieu ve gan 0 va bieu do se noi doi rang thang do khong
+              -- co doanh thu lan chi phi.
+              sum(case when l.account_code like '511%' then l.credit else 0 end)::text as doanh_thu,
+              sum(case when l.account_code like '521%' then l.debit  else 0 end)::text as giam_tru,
+              sum(case when l.account_code like '632%' then l.debit  else 0 end)::text as gia_von,
+              -- KHONG gom 621, 622, 627 vao day. Chung la cau thanh cua gia
+              -- von: nguyen vat lieu va nhan cong truc tiep chay qua 154 roi
+              -- ket chuyen sang 632. Cong ca hai la tinh trung mot khoan chi
+              -- hai lan, va bao cao se bao lo trong khi thuc te dang lai.
+              sum(case when l.account_code similar to '(635|641|642|811)%'
+                       then l.debit else 0 end)::text as chi_phi,
+              count(distinct v.id)::int as so_chung_tu
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       group by 1 order by 1`,
+    ),
+    rows(
+      `select left(l.account_code, 3) as nhom,
+              coalesce(max(a.name), left(l.account_code, 3)) as ten,
+              -- Cung ly do: chi phi phat sinh nam o ve No, phan ve Co la but
+              -- toan ket chuyen cuoi ky, khong phai chi phi giam di.
+              sum(l.debit)::text as so_tien
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.accounts a on a.code = left(l.account_code, 3)
+       -- Cung ly do khong gom 621, 622, 627: chung nam ben trong 632 roi.
+       where left(l.account_code, 3) in ('632','635','641','642','811','821')
+         and ($1::text is null or v.period_code = $1)
+       group by 1
+       having sum(l.debit) > 0
+       order by 3 desc`,
+      [periodCode || null],
+    ),
+    rows(
+      `select l.account_code as ma, a.name as ten,
+              sum(l.debit)::text  as ps_no,
+              sum(l.credit)::text as ps_co,
+              sum(l.debit + l.credit)::text as tong
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.accounts a on a.code = l.account_code
+       where ($1::text is null or v.period_code = $1)
+       group by 1, 2 order by sum(l.debit + l.credit) desc limit 12`,
+      [periodCode || null],
+    ),
+    rows(
+      `select v.period_code as ky,
+              sum(case when l.account_code like '111%' then l.debit - l.credit else 0 end)::text as tien_mat,
+              sum(case when l.account_code like '112%' then l.debit - l.credit else 0 end)::text as ngan_hang,
+              sum(case when l.account_code similar to '(111|112)%'
+                       then l.debit - l.credit else 0 end)::text as rong
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       group by 1 order by 1`,
+    ),
+    rows(
+      // Chi phi khong hop ly cung duoc ghi ca hai ve nhu moi but toan khac,
+      // nen hieu so No tru Co bang 0. Con so ke toan can khi lap Bang ke
+      // quyet toan thue la tong ve No.
+      `select v.period_code as ky, sum(l.debit)::text as so_tien,
+              count(*)::int as so_dong
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       where l.is_deductible = false
+       group by 1 order by 1`,
+    ),
+  ]);
+  return { theo_thang: theoThang, co_cau_chi_phi: coCauChiPhi, top_tai_khoan: topTaiKhoan,
+           dong_tien: dongTien, chi_phi_khong_hop_ly: chiPhiKhongHopLy };
+}
+
 /* ── Danh mục ──────────────────────────────────────────────────────────── */
 
 async function accounts(q) {
@@ -344,5 +437,5 @@ async function batches() {
 module.exports = {
   overview, journal, voucher, trialBalance, ledger, partnerBalances,
   nondeductible, issues, opsSummary, accounts, partners, periods,
-  costItems, batches,
+  costItems, batches, charts,
 };
