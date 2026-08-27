@@ -53,8 +53,14 @@ async function overview(periodCode) {
 
 const JOURNAL_SORTS = {
   ngay: 'v.posting_date',
+  ngay_chung_tu: 'v.voucher_date',
+  ngay_hoa_don: 'l.invoice_date',
   so_chung_tu: 'v.voucher_no',
+  so_hoa_don: 'v.invoice_no',
   tai_khoan: 'l.account_code',
+  doi_ung: 'l.contra_account_code',
+  doi_tac: 'l.partner_code',
+  khoan_muc: 'l.cost_item_code',
   no: 'l.debit',
   co: 'l.credit',
 };
@@ -67,7 +73,8 @@ const JOURNAL_WHERE = `
       and ($5::date is null or v.posting_date <= $5)
       and ($6::text is null or v.voucher_no ilike '%' || $6 || '%'
                             or l.description ilike '%' || $6 || '%')
-      and ($7::boolean is null or l.is_deductible = $7)`;
+      and ($7::boolean is null or l.is_deductible = $7)
+      and ($8::text is null or l.cost_item_code = $8)`;
 
 async function journal(f = {}) {
   const limit = Math.min(Math.max(Number(f.limit) || 50, 1), 500);
@@ -78,19 +85,30 @@ async function journal(f = {}) {
     f.period || null, f.account || null, f.partner || null,
     f.from || null, f.to || null, f.q || null,
     f.deductible === undefined ? null : f.deductible,
+    f.costItem || null,
   ];
 
   const [data, total] = await Promise.all([
     rows(
-      `select l.id::text, v.voucher_no, v.posting_date, v.voucher_type,
-              v.period_code, l.line_no, l.account_code, a.name as account_name,
-              l.contra_account_code, l.debit::text, l.credit::text,
-              l.partner_code, p.name as partner_name, l.cost_item_code,
-              l.description, l.is_deductible, v.id::text as voucher_id
+      // Trả về đúng và đủ 17 cột của Sổ nhật ký chung bản Excel, cùng thứ tự.
+      // Kế toán đọc sổ này hằng ngày và đã thuộc vị trí từng cột; đổi thứ tự
+      // hay bỏ bớt cột là bắt họ dò lại từ đầu mỗi lần mở.
+      `select l.id::text, v.id::text as voucher_id, l.line_no,
+              v.posting_date, v.voucher_date, v.voucher_no,
+              l.invoice_date, v.invoice_no, l.description,
+              l.account_code, a.name as account_name,
+              l.contra_account_code, ac.name as contra_account_name,
+              l.debit::text, l.credit::text,
+              l.partner_code, p.name as partner_name,
+              l.cost_item_code, ci.name as cost_item_name,
+              l.contract_buy, l.contract_sell,
+              l.is_deductible, v.voucher_type, v.period_code
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
        left join finance.accounts a on a.code = l.account_code
+       left join finance.accounts ac on ac.code = l.contra_account_code
        left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
        ${JOURNAL_WHERE}
        order by ${sortCol} ${dir}, l.id ${dir}
        limit ${limit} offset ${offset}`,

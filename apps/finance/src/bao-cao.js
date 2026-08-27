@@ -484,46 +484,125 @@ async function baoCaoTinhHinhTaiChinh() {
   }));
 }
 
-/* ── Sổ chi tiết một tài khoản, có số dư đầu kỳ thật ───────────────────── */
+/* ── Cây tài khoản ─────────────────────────────────────────────────────────
+   Danh sách đầy đủ 256 tài khoản để chọn, kèm số liệu của từng cái.
 
-async function soChiTietTaiKhoan({ account, period, from, to }) {
-  const tk = await one(
-    `select a.code, a.name, a.nature,
-            coalesce(o.debit, 0)::text  as dau_ky_no,
-            coalesce(o.credit, 0)::text as dau_ky_co
+   Có ba loại tài khoản và người dùng cần phân biệt được ngay từ danh sách:
+
+     tài khoản cha    53 cái, không mang bút toán nào, số liệu nằm ở con
+     tài khoản lá có  61 cái mang bút toán trực tiếp
+     tài khoản lá không phát sinh  142 cái, khai báo sẵn nhưng chưa dùng
+
+   Thiếu cột số liệu thì người dùng bấm lần lượt qua 142 tài khoản rỗng mới
+   tìm ra cái có dữ liệu. */
+
+async function cayTaiKhoan() {
+  return rows(
+    `with rieng as (
+       select account_code,
+              count(*) as so_dong,
+              sum(debit)  as ps_no,
+              sum(credit) as ps_co
+       from finance.journal_lines group by 1
+     )
+     select a.code, a.name, a.nature, a.depth, a.is_active,
+            exists (select 1 from finance.accounts b
+                     where b.code <> a.code and b.code like a.code || '%') as co_con,
+            coalesce(r.so_dong, 0)::int  as so_dong_rieng,
+            coalesce(r.ps_no, 0)::text   as ps_no_rieng,
+            coalesce(r.ps_co, 0)::text   as ps_co_rieng,
+            coalesce(g.so_dong, 0)::int  as so_dong_gom,
+            coalesce(g.ps_no, 0)::text   as ps_no_gom,
+            coalesce(g.ps_co, 0)::text   as ps_co_gom,
+            coalesce(o.dau, 0)::text     as dau_ky
      from finance.accounts a
-     left join finance.opening_balances o on o.account_code = a.code
-     where a.code = $1`, [account],
+     left join rieng r on r.account_code = a.code
+     left join lateral (
+       select sum(x.so_dong) as so_dong, sum(x.ps_no) as ps_no, sum(x.ps_co) as ps_co
+       from rieng x where x.account_code like a.code || '%'
+     ) g on true
+     left join lateral (
+       select sum(ob.debit - ob.credit) as dau
+       from finance.opening_balances ob where ob.account_code like a.code || '%'
+     ) o on true
+     order by a.code`,
+  );
+}
+
+/* ── Sổ chi tiết một tài khoản, có số dư đầu kỳ thật ───────────────────────
+   Nguồn Excel: So_chi_tiet_cac_tai_khoan.xlsx
+
+   gomCon: tài khoản cha không mang bút toán nào, mọi con số nằm ở tài khoản
+   con. Mở Sổ chi tiết TK 111 mà chỉ lọc đúng mã 111 thì ra bảng rỗng, trong
+   khi 1111 có hàng nghìn dòng. Sổ kế toán Việt Nam luôn hiểu "sổ chi tiết tài
+   khoản 111" là gồm cả 1111, 1112, 1113. Nên mặc định gộp con, và vẫn cho tắt
+   khi cần soi riêng một cấp. */
+
+async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true }) {
+  const tk = await one(
+    `select a.code, a.name, a.nature, a.depth,
+            exists (select 1 from finance.accounts b
+                     where b.code <> a.code and b.code like a.code || '%') as co_con
+     from finance.accounts a where a.code = $1`, [account],
   );
   if (!tk) return null;
-  const dauKy = Number(tk.dau_ky_no) - Number(tk.dau_ky_co);
+
+  // Tài khoản cha thì luôn gộp con, vì không gộp là chắc chắn ra bảng rỗng.
+  const gom = gomCon || tk.co_con;
+  const loc = gom ? `${account}%` : account;
+  const phepSo = gom ? 'like' : '=';
+
+  const con = tk.co_con
+    ? await rows(
+        `select a.code, a.name, coalesce(count(l.id), 0)::int as so_dong,
+                coalesce(sum(l.debit), 0)::text as ps_no,
+                coalesce(sum(l.credit), 0)::text as ps_co
+         from finance.accounts a
+         left join finance.journal_lines l on l.account_code = a.code
+         where a.code like $1 || '%' and a.code <> $1
+         group by a.code, a.name order by a.code`, [account])
+    : [];
+
+  const dauRow = await one(
+    `select coalesce(sum(debit - credit), 0)::float8 as dau
+     from finance.opening_balances where account_code ${phepSo} $1`, [loc],
+  );
+  const dauKy = dauRow.dau || 0;
+
   const dong = await rows(
     `select v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type,
-            v.invoice_no, l.description, l.contra_account_code,
-            l.partner_code, p.name as partner_name, l.is_deductible,
+            v.invoice_no, l.invoice_date, l.account_code, l.description,
+            l.contra_account_code, l.partner_code, p.name as partner_name,
+            l.cost_item_code, l.is_deductible,
             l.debit::text as ps_no, l.credit::text as ps_co,
-            ($5::numeric + sum(l.debit - l.credit)
+            ($6::numeric + sum(l.debit - l.credit)
                over (order by v.posting_date, v.voucher_no, l.id))::text as so_du
      from finance.journal_lines l
      join finance.vouchers v on v.id = l.voucher_id
      left join finance.partners p on p.code = l.partner_code
-     where l.account_code = $1
+     where l.account_code ${phepSo} $1
        and ($2::text is null or v.period_code = $2)
        and ($3::date is null or v.posting_date >= $3)
        and ($4::date is null or v.posting_date <= $4)
+       and ($5::text is null or l.partner_code = $5)
      order by v.posting_date, v.voucher_no, l.id
      limit 5000`,
-    [account, period || null, from || null, to || null, dauKy],
+    [loc, period || null, from || null, to || null, null, dauKy],
   );
+
   const tong = await one(
     `select coalesce(sum(l.debit), 0)::text as tong_no,
             coalesce(sum(l.credit), 0)::text as tong_co, count(*)::int as so_dong
      from finance.journal_lines l
      join finance.vouchers v on v.id = l.voucher_id
-     where l.account_code = $1 and ($2::text is null or v.period_code = $2)`,
-    [account, period || null],
+     where l.account_code ${phepSo} $1
+       and ($2::text is null or v.period_code = $2)
+       and ($3::date is null or v.posting_date >= $3)
+       and ($4::date is null or v.posting_date <= $4)`,
+    [loc, period || null, from || null, to || null],
   );
-  return { ...tk, dau_ky: String(dauKy), dong, ...tong };
+
+  return { ...tk, gom_con: gom, tai_khoan_con: con, dau_ky: String(dauKy), dong, ...tong };
 }
 
 /* ── Trạng thái số dư đầu kỳ ───────────────────────────────────────────── */
@@ -540,7 +619,7 @@ async function trangThaiDauKy() {
 }
 
 module.exports = {
-  chiPhiTheoKhoanMuc, soQuyTienMat, taiKhoanNganHang, soNganHang,
+  cayTaiKhoan, chiPhiTheoKhoanMuc, soQuyTienMat, taiKhoanNganHang, soNganHang,
   tongHopCongNo, chiTietCongNo, dongTien,
   baoCaoTinhHinhTaiChinh, soChiTietTaiKhoan, trangThaiDauKy,
 };

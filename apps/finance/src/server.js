@@ -358,6 +358,7 @@ app.get(`${BASE}/api/nhat-ky`, guard, doc('xem_nhat_ky_chung', (req) => q.journa
   period: req.query.ky, account: req.query.tai_khoan, partner: req.query.doi_tac,
   from: req.query.tu_ngay, to: req.query.den_ngay, q: req.query.tim,
   deductible: req.query.hop_ly === undefined ? undefined : req.query.hop_ly === 'true',
+  costItem: req.query.khoan_muc,
   sort: req.query.sap_xep, dir: req.query.chieu,
   limit: req.query.so_dong, offset: req.query.bo_qua,
 })));
@@ -666,9 +667,14 @@ app.get(`${BASE}/api/bc/dong-tien`, guard, doc('xem_dong_tien', (req) =>
 app.get(`${BASE}/api/bc/b01`, guard, doc('xem_bao_cao_tinh_hinh_tai_chinh', () =>
   bc.baoCaoTinhHinhTaiChinh()));
 
+app.get(`${BASE}/api/bc/cay-tai-khoan`, guard, async () => bc.cayTaiKhoan());
+
 app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoan', async (req, reply) => {
-  const r = await bc.soChiTietTaiKhoan({ account: req.params.code, period: req.query.ky,
-                                         from: req.query.tu_ngay, to: req.query.den_ngay });
+  const r = await bc.soChiTietTaiKhoan({
+    account: req.params.code, period: req.query.ky,
+    from: req.query.tu_ngay, to: req.query.den_ngay,
+    gomCon: req.query.gom_con !== 'false',
+  });
   if (!r) return fail(reply, 404, 'Không có tài khoản này.');
   return r;
 }));

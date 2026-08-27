@@ -599,12 +599,62 @@ VE['tong-quan'] = async (than) => {
   );
 };
 
-/* ── Màn: Nhật ký chung ────────────────────────────────────────────────── */
+/* ── Màn: Nhật ký chung ────────────────────────────────────────────────────
+   Bố cục bám đúng file Sổ nhật ký chung bản Excel: 17 cột, cùng tên, cùng thứ
+   tự. Kế toán đọc sổ này hằng ngày và đã thuộc vị trí từng cột; đổi thứ tự
+   hay bỏ bớt cột là bắt họ dò lại từ đầu mỗi lần mở.
+
+   17 cột thì rộng hơn màn hình, nên có bảng chọn cột. Mặc định bật đúng những
+   cột bản Excel luôn có số liệu; bốn cột thưa dữ liệu tắt sẵn để bảng dễ đọc,
+   nhưng bật lên là thấy ngay. */
 
 const NK = {
-  tim: '', tai_khoan: '', doi_tac: '', tu_ngay: '', den_ngay: '',
+  tim: '', tai_khoan: '', doi_tac: '', khoan_muc: '', tu_ngay: '', den_ngay: '',
   hop_ly: '', sap_xep: 'ngay', chieu: 'desc', bo_qua: 0, so_dong: 50,
 };
+
+// Thứ tự và tên đúng như file Excel. hien: có bật sẵn hay không.
+const COT_NK = [
+  { ma: 'ngay_hach_toan', ten: 'Ngày hạch toán', hien: true,  sort: 'ngay',
+    ve: (r) => el('td', { class: 'ma' }, ngay(r.posting_date)) },
+  { ma: 'ngay_chung_tu',  ten: 'Ngày chứng từ',  hien: false, sort: 'ngay_chung_tu',
+    ve: (r) => el('td', { class: 'ma mo' }, ngay(r.voucher_date)) },
+  { ma: 'so_chung_tu',    ten: 'Số chứng từ',    hien: true,  sort: 'so_chung_tu',
+    ve: (r) => el('td', { class: 'ma' }, r.voucher_no) },
+  { ma: 'ngay_hoa_don',   ten: 'Ngày hóa đơn',   hien: false, sort: 'ngay_hoa_don',
+    ve: (r) => el('td', { class: 'ma mo' }, r.invoice_date ? ngay(r.invoice_date) : '—') },
+  { ma: 'so_hoa_don',     ten: 'Số hóa đơn',     hien: true,  sort: 'so_hoa_don',
+    ve: (r) => el('td', { class: 'ma mo' }, r.invoice_no || '—') },
+  { ma: 'dien_giai',      ten: 'Diễn giải',      hien: true,
+    ve: (r) => el('td', { class: 'nk-dien-giai' }, r.description || '—') },
+  { ma: 'tai_khoan',      ten: 'Tài khoản',      hien: true,  sort: 'tai_khoan',
+    ve: (r) => el('td', { class: 'ma' }, r.account_code,
+      r.account_name ? el('div', { class: 'mo ten-tai-khoan' }, r.account_name) : null) },
+  { ma: 'tk_doi_ung',     ten: 'TK đối ứng',     hien: true,  sort: 'doi_ung',
+    ve: (r) => el('td', { class: 'ma mo' }, r.contra_account_code || '—') },
+  { ma: 'phat_sinh_no',   ten: 'Phát sinh Nợ',   hien: true,  tien: true, sort: 'no',
+    ve: (r) => el('td', { class: 'tien' }, Number(r.debit) ? tien(r.debit) : '—') },
+  { ma: 'phat_sinh_co',   ten: 'Phát sinh Có',   hien: true,  tien: true, sort: 'co',
+    ve: (r) => el('td', { class: 'tien' }, Number(r.credit) ? tien(r.credit) : '—') },
+  { ma: 'ma_doi_tuong',   ten: 'Mã đối tượng',   hien: true,  sort: 'doi_tac',
+    ve: (r) => el('td', { class: 'ma mo' }, r.partner_code || '—') },
+  { ma: 'ten_doi_tuong',  ten: 'Tên đối tượng',  hien: true,
+    ve: (r) => el('td', { class: 'mo' }, r.partner_name || '—') },
+  { ma: 'ma_kmcp',        ten: 'Mã KMCP',        hien: true,  sort: 'khoan_muc',
+    ve: (r) => el('td', { class: 'ma' }, r.cost_item_code || '—') },
+  { ma: 'ten_kmcp',       ten: 'Tên KMCP',       hien: false,
+    ve: (r) => el('td', { class: 'mo' }, r.cost_item_name || '—') },
+  { ma: 'hop_dong_mua',   ten: 'Hợp đồng mua',   hien: false,
+    ve: (r) => el('td', { class: 'ma mo' }, r.contract_buy || '—') },
+  { ma: 'hop_dong_ban',   ten: 'Hợp đồng bán',   hien: false,
+    ve: (r) => el('td', { class: 'ma mo' }, r.contract_sell || '—') },
+  { ma: 'cp_hop_ly',      ten: 'CP hợp lý/không hợp lý', hien: true,
+    ve: (r) => el('td', {}, r.is_deductible === false
+      ? el('span', { class: 'the-nhan am' }, 'Không hợp lý')
+      : el('span', { class: 'mo' }, 'Hợp lý')) },
+];
+
+const NK_COT = new Set(COT_NK.filter((c) => c.hien).map((c) => c.ma));
 
 VE['nhat-ky'] = async (than) => {
   const p = new URLSearchParams();
@@ -615,21 +665,22 @@ VE['nhat-ky'] = async (than) => {
   const oTim = el('input', { value: NK.tim, placeholder: 'số chứng từ hoặc diễn giải' });
   const oTk = el('input', { value: NK.tai_khoan, placeholder: 'ví dụ 6421', class: 'ma' });
   const oDt = el('input', { value: NK.doi_tac, placeholder: 'mã đối tượng', class: 'ma' });
+  const oKm = el('input', { value: NK.khoan_muc, placeholder: 'mã khoản mục', class: 'ma' });
   const oTu = el('input', { type: 'date', value: NK.tu_ngay });
   const oDen = el('input', { type: 'date', value: NK.den_ngay });
   const oHopLy = el('select', {},
     el('option', { value: '', selected: NK.hop_ly === '' || null }, 'Tất cả'),
-    el('option', { value: 'true', selected: NK.hop_ly === 'true' || null }, 'Chỉ chi phí hợp lý'),
+    el('option', { value: 'true', selected: NK.hop_ly === 'true' || null }, 'Chỉ hợp lý'),
     el('option', { value: 'false', selected: NK.hop_ly === 'false' || null }, 'Chỉ không hợp lý'),
   );
   const apDung = () => {
     NK.tim = oTim.value.trim(); NK.tai_khoan = oTk.value.trim();
-    NK.doi_tac = oDt.value.trim();
+    NK.doi_tac = oDt.value.trim(); NK.khoan_muc = oKm.value.trim();
     NK.tu_ngay = oTu.value; NK.den_ngay = oDen.value;
     NK.hop_ly = oHopLy.value; NK.bo_qua = 0;
     ve();
   };
-  for (const o of [oTim, oTk, oDt]) {
+  for (const o of [oTim, oTk, oDt, oKm]) {
     o.addEventListener('keydown', (e) => { if (e.key === 'Enter') apDung(); });
   }
 
@@ -638,16 +689,26 @@ VE['nhat-ky'] = async (than) => {
     else { NK.sap_xep = cot; NK.chieu = 'desc'; }
     ve();
   };
-  const thSap = (ten, cot, tienTe) => el('th', {
-    class: `co-the-sap${tienTe ? ' tien' : ''}`, onclick: () => sapTheo(cot),
-  }, `${ten}${NK.sap_xep === cot ? (NK.chieu === 'asc' ? ' ↑' : ' ↓') : ''}`);
 
+  const cotHien = COT_NK.filter((c) => NK_COT.has(c.ma));
   const tuDong = d.tong ? NK.bo_qua + 1 : 0;
   const denDong = Math.min(NK.bo_qua + d.dong.length, d.tong);
 
+  const chonCot = el('div', { class: 'chon-cot' },
+    ...COT_NK.map((c) => el('button', {
+      type: 'button', 'aria-pressed': NK_COT.has(c.ma) ? 'true' : 'false',
+      onclick: () => {
+        if (NK_COT.has(c.ma)) NK_COT.delete(c.ma); else NK_COT.add(c.ma);
+        if (!NK_COT.size) NK_COT.add('dien_giai');
+        ve();
+      },
+    }, c.ten)),
+  );
+
   than.replaceChildren(
-    dauTrang('Nhật ký chung',
-      'Mỗi nghiệp vụ ghi hai dòng, một bên Nợ một bên Có. Bấm vào dòng để mở toàn bộ chứng từ.',
+    dauTrang('Sổ nhật ký chung',
+      'Sổ gốc của toàn hệ thống. Mọi báo cáo khác đều tính lại từ đây. Bố cục theo đúng '
+      + 'file Excel: 17 cột, cùng tên, cùng thứ tự. Bấm vào dòng để mở trọn chứng từ.',
       ghiSoDuoc() ? el('button', {
         class: 'nut chinh', onclick: () => moFormChungTu(null),
       }, '+ Thêm chứng từ') : null),
@@ -657,7 +718,8 @@ VE['nhat-ky'] = async (than) => {
         chonKy(() => { NK.bo_qua = 0; ve(); }),
         el('label', { class: 'o rong' }, el('span', {}, 'Tìm'), oTim),
         el('label', { class: 'o' }, el('span', {}, 'Tài khoản bắt đầu bằng'), oTk),
-        el('label', { class: 'o' }, el('span', {}, 'Đối tượng'), oDt),
+        el('label', { class: 'o' }, el('span', {}, 'Mã đối tượng'), oDt),
+        el('label', { class: 'o' }, el('span', {}, 'Mã khoản mục'), oKm),
         el('label', { class: 'o' }, el('span', {}, 'Từ ngày'), oTu),
         el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
         el('label', { class: 'o' }, el('span', {}, 'Chi phí'), oHopLy),
@@ -665,38 +727,38 @@ VE['nhat-ky'] = async (than) => {
         el('button', {
           class: 'nut',
           onclick: () => {
-            Object.assign(NK, { tim: '', tai_khoan: '', doi_tac: '', tu_ngay: '', den_ngay: '', hop_ly: '', bo_qua: 0 });
+            Object.assign(NK, {
+              tim: '', tai_khoan: '', doi_tac: '', khoan_muc: '',
+              tu_ngay: '', den_ngay: '', hop_ly: '', bo_qua: 0,
+            });
             ve();
           },
         }, 'Xóa lọc'),
       ),
+      el('div', { class: 'cot-hop' },
+        el('span', { class: 'cot-nhan' }, 'Cột hiển thị'),
+        chonCot,
+      ),
     )),
 
     el('div', { class: 'bao' },
-      `${dinhDangSo.format(d.tong)} dòng khớp · tổng Nợ ${tien(d.tong_no)} · tổng Có ${tien(d.tong_co)}`),
+      `${dinhDangSo.format(d.tong)} dòng khớp · tổng Nợ ${tien(d.tong_no)} · tổng Có ${tien(d.tong_co)}`
+      + ` · đang hiện ${cotHien.length}/${COT_NK.length} cột`),
 
     d.dong.length
-      ? el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', {},
-          el('thead', {}, el('tr', {},
-            thSap('Ngày', 'ngay'), thSap('Chứng từ', 'so_chung_tu'),
-            thSap('Tài khoản', 'tai_khoan'), el('th', {}, 'Đối ứng'),
-            el('th', {}, 'Diễn giải'), el('th', {}, 'Đối tượng'),
-            thSap('Nợ', 'no', true), thSap('Có', 'co', true))),
-          el('tbody', {}, ...d.dong.map((l) => el('tr', {
-            class: 'bam-duoc', onclick: () => moChungTu(l.voucher_id),
-          },
-            el('td', { class: 'ma' }, ngay(l.posting_date)),
-            el('td', { class: 'ma' }, l.voucher_no),
-            el('td', { class: 'ma' }, l.account_code,
-              l.account_name ? el('div', { class: 'mo ten-tai-khoan' }, l.account_name) : null),
-            el('td', { class: 'ma mo' }, l.contra_account_code || '—'),
-            el('td', {}, l.description || '—',
-              l.is_deductible === false
-                ? el('span', { class: 'the-nhan am cach-trai' }, 'không hợp lý') : null),
-            el('td', { class: 'mo' }, l.partner_name || l.partner_code || '—'),
-            el('td', { class: 'tien' }, Number(l.debit) ? tien(l.debit) : '—'),
-            el('td', { class: 'tien' }, Number(l.credit) ? tien(l.credit) : '—'),
-          ))),
+      ? el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'nk-bang' },
+          el('thead', {}, el('tr', {}, ...cotHien.map((c) => el('th', {
+            class: `${c.tien ? 'tien' : ''}${c.sort ? ' co-the-sap' : ''}`,
+            onclick: c.sort ? () => sapTheo(c.sort) : null,
+          }, c.ten + (c.sort && NK.sap_xep === c.sort ? (NK.chieu === 'asc' ? ' ↑' : ' ↓') : ''))))),
+          el('tbody', {}, ...d.dong.map((r) => el('tr', {
+            class: 'bam-duoc', onclick: () => moChungTu(r.voucher_id),
+          }, ...cotHien.map((c) => c.ve(r))))),
+          el('tfoot', {}, el('tr', {}, ...cotHien.map((c) =>
+            c.ma === 'phat_sinh_no' ? el('td', { class: 'tien' }, tien(d.tong_no))
+              : c.ma === 'phat_sinh_co' ? el('td', { class: 'tien' }, tien(d.tong_co))
+                : c.ma === 'ngay_hach_toan' ? el('td', {}, 'Cộng trang')
+                  : el('td', {}, '')))),
         )))
       : el('div', { class: 'the' }, el('div', { class: 'trong' }, 'Không có dòng nào khớp bộ lọc.')),
 
@@ -2436,79 +2498,206 @@ VE['bc-b01'] = async (than) => {
   );
 };
 
-/* ── Sổ chi tiết các tài khoản ─────────────────────────────────────────── */
+/* ── Sổ chi tiết các tài khoản ─────────────────────────────────────────────
+   Nguồn Excel: So_chi_tiet_cac_tai_khoan.xlsx
 
-const SCT = { tai_khoan: '' };
+   Bố cục hai cột: bên trái là toàn bộ 256 tài khoản để duyệt, bên phải là sổ
+   của tài khoản đang chọn.
+
+   Danh sách bên trái kèm số dòng và phát sinh của từng tài khoản, vì bộ tài
+   khoản này có 142 cái khai báo sẵn mà chưa dùng tới. Không có cột số liệu
+   thì người dùng bấm lần lượt qua 142 bảng rỗng mới tìm ra cái có dữ liệu. */
+
+const SCT = { tai_khoan: '1111', tim: '', chi_co_ps: true, gom_con: true, tu_ngay: '', den_ngay: '' };
 
 VE['bc-so-chi-tiet'] = async (than) => {
-  const dsTk = await goi('/tai-khoan');
-  if (!SCT.tai_khoan) SCT.tai_khoan = '1111';
+  const cay = await goi('/bc/cay-tai-khoan');
 
-  const oTk = el('input', { list: 'ds-tk-sct', class: 'ma', value: SCT.tai_khoan });
-  const list = el('datalist', { id: 'ds-tk-sct' },
-    ...dsTk.map((a) => el('option', { value: a.code }, `${a.code} · ${a.name}`)));
+  const loc = SCT.tim.trim().toLowerCase();
+  const hienThi = cay.filter((a) => {
+    if (SCT.chi_co_ps && !a.so_dong_gom) return false;
+    if (!loc) return true;
+    return a.code.startsWith(loc) || (a.name || '').toLowerCase().includes(loc);
+  });
+
+  const oTim = el('input', { value: SCT.tim, placeholder: 'mã hoặc tên tài khoản' });
+  oTim.addEventListener('input', () => {
+    SCT.tim = oTim.value;
+    veDanhSach();
+  });
+
+  const dsHop = el('div', { class: 'tk-ds' });
+  const dem = el('div', { class: 'tk-dem' });
+
+  function veDanhSach() {
+    const l = SCT.tim.trim().toLowerCase();
+    const ds = cay.filter((a) => {
+      if (SCT.chi_co_ps && !a.so_dong_gom) return false;
+      if (!l) return true;
+      return a.code.startsWith(l) || (a.name || '').toLowerCase().includes(l);
+    });
+    dem.textContent = `${dinhDangSo.format(ds.length)} trên ${dinhDangSo.format(cay.length)} tài khoản`;
+    dsHop.replaceChildren(...ds.map((a) => el('button', {
+      class: `tk-muc c${Math.min(a.depth, 4)}${a.code === SCT.tai_khoan ? ' dang-chon' : ''}`,
+      onclick: () => { SCT.tai_khoan = a.code; ve(); },
+      title: `${a.code} · ${a.name}`,
+    },
+      el('span', { class: 'tk-ma' }, a.code),
+      el('span', { class: 'tk-ten' }, a.name),
+      el('span', { class: 'tk-so' },
+        a.so_dong_gom ? dinhDangSo.format(a.so_dong_gom) : '—'),
+      a.co_con ? el('span', { class: 'the-nhan' }, 'cha') : null,
+    )));
+    if (!ds.length) dsHop.replaceChildren(el('div', { class: 'trong' }, 'Không có tài khoản nào khớp.'));
+  }
 
   let d;
   try {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams({ gom_con: String(SCT.gom_con) });
     if (S.ky) p.set('ky', S.ky);
+    if (SCT.tu_ngay) p.set('tu_ngay', SCT.tu_ngay);
+    if (SCT.den_ngay) p.set('den_ngay', SCT.den_ngay);
     d = await goi(`/bc/so-chi-tiet/${encodeURIComponent(SCT.tai_khoan)}?${p}`);
   } catch (err) {
     d = { loi: err.message };
   }
 
+  const oTu = el('input', { type: 'date', value: SCT.tu_ngay });
+  const oDen = el('input', { type: 'date', value: SCT.den_ngay });
+  const oGom = el('input', {
+    type: 'checkbox', checked: SCT.gom_con,
+    disabled: d.co_con ? true : null,
+    onchange: (e) => { SCT.gom_con = e.target.checked; ve(); },
+  });
+
+  const cuoiKy = d.loi ? 0
+    : Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co);
+
   than.replaceChildren(
     dauTrang('Sổ chi tiết các tài khoản',
-      'Toàn bộ bút toán của một tài khoản, kèm số dư sau mỗi dòng.',
+      'Toàn bộ bút toán của một tài khoản, kèm số dư sau mỗi dòng. Chọn tài khoản ở danh '
+      + 'sách bên trái.',
       chonKy(() => ve()),
-      el('label', { class: 'o' }, el('span', {}, 'Tài khoản'), oTk),
+      el('label', { class: 'o' }, el('span', {}, 'Từ ngày'), oTu),
+      el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
       el('button', {
         class: 'nut chinh',
-        onclick: () => { SCT.tai_khoan = oTk.value.trim(); ve(); },
-      }, 'Xem')),
-    list,
+        onclick: () => { SCT.tu_ngay = oTu.value; SCT.den_ngay = oDen.value; ve(); },
+      }, 'Lọc')),
 
     nhanNguon('So_chi_tiet_cac_tai_khoan.xlsx'),
 
-    d.loi ? el('div', { class: 'bao am' }, d.loi) : el('div', {},
-      canhBaoCatBot(d.dong.length, 5000, d.so_dong),
-      el('div', { class: 'luoi luoi-4 cach-duoi' },
-        theChiSo('Tài khoản', d.code, d.name),
-        theChiSo('Dư đầu kỳ', tien(d.dau_ky),
-          Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
-        theChiSo('Phát sinh Nợ', tien(d.tong_no), `${dinhDangSo.format(d.so_dong)} dòng`),
-        theChiSo('Dư cuối kỳ',
-          tien(Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co)), 'đồng'),
+    el('div', { class: 'tk-khung' },
+      el('div', { class: 'the tk-canh' },
+        el('div', { class: 'the-dau' }, 'Tất cả tài khoản'),
+        el('div', { class: 'the-than' },
+          el('label', { class: 'o' }, el('span', {}, 'Tìm'), oTim),
+          el('label', { class: 'tk-loc' },
+            el('input', {
+              type: 'checkbox', checked: SCT.chi_co_ps,
+              onchange: (e) => { SCT.chi_co_ps = e.target.checked; veDanhSach(); },
+            }),
+            el('span', {}, 'Chỉ tài khoản có phát sinh'),
+          ),
+          dem,
+        ),
+        dsHop,
       ),
-      bang(
-        [{ ten: 'Ngày HT' }, { ten: 'Ngày CT' }, { ten: 'Số chứng từ' }, { ten: 'Số hóa đơn' },
-         { ten: 'Diễn giải' }, { ten: 'TK đối ứng' }, { ten: 'Đối tượng' },
-         { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
-         { ten: 'Số dư', tien: true }],
-        d.dong.map((r) => el('tr', {},
-          el('td', { class: 'ma' }, ngay(r.posting_date)),
-          el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
-          el('td', { class: 'ma' }, r.voucher_no),
-          el('td', { class: 'ma mo' }, r.invoice_no || '—'),
-          el('td', {}, r.description || '—',
-            r.is_deductible === false
-              ? el('span', { class: 'the-nhan am cach-trai' }, 'không hợp lý') : null),
-          el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
-          el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
-          el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
-          el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
-          el('td', { class: 'tien mo' }, tien(r.so_du)),
-        )),
-        el('tr', {},
-          el('td', { colspan: '7' }, 'Cộng phát sinh'),
-          el('td', { class: 'tien' }, tien(d.tong_no)),
-          el('td', { class: 'tien' }, tien(d.tong_co)),
-          el('td', { class: 'tien' },
-            tien(Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co))),
+
+      el('div', { class: 'tk-than' },
+        d.loi ? el('div', { class: 'bao am' }, d.loi) : el('div', {},
+          el('div', { class: 'the cach-duoi' }, el('div', { class: 'the-than' },
+            el('div', { class: 'tk-tieu-de' },
+              el('div', {},
+                el('div', { class: 'ngan-ten' }, `${d.code} · ${d.name}`),
+                el('div', { class: 'mo ngan-phu' },
+                  `${TINH_CHAT[d.nature] || d.nature} · cấp ${d.depth}`
+                  + (d.co_con ? ` · tài khoản cha, gồm ${d.tai_khoan_con.length} tài khoản con` : '')),
+              ),
+              el('label', { class: 'tk-loc' }, oGom,
+                el('span', {}, d.co_con
+                  ? 'Tài khoản cha luôn gộp con'
+                  : 'Gồm cả tài khoản con')),
+            ),
+          )),
+
+          d.co_con ? el('div', { class: 'bao' },
+            'Tài khoản này không mang bút toán nào của riêng nó. Mọi con số nằm ở các tài '
+            + 'khoản con, và sổ dưới đây đã gộp chúng lại.') : null,
+
+          canhBaoCatBot(d.dong.length, 5000, d.so_dong),
+
+          el('div', { class: 'luoi luoi-4 cach-duoi' },
+            theChiSo('Dư đầu kỳ', tien(d.dau_ky),
+              Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ',
+              Number(d.dau_ky) ? '' : 'vang'),
+            theChiSo('Phát sinh Nợ', tien(d.tong_no), `${dinhDangSo.format(d.so_dong)} dòng`),
+            theChiSo('Phát sinh Có', tien(d.tong_co)),
+            theChiSo('Dư cuối kỳ', tien(cuoiKy), 'đồng',
+              cuoiKy >= 0 ? 'duong' : 'am'),
+          ),
+
+          d.tai_khoan_con.length ? el('div', { class: 'the cach-duoi' },
+            el('div', { class: 'the-dau' }, 'Các tài khoản con'),
+            el('div', { class: 'cuon thap' }, el('table', {},
+              el('thead', {}, el('tr', {},
+                el('th', {}, 'Mã'), el('th', {}, 'Tên'),
+                el('th', { class: 'tien' }, 'Số dòng'),
+                el('th', { class: 'tien' }, 'Phát sinh Nợ'),
+                el('th', { class: 'tien' }, 'Phát sinh Có'), el('th', {}, ''))),
+              el('tbody', {}, ...d.tai_khoan_con.map((c) => el('tr', {},
+                el('td', { class: 'ma' }, c.code),
+                el('td', {}, c.name),
+                el('td', { class: 'tien mo' }, c.so_dong ? dinhDangSo.format(c.so_dong) : '—'),
+                el('td', { class: 'tien' }, Number(c.ps_no) ? tien(c.ps_no) : '—'),
+                el('td', { class: 'tien' }, Number(c.ps_co) ? tien(c.ps_co) : '—'),
+                el('td', {}, c.so_dong ? el('button', {
+                  class: 'nut nho', onclick: () => { SCT.tai_khoan = c.code; ve(); },
+                }, 'Mở sổ') : null),
+              ))),
+            )),
+          ) : null,
+
+          d.dong.length ? bang(
+            [{ ten: 'Ngày HT' }, { ten: 'Ngày CT' }, { ten: 'Số chứng từ' },
+             { ten: 'Số hóa đơn' }, d.gom_con && d.co_con ? { ten: 'Tài khoản' } : null,
+             { ten: 'Diễn giải' }, { ten: 'TK đối ứng' }, { ten: 'Đối tượng' },
+             { ten: 'Khoản mục' },
+             { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
+             { ten: 'Số dư', tien: true }].filter(Boolean),
+            d.dong.map((r) => el('tr', {},
+              el('td', { class: 'ma' }, ngay(r.posting_date)),
+              el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
+              el('td', { class: 'ma' }, r.voucher_no),
+              el('td', { class: 'ma mo' }, r.invoice_no || '—'),
+              d.gom_con && d.co_con ? el('td', { class: 'ma' }, r.account_code) : null,
+              el('td', {}, r.description || '—',
+                r.is_deductible === false
+                  ? el('span', { class: 'the-nhan am cach-trai' }, 'không hợp lý') : null),
+              el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+              el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
+              el('td', { class: 'ma mo' }, r.cost_item_code || '—'),
+              el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
+              el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
+              el('td', { class: 'tien mo' }, tien(r.so_du)),
+            )),
+            el('tr', {},
+              el('td', { colspan: String(d.gom_con && d.co_con ? 9 : 8) }, 'Cộng phát sinh'),
+              el('td', { class: 'tien' }, tien(d.tong_no)),
+              el('td', { class: 'tien' }, tien(d.tong_co)),
+              el('td', { class: 'tien' }, tien(cuoiKy)),
+            ),
+          ) : el('div', { class: 'the' }, el('div', { class: 'trong' },
+            `Tài khoản ${d.code} chưa có bút toán nào`
+            + (S.ky ? ` trong kỳ ${S.ky}` : '')
+            + (SCT.tu_ngay || SCT.den_ngay ? ' trong khoảng ngày đang lọc' : '')
+            + '. Tài khoản này đã khai báo trong hệ thống tài khoản nhưng chưa phát sinh.')),
         ),
       ),
     ),
   );
+
+  veDanhSach();
 };
 
 /* ── Ba báo cáo không dựng lại được ────────────────────────────────────── */
