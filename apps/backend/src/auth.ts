@@ -89,8 +89,15 @@ export class AuthService {
          and (
            lower(p.payload->>'employee_code')=$1 or lower(p.payload->>'employee_number')=$1
            or lower(coalesce(e.payload->>'email',''))=$1
+           or lower(coalesce(p.payload->>'full_name',''))=$1
+           or lower(coalesce(e.payload->>'full_name',''))=$1
          )
-       order by case when lower(coalesce(e.payload->>'email',''))=$1 then 0 else 1 end
+       order by case
+         when lower(coalesce(e.payload->>'email',''))=$1 then 0
+         when lower(p.payload->>'employee_code')=$1 then 1
+         when lower(p.payload->>'employee_number')=$1 then 2
+         else 3
+       end
        limit 5`, [identifier]);
 
     // PG works at temporary Support-assigned sites, so the clinic selected on
@@ -106,10 +113,16 @@ export class AuthService {
     const profile = candidate.profile;
     const employee = candidate.employee || {};
     const userId = String(profile.id || candidate.profile_key);
+    // Older roster imports can use readable record keys such as
+    // "staff-profile-pvc-10251". app.local_accounts.user_id is UUID-only,
+    // therefore those profiles need a separate immutable account UUID.
+    const localAccountUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)
+      ? userId
+      : randomUUID();
     const account = await this.infrastructure.postgres.query<{
-      password_salt: string; password_hash: string; active: boolean; locked_until: Date | null;
-    }>('select password_salt,password_hash,active,locked_until from app.local_accounts where profile_key=$1', [candidate.profile_key]);
-    const stored = account.rows[0];
+      user_id: string; password_salt: string; password_hash: string; active: boolean; locked_until: Date | null;
+    }>('select user_id::text,password_salt,password_hash,active,locked_until from app.local_accounts where profile_key=$1', [candidate.profile_key]);
+    let stored = account.rows[0];
     if (stored?.locked_until && stored.locked_until.getTime() > Date.now()) {
       throw new UnauthorizedException('Tài khoản đang tạm khóa. Vui lòng thử lại sau.');
     }
@@ -127,12 +140,17 @@ export class AuthService {
         || (bootstrapAdmin && password === bootstrapAdminPassword);
       if (valid) {
         const credentials = await hashPassword(password);
-        await this.infrastructure.postgres.query(
+        const provisioned = await this.infrastructure.postgres.query<{
+          user_id: string; password_salt: string; password_hash: string; active: boolean; locked_until: Date | null;
+        }>(
           `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash)
-           values ($1,$2,$3,$4,$5,$6,$7) on conflict (profile_key) do nothing`,
-          [userId, candidate.profile_key, employee.email || null, profile.employee_code || null,
+           values ($1,$2,$3,$4,$5,$6,$7)
+           on conflict (profile_key) do update set profile_key=excluded.profile_key
+           returning user_id::text,password_salt,password_hash,active,locked_until`,
+          [localAccountUserId, candidate.profile_key, employee.email || null, profile.employee_code || null,
             profile.branch_id || null, credentials.salt, credentials.hash],
         );
+        stored = provisioned.rows[0];
       }
     }
     if (!valid) {
@@ -156,10 +174,14 @@ export class AuthService {
     const accessToken = signJwt({ sub: user.id, profileKey: candidate.profile_key, role: user.role }, accessTtlSeconds);
     const refreshToken = randomBytes(48).toString('base64url');
     const refreshHash = createHmac('sha256', jwtSecret()).update(refreshToken).digest('hex');
+    // Legacy imports may retain a local-account UUID that differs from the
+    // profile UUID. refresh_sessions references local_accounts.user_id, while
+    // the frontend must continue receiving the profile UUID in `user.id`.
+    const sessionOwnerId = String(stored?.user_id || userId);
     await this.infrastructure.postgres.query(
       `insert into app.refresh_sessions(id,user_id,token_hash,expires_at)
        values ($1,$2,$3,now()+($4 || ' seconds')::interval)`,
-      [randomUUID(), user.id, refreshHash, refreshTtlSeconds],
+      [randomUUID(), sessionOwnerId, refreshHash, refreshTtlSeconds],
     );
     await this.infrastructure.postgres.query(
       'update app.local_accounts set failed_attempts=0,locked_until=null,last_login_at=now(),updated_at=now() where profile_key=$1',

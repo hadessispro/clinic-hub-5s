@@ -225,8 +225,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
                 ) processed_by_owner
          from marketing.leads l cross join bounds b
          where l.assigned_telesale_code is not null
-           and (b.started_at is null or l.assigned_at>=b.started_at)
-           and (b.ended_at is null or l.assigned_at<b.ended_at)
+           and (b.started_at is null or coalesce(l.assigned_at,l.created_at)>=b.started_at)
+           and (b.ended_at is null or coalesce(l.assigned_at,l.created_at)<b.ended_at)
        ), owned as (
          select assigned_telesale_code employee_code,
                 count(*)::int total_data,
@@ -525,8 +525,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         )
       )`);
     }
-    if (query.dateFrom) { params.push(`${String(query.dateFrom)}T00:00:00+07:00`); where.push(`l.created_at >= $${params.length}::timestamptz`); }
-    if (query.dateTo) { params.push(`${String(query.dateTo)}T23:59:59.999+07:00`); where.push(`l.created_at <= $${params.length}::timestamptz`); }
+    // The workspace calls this filter "Ngày được giao". Use the assignment
+    // timestamp consistently with its KPI query; legacy rows without an
+    // assignment timestamp fall back to their creation timestamp.
+    if (query.dateFrom) { params.push(`${String(query.dateFrom)}T00:00:00+07:00`); where.push(`coalesce(l.assigned_at,l.created_at) >= $${params.length}::timestamptz`); }
+    if (query.dateTo) { params.push(`${String(query.dateTo)}T23:59:59.999+07:00`); where.push(`coalesce(l.assigned_at,l.created_at) <= $${params.length}::timestamptz`); }
     if (String(query.pgUnassignedOnly || '').toLowerCase() === 'true') {
       where.push(`l.assigned_telesale_code is null and exists (
         select 1 from app.records pg_creator
@@ -802,7 +805,16 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (user.role === 'telesale_staff' && row.assigned_telesale_code !== user.employeeCode) throw new ForbiddenException();
     if (!['pg_staff', 'telesale_staff'].includes(user.role) && !reportRoles.has(user.role)) throw new ForbiddenException();
     const result = await this.infrastructure.postgres.query(
-      'select * from marketing.call_logs where lead_id=$1 order by created_at desc limit 200', [leadId],
+      `with history as (
+         select id::text id,lead_id::text lead_id,telesale_code,null::text telesale_name,
+                call_status,note,appointment_at,created_at,false is_legacy,'operational'::text event_category
+         from marketing.call_logs where lead_id=$1
+         union all
+         select id::text,lead_id::text,actor_code,actor_name,event_type,summary,null::timestamptz,
+                occurred_at,true,event_category
+         from marketing.customer_journey_events where lead_id=$1
+       )
+       select * from history order by created_at desc limit 300`, [leadId],
     );
     return { data: result.rows };
   }
