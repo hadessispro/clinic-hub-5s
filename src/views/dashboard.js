@@ -1,11 +1,16 @@
 import { getAttendance } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
 import { getTasks } from '../services/tasks.js';
-import { getMarketingLeads } from '../services/marketing.js';
+import { getMarketingLeads, getMarketingReports } from '../services/marketing.js';
 import { DEPARTMENTS, SHIFTS } from '../constants.js';
 import { todayISO, formatTime, escapeHTML, formatCurrency, attendanceStatusLabel, departmentName } from '../utils.js';
 import { pill, metric, statusPill, emptyState } from '../components/shared.js';
+import { initMarketingChart, funnelOption, dataClassOption, sourceOption, roleOption, staffOption, resizeMarketingCharts } from '../components/marketing-charts.js';
 import { store } from '../store.js';
+
+let dashboardMarketingReport = {};
+let dashboardCharts = [];
+let dashboardResizeHandler = null;
 
 // Static clinic notes for dashboard reference
 const STATIC_NOTES = [
@@ -23,12 +28,15 @@ export async function renderView(state) {
     todayAttendance,
     employees,
     tasks,
-    leads
+    leads,
+    marketingReport
   ] = await Promise.all([
     getAttendance({ date: today }),
     getEmployees(),
     getTasks(),
-    getMarketingLeads()
+    getMarketingLeads(),
+    ['admin_marketing', 'telesale_leader'].includes(profile.role)
+      ? getMarketingReports().catch(() => ({})) : Promise.resolve({})
   ]);
 
   const isMarketingUser = ['admin_marketing', 'support_marketing', 'pg_staff', 'telesale_leader', 'telesale_staff'].includes(profile.role) || profile.department === 'mkt';
@@ -114,209 +122,101 @@ export async function renderView(state) {
     `;
   }
 
-  // Compute Marketing Funnel counts for Marketing users
-  const leadsCountNew = leads.filter(l => (l.status || 'new') === 'new').length;
-  const leadsCountContacted = leads.filter(l => l.status === 'contacted').length;
-  const leadsCountBooked = leads.filter(l => l.status === 'appointment_booked').length;
-  const leadsCountConverted = leads.filter(l => l.status === 'converted').length;
-  const leadsCountCancelled = leads.filter(l => l.status === 'cancelled').length;
-  const maxFunnelCount = Math.max(leads.length, 1);
-
-  // Role Performance Metrics data for Marketing Department (100% dynamically computed from database)
-  const targetLeadMonth = 50;
-  const adminPercent = leads.length ? Math.min(Math.round((leads.length / targetLeadMonth) * 100), 100) : 0;
-  const leaderConversion = maxFunnelCount ? Math.round((leadsCountConverted / maxFunnelCount) * 100) : 0;
-  const leaderPercent = Math.min(Math.round((leaderConversion / 20) * 100), 100);
-  
-  const supportIntake = leadsCountNew + leadsCountContacted;
-  const supportPercent = leads.length ? Math.min(Math.round((supportIntake / Math.max(leads.length, 1)) * 100), 100) : 0;
-
-  const pgLeadsCount = leads.filter(l => l.source === 'PG Market' || l.source === 'PG Thị Trường' || l.source === 'Địa Bàn').length;
-  const pgPercent = pgLeadsCount ? Math.min(Math.round((pgLeadsCount / 20) * 100), 100) : 0;
-
-  const tsCallsCount = leadsCountContacted + leadsCountBooked + leadsCountConverted;
-  const tsPercent = maxFunnelCount ? Math.min(Math.round((tsCallsCount / maxFunnelCount) * 100), 100) : 0;
-
-  const rolePerformanceData = [
-    {
-      role: 'Admin Marketing',
-      code: 'admin_marketing',
-      staffName: 'Trần Quốc Bảo',
-      taskName: 'Tối ưu Ads & Điều phối Marketing',
-      target: '50 Lead / tháng',
-      actual: `${leads.length} Lead`,
-      percent: adminPercent,
-      color: '#087f7b',
-      status: adminPercent >= 80 ? 'Xuất sắc' : (adminPercent > 0 ? 'Đạt tiến độ' : 'Chưa có data')
-    },
-    {
-      role: 'Quản lý Telesale',
-      code: 'telesale_leader',
-      staffName: 'Phạm Thu Hương',
-      taskName: 'Giám sát đội ngũ & Tỷ lệ chốt',
-      target: '20% Chốt hẹn',
-      actual: `${leaderConversion}% Chốt`,
-      percent: leaderPercent,
-      color: '#0284c7',
-      status: leaderPercent >= 80 ? 'Đạt chỉ tiêu' : (leaderPercent > 0 ? 'Đang triển khai' : 'Chưa có data')
-    },
-    {
-      role: 'Support Marketing',
-      code: 'support_marketing',
-      staffName: 'Nguyễn Thị Mai',
-      taskName: 'Nạp & Phân bổ Lead Ads / Hotline',
-      target: '30 Lead / tuần',
-      actual: `${supportIntake} Lead`,
-      percent: supportPercent,
-      color: '#8b5cf6',
-      status: supportPercent >= 70 ? 'Đạt tiến độ' : (supportPercent > 0 ? 'Cần tăng cường' : 'Chưa có data')
-    },
-    {
-      role: 'PG Thị Trường',
-      code: 'pg_staff',
-      staffName: 'Lê Văn Nam',
-      taskName: 'Thu thập Data khách hàng trực tiếp',
-      target: '20 Data / tuần',
-      actual: `${pgLeadsCount} Data`,
-      percent: pgPercent,
-      color: '#f59e0b',
-      status: pgPercent >= 70 ? 'Đạt chỉ tiêu' : (pgPercent > 0 ? 'Đang thực hiện' : 'Chưa có data')
-    },
-    {
-      role: 'Telesale Staff',
-      code: 'telesale_staff',
-      staffName: 'Hoàng Kim Anh',
-      taskName: 'Gọi điện tư vấn & Đặt lịch hẹn khám',
-      target: '80 Cuộc gọi / tuần',
-      actual: `${tsCallsCount} Cuộc gọi`,
-      percent: tsPercent,
-      color: '#10b981',
-      status: tsPercent >= 70 ? 'Đạt tiến độ' : (tsPercent > 0 ? 'Cần gọi thêm' : 'Chưa có data')
-    }
-  ];
-
-  // Render Bar Chart columns for Role Performance
-  const roleBarChartHtml = `
-    <div style="display:flex; align-items:flex-end; justify-content:space-around; height:240px; padding:20px 10px 10px; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.04); gap:12px; overflow-x:auto;">
-      ${rolePerformanceData.map(item => `
-        <div style="display:flex; flex-direction:column; align-items:center; flex:1; min-width:90px; height:100%;">
-          <span style="font-size:0.78rem; font-weight:700; color:#0f172a; margin-bottom:6px;">${item.percent}%</span>
-          <div style="width:100%; max-width:48px; background:#f1f5f9; border-radius:8px 8px 0 0; height:100%; display:flex; align-items:flex-end; overflow:hidden; position:relative;">
-            <div style="width:100%; height:${item.percent}%; background:linear-gradient(180deg, ${item.color} 0%, ${item.color}cc 100%); border-radius:6px 6px 0 0; transition:height 0.5s ease-out; box-shadow:0 -2px 6px rgba(0,0,0,0.1);"></div>
-          </div>
-          <span style="font-size:0.75rem; font-weight:700; color:#334155; margin-top:8px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${escapeHTML(item.role)}</span>
-          <span style="font-size:0.7rem; color:#64748b; text-align:center;">${escapeHTML(item.staffName.split(' ').pop())}</span>
-        </div>
-      `).join('')}
-    </div>
-  `;
-
-  // Render Marketing Lead Funnel Bar Chart
+  // Managers receive database aggregates. Other marketing roles retain a
+  // restricted, small personal view and never receive department-wide reports.
+  const totals = marketingReport.totals || {};
+  dashboardMarketingReport = marketingReport;
+  const totalLeads = Number(totals.total || leads.length || 0);
+  const leadsCountNew = Number(totals.new_count ?? leads.filter((lead) => (lead.status || 'new') === 'new').length);
+  const leadsCountContacted = Number(totals.contacted_count ?? leads.filter((lead) => lead.status === 'contacted').length);
+  const leadsCountBooked = Number(totals.appointment_count ?? leads.filter((lead) => lead.status === 'appointment_booked').length);
+  const leadsCountVisited = Number(totals.visited_count || 0);
+  const leadsCountConverted = Number(totals.converted || 0);
+  const leadsCountCancelled = Number(totals.cancelled_count || 0);
+  const maxFunnelCount = Math.max(totalLeads, 1);
   const funnelData = [
-    { label: 'Mới Nạp', count: leadsCountNew, color: '#0369a1', percent: Math.round((leadsCountNew / maxFunnelCount) * 100) },
-    { label: 'Đã Liên Hệ', count: leadsCountContacted, color: '#b45309', percent: Math.round((leadsCountContacted / maxFunnelCount) * 100) },
-    { label: 'Đã Hẹn Khám', count: leadsCountBooked, color: '#15803d', percent: Math.round((leadsCountBooked / maxFunnelCount) * 100) },
-    { label: 'Chốt Thành Công', count: leadsCountConverted, color: '#6b21a8', percent: Math.round((leadsCountConverted / maxFunnelCount) * 100) },
-    { label: 'Hủy / Thất Bại', count: leadsCountCancelled, color: '#ef4444', percent: Math.round((leadsCountCancelled / maxFunnelCount) * 100) },
+    { label: 'Mới nạp', count: leadsCountNew, color: '#0369a1' },
+    { label: 'Đã liên hệ', count: leadsCountContacted, color: '#b45309' },
+    { label: 'Đã hẹn khám', count: leadsCountBooked, color: '#15803d' },
+    { label: 'Đã đến khám', count: leadsCountVisited, color: '#0f766e' },
+    { label: 'Chốt thành công', count: leadsCountConverted, color: '#6b21a8' },
+    { label: 'Hủy / thất bại', count: leadsCountCancelled, color: '#dc2626' },
   ];
-
   const funnelBarChartHtml = `
-    <div style="display:flex; flex-direction:column; gap:12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
-      ${funnelData.map(item => `
-        <div>
-          <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:600; color:#1e293b; margin-bottom:4px;">
-            <span>${item.label}</span>
-            <span>${item.count} Lead (${item.percent}%)</span>
-          </div>
-          <div style="width:100%; height:12px; background:#f1f5f9; border-radius:6px; overflow:hidden;">
-            <div style="width:${item.percent}%; height:100%; background:${item.color}; border-radius:6px; transition:width 0.5s ease;"></div>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+    <div style="display:grid; gap:11px; padding:4px 0;">
+      ${funnelData.map((item) => {
+        const percent = Math.round((item.count / maxFunnelCount) * 100);
+        return `<div><div style="display:flex;justify-content:space-between;gap:12px;font-size:.84rem;font-weight:700;color:#334155;margin-bottom:5px"><span>${item.label}</span><span>${item.count.toLocaleString('vi-VN')} · ${percent}%</span></div><div style="height:10px;background:#edf2f7;border-radius:999px;overflow:hidden"><div style="width:${percent}%;height:100%;background:${item.color};border-radius:inherit"></div></div></div>`;
+      }).join('')}
+    </div>`;
+  const rawCount = Number(totals.raw_count || 0);
+  const netCount = Number(totals.net_count || 0);
+  const rawPercent = totalLeads ? Math.round((rawCount / totalLeads) * 100) : 0;
+  const sourceRows = (marketingReport.sources || []).slice(0, 6);
+  const sourceMax = Math.max(...sourceRows.map((row) => Number(row.total || 0)), 1);
+  const roleLabels = {
+    admin_marketing: 'Admin Marketing', telesale_leader: 'Quản lý Telesale',
+    support_marketing: 'Support Marketing', pg_staff: 'PG thị trường', telesale_staff: 'Telesale',
+  };
+  const roleColors = { admin_marketing: '#0f766e', telesale_leader: '#2563eb', support_marketing: '#7c3aed', pg_staff: '#d97706', telesale_staff: '#059669' };
+  const roleRows = marketingReport.roles || [];
+  const isTelesaleLeader = profile.role === 'telesale_leader';
 
   return `
     <div class="view-header">
       <div>
-        <p class="eyebrow">Executive Marketing Dashboard</p>
-        <h3>Báo cáo Công việc & Tiến độ KPI Theo Chức danh (Marketing & Telesale System)</h3>
+        <p class="eyebrow">${isTelesaleLeader ? 'Telesale Data Center' : 'Marketing Command Center'}</p>
+        <h3>${isTelesaleLeader ? 'Tổng quan khách hàng, Data & hiệu suất Telesale' : 'Tổng quan điều hành Marketing & Telesale'}</h3>
       </div>
       <div class="pill-row">
         ${pill(state.settings.clinicName)}
-        ${pill(`Tổng Lead: ${leads.length}`)}
+        ${pill(`${totalLeads.toLocaleString('vi-VN')} hồ sơ`)}
         ${pill(`Tỷ lệ chốt: ${Math.round((leadsCountConverted / maxFunnelCount) * 100)}%`)}
+        ${['admin_marketing', 'telesale_leader'].includes(profile.role) ? '<button class="primary-button" type="button" data-view-jump="marketing-analytics">Báo cáo chi tiết</button>' : ''}
       </div>
     </div>
 
     <!-- Marketing KPI Summary Grid -->
     <div class="grid cols-4">
-      ${metric("Tổng Lead Tiếp Nhận", leads.length, `${leadsCountNew} Lead mới cần xử lý`)}
+      ${metric("Tổng hồ sơ", totalLeads.toLocaleString('vi-VN'), `${leadsCountNew.toLocaleString('vi-VN')} hồ sơ mới cần xử lý`)}
       ${metric("Đã Liên Hệ Tư Vấn", leadsCountContacted, `Tỷ lệ liên hệ ${Math.round((leadsCountContacted / maxFunnelCount) * 100)}%`)}
       ${metric("Lịch Hẹn Đến Khám", leadsCountBooked, `Tỷ lệ đặt hẹn ${Math.round((leadsCountBooked / maxFunnelCount) * 100)}%`)}
       ${metric("Chốt Thành Công", leadsCountConverted, `Tỷ lệ chuyển đổi ${Math.round((leadsCountConverted / maxFunnelCount) * 100)}%`)}
     </div>
 
-    <!-- Charts Section: Role Performance Bar Chart & Funnel Progress -->
     <div class="grid cols-2" style="margin-top:14px;">
       <section class="panel">
         <div class="section-title">
-          <h3 style="margin:0; font-size:1.05rem; font-weight:700;">📊 Biểu Đồ Cột: Tiến Độ Công Việc Theo Chức Danh Role</h3>
-          ${pill("Đơn vị: % Hoàn thành KPI")}
+          <h3 style="margin:0; font-size:1.05rem; font-weight:700;">Hành trình chuyển đổi toàn hệ thống</h3>
+          ${pill("Số liệu CSDL")}
         </div>
-        <p class="subtle" style="margin:4px 0 14px; font-size:0.82rem; color:#64748b;">Đánh giá mức độ hoàn thành nhiệm vụ theo quy định từng vị trí trong phòng Marketing.</p>
-        ${roleBarChartHtml}
+        <p class="subtle" style="margin:4px 0 14px; font-size:0.82rem; color:#64748b;">Toàn bộ hồ sơ được tổng hợp tại máy chủ, không bị giới hạn 100 dòng hiển thị.</p>
+        <div id="overviewFunnelChart" style="height:330px"></div>
       </section>
-
       <section class="panel">
-        <div class="section-title">
-          <h3 style="margin:0; font-size:1.05rem; font-weight:700;">📈 Phễu Chuyển Đổi Lead Marketing</h3>
-          ${pill("Thời gian thực")}
-        </div>
-        <p class="subtle" style="margin:4px 0 14px; font-size:0.82rem; color:#64748b;">Thống kê chi tiết từng giai đoạn từ lúc nạp Lead đến khi chốt thành công.</p>
-        ${funnelBarChartHtml}
+        <div class="section-title"><h3>Cơ cấu kho dữ liệu</h3>${pill('Thô / Net')}</div>
+        <div id="overviewDataClassChart" style="height:330px"></div>
       </section>
     </div>
 
-    <!-- Detailed Role Task Performance Table -->
-    <section class="panel" style="margin-top:14px;">
-      <div class="section-title">
-        <h3 style="margin:0; font-size:1.05rem; font-weight:700;">📑 Bảng Báo Cáo Nhiệm Vụ & Đánh Giá Tiến Độ Chi Tiết Theo Role</h3>
-        ${pill("Áp dụng phòng Marketing & Telesale")}
+    ${isTelesaleLeader ? `
+      <section class="panel" style="margin-top:14px">
+        <div class="section-title"><h3>Phân bổ hồ sơ theo Telesale</h3>${pill(`${marketingReport.telesale?.length || 0} nhân sự`)}</div>
+        <p class="subtle" style="margin:4px 0 8px">Khối lượng khách hàng đang được từng Telesale trực tiếp quản lý.</p>
+        <div id="overviewTelesaleChart" style="height:340px"></div>
+      </section>
+    ` : `
+      <div class="grid cols-2" style="margin-top:14px">
+        <section class="panel">
+          <div class="section-title"><h3>Top nguồn tiếp nhận</h3>${pill(`${sourceRows.length} nguồn`)}</div>
+          <div id="overviewSourceChart" style="height:320px"></div>
+        </section>
+        <section class="panel">
+          <div class="section-title"><h3>Nhân sự Marketing đang hoạt động</h3>${pill(`${roleRows.reduce((sum, row) => sum + Number(row.total || 0), 0)} người`)}</div>
+          <div id="overviewRoleChart" style="height:320px"></div>
+        </section>
       </div>
-      <div style="overflow-x:auto; margin-top:12px; background:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
-        <table style="width:100%; border-collapse:collapse; text-align:left;">
-          <thead>
-            <tr style="background:#f8fafc; border-bottom:2px solid #cbd5e1; font-size:0.78rem; text-transform:uppercase; color:#475569; letter-spacing:0.04em;">
-              <th style="padding:10px 12px;">Chức danh Role</th>
-              <th style="padding:10px 12px;">Nhân viên phụ trách</th>
-              <th style="padding:10px 12px;">Nhiệm vụ chính quy định</th>
-              <th style="padding:10px 12px;">Mục tiêu KPI</th>
-              <th style="padding:10px 12px;">Thực tế đạt</th>
-              <th style="padding:10px 12px; text-align:center;">Tiến độ</th>
-              <th style="padding:10px 12px; text-align:center;">Đánh giá</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rolePerformanceData.map(row => `
-              <tr style="border-bottom:1px solid #e2e8f0;">
-                <td style="padding:10px 12px; font-size:0.85rem; font-weight:700; color:#0f172a;">${escapeHTML(row.role)}</td>
-                <td style="padding:10px 12px; font-size:0.85rem; font-weight:600; color:#0284c7;">${escapeHTML(row.staffName)}</td>
-                <td style="padding:10px 12px; font-size:0.82rem; color:#334155;">${escapeHTML(row.taskName)}</td>
-                <td style="padding:10px 12px; font-size:0.82rem; color:#475569;">${escapeHTML(row.target)}</td>
-                <td style="padding:10px 12px; font-size:0.85rem; font-weight:700; color:#1e293b;">${escapeHTML(row.actual)}</td>
-                <td style="padding:10px 12px; text-align:center;">
-                  <span style="font-size:0.82rem; font-weight:700; color:${row.color};">${row.percent}%</span>
-                </td>
-                <td style="padding:10px 12px; text-align:center;">
-                  ${statusPill(row.status, row.percent >= 90 ? 'good' : 'pending')}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    `}
   `;
 }
 
@@ -346,5 +246,16 @@ function renderTimeline(records, employees) {
 }
 
 export function initView() {
-  // Global click listeners exist in main.js
+  if (!document.getElementById('overviewFunnelChart')) return;
+  const labels = { admin_marketing: 'Admin Marketing', telesale_leader: 'Quản lý Telesale', support_marketing: 'Support Marketing', pg_staff: 'PG thị trường', telesale_staff: 'Telesale' };
+  dashboardCharts = [
+    initMarketingChart('overviewFunnelChart', funnelOption(dashboardMarketingReport.totals)),
+    initMarketingChart('overviewDataClassChart', dataClassOption(dashboardMarketingReport.totals)),
+    initMarketingChart('overviewSourceChart', sourceOption(dashboardMarketingReport.sources || [])),
+    initMarketingChart('overviewRoleChart', roleOption(dashboardMarketingReport.roles || [], labels)),
+    initMarketingChart('overviewTelesaleChart', staffOption(dashboardMarketingReport.telesale || [])),
+  ].filter(Boolean);
+  if (dashboardResizeHandler) window.removeEventListener('resize', dashboardResizeHandler);
+  dashboardResizeHandler = () => resizeMarketingCharts(dashboardCharts);
+  window.addEventListener('resize', dashboardResizeHandler, { passive: true });
 }

@@ -41,14 +41,26 @@ function facts(lead) {
 
 function historyHtml(logs) {
   if (!logs.length) return '<div class="tsm-empty">Chưa có nhật ký chăm sóc. Hãy tạo lượt tư vấn đầu tiên bên dưới.</div>';
-  return `<div class="lead-timeline">${logs.map((log) => `<article>
-    <i class="ri-phone-line"></i>
-    <div><strong>${safe(CALL_STATUS[log.call_status] || log.call_status, 'Đã liên hệ')}</strong>
+  const legacyLabels = {
+    gift_voucher: 'Đổi quà / Voucher', pg_create: 'PG tiếp nhận khách hàng',
+    tele_assign: 'Phân công Telesale', tele_assign_specific: 'Phân công Telesale',
+    tele_assign_specific_cb: 'Phân công chăm sóc cơ bản', tele_assign_specific_cs: 'Phân công chăm sóc chuyên sâu',
+    tele_save_all: 'Cập nhật chăm sóc', tele_update: 'Cập nhật chăm sóc',
+    tele_bulk_update: 'Cập nhật hàng loạt', arrival_confirm: 'Xác nhận khách đến',
+    arrival_unconfirm: 'Hủy xác nhận khách đến', sheet_update: 'Cập nhật dữ liệu nguồn',
+  };
+  return `<div class="lead-timeline">${logs.map((log) => {
+    const label = CALL_STATUS[log.call_status] || legacyLabels[log.call_status] || log.call_status;
+    const icon = log.event_category === 'gift' ? 'ri-gift-line' : log.is_legacy ? 'ri-history-line' : 'ri-phone-line';
+    return `<article class="${log.is_legacy ? 'is-legacy-event' : ''}">
+    <i class="${icon}"></i>
+    <div><strong>${safe(label, 'Đã liên hệ')}</strong>
       <p>${safe(log.note, 'Không có ghi chú')}</p>
       ${log.appointment_at || log.appointment_date ? `<p><i class="ri-calendar-check-line"></i> Hẹn: ${safe(formatDateTime(log.appointment_at || log.appointment_date))}</p>` : ''}
-      <time>${safe(log.telesale_name || log.telesale_code || log.telesale_id, 'Người chăm sóc')} · ${log.created_at ? safe(formatDateTime(log.created_at)) : 'Chưa rõ thời gian'}</time>
+      <time>${safe(log.telesale_name || log.telesale_code || log.telesale_id, log.is_legacy ? 'Dữ liệu lịch sử' : 'Người chăm sóc')} · ${log.created_at ? safe(formatDateTime(log.created_at)) : 'Chưa rõ thời gian'}${log.is_legacy ? ' · Đã nhập từ hệ thống cũ' : ''}</time>
     </div>
-  </article>`).join('')}</div>`;
+  </article>`;
+  }).join('')}</div>`;
 }
 
 function consultationForm(lead) {

@@ -80,7 +80,7 @@ export function renderTopbar(state) {
     const roleLabel = ROLE_PROFILES[role]?.label || role || 'Nhân viên';
     const listNotifs = notifications || [];
     const unreadCount = listNotifs.filter(n => !n.read).length;
-    const isManager = ['admin', 'hr', 'leader', 'admin_it'].includes(role);
+    const isManager = ['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing', 'telesale_leader'].includes(role);
 
     authArea.innerHTML = `
       <div class="topbar-right-container">

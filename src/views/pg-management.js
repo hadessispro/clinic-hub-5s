@@ -229,10 +229,8 @@ export async function renderView() {
 }
 
 async function refresh(message) {
-  await navigateTo('pg-management');
-  // navigateTo now waits until the fresh account list has been rendered.
-  // Show confirmation only after the user can actually see the result.
   if (message) showToast(message);
+  await navigateTo('pg-management');
 }
 
 export function initView() {
@@ -298,11 +296,7 @@ export function initView() {
     data.email = data.pgEmail; data.phone = data.pgPhone; data.password = data.pgPassword;
     delete data.pgEmail; delete data.pgPhone; delete data.pgPassword;
     if (!data.password) data.password = data.phone;
-    try {
-      await createPgAccount(data);
-      event.currentTarget.reset();
-      await refresh('Đã tạo và kích hoạt tài khoản PG. PG có thể đăng nhập ngay.');
-    } catch (error) { showToast(error.message, true); }
+    try { await createPgAccount(data); await refresh('Đã tạo và kích hoạt tài khoản PG. PG có thể đăng nhập ngay.'); } catch (error) { showToast(error.message, true); }
   });
   const siteForm = document.getElementById('pgSiteForm');
   const locationResults = document.getElementById('pgLocationResults');

@@ -16,7 +16,6 @@ function mapVpsLead(row) {
     low_quality_reason: row.low_quality_reason || row.customer_profile?.lowQualityReason || null,
   };
 }
-
 async function vpsRequest(path, options = {}) {
   return supabase.request(`/marketing${path}`, options);
 }
@@ -586,11 +585,13 @@ export async function getPgAssignments(date) {
 
 export async function createPgAssignment(input) {
   const payload = await vpsRequest('/pg-assignments', { method: 'POST', body: JSON.stringify(input) });
+  notifyDataChange('marketing.pg_assignments');
   return payload.data;
 }
 
 export async function cancelPgAssignment(id, reason) {
   const payload = await vpsRequest(`/pg-assignments/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason }) });
+  notifyDataChange('marketing.pg_assignments');
   return payload.data;
 }
 

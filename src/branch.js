@@ -20,7 +20,7 @@ export function setActiveBranch(branchId) {
 
 export function getEffectiveBranchId(profile, candidateBranchId = null) {
   const requestedBranch = candidateBranchId === 'all' ? null : candidateBranchId;
-  const isManager = ['admin', 'hr', 'leader', 'admin_it'].includes(profile?.role);
+  const isManager = ['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing', 'telesale_leader'].includes(profile?.role);
   if (isManager) {
     const saved = localStorage.getItem('5s_clinic_active_branch');
     const usableSaved = saved === 'all' ? null : saved;

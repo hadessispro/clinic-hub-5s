@@ -1,4 +1,4 @@
-import { getMarketingLeads, exportLeadsToCSV, getTelesaleDailySummary } from '../services/marketing.js';
+import { getMarketingLeadPage, exportLeadsToCSV, getTelesaleDailySummary } from '../services/marketing.js';
 import { LEAD_STATUS } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { leadStatusPill, pill, option, emptyState } from '../components/shared.js';
@@ -17,6 +17,9 @@ let telesaleDataClass = '';
 let telesaleServiceGroup = '';
 let telesaleServiceType = '';
 let telesaleSearch = '';
+let telesaleStatus = '';
+let telesaleBranch = '';
+let telesalePageMeta = { page: 1, pageSize: 12, total: 0 };
 const BASIC_SERVICES = ['Cạo vôi răng', 'Trám răng', 'Nhổ răng khôn', 'Thăm khám răng', 'Phục hình tháo lắp', 'Điều trị tủy', 'Tẩy trắng'];
 const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
 
@@ -33,14 +36,21 @@ export async function renderView(state) {
     service_group: telesaleServiceGroup || undefined,
     service_type: telesaleServiceType || undefined,
     search: telesaleSearch || undefined,
+    status: telesaleStatus || undefined,
+    branch_id: telesaleBranch || undefined,
+    page: telesalePage,
+    page_size: telesalePageSize,
   };
-  const [leads, quickSummary] = await Promise.all([
-    getMarketingLeads(filters),
+  const [leadPage, quickSummary] = await Promise.all([
+    getMarketingLeadPage(filters),
     isLeaderOrAdmin ? Promise.resolve(null) : getTelesaleDailySummary({
       date_from: telesaleDateFrom || undefined,
       date_to: telesaleDateTo || undefined,
     }),
   ]);
+  const leads = leadPage.data || [];
+  telesalePageMeta = leadPage.meta || { page: telesalePage, pageSize: telesalePageSize, total: leads.length };
+  telesalePage = Number(telesalePageMeta.page || telesalePage);
   cachedLeads = leads;
   const quickTotals = quickSummary?.totals || {};
   const serviceOptions = telesaleServiceGroup === 'advanced' ? ADVANCED_SERVICES : telesaleServiceGroup === 'basic' ? BASIC_SERVICES : [];
@@ -85,7 +95,7 @@ export async function renderView(state) {
     const creatorName = lead.created_by_name || lead.created_by_pg || lead.source || 'Không xác định';
     const dataLabel = lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô';
     return `<tr data-workspace-lead-row="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name || '').toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-status="${escapeHTML(lead.status || '')}" data-branch="${escapeHTML(lead.branch_id || '')}">
-      <td data-label="STT">${index + 1}</td><td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || 'Chưa có SĐT')}</small></td>
+      <td data-label="STT">${(telesalePage - 1) * telesalePageSize + index + 1}</td><td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || 'Chưa có SĐT')}</small></td>
       <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${escapeHTML(dataLabel)}</span></td><td data-label="Dịch vụ">${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
       <td data-label="Chi nhánh">${escapeHTML(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}</td><td data-label="Trạng thái" data-workspace-lead-status>${leadStatusPill(lead.status)}</td>
       <td data-label="Nguồn nhập"><strong>${escapeHTML(creatorName)}</strong><small>${escapeHTML(lead.created_by_pg || lead.source || '')}</small></td><td data-label="Ngày tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
@@ -103,7 +113,7 @@ export async function renderView(state) {
     <section class="panel">
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <div>
-          <h3 style="margin:0;">Danh sách Lead cần chăm sóc (${leads.length})</h3>
+          <h3 style="margin:0;">Danh sách Lead cần chăm sóc (${Number(telesalePageMeta.total || 0).toLocaleString('vi-VN')})</h3>
           <span style="font-size:0.8rem; color:#64748b;">${isLeaderOrAdmin ? "Toàn bộ Lead" : "Lead cá nhân được gán"}</span>
         </div>
         <div class="telesale-workspace-actions">
@@ -127,22 +137,22 @@ export async function renderView(state) {
           <label class="telesale-filter-field">
             <span>Trạng thái</span>
             <select id="filterTelesaleStatus">
-            <option value="">Tất cả Trạng thái</option>
-            <option value="new">Mới nạp</option>
-            <option value="contacted">Đã liên hệ</option>
-            <option value="appointment_booked">Đã hẹn khám</option>
-            <option value="converted">Chốt thành công</option>
-            <option value="cancelled">Hủy/Thất bại</option>
-            <option value="appointment_cancelled">Khách hủy hẹn</option>
-            <option value="low_quality">Khách không chất lượng (KCL)</option>
+            <option value=""${!telesaleStatus ? ' selected' : ''}>Tất cả Trạng thái</option>
+            <option value="new"${telesaleStatus === 'new' ? ' selected' : ''}>Mới nạp</option>
+            <option value="contacted"${telesaleStatus === 'contacted' ? ' selected' : ''}>Đã liên hệ</option>
+            <option value="appointment_booked"${telesaleStatus === 'appointment_booked' ? ' selected' : ''}>Đã hẹn khám</option>
+            <option value="converted"${telesaleStatus === 'converted' ? ' selected' : ''}>Chốt thành công</option>
+            <option value="cancelled"${telesaleStatus === 'cancelled' ? ' selected' : ''}>Hủy/Thất bại</option>
+            <option value="appointment_cancelled"${telesaleStatus === 'appointment_cancelled' ? ' selected' : ''}>Khách hủy hẹn</option>
+            <option value="low_quality"${telesaleStatus === 'low_quality' ? ' selected' : ''}>Khách không chất lượng (KCL)</option>
             </select>
           </label>
           <label class="telesale-filter-field">
             <span>Chi nhánh</span>
             <select id="filterTelesaleBranch">
-            <option value="">Tất cả Chi nhánh</option>
-            <option value="le-van-tho">5S Lê Văn Thọ</option>
-            <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
+            <option value=""${!telesaleBranch ? ' selected' : ''}>Tất cả Chi nhánh</option>
+            <option value="le-van-tho"${telesaleBranch === 'le-van-tho' ? ' selected' : ''}>5S Lê Văn Thọ</option>
+            <option value="pham-van-chieu"${telesaleBranch === 'pham-van-chieu' ? ' selected' : ''}>5S Phạm Văn Chiêu</option>
             </select>
           </label>
           <label class="telesale-filter-field">
@@ -246,15 +256,16 @@ export function initView() {
   const pageNumbers = document.getElementById('telesalePageNumbers');
   const paginationSummary = document.getElementById('telesalePaginationSummary');
 
-  function renderTelesalePagination(matchedCards) {
-    const total = matchedCards.length;
-    const totalPages = Math.max(1, Math.ceil(total / telesalePageSize));
-    telesalePage = Math.min(Math.max(1, telesalePage), totalPages);
-    const start = total ? (telesalePage - 1) * telesalePageSize : 0;
-    const end = Math.min(start + telesalePageSize, total);
+  function renderTelesalePagination() {
+    const total = Number(telesalePageMeta.total || 0);
+    const pageSize = Number(telesalePageMeta.pageSize || telesalePageSize);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    telesalePage = Math.min(Math.max(1, Number(telesalePageMeta.page || telesalePage)), totalPages);
+    const start = total ? (telesalePage - 1) * pageSize : 0;
+    const end = Math.min(start + cachedLeads.length, total);
 
-    matchedCards.forEach((card, index) => {
-      card.style.display = index >= start && index < end ? '' : 'none';
+    document.querySelectorAll('.telesale-lead-card, [data-workspace-lead-row]').forEach((item) => {
+      item.style.display = '';
     });
     if (paginationSummary) {
       paginationSummary.textContent = total
@@ -275,35 +286,10 @@ export function initView() {
       pageNumbers.querySelectorAll('[data-telesale-page]').forEach((button) => {
         button.addEventListener('click', () => {
           telesalePage = Number(button.dataset.telesalePage) || 1;
-          applyTelesaleFilters();
+          navigateTo('telesale-workspace');
         });
       });
     }
-  }
-
-  function applyTelesaleFilters(resetPage = false) {
-    if (resetPage) telesalePage = 1;
-    const q = (searchInput?.value || '').trim().toLowerCase();
-    const st = statusSelect?.value || '';
-    const br = branchSelect?.value || '';
-
-    const matchedCards = [];
-    const selector = telesaleViewMode === 'sheet' ? '[data-workspace-lead-row]' : '.telesale-lead-card';
-    document.querySelectorAll(selector).forEach(card => {
-      const name = card.dataset.name || '';
-      const phone = card.dataset.phone || '';
-      const cardStatus = card.dataset.status || '';
-      const cardBranch = card.dataset.branch || '';
-
-      const matchQ = !q || name.includes(q) || phone.includes(q);
-      const matchSt = !st || cardStatus === st;
-      const matchBr = !br || cardBranch === br;
-
-      const matches = matchQ && matchSt && matchBr;
-      card.style.display = 'none';
-      if (matches) matchedCards.push(card);
-    });
-    renderTelesalePagination(matchedCards);
   }
 
   let telesaleSearchTimer;
@@ -323,8 +309,8 @@ export function initView() {
     telesalePage = 1;
     navigateTo('telesale-workspace');
   });
-  if (statusSelect) statusSelect.addEventListener('change', () => applyTelesaleFilters(true));
-  if (branchSelect) branchSelect.addEventListener('change', () => applyTelesaleFilters(true));
+  statusSelect?.addEventListener('change', () => { telesaleStatus = statusSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
+  branchSelect?.addEventListener('change', () => { telesaleBranch = branchSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dateFromInput?.addEventListener('change', () => { telesaleDateFrom = dateFromInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dateToInput?.addEventListener('change', () => { telesaleDateTo = dateToInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dataClassSelect?.addEventListener('change', () => {
@@ -343,27 +329,28 @@ export function initView() {
     navigateTo('telesale-workspace');
   });
   serviceTypeSelect?.addEventListener('change', () => { telesaleServiceType = serviceTypeSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
-  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleSearch = ''; telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
+  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleSearch = ''; telesaleStatus = ''; telesaleBranch = ''; telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
   document.querySelectorAll('[data-workspace-view]').forEach((button) => button.addEventListener('click', () => {
     telesaleViewMode = button.dataset.workspaceView === 'sheet' ? 'sheet' : 'cards';
     document.getElementById('telesaleCardView').hidden = telesaleViewMode === 'sheet';
     document.getElementById('telesaleSheetView').hidden = telesaleViewMode === 'cards';
     document.querySelectorAll('[data-workspace-view]').forEach((item) => item.classList.toggle('is-active', item === button));
-    applyTelesaleFilters(true);
+    renderTelesalePagination();
   }));
   pageSizeSelect?.addEventListener('change', () => {
     telesalePageSize = Number(pageSizeSelect.value) || 12;
-    applyTelesaleFilters(true);
+    telesalePage = 1;
+    navigateTo('telesale-workspace');
   });
   previousPageButton?.addEventListener('click', () => {
     telesalePage = Math.max(1, telesalePage - 1);
-    applyTelesaleFilters();
+    navigateTo('telesale-workspace');
   });
   nextPageButton?.addEventListener('click', () => {
     telesalePage += 1;
-    applyTelesaleFilters();
+    navigateTo('telesale-workspace');
   });
-  applyTelesaleFilters();
+  renderTelesalePagination();
 
   initLeadConsultationDrawer({
     getLead: (id) => cachedLeads.find((lead) => String(lead.id) === String(id)),
