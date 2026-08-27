@@ -12,7 +12,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
-    "web-push": "^3.6.7"
+    "echarts": "^6.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "web-push": "^3.6.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "vite": "^6.3.0"

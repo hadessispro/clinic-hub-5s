@@ -7,14 +7,16 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
-  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'pg-attendance'],
+  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
   telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
-  superadmin: [],
+  // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
+  // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
+  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance'],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
   leader: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
   finance: ['dashboard', 'tasks', 'chat', 'attendance', 'leave', 'payroll'],
@@ -30,7 +32,7 @@ const ROLE_ACTIONS = {
   pg_staff: ['marketing.leads.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send'],
   telesale_leader: ['telesale.team.manage', 'telesale.leads.assign', 'telesale.analytics', 'telesale.calls.create', 'data.export', 'message.send', 'task.create'],
   telesale_staff: ['telesale.leads.view_own', 'telesale.calls.create', 'telesale.appointment.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send', 'task.create'],
-  superadmin: [],
+  superadmin: ['*'],
   hr: [
     'employee.read_all', 'employee.write',
     'attendance.read_all', 'attendance.verify',
@@ -105,6 +107,7 @@ const NAV_ITEMS = [
     { view: 'pg-management', label: 'Quản lý PG', icon: 'ri-user-location-line' },
     { view: 'pg-locations', label: 'Địa điểm PG', icon: 'ri-map-pin-2-line' },
     { view: 'pg-workflow', label: 'Điều phối PG', icon: 'ri-route-line' },
+    { view: 'pg-attendance', label: 'Chấm công PG', icon: 'ri-time-line' },
     { view: 'gift-inventory', label: 'Kho quà tặng', icon: 'ri-gift-2-line' },
   ]},
 ];

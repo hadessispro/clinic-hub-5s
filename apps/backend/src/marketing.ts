@@ -48,6 +48,8 @@ function normalizeLeadPhone(value: unknown) {
   return digits;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function clinicDate(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -1202,42 +1204,92 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
 
   async recordPgAttendance(user: AuthUser, input: JsonMap) {
     if (user.role !== 'pg_staff') throw new ForbiddenException('Chỉ tài khoản PG được chấm công tại vị trí được phân công.');
+
+    const clientEventId = typeof input.clientEventId === 'string' && UUID_PATTERN.test(input.clientEventId)
+      ? input.clientEventId : null;
+
+    // Idempotency đặt trước mọi thứ khác. Một lượt đã ghi nhận thì gửi lại bao
+    // nhiêu lần cũng trả về chính bản ghi đó: thiết bị mất mạng giữa chừng
+    // không biết yêu cầu đã tới nơi hay chưa nên chắc chắn sẽ gửi lại.
+    if (clientEventId) {
+      const existing = await this.infrastructure.postgres.query(
+        'select * from marketing.pg_attendance where client_event_id=$1 and pg_code=$2 limit 1',
+        [clientEventId, user.employeeCode],
+      );
+      if (existing.rows[0]) return { data: existing.rows[0], duplicate: true };
+    }
+
     await this.expireAssignments();
     const type = input.type === 'checkout' ? 'checkout' : 'checkin';
+    const offline = input.offline === true;
     const lat = Number(input.latitude ?? input.lat); const lng = Number(input.longitude ?? input.lng); const accuracy = Math.round(Number(input.accuracy));
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy) || accuracy <= 0) throw new BadRequestException('GPS không hợp lệ.');
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new BadRequestException('Tọa độ GPS nằm ngoài phạm vi hợp lệ.');
+
+    // Lượt ngoại tuyến phải được chấm theo đúng thời điểm PG bấm nút tại điểm
+    // làm việc. Dùng giờ đồng bộ sẽ ghi sai giờ công và làm ca hợp lệ bị đánh
+    // là đi muộn hoặc quá giờ.
+    let capturedAt = new Date();
+    if (offline) {
+      const parsed = new Date(String(input.capturedAt ?? ''));
+      if (!Number.isFinite(parsed.getTime())) throw new BadRequestException('Thời điểm chấm công ngoại tuyến không hợp lệ.');
+      if (parsed.getTime() > Date.now() + 2 * 60 * 1000) throw new BadRequestException('Thời điểm chấm công nằm ở tương lai. Kiểm tra lại đồng hồ thiết bị.');
+      if (parsed.getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000) throw new BadRequestException('Lượt chấm công ngoại tuyến đã quá 7 ngày, cần quản lý bổ sung công thủ công.');
+      capturedAt = parsed;
+    }
+
+    const workDate = clinicDate(capturedAt);
+    const eventTime = seconds(clinicTime(capturedAt));
+
+    // Ca bị expire_pg_assignments() tự đánh dấu hết hạn chính vì check-in không
+    // lên được máy chủ. Với lượt ngoại tuyến hợp lệ thì phải nhận lại ca đó,
+    // nếu không PG mất công dù đã có mặt đúng giờ.
+    const allowedStatuses = offline ? ['scheduled', 'checked_in', 'expired'] : ['scheduled', 'checked_in'];
     const assignment = await this.infrastructure.postgres.query<{
       id: string; start_time: string; end_time: string; status: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
     }>(
       `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
        from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
        where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2
-         and a.status in ('scheduled','checked_in') limit 1`, [user.employeeCode, clinicDate()],
+         and a.status = any($3) limit 1`, [user.employeeCode, workDate, allowedStatuses],
     );
     const shift = assignment.rows[0];
-    if (!shift) throw new BadRequestException('Support chưa phân công vị trí và thời gian làm việc hôm nay.');
+    if (!shift) {
+      throw new BadRequestException(offline
+        ? `Không tìm thấy ca được phân công ngày ${workDate} để ghi nhận lượt chấm công ngoại tuyến này.`
+        : 'Support chưa phân công vị trí và thời gian làm việc hôm nay.');
+    }
     if (accuracy > shift.max_accuracy_m) throw new BadRequestException(`Sai số GPS ±${accuracy} m vượt mức ${shift.max_accuracy_m} m.`);
     const distance = distanceMeters(lat, lng, Number(shift.latitude), Number(shift.longitude));
     if (distance > shift.allowed_radius_m) throw new BadRequestException(`Bạn đang cách vị trí làm việc ${distance} m, ngoài bán kính ${shift.allowed_radius_m} m.`);
     const grace = 5 * 60;
-    const nowTime = seconds(clinicTime());
-    if (type === 'checkin' && shift.status !== 'scheduled') throw new BadRequestException('Ca này đã check-in hoặc không còn hiệu lực.');
+    const canCheckin = shift.status === 'scheduled' || (offline && shift.status === 'expired');
+    if (type === 'checkin' && !canCheckin) throw new BadRequestException('Ca này đã check-in hoặc không còn hiệu lực.');
     if (type === 'checkout' && shift.status !== 'checked_in') throw new BadRequestException('Bạn cần check-in trước khi check-out.');
-    if (type === 'checkin' && nowTime < seconds(shift.start_time) - 3600) throw new BadRequestException('Chưa đến khung giờ chấm công. Bạn chỉ có thể check-in sớm tối đa 60 phút.');
-    if (type === 'checkin' && nowTime > seconds(shift.end_time)) throw new BadRequestException('Ca đã quá giờ kết thúc và không còn nhận check-in.');
+    if (type === 'checkin' && eventTime < seconds(shift.start_time) - 3600) throw new BadRequestException('Chưa đến khung giờ chấm công. Bạn chỉ có thể check-in sớm tối đa 60 phút.');
+    if (type === 'checkin' && eventTime > seconds(shift.end_time)) throw new BadRequestException('Ca đã quá giờ kết thúc và không còn nhận check-in.');
     const status = type === 'checkin'
-      ? (nowTime > seconds(shift.start_time) + grace ? 'late' : 'valid')
-      : (nowTime < seconds(shift.end_time) - grace ? 'early_leave' : 'valid');
+      ? (eventTime > seconds(shift.start_time) + grace ? 'late' : 'valid')
+      : (eventTime < seconds(shift.end_time) - grace ? 'early_leave' : 'valid');
     const result = await this.infrastructure.postgres.query(
-      `insert into marketing.pg_attendance(assignment_id,pg_code,record_type,latitude,longitude,accuracy_m,distance_m,status)
-       values ($1,$2,$3,$4,$5,$6,$7,$8)
+      `insert into marketing.pg_attendance(assignment_id,pg_code,record_type,latitude,longitude,accuracy_m,distance_m,status,recorded_at,captured_at,captured_offline,client_event_id,synced_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11,now())
        on conflict(assignment_id,record_type) do nothing returning *`,
-      [shift.id, user.employeeCode, type, lat, lng, accuracy, distance, status],
+      [shift.id, user.employeeCode, type, lat, lng, accuracy, distance, status, capturedAt.toISOString(), offline, clientEventId],
     );
-    if (!result.rows[0]) throw new BadRequestException(type === 'checkin' ? 'Bạn đã check-in hôm nay.' : 'Bạn đã check-out hôm nay.');
+    if (!result.rows[0]) {
+      // Đã có lượt cùng loại cho ca này. Với hàng đợi ngoại tuyến thì đây là
+      // kết quả mong đợi khi gửi lại, không phải lỗi.
+      const current = await this.infrastructure.postgres.query(
+        'select * from marketing.pg_attendance where assignment_id=$1 and record_type=$2 limit 1',
+        [shift.id, type],
+      );
+      if (offline && current.rows[0]) return { data: current.rows[0], duplicate: true };
+      throw new BadRequestException(type === 'checkin' ? 'Bạn đã check-in hôm nay.' : 'Bạn đã check-out hôm nay.');
+    }
     await this.infrastructure.postgres.query(
       type === 'checkin'
-        ? `update marketing.pg_shift_assignments set status='checked_in',updated_at=now() where id=$1 and status='scheduled'`
+        ? `update marketing.pg_shift_assignments set status='checked_in',expired_at=null,updated_at=now() where id=$1 and status in ('scheduled','expired')`
         : `update marketing.pg_shift_assignments set status='completed',completed_at=now(),updated_at=now() where id=$1 and status='checked_in'`,
       [shift.id],
     );
