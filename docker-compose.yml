@@ -13,6 +13,9 @@ services:
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
       - clinic_internal
+      # Postgres nam tren ca hai mang. Day la diem duy nhat hai the gioi
+      # gap nhau, va o do phan quyen database la thu quyet dinh.
+      - finance_internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -50,9 +53,27 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
-    env_file:
-      - .env.vps
     environment:
+      # Chi cap dung nhung bien ma ma nguon thuc su doc, lay tu
+      # grep process.env trong apps/backend/src. Truoc day cho ca .env.vps vao
+      # bang env_file, nghia la container nay cam luon POSTGRES_PASSWORD, tuc
+      # mat khau superuser. Ai chiem duoc backend la doc duoc so ke toan, du
+      # migration 024 da chan tai khoan cua backend. Bit lo do.
+      APP_JWT_SECRET: ${APP_JWT_SECRET}
+      ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-}
+      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
+      VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
       # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
       # va revoke, nen de backend chay bang superuser thi buc tuong quanh
       # schema finance khong con y nghia. Xem migration 024.
@@ -104,9 +125,27 @@ services:
       dockerfile: Dockerfile.backend
     restart: unless-stopped
     profiles: ["migration"]
-    env_file:
-      - .env.vps
     environment:
+      # Chi cap dung nhung bien ma ma nguon thuc su doc, lay tu
+      # grep process.env trong apps/backend/src. Truoc day cho ca .env.vps vao
+      # bang env_file, nghia la container nay cam luon POSTGRES_PASSWORD, tuc
+      # mat khau superuser. Ai chiem duoc backend la doc duoc so ke toan, du
+      # migration 024 da chan tai khoan cua backend. Bit lo do.
+      APP_JWT_SECRET: ${APP_JWT_SECRET}
+      ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-}
+      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
+      VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
       # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
       # va revoke, nen de backend chay bang superuser thi buc tuong quanh
       # schema finance khong con y nghia. Xem migration 024.
@@ -143,15 +182,31 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
-    env_file:
-      - .env.vps
     environment:
+      # Chi cap dung nhung bien ma ma nguon thuc su doc, lay tu
+      # grep process.env trong apps/backend/src. Truoc day cho ca .env.vps vao
+      # bang env_file, nghia la container nay cam luon POSTGRES_PASSWORD, tuc
+      # mat khau superuser. Ai chiem duoc backend la doc duoc so ke toan, du
+      # migration 024 da chan tai khoan cua backend. Bit lo do.
+      APP_JWT_SECRET: ${APP_JWT_SECRET}
+      ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-50}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-30}
+      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
+      VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
       # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
       # va revoke, nen de backend chay bang superuser thi buc tuong quanh
       # schema finance khong con y nghia. Xem migration 024.
       DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-30}
-      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-50}
     command: ["node", "apps/backend/dist/backup.js"]
     depends_on:
       postgres:
@@ -211,6 +266,7 @@ services:
       - caddy_config:/config
     networks:
       - clinic_internal
+      - finance_internal
     logging:
       driver: json-file
       options:
@@ -241,8 +297,50 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ───────────────────────────────────────────────────────────────────────
+  # FINANCE VAULT
+  # Container rieng, tai khoan database rieng, khoa ky phien rieng, mang
+  # rieng. Backend van hanh khong nam tren mang finance_internal nen no
+  # khong goi duoc dich vu nay, va tai khoan database cua no cung khong
+  # doc duoc schema finance. Hai lop, doc lap nhau.
+  # ───────────────────────────────────────────────────────────────────────
+  finance:
+    build:
+      context: .
+      dockerfile: apps/finance/Dockerfile
+    restart: unless-stopped
+    # Khong dung env_file. Ket tien chi duoc biet dung hai bi mat cua chinh no.
+    environment:
+      FINANCE_DATABASE_URL: postgresql://finance_app:${FINANCE_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FINANCE_JWT_SECRET: ${FINANCE_JWT_SECRET}
+      FINANCE_PORT: 4100
+      FINANCE_BASE_PATH: /vault
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "4100"
+    networks:
+      - finance_internal
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/vault/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   clinic_internal:
+    driver: bridge
+  finance_internal:
     driver: bridge
 
 volumes:

@@ -17,6 +17,27 @@
     respond "API cũ đã ngừng hoạt động; vui lòng cập nhật PWA." 410
   }
 
+  # Két kế toán. Dịch vụ riêng, container riêng, mạng riêng. Đặt trước bộ bắt
+  # tất cả bên dưới, nếu không mọi đường /vault sẽ rơi vào PWA vận hành.
+  handle /vault* {
+    header {
+      # Sổ sách không bao giờ được nằm trong cache của proxy hay trình duyệt.
+      Cache-Control "no-store, no-cache, must-revalidate, private"
+      Referrer-Policy "no-referrer"
+      X-Content-Type-Options "nosniff"
+      X-Frame-Options "DENY"
+      X-Robots-Tag "noindex, nofollow, noarchive"
+      Permissions-Policy "geolocation=(), camera=(), microphone=()"
+      Strict-Transport-Security "max-age=31536000; includeSubDomains"
+      # Giao diện tự chứa hoàn toàn: không phông chữ, không thư viện, không
+      # ảnh từ bên ngoài. Khai báo đúng như vậy để trình duyệt chặn giúp nếu
+      # về sau ai đó lỡ thêm vào.
+      Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+      -Server
+    }
+    reverse_proxy finance:4100
+  }
+
   handle {
     root * /srv
     try_files {path} /index.html
