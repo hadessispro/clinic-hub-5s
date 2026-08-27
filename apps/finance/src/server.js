@@ -23,6 +23,7 @@ const q = require('./queries');
 const auth = require('./auth');
 const crud = require('./crud');
 const nhap = require('./nhap-lieu');
+const bc = require('./bao-cao');
 
 const PORT = Number(process.env.FINANCE_PORT || 4100);
 const BASE = process.env.FINANCE_BASE_PATH || '/vault';
@@ -637,7 +638,40 @@ app.get(`${BASE}/api/nhap-lieu/:id`, guard, async (req, reply) => {
   return lo;
 });
 
+/* ── Báo cáo · tất cả dựng lại từ Sổ nhật ký chung ─────────────────────── */
+
+app.get(`${BASE}/api/bc/so-quy`, guard, doc('xem_so_quy_tien_mat', (req) =>
+  bc.soQuyTienMat({ period: req.query.ky, from: req.query.tu_ngay, to: req.query.den_ngay })));
+
+app.get(`${BASE}/api/bc/tai-khoan-ngan-hang`, guard, async () => bc.taiKhoanNganHang());
+
+app.get(`${BASE}/api/bc/so-ngan-hang`, guard, doc('xem_so_ngan_hang', (req) =>
+  bc.soNganHang({ account: req.query.tai_khoan, period: req.query.ky,
+                  from: req.query.tu_ngay, to: req.query.den_ngay })));
+
+app.get(`${BASE}/api/bc/tong-hop-cong-no`, guard, doc('xem_tong_hop_cong_no', (req) =>
+  bc.tongHopCongNo({ loai: req.query.loai, period: req.query.ky })));
+
+app.get(`${BASE}/api/bc/chi-tiet-cong-no`, guard, doc('xem_chi_tiet_cong_no', (req) =>
+  bc.chiTietCongNo({ loai: req.query.loai, partner: req.query.doi_tac, period: req.query.ky })));
+
+app.get(`${BASE}/api/bc/dong-tien`, guard, doc('xem_dong_tien', (req) =>
+  bc.dongTien({ period: req.query.ky })));
+
+app.get(`${BASE}/api/bc/b01`, guard, doc('xem_bao_cao_tinh_hinh_tai_chinh', () =>
+  bc.baoCaoTinhHinhTaiChinh()));
+
+app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoan', async (req, reply) => {
+  const r = await bc.soChiTietTaiKhoan({ account: req.params.code, period: req.query.ky,
+                                         from: req.query.tu_ngay, to: req.query.den_ngay });
+  if (!r) return fail(reply, 404, 'Không có tài khoản này.');
+  return r;
+}));
+
+app.get(`${BASE}/api/bc/dau-ky`, guard, async () => bc.trangThaiDauKy());
+
 /* ── Giao diện ─────────────────────────────────────────────────────────── */
+
 
 
 app.register(fastifyStatic, {

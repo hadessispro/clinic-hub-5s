@@ -20,6 +20,18 @@ const ExcelJS = require('exceljs');
 const db = require('./db');
 const { rows: rows_ } = db;
 
+/**
+ * Lỗi do người dùng làm sai, không phải máy chủ hỏng. Gắn statusCode để bộ
+ * xử lý lỗi ở server.js trả nguyên văn thay vì nuốt thành "Có lỗi ở máy chủ".
+ * Người nhập cần biết lô hỏng vì sao, chứ một câu chung chung thì họ chỉ có
+ * thể bấm lại lần nữa và nhận đúng câu đó.
+ */
+function loiNguoiDung(msg) {
+  const e = new Error(msg);
+  e.statusCode = 400;
+  return e;
+}
+
 /* ── Nhận diện loại file ───────────────────────────────────────────────── */
 
 const LOAI = {
@@ -189,8 +201,11 @@ function docSheet(sheet, nd, kq) {
       // nhầm cột Có thành cột Nợ, và con số vẫn trông hợp lý nên không ai
       // nhận ra.
       const b = nd.cot['Phát sinh'];
+      const dk = nd.cot['Đầu kỳ'];
       if (b === undefined) continue;
       kq.dong.push({ dong: i, ma, ten: chu(c(r, 'Tên tài khoản')),
+                     dk_no: dk === undefined ? 0 : (v[dk] || 0),
+                     dk_co: dk === undefined ? 0 : (v[dk + 1] || 0),
                      ps_no: v[b] || 0, ps_co: v[b + 1] || 0 });
     }
   }
@@ -234,10 +249,17 @@ async function kiemTra(doc) {
                        so_co: Number(h.co), file_co: d.ps_co, lech_no: dNo, lech_co: dCo });
     }
     if (lech.length) {
-      hong('Đối chiếu chéo',
-        `${khop.length} tài khoản khớp, ${lech.length} lệch: `
-        + lech.slice(0, 6).map((x) => `${x.ma} (Nợ lệch ${Math.round(x.lech_no).toLocaleString('vi-VN')})`).join(', ')
-        + '. Sổ trong hệ thống và bảng cân đối đang nói hai chuyện khác nhau.');
+      // Lệch ở đây KHÔNG chặn. Bảng này chỉ nạp số dư đầu kỳ, mà chênh lệch
+      // tìm được lại nằm ở phát sinh trong kỳ, hai chuyện độc lập nhau. Chặn
+      // việc nạp đầu kỳ vì một chênh lệch ở phát sinh là bắt kế toán trả giá
+      // cho một lỗi không liên quan. Vẫn hiện rõ để không ai bỏ qua nó.
+      tang.push({ ten: 'Đối chiếu chéo', dat: false,
+        mo: `${khop.length} tài khoản khớp, ${lech.length} lệch: `
+          + lech.slice(0, 6).map((x) => `${x.ma} (Nợ lệch ${Math.round(x.lech_no).toLocaleString('vi-VN')})`).join(', ')
+          + '. Sổ trong hệ thống và bảng cân đối đang nói hai chuyện khác nhau ở phần phát sinh.' });
+      canh.push(`${lech.length} tài khoản lệch giữa sổ và bảng cân đối. Chênh lệch này nằm ở `
+        + 'PHÁT SINH trong kỳ, không phải ở số dư đầu kỳ, nên vẫn nạp được đầu kỳ. '
+        + 'Nhưng phải tìm ra nguyên nhân: xem bảng chi tiết bên dưới.');
     } else {
       dat('Đối chiếu chéo', `Toàn bộ ${khop.length} tài khoản khớp tuyệt đối với sổ trong hệ thống.`);
     }
@@ -245,9 +267,11 @@ async function kiemTra(doc) {
       canh.push(`${thieu.length} tài khoản có phát sinh trong bảng nhưng không có bút toán nào `
         + `trong sổ: ${thieu.slice(0, 8).join(', ')}.`);
     }
-    canh.push('Bảng cân đối tài khoản chỉ dùng để đối chiếu, không ghi vào sổ. '
-      + 'Sổ cái được dựng từ Sổ nhật ký chung.');
-    return { tang, loi, canh, chi_doi_chieu: true,
+    const coDauKy = doc.dong.filter((d) => (d.dk_no || 0) !== 0 || (d.dk_co || 0) !== 0).length;
+    canh.push('Bảng này KHÔNG ghi bút toán vào sổ cái. Sổ cái chỉ dựng từ Sổ nhật ký chung. '
+      + `Bấm Ghi vào sổ ở đây chỉ nạp SỐ DƯ ĐẦU KỲ của ${coDauKy} tài khoản, thứ mà nhật ký `
+      + 'chung không chứa và mọi báo cáo có cột số dư đều cần.');
+    return { tang, loi, canh, chi_doi_chieu: false, la_dau_ky: true,
              tom_tat: { loai: doc.loai, so_dong: doc.dong.length,
                         so_khop: khop.length, so_lech: lech.length, lech,
                         xem_thu: doc.dong.slice(0, 60) } };
@@ -389,24 +413,25 @@ async function ghiSo(batchId, nguoi) {
     `select id::text, source_file, status, recon from finance.import_batches where id = $1`,
     [batchId],
   );
-  if (!lo) throw new Error('Không có lô nhập này.');
-  if (lo.status === 'posted') throw new Error('Lô này đã ghi vào sổ rồi.');
-  if (lo.status === 'rejected') throw new Error('Lô này không qua kiểm tra, không ghi được.');
+  if (!lo) throw loiNguoiDung('Không có lô nhập này.');
+  if (lo.status === 'posted') throw loiNguoiDung('Lô này đã ghi vào sổ rồi.');
+  if (lo.status === 'rejected') throw loiNguoiDung('Lô này không qua kiểm tra, không ghi được.');
 
   const raw = await db.rows(
     `select raw from finance.import_rows where batch_id = $1 order by id`, [batchId],
   );
   const dong = raw.map((r) => r.raw);
-  if (!dong.length) throw new Error('Lô rỗng.');
+  if (!dong.length) throw loiNguoiDung('Lô rỗng.');
 
   const loai = lo.recon?.loai;
   return db.tx(async (c) => {
     let ghi = 0;
-    if (loai === 'nhat_ky') ghi = await ghiNhatKy(c, batchId, dong);
+    if (loai === 'can_doi') ghi = await ghiSoDuDauKy(c, batchId, dong, nguoi, lo.source_file);
+    else if (loai === 'nhat_ky') ghi = await ghiNhatKy(c, batchId, dong);
     else if (loai === 'tai_khoan') ghi = await ghiTaiKhoan(c, dong);
     else if (loai === 'khoan_muc') ghi = await ghiKhoanMuc(c, dong);
     else if (loai === 'nha_cung_cap') ghi = await ghiDoiTac(c, dong);
-    else throw new Error(`Loại ${loai} chưa hỗ trợ ghi sổ.`);
+    else throw loiNguoiDung(`Loại ${loai} chưa hỗ trợ ghi sổ.`);
 
     await c.query(
       `update finance.import_batches
@@ -539,6 +564,47 @@ async function ghiDoiTac(c, dong) {
   return ghi;
 }
 
+/**
+ * Bảng cân đối tài khoản không ghi vào sổ cái, nhưng nó là nguồn DUY NHẤT của
+ * số dư đầu kỳ. Nhật ký chung chỉ ghi những gì xảy ra trong năm, không ghi
+ * những gì đã có từ trước. Thiếu số dư đầu kỳ thì Sổ quỹ tiền mặt bắt đầu từ
+ * 0 thay vì 1.798.590.807, và Bảng cân đối kế toán B01 không lập được.
+ *
+ * Chỉ nhận dòng có số dư đầu kỳ khác 0, và chỉ nhận tài khoản đã có trong
+ * danh mục.
+ */
+async function ghiSoDuDauKy(c, batchId, dong, nguoi, tenFile) {
+  const co = await c.query('select code from finance.accounts');
+  const hopLe = new Set(co.rows.map((r) => r.code));
+  const ky = await c.query('select min(code) as k from finance.periods');
+  const kyDau = ky.rows[0]?.k;
+  if (!kyDau) throw loiNguoiDung('Chưa có kỳ kế toán nào. Nhập Sổ nhật ký chung trước.');
+
+  let ghi = 0;
+  for (const d of dong) {
+    if (!hopLe.has(d.ma)) continue;
+    const no = Number(d.dk_no || 0);
+    const cog = Number(d.dk_co || 0);
+    if (no === 0 && cog === 0) continue;
+    // Chỉ lấy tài khoản cấp thấp nhất. Bảng cân đối liệt kê cả cha lẫn con,
+    // cộng cả hai là nhân đôi số dư.
+    const coCon = [...hopLe].some((k) => k !== d.ma && k.startsWith(d.ma));
+    if (coCon) continue;
+    await c.query(
+      `insert into finance.opening_balances
+         (account_code, period_code, debit, credit, source_file, batch_id, created_by)
+       values ($1, $2, $3, $4, $5, $6::uuid, $7)
+       on conflict (account_code, period_code) do update
+         set debit = excluded.debit, credit = excluded.credit,
+             source_file = excluded.source_file, batch_id = excluded.batch_id,
+             updated_at = now()`,
+      [d.ma, kyDau, no, cog, tenFile, batchId, nguoi],
+    );
+    ghi += 1;
+  }
+  return ghi;
+}
+
 /* ── Hủy lô ────────────────────────────────────────────────────────────── */
 
 async function huy(batchId) {
@@ -546,7 +612,7 @@ async function huy(batchId) {
     `update finance.import_batches set status = 'rejected'
       where id = $1 and status <> 'posted' returning id::text`, [batchId],
   );
-  if (!r) throw new Error('Lô không tồn tại hoặc đã ghi vào sổ, không hủy được.');
+  if (!r) throw loiNguoiDung('Lô không tồn tại hoặc đã ghi vào sổ, không hủy được.');
   await db.query('delete from finance.import_rows where batch_id = $1', [batchId]);
   return true;
 }
@@ -559,8 +625,8 @@ async function huy(batchId) {
 async function hoanTac(batchId, nguoi) {
   return db.tx(async (c) => {
     const lo = await c.query('select status from finance.import_batches where id = $1', [batchId]);
-    if (!lo.rows.length) throw new Error('Không có lô này.');
-    if (lo.rows[0].status !== 'posted') throw new Error('Lô chưa ghi vào sổ, không có gì để hoàn tác.');
+    if (!lo.rows.length) throw loiNguoiDung('Không có lô này.');
+    if (lo.rows[0].status !== 'posted') throw loiNguoiDung('Lô chưa ghi vào sổ, không có gì để hoàn tác.');
     const x = await c.query('delete from finance.vouchers where batch_id = $1 returning 1', [batchId]);
     await c.query(
       `update finance.import_batches

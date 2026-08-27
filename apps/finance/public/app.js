@@ -280,10 +280,18 @@ const MAN = [
   { nhom: 'Phân tích' },
   { ma: 'tong-quan', ten: 'Tổng quan', icon: 'M3 13h4v6H3zM10 5h4v14h-4zM17 9h4v10h-4z' },
   { ma: 'van-hanh', ten: 'Số liệu vận hành', icon: 'M4 19V9M10 19V4M16 19v-7M22 19H2' },
-  { nhom: 'Sổ sách' },
+  { nhom: 'Sổ gốc' },
   { ma: 'nhat-ky', ten: 'Nhật ký chung', icon: 'M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5' },
+  { ma: 'bc-so-chi-tiet', ten: 'Sổ chi tiết tài khoản', icon: 'M5 4h14v16H5zM9 8h6M9 12h6M9 16h3' },
   { ma: 'can-doi', ten: 'Cân đối tài khoản', icon: 'M12 3v18M5 8h14M7 8l-3 6h6zM17 8l-3 6h6z' },
-  { ma: 'cong-no', ten: 'Công nợ', icon: 'M3 7h18v12H3zM3 11h18M7 15h4' },
+  { nhom: 'Báo cáo' },
+  { ma: 'bc-so-quy', ten: 'Sổ quỹ tiền mặt', icon: 'M3 7h18v11H3zM3 11h18M16 14.5h2' },
+  { ma: 'bc-so-ngan-hang', ten: 'Sổ tiền gửi ngân hàng', icon: 'M3 10l9-6 9 6M5 10v9M19 10v9M3 19h18' },
+  { ma: 'bc-tong-hop-cong-no', ten: 'Tổng hợp công nợ', icon: 'M4 5h16v14H4zM8 9h8M8 13h5' },
+  { ma: 'cong-no', ten: 'Công nợ theo đối tượng', icon: 'M3 7h18v12H3zM3 11h18M7 15h4' },
+  { ma: 'bc-dong-tien', ten: 'Dòng tiền', icon: 'M4 16l5-5 4 3 7-8M14 6h7v7' },
+  { ma: 'bc-b01', ten: 'B01 · Tình hình tài chính', icon: 'M6 3h9l4 4v14H6zM10 12h6M10 16h6M10 8h3' },
+  { ma: 'bc-khong-dung-duoc', ten: 'Ba báo cáo cần thêm dữ liệu', icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v5M12 16v.5' },
   { nhom: 'Nhập liệu' },
   { ma: 'nhap-excel', ten: 'Nhập từ Excel', icon: 'M12 3v12M8 11l4 4 4-4M4 19h16', quyen: ['accountant', 'vault_admin'] },
   { ma: 'lo-nhap', ten: 'Các lô đã nhập', icon: 'M3 5h18v4H3zM3 11h18v4H3zM3 17h18v3H3' },
@@ -1047,6 +1055,8 @@ VE['cong-no'] = async (than) => {
           muc: phaiTra.slice(0, 10).map((r) => ({ ten: r.name, giaTri: Math.abs(Number(r.con_lai)), mau: 'var(--am)' })),
         })),
     ),
+
+    canhBaoCatBot(d.length, 300),
 
     bang(
       [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'Loại' },
@@ -2049,6 +2059,509 @@ VE['ho-so'] = async (than) => {
         ),
       ),
     ),
+  );
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BÁO CÁO · tất cả dựng lại từ Sổ nhật ký chung
+   ══════════════════════════════════════════════════════════════════════════
+   Bộ Excel của kế toán có 9 file là báo cáo kết xuất từ cùng một sổ. Nhập cả
+   9 file đó vào là tạo ra 9 nguồn sự thật, và chúng sẽ mâu thuẫn nhau — TK
+   1388 đã cho thấy điều đó xảy ra thật. Nên chúng được tính lại ở đây từ
+   nhật ký, và vì cùng một nguồn nên không thể lệch nhau. */
+
+/**
+ * Truy vấn giới hạn số dòng để trang không đơ. Cắt bớt mà không nói là để
+ * người đọc tin rằng họ đang nhìn toàn bộ sổ trong khi không phải, và với sổ
+ * kế toán thì đó là loại hiểu nhầm đắt nhất.
+ */
+function canhBaoCatBot(soDong, tran, tongThat) {
+  if (soDong < tran) return null;
+  return el('div', { class: 'bao cho' },
+    `Đang hiển thị ${dinhDangSo.format(tran)} dòng đầu`
+    + (tongThat ? ` trên tổng ${dinhDangSo.format(tongThat)} dòng` : '')
+    + '. Thu hẹp khoảng ngày hoặc chọn một kỳ cụ thể để xem hết.');
+}
+
+function nhanNguon(nguonExcel) {
+  return el('div', { class: 'bao' },
+    el('strong', {}, 'Dựng lại từ Sổ nhật ký chung. '),
+    'Báo cáo này không nhập từ file. Nó được tính lại từ chính các bút toán trong sổ, '
+    + `nên không thể lệch với sổ. File Excel tương ứng: ${nguonExcel}.`);
+}
+
+/* ── Sổ quỹ tiền mặt ───────────────────────────────────────────────────── */
+
+const SQ = { tu_ngay: '', den_ngay: '' };
+
+VE['bc-so-quy'] = async (than) => {
+  const p = new URLSearchParams();
+  if (S.ky) p.set('ky', S.ky);
+  if (SQ.tu_ngay) p.set('tu_ngay', SQ.tu_ngay);
+  if (SQ.den_ngay) p.set('den_ngay', SQ.den_ngay);
+  const d = await goi(`/bc/so-quy?${p}`);
+
+  const oTu = el('input', { type: 'date', value: SQ.tu_ngay });
+  const oDen = el('input', { type: 'date', value: SQ.den_ngay });
+  const cuoiKy = Number(d.dau_ky) + Number(d.tong_thu) - Number(d.tong_chi);
+
+  than.replaceChildren(
+    dauTrang('Sổ kế toán chi tiết quỹ tiền mặt',
+      'Toàn bộ tiền mặt vào ra trong kỳ, kèm số tồn sau mỗi lần. Tài khoản 111.',
+      chonKy(() => ve()),
+      el('label', { class: 'o' }, el('span', {}, 'Từ ngày'), oTu),
+      el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
+      el('button', {
+        class: 'nut chinh',
+        onclick: () => { SQ.tu_ngay = oTu.value; SQ.den_ngay = oDen.value; ve(); },
+      }, 'Lọc')),
+
+    nhanNguon('So_ke_toan_chi_tiet_quy_tien_mat.xlsx'),
+    canhBaoCatBot(d.dong.length, 5000, d.so_dong),
+
+    el('div', { class: 'luoi luoi-4 cach-duoi' },
+      theChiSo('Tồn đầu kỳ', tien(d.dau_ky),
+        Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
+      theChiSo('Tổng thu', tien(d.tong_thu), `${dinhDangSo.format(d.so_dong)} lượt`, 'duong'),
+      theChiSo('Tổng chi', tien(d.tong_chi), '', 'am'),
+      theChiSo('Tồn cuối kỳ', tien(cuoiKy),
+        cuoiKy >= 0 ? 'đồng' : 'quỹ âm, cần kiểm tra', cuoiKy >= 0 ? '' : 'am'),
+    ),
+
+    bang(
+      [{ ten: 'Ngày' }, { ten: 'Phiếu thu' }, { ten: 'Phiếu chi' }, { ten: 'Đối tượng' },
+       { ten: 'Diễn giải' }, { ten: 'TK đối ứng' },
+       { ten: 'Thu', tien: true }, { ten: 'Chi', tien: true }, { ten: 'Tồn', tien: true }],
+      d.dong.map((r) => el('tr', {},
+        el('td', { class: 'ma' }, ngay(r.posting_date)),
+        el('td', { class: 'ma' }, Number(r.thu) ? r.voucher_no : '—'),
+        el('td', { class: 'ma' }, Number(r.chi) ? r.voucher_no : '—'),
+        el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
+        el('td', {}, r.description || '—'),
+        el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+        el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
+        el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
+        el('td', { class: 'tien mo' }, tien(Number(d.dau_ky) + Number(r.ton))),
+      )),
+      el('tr', {},
+        el('td', { colspan: '6' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
+        el('td', { class: 'tien' }, tien(d.tong_thu)),
+        el('td', { class: 'tien' }, tien(d.tong_chi)),
+        el('td', { class: 'tien' }, tien(cuoiKy)),
+      ),
+    ),
+  );
+};
+
+/* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────── */
+
+const SNH = { tai_khoan: '' };
+
+VE['bc-so-ngan-hang'] = async (than) => {
+  const ds = await goi('/bc/tai-khoan-ngan-hang');
+  if (!SNH.tai_khoan && ds.length) SNH.tai_khoan = ds[0].code;
+  const p = new URLSearchParams({ tai_khoan: SNH.tai_khoan || '112' });
+  if (S.ky) p.set('ky', S.ky);
+  const d = await goi(`/bc/so-ngan-hang?${p}`);
+  const cuoiKy = Number(d.dau_ky) + Number(d.tong_thu) - Number(d.tong_chi);
+  const dangChon = ds.find((x) => x.code === SNH.tai_khoan);
+
+  than.replaceChildren(
+    dauTrang('Sổ tiền gửi ngân hàng',
+      'Một sổ cho mỗi tài khoản ngân hàng. Tài khoản 112.',
+      chonKy(() => ve()),
+      el('label', { class: 'o' }, el('span', {}, 'Tài khoản ngân hàng'),
+        el('select', { onchange: (e) => { SNH.tai_khoan = e.target.value; ve(); } },
+          ...ds.map((x) => el('option', {
+            value: x.code, selected: SNH.tai_khoan === x.code || null,
+          }, `${x.code} · ${x.name}`)))),
+    ),
+
+    nhanNguon('So_tien_gui_ngan_hang.xlsx'),
+    canhBaoCatBot(d.dong.length, 5000, d.so_dong),
+
+    el('div', { class: 'luoi luoi-4 cach-duoi' },
+      theChiSo('Tồn đầu kỳ', tien(d.dau_ky),
+        Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
+      theChiSo('Tổng thu', tien(d.tong_thu), `${dinhDangSo.format(d.so_dong)} lượt`, 'duong'),
+      theChiSo('Tổng chi', tien(d.tong_chi), '', 'am'),
+      theChiSo('Tồn cuối kỳ', tien(cuoiKy), dangChon ? dangChon.name : ''),
+    ),
+
+    ds.length > 1 ? theBieuDo('So sánh các tài khoản ngân hàng', null,
+      window.BD.cotNhom({
+        nhan: ds.map((x) => x.code),
+        chuoi: [
+          { ten: 'Thu', giaTri: ds.map((x) => x.tong_thu), mau: 'var(--xanh)' },
+          { ten: 'Chi', giaTri: ds.map((x) => x.tong_chi), mau: 'var(--vang-sang)' },
+        ], cao: 200,
+      })) : null,
+
+    el('div', { class: 'cach-tren' }, bang(
+      [{ ten: 'Ngày' }, { ten: 'Chứng từ' }, { ten: 'Đối tượng' }, { ten: 'Diễn giải' },
+       { ten: 'TK đối ứng' }, { ten: 'Thu', tien: true }, { ten: 'Chi', tien: true },
+       { ten: 'Tồn', tien: true }],
+      d.dong.map((r) => el('tr', {},
+        el('td', { class: 'ma' }, ngay(r.posting_date)),
+        el('td', { class: 'ma' }, r.voucher_no),
+        el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
+        el('td', {}, r.description || '—'),
+        el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+        el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
+        el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
+        el('td', { class: 'tien mo' }, tien(Number(d.dau_ky) + Number(r.ton))),
+      )),
+      el('tr', {},
+        el('td', { colspan: '5' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
+        el('td', { class: 'tien' }, tien(d.tong_thu)),
+        el('td', { class: 'tien' }, tien(d.tong_chi)),
+        el('td', { class: 'tien' }, tien(cuoiKy)),
+      ),
+    )),
+  );
+};
+
+/* ── Tổng hợp công nợ ──────────────────────────────────────────────────── */
+
+const THCN = { loai: 'phai_thu' };
+const TEN_CN = { phai_thu: 'phải thu khách hàng', phai_tra: 'phải trả nhà cung cấp' };
+
+VE['bc-tong-hop-cong-no'] = async (than) => {
+  const p = new URLSearchParams({ loai: THCN.loai });
+  if (S.ky) p.set('ky', S.ky);
+  const d = await goi(`/bc/tong-hop-cong-no?${p}`);
+  const tongCuoi = d.reduce((s, r) => s + Number(r.cuoi_ky), 0);
+
+  than.replaceChildren(
+    dauTrang(`Tổng hợp công nợ ${TEN_CN[THCN.loai]}`,
+      'Số dư đầu kỳ, phát sinh trong kỳ, số dư cuối kỳ của từng đối tượng. '
+      + `Tài khoản ${THCN.loai === 'phai_thu' ? '131' : '331'}.`,
+      chonKy(() => ve()),
+      el('label', { class: 'o' }, el('span', {}, 'Loại'),
+        el('select', { onchange: (e) => { THCN.loai = e.target.value; ve(); } },
+          el('option', { value: 'phai_thu', selected: THCN.loai === 'phai_thu' || null },
+            'Phải thu khách hàng'),
+          el('option', { value: 'phai_tra', selected: THCN.loai === 'phai_tra' || null },
+            'Phải trả nhà cung cấp'))),
+    ),
+
+    nhanNguon(THCN.loai === 'phai_thu'
+      ? 'Tong_hop_cong_no_phai_thu_khach_hang.xlsx'
+      : 'Tong_hop_cong_no_phai_tra_nha_cung_cap.xlsx'),
+
+    el('div', { class: 'luoi luoi-3 cach-duoi' },
+      theChiSo('Số đối tượng', dinhDangSo.format(d.length)),
+      theChiSo('Tổng phát sinh Nợ', tien(d.reduce((s, r) => s + Number(r.ps_no), 0))),
+      theChiSo('Tổng dư cuối kỳ', tien(tongCuoi), 'đồng', tongCuoi >= 0 ? 'duong' : 'am'),
+    ),
+
+    canhBaoCatBot(d.length, 500),
+
+    theBieuDo('Mười đối tượng dư lớn nhất', null,
+      window.BD.thanhNgang({
+        muc: d.slice(0, 10).map((r) => ({ ten: r.name, giaTri: Math.abs(Number(r.cuoi_ky)) })),
+      })),
+
+    el('div', { class: 'cach-tren' }, bang(
+      [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'TK' }, { ten: 'Dư đầu kỳ', tien: true },
+       { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
+       { ten: 'Dư cuối kỳ', tien: true }, { ten: '' }],
+      d.map((r) => el('tr', {},
+        el('td', { class: 'ma' }, r.code),
+        el('td', {}, r.name),
+        el('td', { class: 'ma mo' }, r.tk_cong_no),
+        el('td', { class: 'tien mo' }, tien(r.dau_ky)),
+        el('td', { class: 'tien' }, tien(r.ps_no)),
+        el('td', { class: 'tien' }, tien(r.ps_co)),
+        el('td', { class: `tien ${Number(r.cuoi_ky) >= 0 ? 'chu-duong' : 'chu-am'}` },
+          tien(r.cuoi_ky)),
+        el('td', {}, el('button', {
+          class: 'nut nho', onclick: () => moChiTietCongNo(THCN.loai, r.code, r.name),
+        }, 'Chi tiết')),
+      )),
+      el('tr', {},
+        el('td', { colspan: '3' }, `Cộng ${dinhDangSo.format(d.length)} đối tượng`),
+        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.dau_ky), 0))),
+        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.ps_no), 0))),
+        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.ps_co), 0))),
+        el('td', { class: 'tien' }, tien(tongCuoi)),
+        el('td', {}, ''),
+      ),
+    )),
+  );
+};
+
+async function moChiTietCongNo(loai, ma, ten) {
+  const p = new URLSearchParams({ loai, doi_tac: ma });
+  if (S.ky) p.set('ky', S.ky);
+  const d = await goi(`/bc/chi-tiet-cong-no?${p}`);
+  moNgan({
+    tieuDe: `Chi tiết công nợ · ${ten}`,
+    phuDe: `${ma}${d.doi_tac?.tax_code ? ` · MST ${d.doi_tac.tax_code}` : ''} · `
+      + `${dinhDangSo.format(d.dong.length)} dòng · dựng từ Sổ nhật ký chung`,
+    than: el('div', {},
+      el('div', { class: 'cuon' }, el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, 'Ngày HT'), el('th', {}, 'Ngày CT'), el('th', {}, 'Số chứng từ'),
+          el('th', {}, 'Số hóa đơn'), el('th', {}, 'Diễn giải'),
+          el('th', {}, 'TK công nợ'), el('th', {}, 'TK đối ứng'),
+          el('th', { class: 'tien' }, 'Phát sinh Nợ'),
+          el('th', { class: 'tien' }, 'Phát sinh Có'),
+          el('th', { class: 'tien' }, 'Số dư'))),
+        el('tbody', {}, ...d.dong.map((r) => el('tr', {},
+          el('td', { class: 'ma' }, ngay(r.posting_date)),
+          el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
+          el('td', { class: 'ma' }, r.voucher_no),
+          el('td', { class: 'ma mo' }, r.invoice_no || '—'),
+          el('td', {}, r.description || '—'),
+          el('td', { class: 'ma mo' }, r.tk_cong_no),
+          el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+          el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
+          el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
+          el('td', { class: 'tien mo' }, tien(r.so_du)),
+        ))),
+        el('tfoot', {}, el('tr', {},
+          el('td', { colspan: '7' }, 'Cộng'),
+          el('td', { class: 'tien' }, tien(d.tong_no)),
+          el('td', { class: 'tien' }, tien(d.tong_co)),
+          el('td', { class: 'tien' }, tien(Number(d.tong_no) - Number(d.tong_co))),
+        )),
+      )),
+    ),
+  });
+}
+
+/* ── Dòng tiền ─────────────────────────────────────────────────────────── */
+
+VE['bc-dong-tien'] = async (than) => {
+  const d = await goi(`/bc/dong-tien${S.ky ? `?ky=${encodeURIComponent(S.ky)}` : ''}`);
+
+  than.replaceChildren(
+    dauTrang('Dòng tiền',
+      'Tiền vào và tiền ra, phân loại theo tài khoản đối ứng. Đó là cách duy nhất biết '
+      + 'một đồng tiền vào ra vì lý do gì, và thông tin đó nằm sẵn trong nhật ký.',
+      chonKy(() => ve())),
+
+    nhanNguon('Dong_tien.xlsx'),
+
+    el('div', { class: 'luoi luoi-4 cach-duoi' },
+      theChiSo('Tiền tồn đầu kỳ', tien(d.dau_ky),
+        Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
+      theChiSo('Tổng thu', tien(d.tong_thu), 'đồng', 'duong'),
+      theChiSo('Tổng chi', tien(d.tong_chi), 'đồng', 'am'),
+      theChiSo('Tiền tồn cuối kỳ', tien(d.cuoi_ky), 'đồng',
+        Number(d.cuoi_ky) >= 0 ? 'duong' : 'am'),
+    ),
+
+    theBieuDo('Thu chi theo tháng', null,
+      window.BD.cotNhom({
+        nhan: d.theo_thang.map((r) => r.ky.replace(/^\d{4}-/, 'T')),
+        chuoi: [
+          { ten: 'Thu tiền mặt', giaTri: d.theo_thang.map((r) => r.tm_thu), mau: 'var(--xanh)' },
+          { ten: 'Thu ngân hàng', giaTri: d.theo_thang.map((r) => r.nh_thu), mau: 'var(--xanh-sang)' },
+          { ten: 'Chi tiền mặt', giaTri: d.theo_thang.map((r) => r.tm_chi), mau: 'var(--vang-sang)' },
+          { ten: 'Chi ngân hàng', giaTri: d.theo_thang.map((r) => r.nh_chi), mau: 'var(--vang)' },
+        ], cao: 240,
+      })),
+
+    el('div', { class: 'luoi luoi-2 cach-tren' },
+      theBieuDo('Tiền vào theo nguồn', null,
+        window.BD.vanhKhuyen({ muc: d.thu.map((r) => ({ ten: r.muc, giaTri: r.so_tien })) })),
+      theBieuDo('Tiền ra theo mục đích', null,
+        window.BD.vanhKhuyen({ muc: d.chi.map((r) => ({ ten: r.muc, giaTri: r.so_tien })) })),
+    ),
+
+    el('div', { class: 'luoi luoi-2 cach-tren' },
+      el('div', { class: 'the' },
+        el('div', { class: 'the-dau' }, 'Chi tiết tiền vào'),
+        el('div', { class: 'cuon thap' }, el('table', {},
+          el('thead', {}, el('tr', {}, el('th', {}, 'Mục thu'),
+            el('th', { class: 'tien' }, 'Số tiền'), el('th', { class: 'tien' }, 'Số lượt'))),
+          el('tbody', {}, ...d.thu.map((r) => el('tr', {},
+            el('td', {}, r.muc),
+            el('td', { class: 'tien chu-duong' }, tien(r.so_tien)),
+            el('td', { class: 'tien mo' }, dinhDangSo.format(r.so_dong)),
+          ))),
+          el('tfoot', {}, el('tr', {}, el('td', {}, 'Cộng'),
+            el('td', { class: 'tien' }, tien(d.tong_thu)), el('td', {}, ''))),
+        )),
+      ),
+      el('div', { class: 'the' },
+        el('div', { class: 'the-dau' }, 'Chi tiết tiền ra'),
+        el('div', { class: 'cuon thap' }, el('table', {},
+          el('thead', {}, el('tr', {}, el('th', {}, 'Mục chi'),
+            el('th', { class: 'tien' }, 'Số tiền'), el('th', { class: 'tien' }, 'Số lượt'))),
+          el('tbody', {}, ...d.chi.map((r) => el('tr', {},
+            el('td', {}, r.muc),
+            el('td', { class: 'tien chu-am' }, tien(r.so_tien)),
+            el('td', { class: 'tien mo' }, dinhDangSo.format(r.so_dong)),
+          ))),
+          el('tfoot', {}, el('tr', {}, el('td', {}, 'Cộng'),
+            el('td', { class: 'tien' }, tien(d.tong_chi)), el('td', {}, ''))),
+        )),
+      ),
+    ),
+  );
+};
+
+/* ── B01-DN · Báo cáo tình hình tài chính ──────────────────────────────── */
+
+VE['bc-b01'] = async (than) => {
+  const [d, dk] = await Promise.all([goi('/bc/b01'), goi('/bc/dau-ky')]);
+  const tongTS = d.find((r) => r.ma === '270');
+  const tongNV = d.find((r) => r.ma === '440');
+  const lech = Number(tongTS?.cuoi_ky || 0) - Number(tongNV?.cuoi_ky || 0);
+
+  than.replaceChildren(
+    dauTrang('B01-DN · Báo cáo tình hình tài chính',
+      'Bảng cân đối kế toán theo Thông tư 200, dựng từ số dư đầu kỳ cộng phát sinh trong '
+      + 'nhật ký chung. Mỗi chỉ tiêu là một nhóm tài khoản.'),
+
+    nhanNguon('B01_dn_bao_cao_tinh_hinh_tai_chinh.xlsx'),
+
+    !dk.so_tai_khoan
+      ? el('div', { class: 'bao cho' },
+          'Chưa nạp số dư đầu kỳ, nên báo cáo này chỉ phản ánh phát sinh trong năm chứ không '
+          + 'phải tình hình tài chính thật. Vào màn Nhập từ Excel, tải '
+          + 'Bang_can_doi_tai_khoan.xlsx rồi bấm Ghi vào sổ để nạp số dư đầu kỳ.')
+      : el('div', { class: 'bao duong' },
+          `Đã nạp số dư đầu kỳ của ${dinhDangSo.format(dk.so_tai_khoan)} tài khoản `
+          + `từ ${dk.tu_file}.`),
+
+    el('div', { class: `bao ${Math.abs(lech) < 1 ? 'duong' : 'am'}` },
+      Math.abs(lech) < 1
+        ? 'Tổng tài sản bằng tổng nguồn vốn. Bảng cân.'
+        : `Tổng tài sản lệch tổng nguồn vốn ${tien(lech)} đồng. Thường là do chưa nạp số dư `
+          + 'đầu kỳ, hoặc kết quả kinh doanh trong năm chưa được kết chuyển sang 421.'),
+
+    bang(
+      [{ ten: 'Chỉ tiêu' }, { ten: 'Mã số' }, { ten: 'Tài khoản' },
+       { ten: 'Số cuối kỳ', tien: true }, { ten: 'Số đầu năm', tien: true }],
+      d.map((r) => el('tr', { class: r.nhom ? 'b01-nhom' : null },
+        el('td', { class: r.dam ? 'b01-dam' : (r.nhom ? 'b01-nhom-ten' : '') }, r.ten),
+        el('td', { class: 'ma mo' }, r.ma),
+        el('td', { class: 'ma mo' }, r.tai_khoan || '—'),
+        el('td', { class: `tien ${r.dam ? 'b01-dam' : ''}` }, tien(r.cuoi_ky)),
+        el('td', { class: 'tien mo' }, tien(r.dau_nam)),
+      )),
+    ),
+  );
+};
+
+/* ── Sổ chi tiết các tài khoản ─────────────────────────────────────────── */
+
+const SCT = { tai_khoan: '' };
+
+VE['bc-so-chi-tiet'] = async (than) => {
+  const dsTk = await goi('/tai-khoan');
+  if (!SCT.tai_khoan) SCT.tai_khoan = '1111';
+
+  const oTk = el('input', { list: 'ds-tk-sct', class: 'ma', value: SCT.tai_khoan });
+  const list = el('datalist', { id: 'ds-tk-sct' },
+    ...dsTk.map((a) => el('option', { value: a.code }, `${a.code} · ${a.name}`)));
+
+  let d;
+  try {
+    const p = new URLSearchParams();
+    if (S.ky) p.set('ky', S.ky);
+    d = await goi(`/bc/so-chi-tiet/${encodeURIComponent(SCT.tai_khoan)}?${p}`);
+  } catch (err) {
+    d = { loi: err.message };
+  }
+
+  than.replaceChildren(
+    dauTrang('Sổ chi tiết các tài khoản',
+      'Toàn bộ bút toán của một tài khoản, kèm số dư sau mỗi dòng.',
+      chonKy(() => ve()),
+      el('label', { class: 'o' }, el('span', {}, 'Tài khoản'), oTk),
+      el('button', {
+        class: 'nut chinh',
+        onclick: () => { SCT.tai_khoan = oTk.value.trim(); ve(); },
+      }, 'Xem')),
+    list,
+
+    nhanNguon('So_chi_tiet_cac_tai_khoan.xlsx'),
+
+    d.loi ? el('div', { class: 'bao am' }, d.loi) : el('div', {},
+      canhBaoCatBot(d.dong.length, 5000, d.so_dong),
+      el('div', { class: 'luoi luoi-4 cach-duoi' },
+        theChiSo('Tài khoản', d.code, d.name),
+        theChiSo('Dư đầu kỳ', tien(d.dau_ky),
+          Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
+        theChiSo('Phát sinh Nợ', tien(d.tong_no), `${dinhDangSo.format(d.so_dong)} dòng`),
+        theChiSo('Dư cuối kỳ',
+          tien(Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co)), 'đồng'),
+      ),
+      bang(
+        [{ ten: 'Ngày HT' }, { ten: 'Ngày CT' }, { ten: 'Số chứng từ' }, { ten: 'Số hóa đơn' },
+         { ten: 'Diễn giải' }, { ten: 'TK đối ứng' }, { ten: 'Đối tượng' },
+         { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
+         { ten: 'Số dư', tien: true }],
+        d.dong.map((r) => el('tr', {},
+          el('td', { class: 'ma' }, ngay(r.posting_date)),
+          el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
+          el('td', { class: 'ma' }, r.voucher_no),
+          el('td', { class: 'ma mo' }, r.invoice_no || '—'),
+          el('td', {}, r.description || '—',
+            r.is_deductible === false
+              ? el('span', { class: 'the-nhan am cach-trai' }, 'không hợp lý') : null),
+          el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+          el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
+          el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
+          el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
+          el('td', { class: 'tien mo' }, tien(r.so_du)),
+        )),
+        el('tr', {},
+          el('td', { colspan: '7' }, 'Cộng phát sinh'),
+          el('td', { class: 'tien' }, tien(d.tong_no)),
+          el('td', { class: 'tien' }, tien(d.tong_co)),
+          el('td', { class: 'tien' },
+            tien(Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co))),
+        ),
+      ),
+    ),
+  );
+};
+
+/* ── Ba báo cáo không dựng lại được ────────────────────────────────────── */
+
+const KHONG_DUNG_DUOC = [
+  { ten: 'Bảng tính khấu hao tài sản cố định',
+    file: 'Bang_tinh_khau_hao_tai_san_co_dinh_theo_nam.xlsx',
+    thieu: 'Nhật ký chỉ ghi bút toán khấu hao hằng tháng, không ghi nguyên giá, ngày ghi tăng '
+      + 'và thời gian sử dụng của từng tài sản. Không có ba thứ đó thì không tính được hao mòn '
+      + 'lũy kế và giá trị còn lại.' },
+  { ten: 'Bảng phân bổ công cụ dụng cụ',
+    file: 'Bang_tinh_phan_bo_cong_cu_dung_cu_theo_nam.xlsx',
+    thieu: 'Cùng lý do: cần số kỳ phân bổ và giá trị gốc của từng công cụ, nhật ký chỉ có bút '
+      + 'toán phân bổ từng tháng.' },
+  { ten: 'Tổng hợp tồn kho',
+    file: 'Tong_hop_ton_kho.xlsx',
+    thieu: 'Nhật ký ghi giá trị nhập xuất kho bằng tiền, không ghi mã hàng và số lượng. Không '
+      + 'có số lượng thì không ra được tồn kho theo từng mặt hàng.' },
+];
+
+VE['bc-khong-dung-duoc'] = async (than) => {
+  than.replaceChildren(
+    dauTrang('Ba báo cáo cần dữ liệu riêng',
+      'Bộ Excel của kế toán có 17 file. Mười bốn file đã nằm trong hệ thống này. Ba file còn '
+      + 'lại không dựng lại được từ nhật ký chung, và nói thẳng ra thì tốt hơn là bịa một con '
+      + 'số trông hợp lý.'),
+
+    el('div', { class: 'luoi luoi-3' },
+      ...KHONG_DUNG_DUOC.map((x) => el('div', { class: 'the' },
+        el('div', { class: 'the-dau' }, x.ten),
+        el('div', { class: 'the-than' },
+          el('p', { class: 'ghi-chu' }, x.thieu),
+          el('p', { class: 'mo nguon-goc ma' }, x.file),
+        ),
+      )),
+    ),
+
+    el('div', { class: 'bao cach-tren' },
+      'Muốn có ba báo cáo này trong hệ thống thì cần thêm ba danh mục: tài sản cố định, công '
+      + 'cụ dụng cụ, và hàng hóa vật tư. Khi có danh mục, phần tính khấu hao và phân bổ sẽ tự '
+      + 'chạy từ đó, và bút toán hằng tháng sinh ra tự động thay vì nhập tay.'),
   );
 };
 
