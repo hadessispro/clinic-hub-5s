@@ -5,17 +5,20 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "lang": "vi",
   "description": "Chấm công GPS chi nhánh 60 Lê Văn Thọ",
   "background_color": "#f4f8f5",
   "theme_color": "#087f7b",
+  "categories": ["business", "productivity", "medical"],
+  "launch_handler": { "client_mode": "navigate-existing" },
   "icons": [
     {
       "src": "/images/app-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/images/app-icon-512.png",
