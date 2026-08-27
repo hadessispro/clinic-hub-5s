@@ -17,6 +17,10 @@ let telesaleDataClass = '';
 let telesaleServiceGroup = '';
 let telesaleServiceType = '';
 let telesaleSearch = '';
+// Lọc lại là router dựng lại view, ô tìm kiếm bị thay bằng input mới và mất
+// focus. Cờ này lấy lại con trỏ sau khi render, nếu không người dùng gõ được
+// một ký tự rồi đứng.
+let restoreTelesaleSearchFocus = false;
 let telesaleStatus = '';
 let telesaleBranch = '';
 let telesalePageMeta = { page: 1, pageSize: 12, total: 0 };
@@ -292,14 +296,23 @@ export function initView() {
     }
   }
 
+  if (restoreTelesaleSearchFocus && searchInput) {
+    restoreTelesaleSearchFocus = false;
+    searchInput.focus();
+    const caret = searchInput.value.length;
+    searchInput.setSelectionRange(caret, caret);
+  }
+
   let telesaleSearchTimer;
   searchInput?.addEventListener('input', () => {
     clearTimeout(telesaleSearchTimer);
     telesaleSearchTimer = setTimeout(() => {
+      if (searchInput.value.trim() === telesaleSearch) return;
       telesaleSearch = searchInput.value.trim();
       telesalePage = 1;
+      restoreTelesaleSearchFocus = true;
       navigateTo('telesale-workspace');
-    }, 260);
+    }, 400);
   });
   searchInput?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return;
@@ -307,6 +320,7 @@ export function initView() {
     clearTimeout(telesaleSearchTimer);
     telesaleSearch = searchInput.value.trim();
     telesalePage = 1;
+    restoreTelesaleSearchFocus = true;
     navigateTo('telesale-workspace');
   });
   statusSelect?.addEventListener('change', () => { telesaleStatus = statusSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });

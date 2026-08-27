@@ -14,6 +14,10 @@ import {
 let suggestions = []; let requests = []; let assignments = []; let accounts = []; let sites = [];
 let supportDate = ''; let supportPg = ''; let supportStatus = '';
 let leadPage = 1; let leadSearch = ''; let leadPg = ''; let leadClass = ''; let leadStatus = ''; let leadCommission = ''; let leadFrom = ''; let leadTo = '';
+// Mỗi lần lọc lại là router dựng lại toàn bộ view, nghĩa là ô tìm kiếm bị
+// thay bằng thẻ input mới và mất focus. Cờ này để lấy lại con trỏ sau khi
+// render xong, nếu không người dùng gõ được một ký tự rồi đứng.
+let restoreLeadSearchFocus = false;
 let leadResult = { data: [], meta: { page: 1, pageSize: 25, total: 0 } };
 const statusLabel = { pending_admin: 'Chờ Admin duyệt', approved: 'Đã duyệt', rejected: 'Từ chối', submitted: 'Chờ Support', admin_review: 'Chờ Admin', in_progress: 'Support đang xử lý', completed: 'Hoàn tất' };
 const assignmentLabels = { scheduled: 'Đã phân công', checked_in: 'Đang trong ca', completed: 'Hoàn thành', cancelled: 'Đã hủy', expired: 'Tự hết hạn' };
@@ -95,14 +99,18 @@ function renderSupportLeadData() {
 export async function renderView() {
   const role = store.getState().profile?.role;
   const isPg = role === 'pg_staff'; const isSupport = role === 'support_marketing';
+  // Backend cho supportRoles (admin, admin_it, superadmin, admin_marketing,
+  // support_marketing) đọc kho data PG và xác nhận khách đến. Trước đây
+  // frontend chỉ dựng panel cho support_marketing nên admin không thấy gì.
+  const canSeePgData = isSupport || ['admin', 'admin_it', 'admin_marketing', 'superadmin'].includes(role);
   supportDate ||= today();
   [suggestions, requests, assignments, accounts, sites, leadResult] = await Promise.all([
     getPgLocationSuggestions(), getPgSupportRequests(), (isPg || isSupport) ? getPgAssignments(isSupport ? supportDate : today()) : Promise.resolve([]),
-    isSupport ? getPgAccounts() : Promise.resolve([]), isSupport ? getPgSites() : Promise.resolve([]),
-    isSupport ? getMarketingLeadPage({ page: leadPage, page_size: 25, pg_only: true, search: leadSearch || undefined, pg_code: leadPg || undefined, data_class: leadClass || undefined, status: leadStatus || undefined, commission_status: leadCommission || undefined, date_from: leadFrom || undefined, date_to: leadTo || undefined }) : Promise.resolve({ data: [], meta: { page: 1, pageSize: 25, total: 0 } }),
+    canSeePgData ? getPgAccounts() : Promise.resolve([]), isSupport ? getPgSites() : Promise.resolve([]),
+    canSeePgData ? getMarketingLeadPage({ page: leadPage, page_size: 25, pg_only: true, search: leadSearch || undefined, pg_code: leadPg || undefined, data_class: leadClass || undefined, status: leadStatus || undefined, commission_status: leadCommission || undefined, date_from: leadFrom || undefined, date_to: leadTo || undefined }) : Promise.resolve({ data: [], meta: { page: 1, pageSize: 25, total: 0 } }),
   ]);
   return `${isSupport ? renderSupportOperations() : `<div class="view-header"><div><p class="eyebrow">ĐIỀU PHỐI PG</p><h3>${isPg ? 'Ca làm & hỗ trợ của tôi' : 'Phê duyệt vận hành PG'}</h3></div></div>`}
-  ${isSupport ? renderSupportLeadData() : ''}
+  ${canSeePgData ? renderSupportLeadData() : ''}
   ${isPg ? `<div class="grid cols-2 pg-workflow-grid">
     <section class="panel"><div class="section-title"><div><h3>Gợi ý chốt tọa độ</h3><p class="subtle">Chỉ gửi gợi ý; GPS chấm công vẫn dùng tọa độ đã được Admin duyệt.</p></div></div>
       <form id="pgSuggestLocation" class="form-grid"><label class="form-field"><span>Phân công hôm nay</span><select name="assignmentId" required><option value="">Chọn phân công</option>${assignments.map(a => `<option value="${a.id}">${escapeHTML(a.site_name)} · ${String(a.start_time).slice(0,5)}–${String(a.end_time).slice(0,5)}</option>`).join('')}</select></label><label class="form-field"><span>Ghi chú vị trí</span><textarea name="note" required placeholder="Mô tả vị trí đứng thực tế, cổng vào hoặc quầy PG"></textarea></label><input name="latitude" type="hidden"><input name="longitude" type="hidden"><input name="accuracy" type="hidden"><button id="captureSuggestionGps" class="secondary-button" type="button"><i class="ri-map-pin-user-line"></i> Lấy GPS hiện tại</button><div id="suggestionGpsState" class="subtle">Chưa lấy tọa độ.</div><button class="primary-button" type="submit">Gửi Admin xác nhận</button></form>
@@ -149,8 +157,34 @@ export function initView() {
   };
   const leadFilter = document.getElementById('supportPgLeadFilter'); let searchTimer = 0;
   leadFilter?.addEventListener('change', (event) => applyLeadFilters(event.currentTarget));
-  document.getElementById('supportPgLeadSearch')?.addEventListener('input', (event) => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(() => applyLeadFilters(event.currentTarget.closest('form')), 350); });
-  document.querySelector('[data-reset-support-pg-leads]')?.addEventListener('click', async () => { leadPage = 1; leadSearch = ''; leadPg = ''; leadClass = ''; leadStatus = ''; leadCommission = ''; leadFrom = ''; leadTo = ''; await navigateTo('pg-workflow'); });
+
+  const leadSearchInput = document.getElementById('supportPgLeadSearch');
+  // Lấy lại con trỏ ngay sau khi view được dựng lại, đặt ở cuối chuỗi để người
+  // dùng gõ tiếp được liền mạch.
+  if (restoreLeadSearchFocus && leadSearchInput) {
+    restoreLeadSearchFocus = false;
+    leadSearchInput.focus();
+    const caret = leadSearchInput.value.length;
+    leadSearchInput.setSelectionRange(caret, caret);
+  }
+  leadSearchInput?.addEventListener('input', (event) => {
+    const input = event.currentTarget;
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      if (String(input.value).trim() === leadSearch) return; // không có gì đổi
+      restoreLeadSearchFocus = true;
+      applyLeadFilters(input.closest('form'));
+    }, 400);
+  });
+  // Enter để tìm ngay, không phải chờ hết thời gian trễ.
+  leadSearchInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    window.clearTimeout(searchTimer);
+    restoreLeadSearchFocus = true;
+    applyLeadFilters(event.currentTarget.closest('form'));
+  });
+  document.querySelector('[data-reset-support-pg-leads]')?.addEventListener('click', async () => { leadPage = 1; leadSearch = ''; leadPg = ''; leadClass = ''; leadStatus = ''; leadCommission = ''; leadFrom = ''; leadTo = ''; restoreLeadSearchFocus = true; await navigateTo('pg-workflow'); });
   document.querySelectorAll('[data-support-lead-page]').forEach((button) => button.addEventListener('click', async () => { leadPage = Number(button.dataset.supportLeadPage || 1); await navigateTo('pg-workflow'); }));
   document.querySelector('[data-support-lead-page-select]')?.addEventListener('change', async (event) => { leadPage = Number(event.currentTarget.value || 1); await navigateTo('pg-workflow'); });
   document.querySelectorAll('[data-support-confirm-arrival]').forEach((button) => button.addEventListener('click', async () => {
