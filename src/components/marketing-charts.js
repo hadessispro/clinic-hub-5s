@@ -179,7 +179,7 @@ export function staffOption(rows = []) {
   return {
     grid: { left: 18, right: 28, top: 12, bottom: 18, containLabel: true },
     xAxis: { type: 'value', axisLabel: { color: '#78908b' }, splitLine: { lineStyle: { color: '#edf3f1' } } },
-    yAxis: { type: 'category', data: data.map((row) => row.full_name || row.telesale_code), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#425f59', fontWeight: 700, width: 135, overflow: 'truncate' } },
+    yAxis: { type: 'category', data: data.map((row) => row.full_name || row.telesale_code || 'Chưa gán'), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: '#425f59', fontWeight: 700, width: 135, overflow: 'truncate' } },
     series: [{ type: 'bar', barMaxWidth: 24, data: data.map((row) => Number(row.assigned || 0)), itemStyle: { borderRadius: [0, 8, 8, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#2563eb' }, { offset: 1, color: '#06b6d4' }]) }, label: { show: true, position: 'right', color: '#123c35', fontWeight: 800, formatter: ({ value }) => Number(value).toLocaleString('vi-VN') } }],
   };
 }

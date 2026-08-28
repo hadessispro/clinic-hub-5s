@@ -10,6 +10,7 @@ function mapVpsLead(row) {
     appointment_date: row.appointment_at,
     service_interest: row.service_type,
     assigned_telesale_id: row.assigned_telesale_code,
+    assigned_telesale_name: row.assigned_telesale_name || null,
     created_by_pg: row.created_by_pg_code,
     created_by_name: row.created_by_name || row.customer_profile?.pgName || null,
     created_by_role: row.created_by_role || null,
@@ -311,7 +312,8 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     'Nguồn Lead',
     'Dịch vụ quan tâm',
     'Chi nhánh đăng ký',
-    'Mã Telesale phụ trách',
+    'Telesale phụ trách',
+    'Mã Telesale',
     'PG/Nguồn nhập',
     'Trạng thái',
     'Lịch hẹn',
@@ -338,7 +340,8 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     `"${(l.source || '').replace(/"/g, '""')}"`,
     `"${(l.service_interest || '').replace(/"/g, '""')}"`,
     `"${l.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu'}"`,
-    `"${(l.assigned_telesale_id || 'Chưa gán').replace(/"/g, '""')}"`,
+    `"${(l.assigned_telesale_name || l.assigned_telesale_id || 'Chưa gán').replace(/"/g, '""')}"`,
+    `"${(l.assigned_telesale_id || '').replace(/"/g, '""')}"`,
     `"${(l.created_by_name || l.created_by_pg || l.source || '').replace(/"/g, '""')}"`,
     `"${(statusMap[l.status] || l.status || '').replace(/"/g, '""')}"`,
     `"${(l.appointment_date ? new Date(l.appointment_date).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '').replace(/"/g, '""')}"`,
@@ -626,9 +629,9 @@ export async function getPgAttendance(from, to) {
 
 export async function exportPgAttendanceCsv(from, to) {
   const rows = await getPgAttendance(from, to);
-  const headers = ['Mã PG', 'Ngày', 'Loại', 'Thời gian', 'Địa điểm', 'Địa chỉ', 'Khoảng cách (m)', 'Sai số GPS (m)', 'Trạng thái'];
+  const headers = ['Nhân viên PG', 'Mã PG', 'Ngày', 'Loại', 'Thời gian', 'Địa điểm', 'Địa chỉ', 'Khoảng cách (m)', 'Sai số GPS (m)', 'Trạng thái'];
   const cell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-  const lines = rows.map((row) => [row.pg_code, row.work_date, row.record_type, row.recorded_at, row.site_name, row.address, row.distance_m, row.accuracy_m, row.status].map(cell).join(','));
+  const lines = rows.map((row) => [row.pg_name || row.pg_code, row.pg_code, row.work_date, row.record_type, row.recorded_at, row.site_name, row.address, row.distance_m, row.accuracy_m, row.status].map(cell).join(','));
   const blob = new Blob(['\uFEFF' + [headers.map(cell).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

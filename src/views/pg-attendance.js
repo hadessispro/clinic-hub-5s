@@ -1,5 +1,5 @@
 import { exportPgAttendanceCsv, getPgAssignments, getPgAttendance, recordPgAttendance } from '../services/marketing.js';
-import { escapeHTML } from '../utils.js';
+import { escapeHTML, oNguoiPhuTrach } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
@@ -46,7 +46,7 @@ export async function renderView() {
         <button class="secondary-button" type="submit">Lọc dữ liệu</button><button id="exportPgAttendanceReport" class="primary-button" type="button">Xuất Excel/CSV</button>
       </form>
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Ngày</th><th>Loại</th><th>Thời gian</th><th>Vị trí</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead><tbody>
-        ${records.length ? records.map((row) => `<tr><td><strong>${escapeHTML(row.pg_code)}</strong></td><td>${escapeHTML(row.work_date)}</td><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${escapeHTML(row.site_name)}</td><td>${row.distance_m} m</td><td>±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="8">Không có dữ liệu trong khoảng ngày đã chọn.</td></tr>'}
+        ${records.length ? records.map((row) => `<tr><td>${oNguoiPhuTrach(row.pg_name, row.pg_code)}</td><td>${escapeHTML(row.work_date)}</td><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${escapeHTML(row.site_name)}</td><td>${row.distance_m} m</td><td>±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="8">Không có dữ liệu trong khoảng ngày đã chọn.</td></tr>'}
       </tbody></table></div>
     </section>`;
   const shift = assignments[0];

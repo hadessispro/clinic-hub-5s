@@ -1,6 +1,6 @@
 import { addTelesaleCallLog, getLeadCallLogs, updateMarketingLead } from '../services/marketing.js';
 import { CALL_STATUS, LEAD_STATUS, LOW_QUALITY_REASONS } from '../constants.js';
-import { escapeHTML, formatDateTime } from '../utils.js';
+import { escapeHTML, formatDateTime, tenNguoiPhuTrach } from '../utils.js';
 import { showToast } from './toast.js';
 import { store } from '../store.js';
 import { leadStatusTone } from './shared.js';
@@ -57,7 +57,7 @@ function historyHtml(logs) {
     <div><strong>${safe(label, 'Đã liên hệ')}</strong>
       <p>${safe(log.note, 'Không có ghi chú')}</p>
       ${log.appointment_at || log.appointment_date ? `<p><i class="ri-calendar-check-line"></i> Hẹn: ${safe(formatDateTime(log.appointment_at || log.appointment_date))}</p>` : ''}
-      <time>${safe(log.telesale_name || log.telesale_code || log.telesale_id, log.is_legacy ? 'Dữ liệu lịch sử' : 'Người chăm sóc')} · ${log.created_at ? safe(formatDateTime(log.created_at)) : 'Chưa rõ thời gian'}${log.is_legacy ? ' · Đã nhập từ hệ thống cũ' : ''}</time>
+      <time>${safe(tenNguoiPhuTrach(log.telesale_name, log.telesale_code || log.telesale_id, log.is_legacy ? 'Dữ liệu lịch sử' : 'Người chăm sóc'))} · ${log.created_at ? safe(formatDateTime(log.created_at)) : 'Chưa rõ thời gian'}${log.is_legacy ? ' · Đã nhập từ hệ thống cũ' : ''}</time>
     </div>
   </article>`;
   }).join('')}</div>`;

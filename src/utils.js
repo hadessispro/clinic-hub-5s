@@ -208,3 +208,38 @@ export function uniformPackageFor(department, roleTitle) {
   const haystack = normalizeText(`${department} ${roleTitle}`);
   return UNIFORM_CATALOG.find((pkg) => pkg.matcher.some((m) => haystack.includes(m))) || UNIFORM_CATALOG.at(-1);
 }
+
+/* ── Hiển thị người phụ trách ────────────────────────────────────────────
+ *
+ * Quy tắc chung của hệ thống: TÊN là thứ để đọc, MÃ là thứ để tra.
+ *
+ * Mã nhân viên như PVC-10237 và PVC-10221 chỉ khác nhau bốn chữ số cuối. Nhìn
+ * lướt qua một bảng ba mươi dòng thì chúng gần như một, và người ta phải dừng
+ * lại dò từng ký tự. Tên thì đọc là nhận ra ngay, kể cả khi trùng họ.
+ *
+ * Nên mọi bảng đều hiển thị tên trước, mã đặt nhỏ bên dưới để còn đối chiếu
+ * và còn tìm kiếm. Giấu hẳn mã đi thì mất một khóa tra cứu thật; đặt nó lên
+ * trước thì bắt người đọc làm việc của máy.
+ *
+ * Hai hàm này là chỗ duy nhất quyết định thứ tự đó. Sửa ở đây là đổi cả hệ
+ * thống, thay vì tìm lại tám chỗ đang tự dựng chuỗi theo tám kiểu.
+ */
+
+// Dạng chữ thuần, dùng cho nhãn biểu đồ, file xuất, thuộc tính title.
+export function tenNguoiPhuTrach(ten, ma, khiTrong = 'Chưa gán') {
+  const t = String(ten || '').trim();
+  const m = String(ma || '').trim();
+  if (t && m && t.toLowerCase() !== m.toLowerCase()) return `${t} · ${m}`;
+  return t || m || khiTrong;
+}
+
+// Dạng ô bảng: tên in đậm, mã in nhỏ bên dưới. Trả về HTML đã thoát ký tự.
+export function oNguoiPhuTrach(ten, ma, khiTrong = 'Chưa gán') {
+  const t = String(ten || '').trim();
+  const m = String(ma || '').trim();
+  if (!t && !m) return `<span class="pg-unassigned">${escapeHTML(khiTrong)}</span>`;
+  // Không có tên thì mã lên làm dòng chính, đừng để dòng chính trống rỗng.
+  if (!t) return `<strong>${escapeHTML(m)}</strong>`;
+  if (!m || t.toLowerCase() === m.toLowerCase()) return `<strong>${escapeHTML(t)}</strong>`;
+  return `<strong>${escapeHTML(t)}</strong><small>${escapeHTML(m)}</small>`;
+}

@@ -525,6 +525,15 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
             and lower(pg_search.payload->>'employee_code')=lower(l.created_by_pg_code)
             and coalesce(pg_employee.payload->>'full_name',pg_search.payload->>'full_name','') ilike ${placeholder}
         )
+        or coalesce(l.assigned_telesale_code,'') ilike ${placeholder}
+        or exists (
+          select 1 from app.records ts_search
+          left join app.records ts_employee on ts_employee.entity_type='employees' and ts_employee.deleted_at is null
+            and lower(ts_employee.payload->>'code')=lower(ts_search.payload->>'employee_code')
+          where ts_search.entity_type='profiles' and ts_search.deleted_at is null
+            and lower(ts_search.payload->>'employee_code')=lower(l.assigned_telesale_code)
+            and coalesce(ts_employee.payload->>'full_name',ts_search.payload->>'full_name','') ilike ${placeholder}
+        )
       )`);
     }
     // The workspace calls this filter "Ngày được giao". Use the assignment
@@ -550,6 +559,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       `select l.*,count(*) over()::int total_count,
         coalesce(creator.full_name,nullif(trim(cp.pg_name),''),l.created_by_pg_code) created_by_name,
         creator.role created_by_role,
+        coalesce(telesale.full_name,nullif(trim(cp.telesale_name),'')) assigned_telesale_name,
         case when cp.id is null then null else jsonb_build_object(
           'customerCode',cp.customer_code,'customerName',cp.customer_name,'phone',cp.phone,
           'serviceNeed',cp.service_need,'booth',cp.booth,'pgName',cp.pg_name,'telesaleName',cp.telesale_name,
@@ -575,6 +585,26 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
            and lower(p.payload->>'employee_code')=lower(l.created_by_pg_code)
          order by p.updated_at desc limit 1
        ) creator on true
+       -- Tên người telesale đang phụ trách. Cùng khuôn với creator ở trên, và
+       -- cố ý dùng lại đúng thứ tự ưu tiên đó: hồ sơ nhân sự trước, hồ sơ tài
+       -- khoản sau. Hai cách phân giải tên khác nhau trong cùng một hệ thống
+       -- thì sớm muộn cũng ra hai cái tên khác nhau cho cùng một người.
+       --
+       -- Bậc cuối cp.telesale_name — tên do hệ thống cũ ghi lại — nằm ở
+       -- coalesce NGOÀI chứ không nằm trong lateral này. Đặt vào trong thì nó
+       -- không bao giờ chạy: lateral không trả dòng nào khi không tìm thấy hồ
+       -- sơ, mà không tìm thấy hồ sơ mới đúng là lúc cần tới bậc dự phòng.
+       -- Đo trên dữ liệu thật: đặt sai chỗ làm 156 lead hiện mã một cách vô
+       -- ích, và bậc dự phòng trông như đang hoạt động.
+       left join lateral (
+         select coalesce(te.payload->>'full_name',tp.payload->>'full_name') full_name
+         from app.records tp
+         left join app.records te on te.entity_type='employees' and te.deleted_at is null
+           and lower(te.payload->>'code')=lower(tp.payload->>'employee_code')
+         where tp.entity_type='profiles' and tp.deleted_at is null
+           and lower(tp.payload->>'employee_code')=lower(l.assigned_telesale_code)
+         order by tp.updated_at desc limit 1
+       ) telesale on true
        ${where.length ? `where ${where.join(' and ')}` : ''}
        order by l.created_at desc limit $${params.length - 1} offset $${params.length}`, params,
     );
@@ -808,9 +838,24 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (!['pg_staff', 'telesale_staff'].includes(user.role) && !reportRoles.has(user.role)) throw new ForbiddenException();
     const result = await this.infrastructure.postgres.query(
       `with history as (
-         select id::text id,lead_id::text lead_id,telesale_code,null::text telesale_name,
-                call_status,note,appointment_at,created_at,false is_legacy,'operational'::text event_category
-         from marketing.call_logs where lead_id=$1
+         -- Trước đây cột này trả thẳng null, nên giao diện có sẵn nhánh dự
+         -- phòng telesale_name || telesale_code lúc nào cũng rơi về mã. Nhánh
+         -- dự phòng trông như đang hoạt động, mà thật ra chưa từng chạy vế đầu.
+         select c.id::text id,c.lead_id::text lead_id,c.telesale_code,
+                nguoi.full_name telesale_name,
+                c.call_status,c.note,c.appointment_at,c.created_at,false is_legacy,
+                'operational'::text event_category
+         from marketing.call_logs c
+         left join lateral (
+           select coalesce(te.payload->>'full_name',tp.payload->>'full_name') full_name
+           from app.records tp
+           left join app.records te on te.entity_type='employees' and te.deleted_at is null
+             and lower(te.payload->>'code')=lower(tp.payload->>'employee_code')
+           where tp.entity_type='profiles' and tp.deleted_at is null
+             and lower(tp.payload->>'employee_code')=lower(c.telesale_code)
+           order by tp.updated_at desc limit 1
+         ) nguoi on true
+         where c.lead_id=$1
          union all
          select id::text,lead_id::text,actor_code,actor_name,event_type,summary,null::timestamptz,
                 occurred_at,true,event_category
@@ -858,7 +903,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         order by totals.total desc`,
     );
     const telesale = await this.infrastructure.postgres.query(
-      `select l.assigned_telesale_code telesale_code,count(distinct l.id)::int assigned,
+      `select l.assigned_telesale_code telesale_code,
+       coalesce(max(ts.full_name),l.assigned_telesale_code) full_name,
+       count(distinct l.id)::int assigned,
        count(distinct c.lead_id)::int contacted,
        count(distinct c.lead_id) filter (where c.call_status='appointment_booked')::int appointments,
        count(distinct l.id) filter (where l.status='converted')::int converted,
@@ -866,8 +913,19 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        count(distinct l.id) filter (where l.status='appointment_cancelled')::int appointment_cancelled,
        count(distinct l.id) filter (where l.status='cancelled')::int cancelled,
        count(c.id)::int total_calls
-       from marketing.leads l left join marketing.call_logs c on c.lead_id=l.id
-       where l.assigned_telesale_code is not null group by l.assigned_telesale_code order by assigned desc`,
+       from marketing.leads l
+       left join marketing.call_logs c on c.lead_id=l.id
+       left join lateral (
+         select coalesce(te.payload->>'full_name',tp.payload->>'full_name') full_name
+         from app.records tp
+         left join app.records te on te.entity_type='employees' and te.deleted_at is null
+           and lower(te.payload->>'code')=lower(tp.payload->>'employee_code')
+         where tp.entity_type='profiles' and tp.deleted_at is null
+           and lower(tp.payload->>'employee_code')=lower(l.assigned_telesale_code)
+         order by tp.updated_at desc limit 1
+       ) ts on true
+       where l.assigned_telesale_code is not null
+       group by l.assigned_telesale_code order by assigned desc`,
     );
     const totals = await this.infrastructure.postgres.query(
       `select count(*)::int total,count(*) filter(where data_class='raw')::int raw_count,
@@ -1307,9 +1365,22 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       owner = `and lower(trim(a.pg_code))=lower(trim($${values.length}))`;
     }
     const result = await this.infrastructure.postgres.query(
-      `select a.*,s.work_date,s.start_time,s.end_time,w.name site_name,w.address
+      `select a.*,s.work_date,s.start_time,s.end_time,w.name site_name,w.address,
+              nguoi.full_name pg_name
        from marketing.pg_attendance a join marketing.pg_shift_assignments s on s.id=a.assignment_id
        join marketing.pg_work_sites w on w.id=s.site_id
+       -- Cùng khuôn phân giải tên với truy vấn Lead. Bảng chấm công và file
+       -- xuất của nó trước đây chỉ có mã PG, nên bảng lương và bảng đối chiếu
+       -- cuối tháng phải tra tay từng mã sang tên.
+       left join lateral (
+         select coalesce(pe.payload->>'full_name',pp.payload->>'full_name') full_name
+         from app.records pp
+         left join app.records pe on pe.entity_type='employees' and pe.deleted_at is null
+           and lower(pe.payload->>'code')=lower(pp.payload->>'employee_code')
+         where pp.entity_type='profiles' and pp.deleted_at is null
+           and lower(trim(pp.payload->>'employee_code'))=lower(trim(a.pg_code))
+         order by pp.updated_at desc limit 1
+       ) nguoi on true
        where s.work_date between $1 and $2 ${owner} order by a.recorded_at desc`, values,
     );
     return { data: result.rows };
@@ -1364,9 +1435,10 @@ export class MarketingController {
   async attendanceExport(@Req() request: ActorRequest, @Res({ passthrough: true }) reply: FastifyReply, @Query('from') from?: string, @Query('to') to?: string) {
     const result = await this.service.listPgAttendance(request.user, from, to);
     const rows = result.data as JsonMap[];
-    const header = ['Mã PG','Ngày','Loại','Thời gian','Địa điểm','Khoảng cách (m)','Sai số GPS (m)','Trạng thái'];
+    const header = ['Nhân viên PG','Mã PG','Ngày','Loại','Thời gian','Địa điểm','Khoảng cách (m)','Sai số GPS (m)','Trạng thái'];
     const csv = '\uFEFF' + [header.map(csvCell).join(','), ...rows.map((row) => [
-      row.pg_code,row.work_date,row.record_type,row.recorded_at,row.site_name,row.distance_m,row.accuracy_m,row.status,
+      row.pg_name || row.pg_code,row.pg_code,row.work_date,row.record_type,row.recorded_at,
+      row.site_name,row.distance_m,row.accuracy_m,row.status,
     ].map(csvCell).join(','))].join('\n');
     reply.header('Content-Type', 'text/csv; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="Cham_cong_PG_${from || clinicDate()}_${to || clinicDate()}.csv"`);

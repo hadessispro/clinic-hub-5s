@@ -1,6 +1,6 @@
 import { bulkAssignMarketingLeads, createMarketingLead, distributeRawLeads, exportLeadsToCSV, getMarketingLeadPage, getMarketingLeads, getTelesaleAccounts, getTelesaleDailySummary, updateMarketingLead } from '../services/marketing.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
-import { escapeHTML, formatDateTime } from '../utils.js';
+import { escapeHTML, formatDateTime, tenNguoiPhuTrach } from '../utils.js';
 import { leadStatusPill, option } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
@@ -88,7 +88,7 @@ export async function renderView() {
     <td data-label="Chi nhánh">${escapeHTML(branchName(lead.branch_id))}</td>
     <td data-label="Telesale phụ trách"><select class="select-badge tsm-assign" data-reassign-lead="${escapeHTML(lead.id)}" data-current="${escapeHTML(lead.assigned_telesale_id || '')}">
       <option value="">Chưa gán</option>
-      ${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, lead.assigned_telesale_id === member.employee_code)).join('')}
+      ${telesales.map((member) => option(member.employee_code, tenNguoiPhuTrach(member.name, member.employee_code), lead.assigned_telesale_id === member.employee_code)).join('')}
     </select></td>
     <td data-label="Trạng thái"><span data-tsm-lead-status>${leadStatusPill(lead.status)}</span></td>
     <td data-label="Nguồn nhập"><strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong><small>${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small></td>

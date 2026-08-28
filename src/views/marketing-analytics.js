@@ -1,6 +1,6 @@
 import { getMarketingLeads, getMarketingReports, getTelesaleAccounts } from '../services/marketing.js';
 import { getEmployees } from '../services/employees.js';
-import { escapeHTML, formatCurrency } from '../utils.js';
+import { escapeHTML, formatCurrency, oNguoiPhuTrach, tenNguoiPhuTrach } from '../utils.js';
 import { pill, statusPill } from '../components/shared.js';
 import { store } from '../store.js';
 import { navigateTo } from '../router.js';
@@ -31,19 +31,24 @@ export async function renderView(state) {
   const leads = loadedLeads.filter((lead) => {
     if (analyticsBranch && lead.branch_id !== analyticsBranch) return false;
     if (periodStart && new Date(lead.created_at) < periodStart) return false;
-    if (needle && !`${lead.full_name || ''} ${lead.phone || ''}`.toLocaleLowerCase('vi').includes(needle)) return false;
+    // Gõ tên telesale hay gõ mã đều ra, giống hệt ô tìm kiếm ở màn Lead.
+    const dongTim = `${lead.full_name || ''} ${lead.phone || ''} ${lead.assigned_telesale_name || ''} ${lead.assigned_telesale_id || ''}`;
+    if (needle && !dongTim.toLocaleLowerCase('vi').includes(needle)) return false;
     return true;
   });
 
   cachedLeads = leads;
   cachedEmployees = employees;
 
-  const formatTelesaleIdentity = (staffCode) => {
+  // Tên trước, mã sau. Trước đây hàm này trả `MÃ · Tên`, tức là bắt người
+  // đọc lướt qua dãy mã mới tới phần đọc được. Danh bạ tài khoản chỉ dùng khi
+  // máy chủ không kèm sẵn tên.
+  const formatTelesaleIdentity = (staffCode, staffNameFromServer) => {
     if (!staffCode || staffCode === 'Chưa gán') return 'Chưa gán Telesale';
     const staff = telesaleAccounts.find((item) => item.id === staffCode || item.employee_code === staffCode)
       || employees.find((item) => item.id === staffCode || item.employeeNumber === staffCode);
-    const staffName = staff?.name || staff?.full_name || '';
-    return staffName ? `${staffCode} · ${staffName}` : staffCode;
+    const staffName = staffNameFromServer || staff?.name || staff?.full_name || '';
+    return tenNguoiPhuTrach(staffName, staffCode, 'Chưa gán Telesale');
   };
 
   const totalLeads = leads.length;
@@ -280,7 +285,7 @@ export async function renderView(state) {
       <section class="panel">
         <div class="section-title"><h3>Hiệu suất theo tài khoản Telesale</h3>${pill(`${operationalReport.telesale?.length || 0} tài khoản`)}</div>
         <div class="table-wrap"><table><thead><tr><th>Telesale</th><th>Được giao</th><th>Đã gọi</th><th>Hẹn khám</th><th>Chốt</th><th>Khách KCL</th></tr></thead><tbody>
-          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td><strong>${escapeHTML(formatTelesaleIdentity(row.telesale_code))}</strong></td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td><td>${row.low_quality || 0}</td></tr>`).join('') : '<tr><td colspan="6">Chưa có dữ liệu Telesale.</td></tr>'}
+          ${operationalReport.telesale?.length ? operationalReport.telesale.map((row) => `<tr><td>${oNguoiPhuTrach(row.full_name, row.telesale_code, 'Chưa gán Telesale')}</td><td>${row.assigned}</td><td>${row.contacted}</td><td>${row.appointments}</td><td>${row.converted}</td><td>${row.low_quality || 0}</td></tr>`).join('') : '<tr><td colspan="6">Chưa có dữ liệu Telesale.</td></tr>'}
         </tbody></table></div>
       </section>
     </div>
