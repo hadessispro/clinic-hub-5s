@@ -146,7 +146,7 @@ export function canPerform(role, action) {
 export const VAI_TRO_KHONG_CHAM_CONG = [
   'admin', 'admin_it', 'superadmin',
   'admin_marketing', 'support_marketing',
-  'leader', 'telesale_leader', 'hr',
+  'leader', 'telesale_leader', 'hr', 'finance',
 ];
 
 export function khongPhaiChamCong(role) {
