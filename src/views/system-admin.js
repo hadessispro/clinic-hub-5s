@@ -1,12 +1,12 @@
 import {
   getSystemHealth, getBugLogs, createBugLog, updateBugLog,
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
-  updateUserAccess, unlockAccount, getTechnicalAudit, getIntegrationFailures,
+  updateUserAccess, unlockAccount, datLaiMatKhau, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
-import { confirmAction } from '../components/app-dialog.js';
+import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { ROLE_PROFILES } from '../constants.js';
 
@@ -132,7 +132,11 @@ function profileRows(profiles, currentUserId) {
         : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}
         ${profile.employee_code ? `<button class="secondary-button compact-button" type="button"
           data-unlock="${escapeHTML(profile.employee_code)}"
-          title="Xoá bộ đếm nhập sai mật khẩu. Không đổi mật khẩu.">Mở khoá</button>` : ''}</td></tr>`;
+          title="Xoá bộ đếm nhập sai mật khẩu. KHÔNG đổi mật khẩu.">Mở khoá</button>
+        <button class="secondary-button compact-button" type="button"
+          data-reset-pw="${escapeHTML(profile.employee_code)}"
+          data-ten="${escapeHTML(profile.full_name || profile.employee_code)}"
+          title="Đặt mật khẩu mới. Dùng khi người dùng quên hẳn mật khẩu.">Đặt lại mật khẩu</button>` : ''}</td></tr>`;
   }).join('');
 }
 
@@ -226,6 +230,24 @@ export function initView() {
   document.querySelectorAll('[data-the]').forEach((b) => b.addEventListener('click', () => {
     theDangMo = b.dataset.the;
     store.notify();
+  }));
+
+  document.querySelectorAll('[data-reset-pw]').forEach((button) => button.addEventListener('click', async () => {
+    const ma = button.dataset.resetPw;
+    const ten = button.dataset.ten;
+    const matKhau = await requestInput(
+      `Đặt mật khẩu mới cho ${ten} (${ma}). Bạn tự nhập rồi báo lại cho họ — hệ thống không `
+      + 'sinh mật khẩu hộ và không gửi đi đâu. Tài khoản sẽ được mở khoá, và mọi phiên đang '
+      + 'mở của họ bị đăng xuất.',
+      { title: 'Đặt lại mật khẩu', label: 'Mật khẩu mới', placeholder: 'Ít nhất 8 ký tự',
+        confirmText: 'Đặt lại', tone: 'danger' });
+    if (!matKhau) return;
+    if (String(matKhau).length < 8) return showToast('Mật khẩu phải có ít nhất 8 ký tự.', true);
+    try {
+      await datLaiMatKhau(ma, String(matKhau));
+      showToast(`Đã đặt lại mật khẩu cho ${ma}. Báo lại cho họ và nhắc đổi sau lần đăng nhập đầu.`);
+      store.notify();
+    } catch (error) { showToast(error.message || 'Không đặt lại được mật khẩu.', true); }
   }));
 
   document.querySelectorAll('[data-unlock]').forEach((button) => button.addEventListener('click', async () => {

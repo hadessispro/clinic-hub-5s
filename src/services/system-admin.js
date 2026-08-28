@@ -81,6 +81,19 @@ export async function unlockAccount(employeeCode) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+/* Đặt lại mật khẩu cho một tài khoản đã có.
+ *
+ * Người quản trị tự nhập mật khẩu mới rồi báo lại cho chủ tài khoản — hệ
+ * thống không sinh mật khẩu hộ và không gửi đi đâu.
+ *
+ * Đặt lại xong thì tài khoản được mở khoá luôn và mọi phiên đang mở bị huỷ.
+ */
+export async function datLaiMatKhau(employeeCode, password) {
+  return supabase.request('/auth/dat-lai-mat-khau', {
+    method: 'POST', body: JSON.stringify({ employeeCode, password }),
+  });
+}
+
 export async function getTechnicalAudit() {
   const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(60);
   if (error) throw error;

@@ -226,6 +226,46 @@ export class AuthService {
     return { user, session: { accessToken, refreshToken, expiresIn: accessTtlSeconds } };
   }
 
+  /* Đặt lại mật khẩu cho một tài khoản đã có, tra theo mã nhân sự.
+   *
+   * Khác provision ở chỗ không cần email. provision dùng khi TẠO tài khoản
+   * nên phải biết email; đặt lại thì tài khoản đã tồn tại và email đã có sẵn
+   * trong database. Bắt người quản trị nhớ email của đồng nghiệp chỉ để đặt
+   * lại mật khẩu là một rào cản không có lý do.
+   *
+   * Xoá luôn bộ đếm sai và khoá. Đặt lại mật khẩu mà vẫn để tài khoản bị
+   * khoá mười phút thì người ta thử mật khẩu mới, thấy vẫn vào không được,
+   * và tưởng việc đặt lại thất bại.
+   */
+  async datLaiMatKhau(actor: AuthUser, input: { employeeCode?: string; password?: string }) {
+    if (!['admin', 'admin_it', 'superadmin'].includes(actor.role)) {
+      throw new ForbiddenException('Chỉ quản trị viên được đặt lại mật khẩu.');
+    }
+    const ma = String(input.employeeCode || '').trim();
+    const matKhau = String(input.password || '');
+    if (!ma) throw new BadRequestException('Thiếu mã nhân sự.');
+    if (matKhau.length < 8) throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
+
+    const { salt, hash } = await hashPassword(matKhau);
+    const kq = await this.infrastructure.postgres.query<{ employee_code: string; email: string }>(
+      `update app.local_accounts
+          set password_salt = $2, password_hash = $3,
+              failed_attempts = 0, locked_until = null,
+              active = true, updated_at = now()
+        where lower(trim(employee_code)) = lower($1)
+      returning employee_code, email`, [ma, salt, hash],
+    );
+    if (!kq.rowCount) throw new BadRequestException(`Không tìm thấy tài khoản đăng nhập của ${ma}.`);
+
+    // Mọi phiên đang mở phải chết theo. Đặt lại mật khẩu vì nghi lộ mà phiên
+    // cũ vẫn dùng được thì việc đặt lại chẳng ngăn được ai.
+    await this.infrastructure.postgres.query(
+      `delete from app.refresh_sessions where user_id in (
+         select user_id from app.local_accounts where lower(trim(employee_code)) = lower($1))`, [ma],
+    );
+    return { employee_code: kq.rows[0].employee_code, email: kq.rows[0].email, reset: true };
+  }
+
   async provision(actor: AuthUser, input: { profileId?: string; email?: string; password?: string }) {
     if (!['admin', 'admin_it', 'superadmin'].includes(actor.role)) {
       throw new ForbiddenException('Chỉ quản trị viên được tạo hoặc đặt lại tài khoản đăng nhập.');
@@ -308,5 +348,11 @@ export class AuthController {
   @UseGuards(AuthGuard)
   provision(@Req() request: { user: AuthUser }, @Body() body: { profileId?: string; email?: string; password?: string }) {
     return this.auth.provision(request.user, body);
+  }
+
+  @Post('/dat-lai-mat-khau')
+  @UseGuards(AuthGuard)
+  datLaiMatKhau(@Req() request: { user: AuthUser }, @Body() body: { employeeCode?: string; password?: string }) {
+    return this.auth.datLaiMatKhau(request.user, body);
   }
 }
