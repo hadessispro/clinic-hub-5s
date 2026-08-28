@@ -108,7 +108,7 @@ jobs:
 
 
   migration:
-    name: Migration chạy được và chạy lại được
+    name: Lược đồ và dữ liệu kế toán
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -121,8 +121,19 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U kiem_tra"
           --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGPASSWORD: kiem_tra
+      PGHOST: localhost
+      PGUSER: kiem_tra
+      PGDATABASE: kiem_tra
     steps:
       - uses: actions/checkout@v4
+
+      - name: Quy ước migration
+        # Chạy trước mọi thứ vì nó không cần database và vì nó chặn loại lỗi
+        # đắt nhất: một migration xóa cột. Nút Khôi phục lùi được mã nguồn chứ
+        # không lùi được lược đồ, nên cột đã xóa là mất hẳn.
+        run: bash infra/postgres/kiem-thu/quy-uoc.sh
 
       - name: Chạy script khởi tạo trước
         # Trên máy thật, thư mục infra/postgres/init được nạp qua
@@ -131,55 +142,82 @@ jobs:
         # migration.raw_records do 001-shadow.sql tạo. Bỏ bước này thì
         # migration 002 hỏng ngay, và đó chính là điều CI phát hiện ra lần
         # chạy đầu tiên.
-        env:
-          PGPASSWORD: kiem_tra
         run: |
           set -e
           for f in $(ls infra/postgres/init/*.sql | sort); do
             echo "── init $(basename "$f")"
-            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f"
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
           done
 
-      - name: Chạy toàn bộ migration lên database trống
-        env:
-          PGPASSWORD: kiem_tra
+      - name: Áp migration ĐÚNG cách trình chạy thật áp
+        # Không dùng psql -f.
+        #
+        # apps/backend/src/migrate.ts gọi client.query(sql) MỘT LẦN cho cả
+        # file, bọc trong begin/commit. psql -f thì tách từng câu và tự commit
+        # sau mỗi câu. Hai đường khác nhau, và cái khác nhau đó giấu được lỗi
+        # thật: CREATE INDEX CONCURRENTLY chạy ngon dưới psql -f nhưng chết
+        # dưới trình chạy thật vì nó nằm trong transaction.
+        #
+        # psql -c với chuỗi nhiều câu gửi cả chuỗi trong một lệnh, bọc trong
+        # một transaction ngầm. Đúng bằng đường production đi.
         run: |
           set -e
           n=0
           for f in $(ls infra/postgres/migrations/*.sql | sort); do
+            psql -v ON_ERROR_STOP=1 -q -c "$(cat "$f")" \
+              || { echo "::error file=$f::Không áp được dưới trình chạy thật"; exit 1; }
             n=$((n+1))
-            echo "── $(basename "$f")"
-            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f"
           done
           echo "Đã áp $n migration"
 
-      - name: Chạy lại lần hai để chứng minh chạy lại được
+      - name: Áp lại lần hai để chứng minh chạy lại được
         # Migration phải an toàn khi chạy lại, vì thực tế nó sẽ chạy lại: mỗi
         # lần dựng lại container migrate là một lần cả thư mục được áp lại.
         # Migration 008 từng drop rồi add ràng buộc, chạy lần hai là hỏng.
-        env:
-          PGPASSWORD: kiem_tra
         run: |
           set -e
           for f in $(ls infra/postgres/migrations/*.sql | sort); do
-            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f" \
-              || { echo "::error file=$f::Chạy lần hai bị lỗi, migration không an toàn khi chạy lại"; exit 1; }
+            psql -v ON_ERROR_STOP=1 -q -c "$(cat "$f")" \
+              || { echo "::error file=$f::Chạy lần hai bị lỗi, không an toàn khi chạy lại"; exit 1; }
           done
           echo "Toàn bộ migration chạy lại được"
 
-      - name: Bất biến kế toán còn nguyên trên lược đồ trống
-        # File này đã chạy thật trên một Postgres 17 trống ngày 27/08/2026 và
-        # cả tám phép thử đều đạt. Nó kiểm những ràng buộc mà nếu hỏng thì sổ
-        # sách sai mà không ai biết: một dòng ghi cả hai vế, sửa được nhật ký
-        # truy cập, tự nâng quyền, ghi vào kỳ đã khóa.
-        env:
-          PGPASSWORD: kiem_tra
+      - name: Nạp một tháng sổ sách thu nhỏ
+        # Bất biến dữ liệu chạy trên lược đồ trống thì mọi tổng đều bằng 0 và
+        # mọi phép thử đều đạt một cách vô nghĩa: 0 = 0. Phải có dữ liệu thì
+        # phép thử mới nói được điều gì.
+        run: psql -v ON_ERROR_STOP=1 -q -f infra/postgres/kiem-thu/du-lieu-mau.sql
+
+      - name: Bất biến của dữ liệu
+        # Khác phép thử lược đồ ở trên. Cái kia hỏi "cái khóa còn hoạt động
+        # không". Cái này hỏi "thứ đang nằm trong sổ có đúng không".
+        run: psql -v ON_ERROR_STOP=1 -f infra/postgres/kiem-thu/bat-bien-du-lieu.sql
+
+      - name: Thử ngược · bắt bộ kiểm phải thất bại theo yêu cầu
+        # Bước quan trọng nhất của job này.
+        #
+        # Một phép thử chỉ từng nhìn thấy dữ liệu sạch là một phép thử có thể
+        # đã hỏng từ lâu mà không ai biết. Nó xanh mọi lần chạy, và nó cũng sẽ
+        # xanh đúng cái ngày sổ sách lệch thật. Bước này cố tình gây ra từng
+        # loại sai một, rồi đòi bộ kiểm đỏ đúng chỗ, rồi hoàn tác.
+        run: bash infra/postgres/kiem-thu/thu-nguoc.sh
+
+
+      - name: Bất biến của lược đồ
+        # Chạy SAU phần dữ liệu, không phải trước.
+        #
+        # File này chèn dữ liệu thử để bắt database chặn: một tài khoản 999,
+        # một kỳ 2000-01, và một chứng từ THU001 không có dòng bút toán nào.
+        # Chứng từ rỗng đó chính là thứ bất biến dữ liệu số 5 đi tìm. Chạy
+        # trước thì phần dữ liệu đỏ vì rác của phần lược đồ, và mất cả buổi
+        # để hiểu vì sao.
+        # Chèn thử dòng sai rồi xem database có chặn không: ghi cả hai vế, sửa
+        # nhật ký truy cập, tự nâng quyền, ghi vào kỳ đã khóa.
         run: |
           set -e
-          psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1                -f infra/postgres/kiem-thu/bat-bien.sql 2>&1 | tee /tmp/kq.txt
+          psql -v ON_ERROR_STOP=1 -f infra/postgres/kiem-thu/bat-bien.sql 2>&1 | tee /tmp/kq.txt
           if grep -q 'HONG' /tmp/kq.txt; then
-            echo "::error::Có bất biến kế toán bị hỏng"
-            exit 1
+            echo "::error::Có bất biến lược đồ bị hỏng"; exit 1
           fi
           echo "Số phép thử đạt: $(grep -c 'OK ·' /tmp/kq.txt)"
 

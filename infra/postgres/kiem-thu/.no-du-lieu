@@ -1,0 +1,33 @@
+# Nợ dữ liệu đã ghi nhận trên production, tính tới 28/08/2026.
+#
+# Đây là bánh cóc, quay được một chiều. Workflow Theo dõi đỏ nếu số ca sai VƯỢT
+# mức ghi ở đây, và nhắc hạ mức xuống nếu số ca sai THẤP HƠN. Nợ chỉ giảm được,
+# không tăng được, và mỗi lần giảm phải sửa file này nên nó hiện trong diff.
+#
+# Vì sao không để đỏ luôn cho xong: một cảnh báo đỏ suốt ngày này qua ngày khác
+# là một cảnh báo người ta học được cách phớt lờ, và tới lúc nó đỏ vì chuyện
+# thật thì không ai nhìn nữa. Đỏ phải có nghĩa là "hôm nay có gì đó mới hỏng".
+#
+# Định dạng: <số hiệu bất biến>=<số ca sai chấp nhận được>
+#
+# 2 · Từng chứng từ cân Nợ = Có — 10 ca
+#
+#   Năm cặp chứng từ, mỗi cặp cùng ngày và lệch triệt tiêu nhau chính xác:
+#     22/06  PC043/2026_06  ↔  NK877/244    1.355.143
+#     23/01  PC055/2026_01  ↔  NK567/244      450.000
+#     20/04  PC045/2026_04  ↔  NK00086        279.990
+#     09/01  PC023/2026_01  ↔  NK597/244      260.000
+#     07/06  PC020/2026_06  ↔  NK931/244      198.057
+#
+#   Nguyên nhân: trong file Excel gốc, bốn dòng liên tiếp là MỘT bút toán,
+#   nhưng cột số chứng từ đổi giá trị ở dòng đầu. Ví dụ dòng 59441 mang
+#   NK877/244 còn 59442–59444 mang PC043/2026_06, nên trình nhập tách đôi.
+#
+#   Ảnh hưởng: sổ cái và báo cáo tài chính VẪN ĐÚNG, vì số theo tài khoản không
+#   đổi và toàn sổ vẫn cân. Chỉ những màn hình xem theo chứng từ hiện ra nửa
+#   bút toán.
+#
+#   Cách sửa: kế toán quyết định số nào là số chính thức của mỗi cặp, rồi gộp
+#   lại. Không tự sửa được vì cả hai số đều có thật trong sổ giấy.
+#
+2=10

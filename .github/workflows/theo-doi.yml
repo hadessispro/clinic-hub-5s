@@ -67,6 +67,56 @@ jobs:
           chmod +x scripts/bao-cao-he-thong.sh
           ./scripts/bao-cao-he-thong.sh | tee /tmp/bao-cao.md
           cat /tmp/bao-cao.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Bất biến kế toán trên dữ liệu production
+        # Báo cáo ở bước trên đã kiểm sổ có cân không, nhưng chỉ kiểm TỔNG.
+        # Tổng cân mà từng chứng từ không cân là chuyện có thật và đang xảy ra:
+        # hai chứng từ lệch ngược chiều nhau thì tổng vẫn bằng 0. Bước này chạy
+        # cả 12 bất biến, trong đó có phép kiểm từng chứng từ một.
+        #
+        # CHỈ ĐỌC. Gửi file SQL qua stdin nên không để lại gì trên VPS.
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/vps -o BatchMode=yes "$VPS_HOST" \
+            "cd /opt/clinic-hub-5s && docker compose --env-file .env.vps exec -T postgres \
+               sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB'" \
+            < infra/postgres/kiem-thu/bat-bien-du-lieu.sql > /tmp/bb.txt 2>&1 || true
+
+          {
+            echo ''
+            echo '## Bất biến kế toán trên dữ liệu'
+            echo ''
+            echo '```'
+            sed -n '/BẤT BIẾN KẾ TOÁN/,/rows)/p' /tmp/bb.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          dong="$(grep -o '<!-- MAY-DOC bat-bien .* -->' /tmp/bb.txt | head -1)"
+          if [ -z "$dong" ]; then
+            echo "::error::Không chạy được bất biến trên production. Xem đầu ra:"
+            tail -20 /tmp/bb.txt
+            exit 1
+          fi
+          echo "$dong"
+
+          # Bánh cóc. Đỏ khi số ca sai VƯỢT mức nợ đã ghi nhận, nhắc hạ mức khi
+          # nó THẤP HƠN. Nợ chỉ giảm được. Xem infra/postgres/kiem-thu/.no-du-lieu
+          # để biết vì sao từng khoản nợ còn đó.
+          loi=0
+          for cap in $(echo "$dong" | grep -oE '[0-9]+=[0-9]+'); do
+            stt="${cap%%=*}"; nay="${cap##*=}"
+            cho="$(grep -oE "^$stt=[0-9]+" infra/postgres/kiem-thu/.no-du-lieu | cut -d= -f2)"
+            cho="${cho:-0}"
+            if [ "$nay" -gt "$cho" ]; then
+              echo "::error::Bất biến $stt: $nay ca sai, vượt mức đã ghi nhận là $cho. Hôm nay có gì đó mới hỏng."
+              loi=1
+            elif [ "$nay" -lt "$cho" ]; then
+              echo "::notice::Bất biến $stt: còn $nay ca sai, đã giảm từ $cho. Hạ mức trong .no-du-lieu xuống $nay."
+            fi
+          done
+          [ "$loi" = "0" ] && echo "Không có bất biến dữ liệu nào xấu đi." || exit 1
+
+
 
       - name: Báo động nếu có dấu hiệu hỏng
         # Đọc đúng một dòng máy đọc được ở cuối báo cáo, không bóc tách bảng

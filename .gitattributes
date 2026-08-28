@@ -1,0 +1,12 @@
+# Script shell và SQL luôn dùng xuống dòng kiểu Unix trong kho.
+#
+# Máy lập trình viên chạy Windows nên git tự đổi sang CRLF khi checkout. Một
+# script .sh mang CRLF thì Linux đọc dòng đầu thành "#!/usr/bin/env bash\r" và
+# báo "bad interpreter" — lỗi khó hiểu vì file trông hoàn toàn bình thường.
+#
+# Với SQL còn một lý do nữa: infra/postgres/kiem-thu/quy-uoc.sh băm nội dung
+# migration để phát hiện file đã áp bị sửa. Kiểu xuống dòng đổi là chữ ký đổi.
+# Hàm băm đã bỏ ký tự CR trước khi băm, nhưng chốt luôn ở đây thì bớt được một
+# thứ phải nhớ.
+*.sh  text eol=lf
+*.sql text eol=lf
