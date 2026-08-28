@@ -237,6 +237,28 @@ export class AuthService {
    * khoá mười phút thì người ta thử mật khẩu mới, thấy vẫn vào không được,
    * và tưởng việc đặt lại thất bại.
    */
+  /* Bậc quyền. Số lớn hơn là quyền cao hơn.
+   *
+   * Dùng để chặn leo thang: một admin không được đặt lại mật khẩu của
+   * superadmin rồi đăng nhập bằng đó. Không có bậc này thì mọi admin đều
+   * ngang superadmin trên thực tế, và cấp cao nhất chỉ còn là danh nghĩa.
+   */
+  private bacQuyen(role: string) {
+    return ({ superadmin: 3, admin: 2, admin_it: 2 } as Record<string, number>)[role] ?? 1;
+  }
+
+  private async ghiNhatKy(hanhDong: string, actor: AuthUser, mucTieu: string,
+    mucTieuVaiTro: string | null, chiTiet: JsonMap = {}) {
+    // Không bao giờ nhận mật khẩu vào đây. Chỗ gọi chỉ truyền thông tin mô tả.
+    await this.infrastructure.postgres.query(
+      `insert into app.auth_audit
+         (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
+       values ($1,$2,$3,$4,$5,$6::jsonb)`,
+      [hanhDong, actor.employeeCode || null, actor.role, mucTieu, mucTieuVaiTro,
+       JSON.stringify(chiTiet)],
+    );
+  }
+
   async datLaiMatKhau(actor: AuthUser, input: { employeeCode?: string; password?: string }) {
     if (!['admin', 'admin_it', 'superadmin'].includes(actor.role)) {
       throw new ForbiddenException('Chỉ quản trị viên được đặt lại mật khẩu.');
@@ -245,6 +267,19 @@ export class AuthService {
     const matKhau = String(input.password || '');
     if (!ma) throw new BadRequestException('Thiếu mã nhân sự.');
     if (matKhau.length < 8) throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
+
+    // Không đặt lại cho người có quyền bằng hoặc cao hơn mình.
+    const hoSo = await this.infrastructure.postgres.query<{ role: string }>(
+      `select payload->>'role' role from app.records
+        where entity_type='profiles' and deleted_at is null
+          and lower(payload->>'employee_code') = lower($1) limit 1`, [ma],
+    );
+    const vaiTroDich = hoSo.rows[0]?.role || 'staff';
+    if (this.bacQuyen(vaiTroDich) >= this.bacQuyen(actor.role)
+        && actor.employeeCode?.toLowerCase() !== ma.toLowerCase()) {
+      throw new ForbiddenException(
+        `Không đặt lại được mật khẩu của ${ma}: vai trò ${vaiTroDich} có quyền bằng hoặc cao hơn bạn.`);
+    }
 
     const { salt, hash } = await hashPassword(matKhau);
     const kq = await this.infrastructure.postgres.query<{ employee_code: string; email: string }>(
@@ -263,6 +298,8 @@ export class AuthService {
       `delete from app.refresh_sessions where user_id in (
          select user_id from app.local_accounts where lower(trim(employee_code)) = lower($1))`, [ma],
     );
+    await this.ghiNhatKy('dat_lai_mat_khau', actor, kq.rows[0].employee_code, vaiTroDich,
+      { email: kq.rows[0].email, da_mo_khoa: true, da_huy_phien: true });
     return { employee_code: kq.rows[0].employee_code, email: kq.rows[0].email, reset: true };
   }
 
@@ -294,6 +331,10 @@ export class AuthService {
       [userId, row.profile_key, email, row.profile.employee_code || null, row.profile.branch_id || null,
         credentials.salt, credentials.hash],
     );
+    // provision đặt lại được mật khẩu của tài khoản đã có (on conflict do
+    // update password_hash), nên nó cũng phải để lại dấu như đường đặt lại.
+    await this.ghiNhatKy('tao_tai_khoan', actor, String(row.profile.employee_code || profileId),
+      String(row.profile.role || ''), { email });
     return { id: userId, email, employeeCode: row.profile.employee_code || null };
   }
 

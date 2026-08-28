@@ -1,7 +1,7 @@
 import {
   getSystemHealth, getBugLogs, createBugLog, updateBugLog,
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
-  updateUserAccess, unlockAccount, datLaiMatKhau, getTechnicalAudit, getIntegrationFailures,
+  updateUserAccess, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
@@ -13,6 +13,11 @@ import { ROLE_PROFILES } from '../constants.js';
 // Thẻ đang mở. Giữ ngoài hàm dựng vì router dựng lại cả view mỗi lần điều
 // hướng, và nhảy về thẻ đầu sau mỗi thao tác thì không ai làm việc được.
 let theDangMo = 'tai-khoan';
+
+// Bộ lọc bảng tài khoản. Giữ ngoài hàm dựng vì store.notify() dựng lại cả
+// view sau mỗi thao tác, và mất bộ lọc sau mỗi lần cập nhật quyền thì phải
+// lọc lại từ đầu mỗi người.
+let tkTim = ''; let tkVaiTro = ''; let tkTrangThai = ''; let tkBoPhan = ''; let tkChiNhanh = '';
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   bug: 'Bug và thông báo',
@@ -116,8 +121,9 @@ function errorRows(logs) {
   }).join('');
 }
 
-function profileRows(profiles, currentUserId) {
+function profileRows(profiles, currentUserId, trangThaiMap) {
   return profiles.map((profile) => {
+    const tk = trangThaiMap.get(String(profile.employee_code || '').toLowerCase());
     const protectedRole = VAI_TRO_BAO_VE.includes(profile.role) || profile.id === currentUserId;
     // Vai trò hiện tại LUÔN có mặt trong danh sách, kể cả khi nó không thuộc
     // nhóm cấp được. Thiếu nó thì ô chọn rơi về mục đầu tiên và người dùng
@@ -128,6 +134,11 @@ function profileRows(profiles, currentUserId) {
       <td>${escapeHTML(profile.department || '—')}</td><td>${escapeHTML(profile.branch_id || '—')}</td>
       <td><select data-user-role="${profile.id}" ${protectedRole ? 'disabled' : ''}>${dsVaiTro.map((role) => `<option value="${escapeHTML(role)}" ${profile.role === role ? 'selected' : ''}>${escapeHTML(roleLabel[role] || role)}</option>`).join('')}</select></td>
       <td><label class="system-toggle"><input type="checkbox" data-user-active="${profile.id}" ${profile.active ? 'checked' : ''} ${protectedRole ? 'disabled' : ''}><span>${profile.active ? 'Hoạt động' : 'Đã khóa'}</span></label></td>
+      <td>${!tk ? '<span class="subtle">Chưa có tài khoản</span>'
+        : tk.dang_khoa ? `<span class="status-pill bad">Đang khoá đăng nhập</span>`
+        : tk.failed_attempts > 0 ? `<span class="status-pill warn">Sai ${tk.failed_attempts} lần</span>`
+        : `<span class="status-pill good">Đăng nhập được</span>`}
+        ${tk?.last_login_at ? `<small class="subtle">Vào lần cuối ${formatDateTime(tk.last_login_at)}</small>` : ''}</td>
       <td class="sa-thaotac">${protectedRole ? '<span class="subtle">Được bảo vệ</span>'
         : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}
         ${profile.employee_code ? `<button class="secondary-button compact-button" type="button"
@@ -144,14 +155,51 @@ export async function renderView(state) {
   const [health, bugs, announcements, profiles, audits, outbox, errorLogs] = await Promise.all([
     getSystemHealth(), getBugLogs(), getSystemAnnouncements(), getSystemProfiles(), getTechnicalAudit(), getIntegrationFailures(), getSystemErrorLogs(),
   ]);
+  // Trạng thái đăng nhập là nguồn dữ liệu KHÁC với hồ sơ. Lấy riêng rồi ghép
+  // theo mã nhân sự; hỏng thì bảng vẫn dựng được, chỉ thiếu cột khoá.
+  const accountStates = await getAccountStates().catch(() => []);
+  const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   const failed = outbox.filter((item) => item.status === 'failed');
   const the = theDangMo;
+  const chon = (v, t, dang) => `<option value="${escapeHTML(v)}"${dang === v ? ' selected' : ''}>${escapeHTML(t)}</option>`;
+  const dsBoPhan = [...new Set(profiles.map((x) => x.department).filter(Boolean))].sort();
+  const dsChiNhanh = [...new Set(profiles.map((x) => x.branch_id).filter(Boolean))].sort();
+  const tim = tkTim.trim().toLocaleLowerCase('vi');
+  const daLoc = profiles.filter((x) => {
+    const tk = tkTrangThaiMap.get(String(x.employee_code || '').toLowerCase());
+    if (tim && !`${x.full_name || ''} ${x.employee_code || ''}`.toLocaleLowerCase('vi').includes(tim)) return false;
+    if (tkVaiTro && x.role !== tkVaiTro) return false;
+    if (tkBoPhan && x.department !== tkBoPhan) return false;
+    if (tkChiNhanh && x.branch_id !== tkChiNhanh) return false;
+    if (tkTrangThai === 'khoa'   && !tk?.dang_khoa) return false;
+    if (tkTrangThai === 'sai'    && !(tk && tk.failed_attempts > 0)) return false;
+    if (tkTrangThai === 'ok'     && !(tk && !tk.dang_khoa && !tk.failed_attempts)) return false;
+    if (tkTrangThai === 'chua'   && tk) return false;
+    if (tkTrangThai === 'vohieu' && x.active !== false) return false;
+    return true;
+  });
   // Bốn thẻ thay vì bảy khối chồng lên nhau. Trước đó màn này nhồi sức khỏe,
   // thông báo, form bug, danh sách bug, log realtime, tài khoản và audit vào
   // cùng một trang; muốn sửa quyền một người phải cuộn qua toàn bộ nhật ký
   // lỗi. Dải sức khỏe giữ nguyên ở trên vì nó là tóm tắt, đúng với mọi thẻ.
   const KHOI = {
-    'tai-khoan': `<section class="panel"><div class="section-title"><div><p class="eyebrow">PHÂN QUYỀN CÓ KIỂM SOÁT</p><h3>Tài khoản hệ thống</h3></div><span class="subtle">Không thể cấp Admin IT/Superadmin tại đây</span></div><div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>${profileRows(profiles, state.user.id)}</tbody></table></div></section>`,
+    'tai-khoan': `<section class="panel">
+      <div class="section-title"><div><p class="eyebrow">PHÂN QUYỀN CÓ KIỂM SOÁT</p><h3>Tài khoản hệ thống</h3></div>
+        <span class="subtle">${daLoc.length}/${profiles.length} tài khoản · không cấp được Admin IT hay Superadmin tại đây</span></div>
+      <form id="tkLoc" class="hh-loc">
+        <label><span>Tìm tên hoặc mã nhân sự</span><input type="search" name="tim" value="${escapeHTML(tkTim)}" placeholder="VD: Ngọc Đức hoặc PVC-10162"></label>
+        <label><span>Vai trò</span><select name="vaiTro">${chon('', 'Tất cả vai trò', tkVaiTro)}${Object.keys(ROLE_PROFILES).map((r) => chon(r, roleLabel[r], tkVaiTro)).join('')}</select></label>
+        <label><span>Trạng thái đăng nhập</span><select name="trangThai">
+          ${chon('', 'Tất cả', tkTrangThai)}${chon('khoa', 'Đang khoá đăng nhập', tkTrangThai)}${chon('sai', 'Có lần nhập sai', tkTrangThai)}
+          ${chon('ok', 'Đăng nhập được', tkTrangThai)}${chon('chua', 'Chưa có tài khoản', tkTrangThai)}${chon('vohieu', 'Hồ sơ đã khoá', tkTrangThai)}</select></label>
+        <label><span>Bộ phận</span><select name="boPhan">${chon('', 'Tất cả bộ phận', tkBoPhan)}${dsBoPhan.map((x) => chon(x, x, tkBoPhan)).join('')}</select></label>
+        <label><span>Chi nhánh</span><select name="chiNhanh">${chon('', 'Tất cả chi nhánh', tkChiNhanh)}${dsChiNhanh.map((x) => chon(x, x, tkChiNhanh)).join('')}</select></label>
+        <button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button>
+        ${tkTim || tkVaiTro || tkTrangThai || tkBoPhan || tkChiNhanh ? '<p class="hh-ghi"><button type="button" id="tkXoaLoc" class="secondary-button">Xóa lọc</button></p>' : ''}
+      </form>
+      ${!daLoc.length ? '<p class="hh-ghi">Không có tài khoản nào khớp bộ lọc.</p>'
+        : `<div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Hồ sơ</th><th>Đăng nhập</th><th></th></tr></thead><tbody>${profileRows(daLoc, state.user.id, tkTrangThaiMap)}</tbody></table></div>`}
+    </section>`,
     'bug': `<div class="grid cols-2 system-admin-grid">
       <section class="panel"><div class="section-title"><div><p class="eyebrow">THÔNG BÁO PHÁT HÀNH</p><h3>Gửi cập nhật đến người dùng</h3></div></div>
         <form id="announcementForm" class="system-form"><label class="span-2">Tiêu đề<input name="title" required maxlength="160" placeholder="VD: Đã cập nhật chức năng chấm công"></label><label>Loại<select name="category"><option value="feature">Tính năng mới</option><option value="maintenance">Bảo trì</option><option value="security">Bảo mật</option><option value="general">Thông báo chung</option></select></label><label>Người nhận<select name="audience"><option value="all">Tất cả người dùng</option><option value="staff">Nhân viên</option><option value="leader">Trưởng bộ phận</option><option value="hr">Nhân sự</option><option value="finance">Kế toán</option><option value="admin">Admin</option></select></label><label class="span-2">Nội dung<textarea name="body" required maxlength="2000" placeholder="Mô tả thay đổi, thời gian áp dụng và hướng dẫn..."></textarea></label><button class="primary-button span-2" type="submit">🔔 Phát hành thông báo realtime</button></form>
@@ -231,6 +279,19 @@ export function initView() {
     theDangMo = b.dataset.the;
     store.notify();
   }));
+
+  document.getElementById('tkLoc')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    tkTim = f.get('tim') || ''; tkVaiTro = f.get('vaiTro') || '';
+    tkTrangThai = f.get('trangThai') || ''; tkBoPhan = f.get('boPhan') || '';
+    tkChiNhanh = f.get('chiNhanh') || '';
+    store.notify();
+  });
+  document.getElementById('tkXoaLoc')?.addEventListener('click', () => {
+    tkTim = ''; tkVaiTro = ''; tkTrangThai = ''; tkBoPhan = ''; tkChiNhanh = '';
+    store.notify();
+  });
 
   document.querySelectorAll('[data-reset-pw]').forEach((button) => button.addEventListener('click', async () => {
     const ma = button.dataset.resetPw;

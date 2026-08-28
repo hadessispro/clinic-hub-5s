@@ -197,6 +197,16 @@ export class RpcService {
       if (!current) throw new Error('Không tìm thấy hồ sơ người dùng.');
       const next = { ...current.payload, role: args.p_role, active: Boolean(args.p_active) };
       await this.put('profiles', next, current.record_key);
+      await this.infrastructure.postgres.query(
+        `insert into app.auth_audit
+           (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
+         values ($1, $2, $3, $4, $5, $6::jsonb)`,
+        [Boolean(args.p_active) === false ? 'khoa_tai_khoan' : 'doi_vai_tro',
+         user.employeeCode || null, user.role,
+         String(current.payload.employee_code || args.p_user_id), String(args.p_role || ''),
+         JSON.stringify({ vai_tro_cu: current.payload.role, vai_tro_moi: args.p_role,
+                          hoat_dong: Boolean(args.p_active) })],
+      );
       return next;
     }
     // Mở khoá tài khoản bị chặn vì nhập sai mật khẩu nhiều lần.
@@ -208,6 +218,26 @@ export class RpcService {
     // KHÔNG đặt lại mật khẩu ở đây. Mở khoá chỉ xoá bộ đếm sai; mật khẩu vẫn
     // là mật khẩu cũ. Đặt lại mật khẩu đi đường /auth/provision, nơi người
     // quản trị phải tự nhập mật khẩu mới và biết mình vừa đặt gì.
+    // Trạng thái đăng nhập của mọi tài khoản, để bảng quản trị hiện được ai
+    // đang bị khoá.
+    //
+    // Trước đó bảng chỉ có cột "Hoạt động" lấy từ hồ sơ, mà cột đó nói về
+    // việc hồ sơ có bị vô hiệu hoá hay không — hoàn toàn khác với việc tài
+    // khoản đăng nhập có đang bị khoá vì nhập sai mật khẩu. Hai chuyện khác
+    // nhau mà chỉ hiện một, nên người quản trị nhìn thấy "Hoạt động" trong
+    // khi người kia đang không đăng nhập được.
+    if (name === 'system_account_state') {
+      if (!admins.has(user.role)) throw new ForbiddenException();
+      const kq = await this.infrastructure.postgres.query(
+        `select employee_code, email, active,
+                failed_attempts,
+                locked_until,
+                locked_until is not null and locked_until > now() dang_khoa,
+                last_login_at
+           from app.local_accounts`,
+      );
+      return kq.rows;
+    }
     if (name === 'system_unlock_account') {
       if (!admins.has(user.role)) throw new ForbiddenException();
       const ma = String(args.p_employee_code || '').trim();
@@ -219,6 +249,14 @@ export class RpcService {
         returning employee_code, email`, [ma],
       );
       if (!kq.rowCount) throw new Error(`Không tìm thấy tài khoản đăng nhập của ${ma}.`);
+      // Mở khoá cũng để lại dấu. Nó không đổi mật khẩu nhưng nó mở lại một
+      // cánh cửa vừa bị đóng vì nghi ngờ, nên phải biết ai đã mở.
+      await this.infrastructure.postgres.query(
+        `insert into app.auth_audit (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
+         values ('mo_khoa', $1, $2, $3, $4::jsonb)`,
+        [user.employeeCode || null, user.role, kq.rows[0].employee_code,
+         JSON.stringify({ email: kq.rows[0].email })],
+      );
       return { employee_code: kq.rows[0].employee_code, email: kq.rows[0].email, unlocked: true };
     }
     if (name === 'resolve_system_error') {

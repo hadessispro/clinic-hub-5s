@@ -64,6 +64,19 @@ export async function getSystemProfiles() {
   return data || [];
 }
 
+/* Trạng thái tài khoản ĐĂNG NHẬP, khác với trạng thái hồ sơ.
+ *
+ * "Hoạt động" trên hồ sơ nói về việc người đó còn làm việc hay không.
+ * "Đang khoá" nói về việc tài khoản bị chặn vì nhập sai mật khẩu. Một người
+ * hoàn toàn có thể đang hoạt động mà không đăng nhập được, và bảng cũ chỉ
+ * hiện vế đầu nên chuyện đó vô hình.
+ */
+export async function getAccountStates() {
+  const { data, error } = await supabase.rpc('system_account_state', {});
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
 export async function updateUserAccess(userId, role, active) {
   const { data, error } = await supabase.rpc('system_update_user_access', { p_user_id: userId, p_role: role, p_active: active });
   if (error) throw error;
