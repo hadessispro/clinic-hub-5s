@@ -285,6 +285,7 @@ const MAN = [
   { nhom: 'Phân tích' },
   { ma: 'tong-quan', ten: 'Tổng quan', icon: 'M3 13h4v6H3zM10 5h4v14h-4zM17 9h4v10h-4z' },
   { ma: 'van-hanh', ten: 'Số liệu vận hành', icon: 'M4 19V9M10 19V4M16 19v-7M22 19H2' },
+  { ma: 'hoa-hong-pg', ten: 'Hoa hồng PG · SUP', icon: 'M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8L3.5 9.2l5.9-.9z' },
   { nhom: 'Sổ gốc' },
   { ma: 'nhat-ky', ten: 'Nhật ký chung', icon: 'M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5' },
   { ma: 'bc-so-chi-tiet', ten: 'Sổ chi tiết tài khoản', icon: 'M5 4h14v16H5zM9 8h6M9 12h6M9 16h3' },
@@ -1813,6 +1814,82 @@ VE['ky'] = async (than) => {
 };
 
 /* ── Màn: Số liệu vận hành ─────────────────────────────────────────────── */
+
+VE['hoa-hong-pg'] = async (than) => {
+  const d = await goi('/hoa-hong');
+  const NHAN_MAU = {
+    da_chot: 'duong', tu_choi: 'am', cho_sup: 'vang', cho_admin: 'vang', admin_da_duyet: 'vang',
+  };
+
+  const dongDot = d.dot.map((x) => {
+    const chuaGhiSo = x.da_chot && !x.finance_voucher_no;
+    return el('tr', { class: x.trang_thai === 'tu_choi' ? 'mo' : null },
+      el('td', {}, el('strong', {}, x.ky_code),
+        el('div', { class: 'phu' }, `${ngay(x.ky_tu)} – ${ngay(x.ky_den)}`)),
+      el('td', {}, el('span', { class: `nhan ${NHAN_MAU[x.trang_thai] || ''}` }, x.trang_thai_ten)),
+      el('td', { class: 'tien' }, dinhDangSo.format(x.so_dong)),
+      el('td', { class: 'tien' }, tien(x.tong_tien_pg)),
+      el('td', { class: 'tien' }, tien(x.tong_tien_sup)),
+      el('td', { class: 'tien' }, el('strong', {}, tien(x.tong_tien))),
+      el('td', {}, `Nợ ${x.tk_no} / Có ${x.tk_co}`,
+        el('div', { class: 'phu' }, `khoản mục ${x.khoan_muc}`)),
+      el('td', {}, x.finance_voucher_no
+        ? x.finance_voucher_no
+        : el('span', { class: chuaGhiSo ? 'nhan vang' : 'phu' },
+            chuaGhiSo ? 'chưa ghi sổ' : '—')),
+    );
+  });
+
+  // Gộp theo người, chỉ những đợt đã chốt — đó mới là khoản phải ghi sổ.
+  const nguoi = new Map();
+  for (const x of d.dot) {
+    if (!x.da_chot) continue;
+    for (const c of x.chi_tiet) {
+      const k = `${c.vai_tro}|${c.nguoi_ma}`;
+      if (!nguoi.has(k)) {
+        nguoi.set(k, { vai_tro: c.vai_tro, ma: c.nguoi_ma, ten: c.nguoi_ten, sl: 0, tien: 0 });
+      }
+      const g = nguoi.get(k);
+      g.sl += Number(c.so_luong || 0);
+      g.tien += Number(c.so_tien || 0);
+    }
+  }
+  const dongNguoi = [...nguoi.values()].sort((a, b) => b.tien - a.tien).map((g) => el('tr', {},
+    el('td', {}, g.vai_tro === 'pg' ? 'PG' : 'SUP'),
+    el('td', {}, el('strong', {}, g.ten || g.ma), el('div', { class: 'phu' }, g.ma)),
+    el('td', { class: 'tien' }, dinhDangSo.format(g.sl)),
+    el('td', { class: 'tien' }, el('strong', {}, tien(g.tien))),
+  ));
+
+  than.replaceChildren(
+    dauTrang('Hoa hồng PG · SUP',
+      'Khoản chi do phân hệ vận hành tính. Kế toán QUAN SÁT luồng này để cuối kỳ còn giải '
+      + 'thích được con số, không phải là một cửa duyệt.'),
+
+    el('div', { class: 'bao' },
+      'Quy trình duyệt nằm trọn bên vận hành: hệ thống tính tự động, SUP xác nhận, Admin xác '
+      + 'nhận, rồi chốt. Chỉ khoản ĐÃ CHỐT mới là khoản phải ghi sổ; các giai đoạn trước hiện ở '
+      + 'đây để biết trước tháng này sắp có khoản chi bao nhiêu. Đọc một chiều qua finance_src, '
+      + 'két không ghi được gì sang phân hệ vận hành.'),
+
+    el('div', { class: 'luoi luoi-3 cach-duoi' },
+      theChiSo('Đã chốt · phải ghi sổ', tien(d.tong_da_chot), 'đồng', 'duong'),
+      theChiSo('Đang trong quy trình duyệt', tien(d.tong_dang_duyet), 'đồng, chưa chắc chắn', 'vang'),
+      theChiSo('Đợt đã chốt chưa có chứng từ', dinhDangSo.format(d.so_cho_ghi_so),
+        d.so_cho_ghi_so ? 'cần lập chứng từ' : 'không còn đợt nào', d.so_cho_ghi_so ? 'vang' : ''),
+    ),
+
+    el('h3', { class: 'muc' }, 'Các đợt hoa hồng'),
+    bang([{ ten: 'Kỳ' }, { ten: 'Trạng thái' }, { ten: 'Số dòng', tien: true },
+      { ten: 'Phần PG', tien: true }, { ten: 'Phần SUP', tien: true },
+      { ten: 'Tổng chi', tien: true }, { ten: 'Định khoản đề xuất' }, { ten: 'Chứng từ' }],
+      dongDot),
+
+    el('h3', { class: 'muc' }, 'Tổng hợp theo người · chỉ đợt đã chốt'),
+    bang([{ ten: 'Vai trò' }, { ten: 'Người hưởng' }, { ten: 'Số lượt', tien: true },
+      { ten: 'Thành tiền', tien: true }], dongNguoi),
+  );
+};
 
 VE['van-hanh'] = async (than) => {
   const d = await goi('/van-hanh');

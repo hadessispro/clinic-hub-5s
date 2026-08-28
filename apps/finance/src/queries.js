@@ -255,6 +255,39 @@ async function issues(periodCode) {
  * Xem tổng quỹ lương theo bộ phận thì được, xem lương của một cái tên cụ thể
  * thì không.
  */
+/* Hoa hồng PG/SUP mà phân hệ vận hành đang tính.
+ *
+ * Kế toán QUAN SÁT luồng này, không duyệt. Quy trình duyệt nằm trọn bên
+ * marketing: tính tự động, SUP xác nhận, Admin xác nhận, chốt.
+ *
+ * Nhưng cuối kỳ kế toán là người phải giải thích con số, nên họ cần thấy nó
+ * hình thành chứ không phải biết sau khi mọi thứ đã xong. Đó là lý do view
+ * này hiện MỌI giai đoạn chứ không riêng đợt đã chốt.
+ *
+ * Đọc một chiều qua finance_src. Két không ghi được gì sang marketing.
+ */
+async function hoaHong() {
+  const [dot, chiTiet] = await Promise.all([
+    rows(`select * from finance_src.hoa_hong_pg order by ky_code desc, tinh_luc desc limit 36`),
+    rows(`select * from finance_src.hoa_hong_pg_chi_tiet
+           order by ky_code desc, vai_tro, so_tien desc`),
+  ]);
+  const theoDot = new Map();
+  for (const d of chiTiet) {
+    if (!theoDot.has(d.dot_id)) theoDot.set(d.dot_id, []);
+    theoDot.get(d.dot_id).push(d);
+  }
+  return {
+    dot: dot.map((d) => ({ ...d, chi_tiet: theoDot.get(d.dot_id) || [] })),
+    // Chỉ khoản ĐÃ CHỐT mới là khoản phải ghi sổ. Các giai đoạn trước là để
+    // biết trước, không phải để hạch toán.
+    tong_da_chot: dot.filter((d) => d.da_chot).reduce((t, d) => t + Number(d.tong_tien || 0), 0),
+    tong_dang_duyet: dot.filter((d) => !d.da_chot && d.trang_thai !== 'tu_choi')
+      .reduce((t, d) => t + Number(d.tong_tien || 0), 0),
+    so_cho_ghi_so: dot.filter((d) => d.da_chot && !d.finance_voucher_no).length,
+  };
+}
+
 async function opsSummary({ canSeeIndividualPay }) {
   const [leadsByChannel, leadsByMonth, pgWork, payroll] = await Promise.all([
     rows(
@@ -490,6 +523,6 @@ async function batches() {
 
 module.exports = {
   overview, journal, voucher, trialBalance, ledger, partnerBalances,
-  nondeductible, issues, opsSummary, accounts, partners, periods,
+  nondeductible, issues, opsSummary, hoaHong, accounts, partners, periods,
   costItems, batches, charts,
 };

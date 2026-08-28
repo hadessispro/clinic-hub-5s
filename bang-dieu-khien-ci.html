@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bảng điều khiển CI/CD · Nha Khoa 5S</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Trang này chạy thẳng từ file, không cần máy chủ, không cần cài gì.
+   Không nạp phông chữ hay thư viện từ ngoài, nên mở được cả khi mất mạng
+   nội bộ — chỉ cần ra được api.github.com.
+   Màu theo brand: nền trắng, xanh dương làm chữ nổi, vàng làm phần nhấn.
+   ───────────────────────────────────────────────────────────────────── */
+:root {
+  --nen:        #ffffff;
+  --nen-phu:    #f5f8fd;
+  --nen-chim:   #eef3fb;
+  --vien:       #dde5f1;
+  --vien-dam:   #c3d0e4;
+  --chu:        #0e1b2e;
+  --chu-nhat:   #5b6b85;
+  --chu-mo:     #8a99b0;
+  --xanh:       #1856c4;
+  --xanh-dam:   #0f3c8c;
+  --xanh-nhat:  #e8f0fe;
+  --vang:       #e0a000;
+  --vang-nen:   #fff6dd;
+  --vang-vien:  #f0d089;
+  --dat:        #12894b;
+  --dat-nen:    #e7f6ee;
+  --hong:       #c62828;
+  --hong-nen:   #fdeaea;
+  --cho:        #b06b00;
+  --cho-nen:    #fff3e0;
+  --bong:       0 1px 2px rgba(14,27,46,.06), 0 4px 12px rgba(14,27,46,.05);
+  --chu-thuong: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --chu-so:     "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--nen-phu);
+  color: var(--chu);
+  font-family: var(--chu-thuong);
+  font-size: 15px;
+  line-height: 1.55;
+  font-feature-settings: "cv05" 1;
+}
+a { color: var(--xanh); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--xanh); outline-offset: 2px; border-radius: 4px; }
+
+.khung { max-width: 1120px; margin: 0 auto; padding: 28px 22px 64px; }
+
+/* ── Đầu trang ───────────────────────────────────────────────────────── */
+.dinh {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  gap: 18px; justify-content: space-between;
+  padding-bottom: 18px; margin-bottom: 22px;
+  border-bottom: 2px solid var(--vien);
+}
+.dinh h1 {
+  margin: 0; font-size: 23px; font-weight: 700;
+  letter-spacing: -.015em; color: var(--xanh-dam);
+}
+.dinh .kho {
+  margin: 3px 0 0; font-size: 13px; color: var(--chu-nhat);
+  font-family: var(--chu-so);
+}
+.dieu-khien { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+button {
+  font: inherit; font-size: 13.5px; font-weight: 600;
+  padding: 7px 15px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--vien-dam); background: var(--nen); color: var(--chu);
+  transition: background .12s, border-color .12s;
+}
+button:hover { background: var(--nen-chim); border-color: var(--xanh); }
+button.chinh { background: var(--xanh); border-color: var(--xanh); color: #fff; }
+button.chinh:hover { background: var(--xanh-dam); border-color: var(--xanh-dam); }
+
+.dem {
+  font-family: var(--chu-so); font-size: 12.5px; color: var(--chu-nhat);
+  min-width: 118px; text-align: right;
+}
+
+/* ── Dải tổng quan ───────────────────────────────────────────────────── */
+.dai {
+  display: flex; align-items: center; gap: 13px;
+  padding: 15px 18px; border-radius: 10px; margin-bottom: 24px;
+  border: 1px solid var(--vien); background: var(--nen); box-shadow: var(--bong);
+}
+.dai.tot   { border-left: 4px solid var(--dat);  background: var(--dat-nen); }
+.dai.xau   { border-left: 4px solid var(--hong); background: var(--hong-nen); }
+.dai.dang  { border-left: 4px solid var(--vang); background: var(--vang-nen); }
+.dai .to   { font-size: 16px; font-weight: 700; }
+.dai .nho  { font-size: 13.5px; color: var(--chu-nhat); }
+
+/* ── Thẻ workflow ────────────────────────────────────────────────────── */
+h2 {
+  font-size: 12px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--chu-mo);
+  margin: 0 0 12px;
+}
+.luoi {
+  display: grid; gap: 14px; margin-bottom: 30px;
+  grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+}
+.the {
+  background: var(--nen); border: 1px solid var(--vien);
+  border-radius: 10px; padding: 16px 17px; box-shadow: var(--bong);
+  display: flex; flex-direction: column; gap: 11px;
+}
+.the-dinh { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.the-ten { font-weight: 700; font-size: 15.5px; letter-spacing: -.01em; }
+.the-vai {
+  font-size: 12px; color: var(--chu-nhat); margin-top: 1px;
+}
+.the-so {
+  font-family: var(--chu-so); font-size: 12px; color: var(--chu-mo);
+}
+.the-chan { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.the-chan a {
+  font-size: 12.5px; font-weight: 600; padding: 5px 11px;
+  border: 1px solid var(--vien-dam); border-radius: 6px;
+  background: var(--nen); color: var(--xanh);
+}
+.the-chan a:hover { background: var(--xanh-nhat); border-color: var(--xanh); text-decoration: none; }
+.the-chan a.nhan {
+  background: var(--vang-nen); border-color: var(--vang-vien); color: #8a6100;
+}
+.the-chan a.nhan:hover { background: #ffeec2; }
+
+/* ── Nhãn trạng thái ─────────────────────────────────────────────────── */
+.nhan-tt {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid transparent;
+}
+.nhan-tt::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+}
+.tt-dat  { color: var(--dat);  background: var(--dat-nen);  border-color: #b8e2cb; }
+.tt-hong { color: var(--hong); background: var(--hong-nen); border-color: #f2c4c4; }
+.tt-chay { color: var(--cho);  background: var(--cho-nen);  border-color: var(--vang-vien); }
+.tt-khac { color: var(--chu-nhat); background: var(--nen-chim); border-color: var(--vien-dam); }
+.tt-chay::before { animation: dap 1.1s ease-in-out infinite; }
+@keyframes dap { 0%,100% { opacity: 1 } 50% { opacity: .28 } }
+@media (prefers-reduced-motion: reduce) { .tt-chay::before { animation: none } }
+
+/* ── Bảng lần chạy ───────────────────────────────────────────────────── */
+.cuon { overflow-x: auto; border: 1px solid var(--vien); border-radius: 10px; background: var(--nen); box-shadow: var(--bong); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13.5px; }
+th {
+  text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--chu-mo);
+  padding: 11px 14px; background: var(--nen-chim);
+  border-bottom: 1px solid var(--vien);
+}
+td { padding: 10px 14px; border-bottom: 1px solid var(--vien); vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr.bam { cursor: pointer; }
+tbody tr.bam:hover { background: var(--nen-phu); }
+.ma { font-family: var(--chu-so); font-size: 12.5px; color: var(--chu-nhat); }
+.loi-nhan {
+  display: block; max-width: 380px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.so { font-family: var(--chu-so); font-variant-numeric: tabular-nums; }
+
+/* Hàng chi tiết job, mở ra khi bấm vào một lần chạy */
+tr.chi-tiet > td { background: var(--nen-phu); padding: 0; }
+.job-ds { padding: 12px 16px 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+.job {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding-left: 10px; border-left: 3px solid var(--vien-dam);
+}
+.job.job-dat  { border-left-color: var(--dat); }
+.job.job-hong { border-left-color: var(--hong); }
+.job-ten { font-weight: 600; font-size: 13.5px; }
+.buoc-ds { display: flex; flex-wrap: wrap; gap: 4px 14px; width: 100%; padding-left: 2px; }
+.buoc { font-size: 12.5px; color: var(--chu-nhat); }
+.buoc b { font-weight: 700; font-style: normal; }
+.buoc.b-hong { color: var(--hong); font-weight: 600; }
+
+/* ── Chân trang ──────────────────────────────────────────────────────── */
+.chan {
+  margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--vien);
+  font-size: 12.5px; color: var(--chu-nhat); display: flex;
+  flex-wrap: wrap; gap: 8px 26px; align-items: center;
+}
+.chan code {
+  font-family: var(--chu-so); font-size: 12px; background: var(--nen-chim);
+  border: 1px solid var(--vien); border-radius: 5px; padding: 2px 7px; color: var(--chu);
+}
+.canh {
+  margin-bottom: 20px; padding: 13px 16px; border-radius: 9px;
+  background: var(--hong-nen); border: 1px solid #f2c4c4; color: #8c1f1f;
+  font-size: 13.5px;
+}
+.canh[hidden] { display: none; }
+.mo { color: var(--chu-mo); }
+</style>
+</head>
+<body>
+<div class="khung">
+
+  <header class="dinh">
+    <div>
+      <h1>Bảng điều khiển CI/CD</h1>
+      <p class="kho">hadessispro/clinic-hub-5s · nhánh main</p>
+    </div>
+    <div class="dieu-khien">
+      <span class="dem" id="dem">đang tải…</span>
+      <button id="nut-tam">Tạm dừng</button>
+      <button class="chinh" id="nut-moi">Làm mới</button>
+    </div>
+  </header>
+
+  <div class="canh" id="canh" hidden></div>
+
+  <div class="dai" id="dai">
+    <span class="to" id="dai-to">Đang tải…</span>
+    <span class="nho" id="dai-nho"></span>
+  </div>
+
+  <h2>Bốn quy trình</h2>
+  <div class="luoi" id="luoi"></div>
+
+  <h2>Hai mươi lần chạy gần nhất — bấm vào một dòng để xem từng job</h2>
+  <div class="cuon">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:150px">Quy trình</th>
+          <th style="width:120px">Kết quả</th>
+          <th>Commit</th>
+          <th style="width:92px">Mã</th>
+          <th style="width:118px">Lúc</th>
+          <th style="width:74px">Mất</th>
+        </tr>
+      </thead>
+      <tbody id="bang"><tr><td colspan="6" class="mo">Đang tải…</td></tr></tbody>
+    </table>
+  </div>
+
+  <footer class="chan">
+    <span>Hạn mức GitHub còn <b id="han">–</b>/60 lượt trong giờ này</span>
+    <span class="mo">Nhịp tự đổi: 10s khi đang chạy, 150s khi rảnh.</span>
+    <span>Xóa trang: <code>rm bang-dieu-khien-ci.html</code></span>
+    <span class="mo">Chỉ đọc. Không đụng gì tới VPS.</span>
+  </footer>
+
+</div>
+
+<script>
+"use strict";
+
+// Trang chỉ ĐỌC API công khai của GitHub. Không có khóa, không đăng nhập,
+// không gửi gì đi đâu. Kho đang công khai nên không cần xác thực.
+const KHO   = "hadessispro/clinic-hub-5s";
+const API   = "https://api.github.com/repos/" + KHO;
+const TRANG = "https://github.com/" + KHO;
+
+// NHỊP THÍCH ỨNG
+//
+// Hạn mức khi không đăng nhập là 60 lượt mỗi giờ tính theo địa chỉ IP, và đó
+// là trần cứng. Tài liệu GitHub nói phản hồi 304 không bị tính; đo thật ngày
+// 28/08/2026 thì nó CÓ bị tính, mỗi lần một lượt (52→51→50→49→48→47). Nên
+// không có mẹo nào lách được con số 60.
+//
+// Vậy cách duy nhất để gần thời gian thực là tiêu hạn mức ĐÚNG LÚC CẦN. Lúc
+// cần là khi có lần chạy đang diễn ra; còn lại thì nhìn nhanh cũng chẳng thấy
+// gì mới.
+//
+//   đang chạy   10 giây   một lần chạy dài ~90 giây tốn khoảng 9 lượt
+//   rảnh       150 giây   24 lượt mỗi giờ, đủ để biết ai đó vừa đẩy mã
+//   sắp cạn    300 giây   phanh tay, để dành cho lúc thật sự cần
+//
+// Bốn lần chạy được theo sát trọn vẹn trong một giờ vẫn nằm trong 60.
+const NHIP_CHAY = 10;
+const NHIP_RANH = 150;
+const NHIP_TIET = 300;
+const SAN_QUOTA = 15;   // dưới mức này thì phanh, đừng để cạn sạch
+
+// Vai trò của từng quy trình. Giữ ở đây thay vì đoán từ tên, để thẻ nào cũng
+// nói được nó dùng làm gì và ai là người bấm.
+const VAI = {
+  "kiem-tra.yml":  { vai: "Tự chạy mỗi lần đẩy mã",  bam: false },
+  "trien-khai.yml":{ vai: "Bạn bấm tay · đổi VPS",   bam: true  },
+  "khoi-phuc.yml": { vai: "Bạn bấm tay · lùi bản",   bam: true  },
+  "theo-doi.yml":  { vai: "Tự chạy 08:00 hằng ngày", bam: true  },
+};
+const THU_TU = ["kiem-tra.yml", "trien-khai.yml", "khoi-phuc.yml", "theo-doi.yml"];
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let dungLai = false, dangTai = false;
+let conQuota = 60;        // đọc từ đầu phản hồi mỗi lần gọi
+let dangCoChay = false;   // có lần chạy nào đang diễn ra không
+let etag = null;          // để hỏi "có gì mới không" thay vì tải lại cả gói
+let dem = NHIP_RANH;
+const jobDaTai = new Map();   // id lần chạy -> HTML danh sách job
+
+// Nhịp cho vòng kế tiếp. Quyết định lại sau MỖI lần gọi, vì cả hai đầu vào
+// đều đổi liên tục: hạn mức còn lại, và có gì đang chạy hay không.
+function nhipHienTai() {
+  if (conQuota <= SAN_QUOTA) return NHIP_TIET;
+  if (!dangCoChay) return NHIP_RANH;
+  return conQuota > 30 ? NHIP_CHAY : 45;
+}
+function tenNhip() {
+  if (conQuota <= SAN_QUOTA) return "tiết kiệm";
+  return dangCoChay ? "theo sát" : "chờ";
+}
+
+// ── Cách gọi tên trạng thái ───────────────────────────────────────────────
+function tt(run) {
+  if (run.status !== "completed") {
+    return { lop: "tt-chay", chu: run.status === "queued" ? "Đang xếp hàng" : "Đang chạy" };
+  }
+  switch (run.conclusion) {
+    case "success":   return { lop: "tt-dat",  chu: "Đạt" };
+    case "failure":   return { lop: "tt-hong", chu: "Hỏng" };
+    case "cancelled": return { lop: "tt-khac", chu: "Đã hủy" };
+    case "skipped":   return { lop: "tt-khac", chu: "Bỏ qua" };
+    case "startup_failure": return { lop: "tt-hong", chu: "Không khởi động" };
+    default:          return { lop: "tt-khac", chu: run.conclusion || "—" };
+  }
+}
+const nhan = (t) => `<span class="nhan-tt ${t.lop}">${esc(t.chu)}</span>`;
+
+function truoc(iso) {
+  if (!iso) return "—";
+  const giay = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (giay < 60)     return Math.round(giay) + " giây trước";
+  if (giay < 3600)   return Math.round(giay / 60) + " phút trước";
+  if (giay < 86400)  return Math.round(giay / 3600) + " giờ trước";
+  return Math.round(giay / 86400) + " ngày trước";
+}
+function lau(a, b) {
+  if (!a || !b) return "—";
+  const s = Math.round((new Date(b) - new Date(a)) / 1000);
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m" + String(s % 60).padStart(2, "0");
+}
+const tenFile = (p) => String(p || "").split("/").pop();
+
+// ── Gọi API ───────────────────────────────────────────────────────────────
+async function goi(duong, dungEtag) {
+  const dau = { Accept: "application/vnd.github+json" };
+  // Gửi kèm ETag thì GitHub trả 304 khi chưa có gì đổi. Không tiết kiệm được
+  // hạn mức — đã đo — nhưng tránh tải lại cả gói và tránh vẽ lại màn hình
+  // đang đứng yên, nên con trỏ chuột không bị nhảy khi đang đọc.
+  if (dungEtag && etag) dau["If-None-Match"] = etag;
+
+  const r = await fetch(duong, { headers: dau });
+  const con = r.headers.get("x-ratelimit-remaining");
+  if (con !== null) { conQuota = Number(con); $("han").textContent = con; }
+  if (dungEtag) {
+    const e = r.headers.get("etag");
+    if (e) etag = e;
+    if (r.status === 304) return null;   // chưa có gì mới
+  }
+  if (r.status === 403 || r.status === 429) {
+    const lai = Number(r.headers.get("x-ratelimit-reset") || 0) * 1000;
+    throw new Error("Hết hạn mức GitHub (60 lượt/giờ cho mỗi địa chỉ IP)."
+      + (lai ? " Mở lại lúc " + new Date(lai).toLocaleTimeString("vi-VN") + "." : ""));
+  }
+  if (!r.ok) throw new Error("GitHub trả về mã " + r.status + ".");
+  return r.json();
+}
+
+function baoLoi(msg) {
+  const o = $("canh");
+  if (!msg) { o.hidden = true; return; }
+  o.hidden = false;
+  o.textContent = msg;
+}
+
+// ── Vẽ ────────────────────────────────────────────────────────────────────
+function veDai(runs) {
+  const o = $("dai"), to = $("dai-to"), nho = $("dai-nho");
+  o.className = "dai";
+  const dangChay = runs.filter((r) => r.status !== "completed");
+  // Chỉ tính lần chạy MỚI NHẤT của mỗi quy trình. Một lần hỏng ba hôm trước
+  // đã được sửa thì không nên làm cả bảng đỏ mãi.
+  const moiNhat = new Map();
+  for (const r of runs) if (!moiNhat.has(r.path)) moiNhat.set(r.path, r);
+  const hong = [...moiNhat.values()].filter((r) => r.status === "completed" && r.conclusion === "failure");
+
+  if (dangChay.length) {
+    o.classList.add("dang");
+    to.textContent = dangChay.length + " lần chạy đang diễn ra";
+    nho.textContent = dangChay.map((r) => r.name).join(" · ");
+  } else if (hong.length) {
+    o.classList.add("xau");
+    to.textContent = hong.length + " quy trình đang hỏng";
+    nho.textContent = hong.map((r) => r.name).join(" · ") + " — bấm vào dòng tương ứng bên dưới để xem job nào trượt";
+  } else {
+    o.classList.add("tot");
+    to.textContent = "Mọi quy trình đều đạt";
+    nho.textContent = "Lần chạy mới nhất của cả bốn quy trình đều xanh.";
+  }
+}
+
+function veThe(runs) {
+  const moiNhat = new Map();
+  for (const r of runs) { const f = tenFile(r.path); if (!moiNhat.has(f)) moiNhat.set(f, r); }
+
+  const tenTu = { "kiem-tra.yml": "Kiểm tra", "trien-khai.yml": "Triển khai",
+                  "khoi-phuc.yml": "Khôi phục", "theo-doi.yml": "Theo dõi hệ thống" };
+
+  $("luoi").innerHTML = THU_TU.map((f) => {
+    const r = moiNhat.get(f), v = VAI[f] || { vai: "", bam: false };
+    const ten = r ? r.name : (tenTu[f] || f);
+    const dinh = r
+      ? nhan(tt(r))
+      : `<span class="nhan-tt tt-khac">Chưa chạy</span>`;
+    const than = r
+      ? `<div class="the-so">#${r.run_number} · ${esc(truoc(r.created_at))} · ${esc(lau(r.run_started_at || r.created_at, r.updated_at))}</div>`
+      : `<div class="the-so">chưa có lần chạy nào</div>`;
+    const chay = v.bam
+      ? `<a class="nhan" href="${TRANG}/actions/workflows/${f}" target="_blank" rel="noopener">Bấm chạy ↗</a>`
+      : "";
+    const xem = r ? `<a href="${TRANG}/actions/runs/${r.id}" target="_blank" rel="noopener">Lần gần nhất ↗</a>` : "";
+    return `<article class="the">
+      <div class="the-dinh">
+        <div><div class="the-ten">${esc(ten)}</div><div class="the-vai">${esc(v.vai)}</div></div>
+        ${dinh}
+      </div>
+      ${than}
+      <div class="the-chan">
+        <a href="${TRANG}/actions/workflows/${f}" target="_blank" rel="noopener">Lịch sử ↗</a>
+        ${xem}${chay}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function veBang(runs) {
+  if (!runs.length) { $("bang").innerHTML = `<tr><td colspan="6" class="mo">Chưa có lần chạy nào.</td></tr>`; return; }
+  $("bang").innerHTML = runs.slice(0, 20).map((r) => {
+    const loi = (r.head_commit && r.head_commit.message || "").split("\n")[0];
+    return `<tr class="bam" data-id="${r.id}" tabindex="0">
+      <td>${esc(r.name)}<div class="ma">#${r.run_number}</div></td>
+      <td>${nhan(tt(r))}</td>
+      <td><span class="loi-nhan" title="${esc(loi)}">${esc(loi) || '<span class="mo">—</span>'}</span></td>
+      <td class="ma">${esc(String(r.head_sha).slice(0, 7))}</td>
+      <td class="mo">${esc(truoc(r.created_at))}</td>
+      <td class="so">${esc(lau(r.run_started_at || r.created_at, r.updated_at))}</td>
+    </tr>`;
+  }).join("");
+}
+
+// ── Mở chi tiết job của một lần chạy ─────────────────────────────────────
+async function moChiTiet(tr) {
+  const id = tr.dataset.id;
+  const ke = tr.nextElementSibling;
+  if (ke && ke.classList.contains("chi-tiet")) { ke.remove(); return; }
+  document.querySelectorAll("tr.chi-tiet").forEach((e) => e.remove());
+
+  const hang = document.createElement("tr");
+  hang.className = "chi-tiet";
+  hang.innerHTML = `<td colspan="6"><div class="job-ds mo">Đang tải job…</div></td>`;
+  tr.after(hang);
+
+  if (jobDaTai.has(id)) { hang.firstChild.innerHTML = jobDaTai.get(id); return; }
+
+  try {
+    const d = await goi(`${API}/actions/runs/${id}/jobs`);
+    const html = (d.jobs || []).map((j) => {
+      const dat = j.conclusion === "success", hong = j.conclusion === "failure";
+      const buoc = (j.steps || [])
+        .filter((s) => !/^(Set up|Post |Complete|Initialize|Stop c|Run actions)/.test(s.name))
+        .map((s) => {
+          const x = s.conclusion === "failure";
+          return `<span class="buoc${x ? " b-hong" : ""}"><b>${x ? "✗" : s.conclusion === "success" ? "✓" : "·"}</b> ${esc(s.name)}</span>`;
+        }).join("");
+      return `<div class="job ${dat ? "job-dat" : hong ? "job-hong" : ""}">
+        <span class="job-ten">${esc(j.name)}</span>
+        ${nhan(tt(j))}
+        <span class="mo so">${esc(lau(j.started_at, j.completed_at))}</span>
+        <div class="buoc-ds">${buoc}</div>
+      </div>`;
+    }).join("") || `<span class="mo">Lần chạy này chưa có job nào.</span>`;
+    jobDaTai.set(id, html);
+    hang.firstChild.innerHTML = html;
+  } catch (e) {
+    hang.firstChild.innerHTML = `<span class="mo">${esc(e.message)}</span>`;
+  }
+}
+
+// ── Vòng làm mới ─────────────────────────────────────────────────────────
+async function tai() {
+  if (dangTai) return;
+  dangTai = true;
+  $("nut-moi").disabled = true;
+  try {
+    const d = await goi(`${API}/actions/runs?per_page=20`, true);
+    baoLoi("");
+    if (d) {
+      const runs = d.workflow_runs || [];
+      dangCoChay = runs.some((r) => r.status !== "completed");
+      veDai(runs); veThe(runs); veBang(runs);
+      jobDaTai.clear();
+    }
+    // d rỗng nghĩa là 304: không có gì đổi, giữ nguyên màn hình đang xem.
+  } catch (e) {
+    baoLoi(e.message);
+  } finally {
+    dangTai = false;
+    $("nut-moi").disabled = false;
+    dem = nhipHienTai();
+  }
+}
+
+$("nut-moi").addEventListener("click", tai);
+$("nut-tam").addEventListener("click", () => {
+  dungLai = !dungLai;
+  $("nut-tam").textContent = dungLai ? "Chạy tiếp" : "Tạm dừng";
+  if (!dungLai) dem = nhipHienTai();
+});
+$("bang").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr.bam"); if (tr) moChiTiet(tr);
+});
+$("bang").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const tr = e.target.closest("tr.bam"); if (tr) { e.preventDefault(); moChiTiet(tr); }
+});
+
+setInterval(() => {
+  if (dungLai) { $("dem").textContent = "đã tạm dừng"; return; }
+  if (--dem <= 0) { tai(); return; }
+  // Nếu vừa có lần chạy bắt đầu thì rút ngắn phần đếm còn lại ngay, không đợi
+  // hết vòng cũ rồi mới chuyển nhịp.
+  const n = nhipHienTai();
+  if (dem > n) dem = n;
+  $("dem").textContent = tenNhip() + " · " + dem + "s";
+}, 1000);
+
+tai();
+</script>
+</body>
+</html>

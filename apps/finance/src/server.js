@@ -390,6 +390,10 @@ app.get(`${BASE}/api/bieu-do`, guard, doc('xem_bieu_do',
 app.get(`${BASE}/api/van-hanh`, guard, doc('xem_so_lieu_van_hanh',
   (req) => q.opsSummary({ canSeeIndividualPay: req.user.role !== 'viewer' })));
 
+// Kế toán quan sát hoa hồng PG/SUP. Chỉ đọc: két không có đường ghi nào sang
+// marketing, và quy trình duyệt cũng không cần kế toán ký.
+app.get(`${BASE}/api/hoa-hong`, guard, doc('xem_hoa_hong_pg', () => q.hoaHong()));
+
 /* ── Danh mục ──────────────────────────────────────────────────────────── */
 
 app.get(`${BASE}/api/tai-khoan`, guard, async (req) => q.accounts(req.query.tim));

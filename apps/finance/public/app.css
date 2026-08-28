@@ -677,3 +677,12 @@ tfoot td {
 @media (max-width: 1100px) {
   .tk-than .luoi-4 { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
 }
+
+/* Tiêu đề mục bên trong một màn. Nhỏ hơn tiêu đề trang, đủ để tách hai bảng
+ * đứng cạnh nhau mà không làm chúng trông như hai màn riêng. */
+.muc {
+  margin: 22px 0 10px;
+  font-size: 14px; font-weight: 660; letter-spacing: -.01em;
+  color: var(--muc);
+}
+.muc:first-of-type { margin-top: 14px; }

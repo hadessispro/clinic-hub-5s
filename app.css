@@ -7013,54 +7013,89 @@ body.dialog-open {
 
 /* ── Duyệt hoa hồng PG / SUP ──────────────────────────────────────────────
  *
- * Trắng làm nền, xanh dương cho chữ nổi, vàng cho phần cần nhìn kỹ. Ba nhãn
- * "suy ra" / "lùi về lúc bấm" / cảnh báo đều dùng vàng, vì chúng nói cùng một
- * điều: con số này đúng, nhưng nó dựa trên suy đoán chứ không dựa trên khai
- * báo, và người ký cần biết trước khi ký.
+ * Dùng token và thành phần sẵn có của ứng dụng: .panel, .metric-card,
+ * .status-pill, tông xanh ngọc --teal. Bản đầu tôi tự đặt một bảng màu xanh
+ * dương riêng, và kết quả là màn này trông như dán thêm vào chứ không thuộc
+ * về phần mềm. Một màn hình lạc tông làm người dùng nghi ngờ nó, kể cả khi số
+ * liệu bên trong đúng.
+ *
+ * Chỉ định nghĩa những gì thật sự chưa có: hàng bộ lọc, dòng bị loại, và nhãn
+ * "suy ra". Còn lại dùng chung.
  */
-.hh-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 16px; }
-.hh-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
-.hh-note { font-size: 13px; color: var(--text-muted, #5b6b85); }
 
-.hh-tomtat { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0; }
-.hh-tomtat > div {
-  flex: 1 1 150px; padding: 14px 16px; border-radius: 10px;
-  background: #f5f8fd; border: 1px solid #dde5f1;
+/* Hàng bộ lọc. Cùng khuôn với .tsm-filters của màn Quản lý Telesale để hai
+ * màn thao tác giống nhau, thay vì mỗi màn một kiểu lọc. */
+.hh-loc {
+  display: grid; align-items: end; gap: 10px; margin: 14px 0;
+  grid-template-columns: minmax(190px, 1.3fr) repeat(4, minmax(130px, 1fr)) auto;
 }
-.hh-tomtat span { display: block; font-size: 20px; font-weight: 700; color: #0f3c8c; }
-.hh-tomtat small { display: block; font-size: 12px; color: #5b6b85; margin-top: 2px; }
-
-.hh-so { text-align: right; font-variant-numeric: tabular-nums; }
-
-.hh-pill {
-  display: inline-block; white-space: nowrap; font-size: 12px; font-weight: 700;
-  padding: 3px 10px; border-radius: 999px; border: 1px solid transparent;
+.hh-loc label span {
+  display: block; margin-bottom: 6px;
+  color: #55716b; font-size: .72rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .04em;
 }
-.hh-pill.is-cho    { color: #b06b00; background: #fff3e0; border-color: #f0d089; }
-.hh-pill.is-duyet  { color: #12894b; background: #e7f6ee; border-color: #b8e2cb; }
-.hh-pill.is-chot   { color: #0f3c8c; background: #e8f0fe; border-color: #b9cdf2; }
-.hh-pill.is-tuchoi { color: #c62828; background: #fdeaea; border-color: #f2c4c4; }
+.hh-loc input, .hh-loc select {
+  width: 100%; height: 44px; padding: 0 12px;
+  border: 1px solid #cbdcd8; border-radius: 11px;
+  background: #fff; color: #17312e; font: inherit;
+}
+.hh-loc .secondary-button, .hh-loc .primary-button { height: 44px; white-space: nowrap; }
+.hh-loc-ket { grid-column: 1 / -1; margin: -4px 0 0; color: var(--muted); font-size: .84rem; }
 
+/* Bảng. Cùng khuôn .tsm-table. */
+.hh-bang-wrap { overflow: auto; border: 1px solid #d7e2df; border-radius: 13px; }
+.hh-bang { width: 100%; min-width: 940px; border-collapse: collapse; }
+.hh-bang th {
+  padding: 12px; background: #f3f8f6; color: #4b6560;
+  font-size: .72rem; text-align: left; text-transform: uppercase; letter-spacing: .03em;
+}
+.hh-bang td {
+  padding: 11px 12px; border-top: 1px solid #e1e9e7;
+  color: #233c38; font-size: .82rem; vertical-align: middle;
+}
+.hh-bang td strong, .hh-bang td small { display: block; }
+.hh-bang td small { margin-top: 2px; color: #758782; font-size: .7rem; }
+.hh-so { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Dòng bị loại vẫn phải đọc được. Làm mờ đi thì nó thành phụ lục, mà đây
+ * chính là thứ SUP cần soi kỹ nhất khi đối chiếu. Chỉ đánh dấu bằng một vạch
+ * bên trái, không giảm độ tương phản của chữ. */
+.hh-bang tr.hh-loai td:first-child { box-shadow: inset 3px 0 0 var(--coral); }
+
+/* Vàng cho mọi thứ dựa trên suy đoán: SUP suy ra, ngày lùi về lúc bấm. Chúng
+ * nói cùng một điều — con số này đúng, nhưng nguồn của nó không phải khai báo
+ * trực tiếp, và người ký cần biết trước khi ký. */
+.hh-suyra {
+  display: inline-block; margin-left: 6px;
+  padding: 1px 7px; border-radius: 5px;
+  border: 1px solid rgba(231, 167, 45, .45);
+  background: #fff5d8; color: #8c5b06;
+  font-size: .68rem; font-weight: 800; white-space: nowrap;
+}
+.hh-lydo { color: #97302e; font-size: .78rem; }
 .hh-canhbao {
-  margin: 14px 0; padding: 13px 16px; border-radius: 9px;
-  background: #fff6dd; border: 1px solid #f0d089; color: #7a5600; font-size: 13.5px;
+  margin: 14px 0; padding: 13px 16px; border-radius: 11px;
+  border: 1px solid rgba(231, 167, 45, .45);
+  background: #fff8e6; color: #7a5600; font-size: .86rem;
 }
 .hh-canhbao strong { display: block; margin-bottom: 6px; }
 .hh-canhbao ul { margin: 0; padding-left: 18px; }
+.hh-canhbao li + li { margin-top: 3px; }
 
-.hh-suyra {
-  display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700;
-  padding: 1px 7px; border-radius: 4px;
-  color: #7a5600; background: #fff6dd; border: 1px solid #f0d089;
+.hh-nut { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 4px; }
+.hh-chuoi {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 4px 0 14px; color: var(--muted); font-size: .82rem;
 }
-.hh-cho { font-size: 12px; color: #b06b00; }
-.hh-loai td { opacity: .62; }
+.hh-chuoi i { color: #b3c4bf; font-style: normal; }
+.hh-chuoi .xong { color: var(--teal-dark); font-weight: 700; }
 
-.hh-nut { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
-
-.hh-nhatky { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.hh-nhatky { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .hh-nhatky li {
-  padding-left: 12px; border-left: 3px solid #c3d0e4; font-size: 13.5px;
+  padding: 9px 12px; border-left: 3px solid var(--teal);
+  border-radius: 0 9px 9px 0; background: var(--surface-soft); font-size: .84rem;
 }
-.hh-nhatky li small { display: block; color: #5b6b85; margin-top: 2px; }
-.hh-lydo { font-size: 12.5px; color: #8c1f1f; }
+.hh-nhatky li small { display: block; margin-top: 2px; color: var(--muted); }
+
+@media (max-width: 1050px) { .hh-loc { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px)  { .hh-loc { grid-template-columns: 1fr; } }

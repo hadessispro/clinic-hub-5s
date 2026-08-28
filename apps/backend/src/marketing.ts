@@ -1632,9 +1632,12 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       { luc: 'admin_luc', boi: 'admin_boi' }, 'Admin xác nhận');
   }
 
+  // Chốt là bước cuối và nằm hoàn toàn bên marketing. Kế toán KHÔNG duyệt —
+  // họ quan sát luồng này qua két kế toán để cuối kỳ còn giải thích được con
+  // số, chứ không thêm một cửa nữa vào quy trình.
   hoaHongChot(user: AuthUser, id: string) {
     return this.hoaHongChuyen(user, id, 'da_chot', adminRoles,
-      { luc: 'chot_luc', boi: 'chot_boi' }, 'Chốt và đẩy sang kế toán');
+      { luc: 'chot_luc', boi: 'chot_boi' }, 'Chốt · kế toán thấy khoản chi này');
   }
 
   hoaHongTuChoi(user: AuthUser, id: string, lyDo: string) {
