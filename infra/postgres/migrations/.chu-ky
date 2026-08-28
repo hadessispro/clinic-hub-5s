@@ -31,3 +31,5 @@ b4a32500ee93dfc8  026-backup-outbox-thu-chet.sql
 5603fdbc43973310  027-so-du-dau-ky.sql
 abdf6ae80c7a480d  028-nhat-ky-co-khoan-muc.sql
 e7e4e838ef935741  029-cham-cong-hai-trang-thai.sql
+b90f0a6e935f8917  030-hoa-hong-pg-sup.sql
+58cf0f4319dc8d06  031-hop-nhat-leads-check.sql

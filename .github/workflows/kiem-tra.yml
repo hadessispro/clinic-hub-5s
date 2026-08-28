@@ -202,6 +202,17 @@ jobs:
         # loại sai một, rồi đòi bộ kiểm đỏ đúng chỗ, rồi hoàn tác.
         run: bash infra/postgres/kiem-thu/thu-nguoc.sh
 
+      - name: Chốt chặn hoa hồng PG/SUP
+        # Tiền thật trả cho người thật, nên tám chốt chặn của nó đều bị cố tình
+        # vi phạm ở đây và phải bị database từ chối: nhảy bước duyệt, một người
+        # ký cả hai vòng, trả trùng một lead qua hai đợt, sửa số sau khi chốt.
+        #
+        # Một ràng buộc chưa từng bị thử là ràng buộc không ai biết còn sống
+        # hay không. Nó có thể đã chết vì một migration sau đó, và mọi thứ vẫn
+        # xanh cho tới ngày trả nhầm tiền.
+        run: psql -v ON_ERROR_STOP=1 -f infra/postgres/kiem-thu/hoa-hong-thu-nguoc.sql
+
+
 
       - name: Bất biến của lược đồ
         # Chạy SAU phần dữ liệu, không phải trước.

@@ -95,7 +95,11 @@ for f in "$MIG"/*.sql; do
 
   bat() {
     local mau="$1" giai_thich="$2" dong
-    dong="$(printf '%s\n' "$than" | grep -inE "$mau" | head -3)"
+    # Bỏ qua dòng có where trước khi soi. Viết [^;]* không thôi thì mẫu nuốt
+    # luôn cả mệnh đề where và báo động một câu lệnh hoàn toàn đúng phạm vi.
+    # Đã xảy ra thật với migration 030 ngày 28/08/2026: một câu update có
+    # where rõ ràng bị bắt như thể nó ghi đè cả bảng.
+    dong="$(printf '%s\n' "$than" | grep -ivE "\bwhere\b" | grep -inE "$mau" | head -3)"
     if [ -n "$dong" ]; then
       do_ "$ten · $giai_thich"
       printf '%s\n' "$dong" | sed 's/^/       /'
