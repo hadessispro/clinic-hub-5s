@@ -180,11 +180,17 @@ export function downloadText(filename, content, mime = 'text/plain') {
   URL.revokeObjectURL(url);
 }
 
-export function attendanceStatusLabel(status) {
-  if (status === 'valid') return 'Hợp lệ';
-  if (status === 'late') return 'Đi muộn';
+/**
+ * Chấm công chỉ còn hai trạng thái, và cả hai đều là xác nhận chứ không phải
+ * phán xét. Trễ muộn được đối chiếu ở bước đồng bộ Google Sheet, nơi có đủ
+ * lịch làm việc thật để so, chứ không đoán từ ca mặc định.
+ *
+ * Vẫn giữ nhãn "Ngoài bán kính" vì đó không phải phán xét mà là sự thật đo
+ * được: bản ghi đó bị hệ thống từ chối ngay tại chỗ.
+ */
+export function attendanceStatusLabel(status, recordType) {
   if (status === 'outside') return 'Ngoài bán kính';
-  return 'Cần xác minh';
+  return recordType === 'checkout' ? 'Đã xác nhận ra ca' : 'Đã xác nhận vào ca';
 }
 
 /* ── Department / Shift lookups ── */

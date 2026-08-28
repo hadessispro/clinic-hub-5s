@@ -61,20 +61,25 @@ function currentEmployeeFallback(state) {
   };
 }
 
+/*
+ * Chấm công chỉ còn hai trạng thái: đã xác nhận vào ca, và đã xác nhận ra ca.
+ *
+ * Nhãn lấy từ LOẠI bản ghi, không từ một phán xét trễ hay muộn. Phán xét đó
+ * đã bị bỏ vì nó dựa trên ca làm mà backend đoán ra, và ca đoán ra không phải
+ * lúc nào cũng là ca người dùng nhìn thấy trên màn hình. Một nhãn "Đi muộn"
+ * sai làm người bị gắn mất lòng tin vào cả hệ thống.
+ *
+ * Việc đối chiếu trễ muộn chuyển sang bước đồng bộ Google Sheet, nơi có đủ
+ * lịch làm việc thật. Giờ chấm và ca làm vẫn được ghi đủ ở đây.
+ */
 function attendanceTone(record) {
   if (record?.isOfflinePending) return 'warn';
-  if (record?.status === 'valid') return 'good';
-  if (record?.status === 'late') return 'warn';
-  if (record?.status === 'early_leave') return 'warn';
-  return 'bad';
+  return 'good';
 }
 
 function attendanceLabel(record) {
   if (record?.isOfflinePending) return 'Chờ đồng bộ';
-  if (record?.status === 'late') return 'Đi muộn';
-  if (record?.status === 'early_leave') return 'Về sớm';
-  if (record?.status === 'valid') return 'Đã ghi nhận';
-  return 'Cần kiểm tra';
+  return record?.record_type === 'checkout' ? 'Đã xác nhận ra ca' : 'Đã xác nhận vào ca';
 }
 
 function recordTypeLabel(record) {
@@ -334,7 +339,7 @@ export async function renderView(state) {
     if (attendanceDepartmentFilter !== 'all' && recordEmployee?.department !== attendanceDepartmentFilter) return false;
     if (attendanceBranchFilter !== 'all' && recordEmployee?.branchId !== attendanceBranchFilter) return false;
     if (attendanceTypeFilter !== 'all' && record.type !== attendanceTypeFilter) return false;
-    if (attendanceStatusFilter !== 'all' && record.status !== attendanceStatusFilter) return false;
+    if (attendanceStatusFilter !== 'all' && record.record_type !== attendanceStatusFilter) return false;
     if (attendanceDateFilter && String(record.date || record.time || '').slice(0, 10) !== attendanceDateFilter) return false;
     return !attendanceSearch || smartMatch([
       recordEmployee?.name,
@@ -426,7 +431,7 @@ export async function renderView(state) {
           <label>Chi nhánh<select id="attendanceBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${attendanceBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${attendanceBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
           <label>Phòng ban<select id="attendanceDepartmentFilter"><option value="all">Tất cả phòng ban được xem</option>${[...new Set(scopedEmployees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${attendanceDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
           <label>Loại<select id="attendanceTypeFilter"><option value="all">Vào và ra</option><option value="checkin" ${attendanceTypeFilter === 'checkin' ? 'selected' : ''}>Check-in</option><option value="checkout" ${attendanceTypeFilter === 'checkout' ? 'selected' : ''}>Check-out</option></select></label>
-          <label>Trạng thái<select id="attendanceStatusFilter"><option value="all">Tất cả trạng thái</option><option value="valid" ${attendanceStatusFilter === 'valid' ? 'selected' : ''}>Đã ghi nhận</option><option value="late" ${attendanceStatusFilter === 'late' ? 'selected' : ''}>Đi muộn</option><option value="early_leave" ${attendanceStatusFilter === 'early_leave' ? 'selected' : ''}>Về sớm</option></select></label>
+          <label>Loại<select id="attendanceStatusFilter"><option value="all">Vào ca và ra ca</option><option value="checkin" ${attendanceStatusFilter === 'checkin' ? 'selected' : ''}>Chỉ vào ca</option><option value="checkout" ${attendanceStatusFilter === 'checkout' ? 'selected' : ''}>Chỉ ra ca</option></select></label>
           <label>Ngày<input type="date" id="attendanceDateFilter" value="${escapeHTML(attendanceDateFilter)}"></label>
           <button class="secondary-button" type="button" id="clearAttendanceFilters">Xóa bộ lọc</button>
         </div>` : ''}

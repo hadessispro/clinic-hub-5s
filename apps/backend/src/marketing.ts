@@ -1262,15 +1262,16 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (accuracy > shift.max_accuracy_m) throw new BadRequestException(`Sai số GPS ±${accuracy} m vượt mức ${shift.max_accuracy_m} m.`);
     const distance = distanceMeters(lat, lng, Number(shift.latitude), Number(shift.longitude));
     if (distance > shift.allowed_radius_m) throw new BadRequestException(`Bạn đang cách vị trí làm việc ${distance} m, ngoài bán kính ${shift.allowed_radius_m} m.`);
-    const grace = 5 * 60;
     const canCheckin = shift.status === 'scheduled' || (offline && shift.status === 'expired');
     if (type === 'checkin' && !canCheckin) throw new BadRequestException('Ca này đã check-in hoặc không còn hiệu lực.');
     if (type === 'checkout' && shift.status !== 'checked_in') throw new BadRequestException('Bạn cần check-in trước khi check-out.');
     if (type === 'checkin' && eventTime < seconds(shift.start_time) - 3600) throw new BadRequestException('Chưa đến khung giờ chấm công. Bạn chỉ có thể check-in sớm tối đa 60 phút.');
     if (type === 'checkin' && eventTime > seconds(shift.end_time)) throw new BadRequestException('Ca đã quá giờ kết thúc và không còn nhận check-in.');
-    const status = type === 'checkin'
-      ? (eventTime > seconds(shift.start_time) + grace ? 'late' : 'valid')
-      : (eventTime < seconds(shift.end_time) - grace ? 'early_leave' : 'valid');
+    // Chấm công PG cũng chỉ còn hai việc: xác nhận vào ca và xác nhận ra ca.
+    // Xem giải thích đầy đủ ở đầu hàm classify cũ trong attendance.ts.
+    // Giờ chấm và ca làm vẫn ghi đủ, việc đối chiếu trễ muộn chuyển sang bước
+    // đồng bộ Google Sheet.
+    const status = 'valid';
     const result = await this.infrastructure.postgres.query(
       `insert into marketing.pg_attendance(assignment_id,pg_code,record_type,latitude,longitude,accuracy_m,distance_m,status,recorded_at,captured_at,captured_offline,client_event_id,synced_at)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11,now())

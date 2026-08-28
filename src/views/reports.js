@@ -33,6 +33,8 @@ export async function renderView(state) {
   cachedTasks = tasks;
 
   const attendanceByStatus = countBy(attendance, "status");
+  // Chấm công chỉ còn hai loại. Trễ muộn đối chiếu ở bước Google Sheet.
+  const attendanceByType = countBy(attendance, "record_type");
   const taskByDept = DEPARTMENTS.map((dept) => {
     const deptTasks = tasks.filter((task) => task.department === dept.id);
     const progress = deptTasks.length
@@ -48,8 +50,8 @@ export async function renderView(state) {
         <h3>Cấu hình vị trí phòng khám, ghi chú quản lý và xem nhanh rủi ro vận hành.</h3>
       </div>
       <div class="pill-row">
-        ${statusPill(`${attendanceByStatus.valid || 0} hợp lệ`, "good")}
-        ${statusPill(`${attendanceByStatus.late || 0} đi muộn`, "warn")}
+        ${statusPill(`${attendanceByType.checkin || 0} lượt vào ca`, "good")}
+        ${statusPill(`${attendanceByType.checkout || 0} lượt ra ca`, "good")}
         ${statusPill(`${attendanceByStatus.outside || 0} ngoài bán kính`, "bad")}
       </div>
     </div>

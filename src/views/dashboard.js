@@ -227,9 +227,10 @@ function renderTimeline(records, employees) {
     .slice(0, 6)
     .map(record => {
       const employee = employees.find(e => e.id === record.employee);
-      const label = attendanceStatusLabel(record.status);
-      const dotColor = record.status === 'valid' ? '' : record.status === 'late' ? 'warn' : 'bad';
-      const tone = record.status === 'valid' ? 'good' : record.status === 'late' ? 'warn' : 'bad';
+      const label = attendanceStatusLabel(record.status, record.record_type);
+      const ngoaiVung = record.status === 'outside';
+      const dotColor = ngoaiVung ? 'bad' : '';
+      const tone = ngoaiVung ? 'bad' : 'good';
       
       return `
         <div class="timeline-item">

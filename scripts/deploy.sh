@@ -51,6 +51,12 @@
 
 set -euo pipefail
 
+# Bật globstar. Không bật thì mẫu src/**/*.js chỉ khớp file trong thư mục con,
+# và mười file ở gốc src/ như utils.js hay main.js không bao giờ được so sánh
+# hay triển khai. Chúng vẫn nằm im trên VPS ở bản cũ trong khi báo cáo nói
+# "148 file giống hệt", tức là im lặng bỏ sót chứ không báo lỗi.
+shopt -s globstar nullglob
+
 VPS_HOST="${VPS_HOST:-root@31.97.191.177}"
 VPS_KEY="${VPS_KEY:-/c/Users/thaibao/Documents/Codex/2026-08-13/https-github-com-hadessispro-clinic-hub/work/clinic-hub-vps-ed25519-v2}"
 VPS_DIR="/opt/clinic-hub-5s"
@@ -76,6 +82,7 @@ PHAM_VI=(
   "infra/postgres/migrations/*.sql|migrate"
   "deploy/Caddyfile|web"
   "docker-compose.yml|"
+  "src/*.js|web"
   "src/**/*.js|web"
   "public/*|web"
   "index.html|web"
@@ -266,8 +273,8 @@ bao_cao_so_sanh() {
     sed 's/^/    /' "$TAM/troi.txt"
     echo
     do_ "  Kéo bản trên VPS về xem trước rồi hãy quyết:"
-    while read -r f; do
-      echo "    scp -i \"\$VPS_KEY\" $VPS_HOST:$VPS_DIR/$f  /tmp/$(basename "$f").vps"
+    while IFS= read -r f; do
+      [ -n "$f" ] && echo "    scp -i \"\$VPS_KEY\" $VPS_HOST:$VPS_DIR/$f  /tmp/$(basename "$f").vps"
     done < "$TAM/troi.txt"
   fi
 }
@@ -291,6 +298,14 @@ lenh_kiem_tra() {
   chup_so_lieu | sed 's/^/    /'
 }
 
+# Đếm số migration đã áp trên VPS. Dùng ở hai chỗ nên tách ra hàm: một lần
+# ở bước quyết định có thoát sớm hay không, một lần ở bước 5.
+dem_migration_da_ap() {
+    ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
+        sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
+        < /dev/null" 2>/dev/null | tr -d '[:space:]'
+  }
+
 lenh_chay() {
   xanh "═══ TRIỂN KHAI · mã lần chạy $MA_LAN ═══"
   chuan_bi
@@ -304,13 +319,33 @@ lenh_chay() {
     exit 2
   fi
 
+  # Không có file nào đổi VẪN có thể còn migration chưa áp: nó đã nằm sẵn
+  # trên VPS từ một lần chạy trước bị dở dang. Kiểm bất biến trước khi thoát,
+  # nếu không thì lược đồ database đứng lại mãi mà không ai biết.
   if [ ! -s "$TAM/doi.txt" ] && [ ! -s "$TAM/moi.txt" ]; then
-    luc "Không có gì để triển khai. VPS đã khớp với bản cục bộ."
-    exit 0
+    local tren_dia_ da_ap_
+    tren_dia_="$(ls infra/postgres/migrations/*.sql 2>/dev/null | wc -l | tr -d '[:space:]')"
+    da_ap_="$(dem_migration_da_ap)"
+    if [ -n "$da_ap_" ] && [ "$tren_dia_" -le "$da_ap_" ]; then
+      luc "Không có gì để triển khai. VPS đã khớp, và mọi migration đã áp."
+      exit 0
+    fi
+    vang "File đã khớp, nhưng còn $((tren_dia_ - ${da_ap_:-0})) migration chưa áp. Chạy tiếp."
   fi
 
   local dv
   dv="$(cat "$TAM/doi.txt" "$TAM/moi.txt" 2>/dev/null | while read -r f; do dich_vu_cua "$f"; done | tr ',' '\n' | sort -u | tr '\n' ' ')"
+
+  # Chụp danh sách migration NGAY BÂY GIỜ.
+  #
+  # Bước 4 chép file xong sẽ so lại mã băm để chắc chắn file tới nơi đúng, và
+  # lần so đó ghi đè chính doi.txt và moi.txt. Sau khi chép thành công thì mọi
+  # file đều khớp nên hai danh sách rỗng, và bước 5 kết luận "không có
+  # migration nào". Lỗi này đã xảy ra thật ngày 28/08/2026: migration 029 bị
+  # bỏ qua trong im lặng, deploy vẫn báo xong, mà lược đồ thì chưa đổi.
+  local mig_moi mig_sua
+  mig_moi="$(grep 'migrations/' "$TAM/moi.txt" 2>/dev/null || true)"
+  mig_sua="$(grep 'migrations/' "$TAM/doi.txt" 2>/dev/null || true)"
 
   echo
   xanh "1/7 · Sao lưu database"
@@ -325,22 +360,54 @@ lenh_chay() {
 
   echo
   xanh "3/7 · Lưu bản hiện tại của từng file sắp bị ghi đè"
-  ssh_ "mkdir -p $VPS_DIR/.deploy-backups/$MA_LAN/files $VPS_DIR/.deploy-state"
-  while read -r f; do
-    ssh_ "cd $VPS_DIR && mkdir -p .deploy-backups/$MA_LAN/files/\$(dirname '$f') && cp -p '$f' .deploy-backups/$MA_LAN/files/'$f'"
-  done < "$TAM/doi.txt"
+  ssh_ "mkdir -p $VPS_DIR/.deploy-backups/$MA_LAN/files $VPS_DIR/.deploy-state" < /dev/null
+
+  # Gửi cả danh sách sang VPS làm một lần, để chính nó tự sao lưu từng file.
+  #
+  # KHÔNG lặp ssh cho từng file. ssh đọc stdin, nên gọi nó bên trong vòng lặp
+  # while read là nó nuốt luôn phần còn lại của danh sách: vòng đầu chạy, các
+  # vòng sau không bao giờ tới. Lỗi này đã xảy ra thật ngày 28/08/2026, chỉ 1
+  # trong 9 file được chép, và lưới an toàn bắt được nhờ bước so mã băm lại
+  # sau khi chép. Một lần gọi cũng nhanh hơn nhiều so với chín lần bắt tay SSH.
+  ssh_ "cd $VPS_DIR && while read -r f; do
+          [ -n \"\$f\" ] || continue
+          mkdir -p \".deploy-backups/$MA_LAN/files/\$(dirname \"\$f\")\"
+          cp -p \"\$f\" \".deploy-backups/$MA_LAN/files/\$f\"
+        done" < "$TAM/doi.txt"
   echo "$dv" | ssh_ "cat > $VPS_DIR/.deploy-backups/$MA_LAN/dich-vu.txt"
   echo "  ✓ đã lưu $(wc -l < "$TAM/doi.txt") file vào .deploy-backups/$MA_LAN"
 
   echo
   xanh "4/7 · Chép file lên"
-  local n=0
-  while read -r f; do
-    ssh_ "mkdir -p $VPS_DIR/\$(dirname '$f')"
-    scp_ "$f" "$VPS_HOST:$VPS_DIR/$f"
-    n=$((n + 1))
-  done < <(cat "$TAM/doi.txt" "$TAM/moi.txt")
-  echo "  ✓ đã chép $n file"
+  # Đọc danh sách vào mảng TRƯỚC khi gọi ssh hay scp. Cùng lý do với bước 3:
+  # ssh đọc stdin và nuốt mất phần còn lại của danh sách nếu nó được gọi bên
+  # trong một vòng lặp đang đọc từ file.
+  local -a ds_chep=()
+  local f
+  while IFS= read -r f; do [ -n "$f" ] && ds_chep+=("$f"); done \
+    < <(cat "$TAM/doi.txt" "$TAM/moi.txt")
+
+
+  # Danh sách rỗng là trường hợp thật: lần chạy này chỉ còn migration chưa áp,
+  # không file nào đổi. Không chốt thì printf trên mảng rỗng đẩy một dòng trống
+  # sang VPS, mkdir "" báo lỗi, và set -e kết thúc script giữa chừng.
+  if [ "${#ds_chep[@]}" -eq 0 ]; then
+    echo "  không có file nào cần chép"
+  else
+    # Tạo hết thư mục cần thiết bằng một lần gọi.
+    printf '%s\n' "${ds_chep[@]}" \
+      | ssh_ "cd $VPS_DIR && while read -r f; do [ -n \"\$f\" ] && mkdir -p \"\$(dirname \"\$f\")\"; done"
+
+    local n=0
+    for f in "${ds_chep[@]}"; do
+      scp_ "$f" "$VPS_HOST:$VPS_DIR/$f"
+      n=$((n + 1))
+    done
+    echo "  ✓ đã chép $n trên ${#ds_chep[@]} file"
+    if [ "$n" != "${#ds_chep[@]}" ]; then
+      do_ "Chép thiếu file. Khôi phục."; khoi_phuc "$MA_LAN"; exit 1
+    fi
+  fi
 
   # Xác nhận từng file đã tới nơi đúng như bản cục bộ. Chép xong mà không kiểm
   # thì vẫn là tin vào may mắn.
@@ -355,31 +422,56 @@ lenh_chay() {
 
   echo
   xanh "5/7 · Migration"
-  local mig_moi mig_sua
-  mig_moi="$(grep 'migrations/' "$TAM/moi.txt" 2>/dev/null || true)"
-  mig_sua="$(grep 'migrations/' "$TAM/doi.txt" 2>/dev/null || true)"
 
   if [ -n "$mig_sua" ]; then
     # Service migrate ghi tên file đã áp vào app.schema_migrations rồi bỏ qua
     # những file đã có tên trong đó. Nên SỬA một migration đã chạy thì nó
     # KHÔNG chạy lại: database giữ nguyên trạng thái cũ trong khi file trên
-    # đĩa nói một chuyện khác. Đây là loại lệch âm thầm khó tìm nhất, nên
-    # phải nói ra ngay lúc nó xảy ra.
+    # đĩa nói một chuyện khác. Đây là loại lệch âm thầm khó tìm nhất.
     vang "    Có migration đã từng chạy nay bị sửa nội dung:"
     echo "$mig_sua" | sed 's/^/      /'
     vang "    Những file này KHÔNG được áp lại. Muốn thay đổi có hiệu lực"
     vang "    thì viết một migration MỚI với số thứ tự lớn hơn."
   fi
 
-  if [ -n "$mig_moi" ]; then
-    echo "    Migration mới:"; echo "$mig_moi" | sed 's/^/      /'
-    ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps build migrate < /dev/null >/dev/null 2>&1 && docker compose --env-file .env.vps run --rm --no-deps migrate < /dev/null 2>&1 | grep -iE 'applied|error' | sed 's/^/    /'" \
-      || { do_ "Migration hỏng. Database đã sao lưu ở $file_sl. Khôi phục file nguồn."; khoi_phuc "$MA_LAN"; exit 1; }
+  # Quyết định chạy migration dựa trên BẤT BIẾN, không dựa trên danh sách
+  # file thay đổi của lần triển khai này.
+  #
+  # Bất biến: mọi file trong thư mục migrations đều phải có mặt trong
+  # app.schema_migrations. Dựa vào danh sách file thì hỏng ở hai trường hợp
+  # thật đã gặp: migration đã nằm sẵn trên VPS từ lần chạy trước mà chưa áp,
+  # và migration bị bước so mã băm lần hai xóa khỏi danh sách sau khi chép
+  # thành công. Cả hai lần đều báo "không có migration nào" rồi đi tiếp.
+  local tren_dia da_ap
+  tren_dia="$(ls infra/postgres/migrations/*.sql 2>/dev/null | wc -l | tr -d '[:space:]')"
+  da_ap="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
+      sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
+      < /dev/null" 2>/dev/null | tr -d '[:space:]')"
+  echo "    trên đĩa $tren_dia · đã áp ${da_ap:-?}"
+
+  if [ -n "$da_ap" ] && [ "$tren_dia" -gt "$da_ap" ]; then
+    echo "    còn $((tren_dia - da_ap)) migration chưa áp, đang chạy…"
+    ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps build migrate < /dev/null >/dev/null 2>&1 \
+          && docker compose --env-file .env.vps run --rm --no-deps migrate < /dev/null 2>&1 \
+             | grep -iE 'applied|error' | sed 's/^/    /'" \
+      || { do_ "Migration hỏng. Database đã sao lưu ở $file_sl."; khoi_phuc "$MA_LAN"; exit 1; }
+
+    local sau
+    sau="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
+        sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
+        < /dev/null" 2>/dev/null | tr -d '[:space:]')"
+    echo "    sau khi chạy: đã áp $sau trên $tren_dia"
+    if [ "${sau:-0}" != "$tren_dia" ]; then
+      do_ "Vẫn còn migration chưa áp sau khi chạy. Khôi phục."
+      khoi_phuc "$MA_LAN"; exit 1
+    fi
+  elif [ -z "$da_ap" ]; then
+    do_ "    Không đọc được app.schema_migrations. Dừng để khỏi đoán mò."
+    khoi_phuc "$MA_LAN"; exit 1
   else
-    echo "    không có migration mới trong lần này"
+    echo "    mọi migration trên đĩa đều đã được áp"
   fi
 
-  echo
   # migrate là container chạy một lần rồi thoát, bước 5 đã dựng và chạy nó.
   # Đưa nó vào "up -d" ở đây là chạy migration lần thứ hai không lý do.
   dv="$(echo "$dv" | tr ' ' '

@@ -17,10 +17,13 @@ export async function exportRichAnalyticsReport() {
   const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
 
   // Calculate Key Metrics
+  // Chấm công chỉ còn hai loại: vào ca và ra ca. Việc đối chiếu trễ muộn
+  // chuyển sang bước đồng bộ Google Sheet, nơi có đủ lịch làm việc thật.
   const totalCheckins = attendance.length;
-  const validCheckins = attendance.filter(a => a.status === 'valid' || !a.status).length;
-  const lateCheckins = attendance.filter(a => a.status === 'late').length;
+  const soVaoCa = attendance.filter(a => a.record_type !== 'checkout').length;
+  const soRaCa = attendance.filter(a => a.record_type === 'checkout').length;
   const outsideRadius = attendance.filter(a => a.status === 'outside').length;
+  const validCheckins = totalCheckins - outsideRadius;
   const attendanceRate = totalCheckins ? Math.round((validCheckins / totalCheckins) * 100) : 100;
 
   const totalLeaves = leaveRequests.length;
@@ -93,9 +96,9 @@ export async function exportRichAnalyticsReport() {
         <div class="kpi-sub">${validCheckins} / ${totalCheckins} lượt hợp lệ</div>
       </div>
       <div class="kpi-card highlight-red">
-        <div class="kpi-title">Đi muộn / Ngoài vị trí</div>
-        <div class="kpi-value">${lateCheckins + outsideRadius}</div>
-        <div class="kpi-sub">${lateCheckins} muộn · ${outsideRadius} ngoài bán kính</div>
+        <div class="kpi-title">Ngoài vị trí</div>
+        <div class="kpi-value">${outsideRadius}</div>
+        <div class="kpi-sub">${soVaoCa} lượt vào ca · ${soRaCa} lượt ra ca</div>
       </div>
       <div class="kpi-card highlight-teal">
         <div class="kpi-title">Đơn từ Đã Duyệt</div>
@@ -125,8 +128,10 @@ export async function exportRichAnalyticsReport() {
       <tbody>
         ${attendance.length ? attendance.map(item => {
           const emp = empMap[item.employee] || empMap[item.employeeCode] || { name: item.employeeName || item.employee || 'Nhân viên', department: '' };
-          const statusClass = item.status === 'valid' || !item.status ? 'badge-valid' : item.status === 'late' ? 'badge-late' : 'badge-outside';
-          const statusLabel = item.status === 'valid' || !item.status ? '✓ Hợp lệ' : item.status === 'late' ? '⏱ Đi muộn' : '📍 Ngoài bán kính';
+          const ngoaiVung = item.status === 'outside';
+          const statusClass = ngoaiVung ? 'badge-outside' : 'badge-valid';
+          const statusLabel = ngoaiVung ? '📍 Ngoài bán kính'
+            : item.record_type === 'checkout' ? '✓ Đã xác nhận ra ca' : '✓ Đã xác nhận vào ca';
           const photoUrl = item.photoUrl || item.proofUrl || '';
           const gpsLink = item.lat && item.lng ? `https://www.google.com/maps?q=${item.lat},${item.lng}` : null;
           return `

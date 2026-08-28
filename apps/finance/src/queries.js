@@ -274,11 +274,16 @@ async function opsSummary({ canSeeIndividualPay }) {
        group by 1, 2 order by 2 desc, 3 desc`,
     ),
     rows(
+      // KHÔNG lọc theo status. Bộ lọc cũ là where status = 'valid', và nó âm
+      // thầm loại bỏ mọi lượt bị gắn "đi muộn" khỏi số ngày công. Một người
+      // đi muộn vẫn là một ngày công; loại họ ra là tính thiếu công của người
+      // thật. Nhãn trễ muộn nay đã bỏ hẳn, nhưng dữ liệu cũ còn mang nhãn đó
+      // nên bộ lọc phải đi cùng lúc.
       `select pg_code, count(*)::int as so_lan_cham,
+              count(*) filter (where record_type = 'checkin')::int as so_lan_vao_ca,
               count(*) filter (where captured_offline)::int as cham_ngoai_tuyen,
               min(work_date) as tu_ngay, max(work_date) as den_ngay
        from finance_src.pg_attendance
-       where status = 'valid'
        group by 1 order by 2 desc limit 100`,
     ),
     canSeeIndividualPay

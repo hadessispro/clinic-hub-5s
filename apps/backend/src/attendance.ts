@@ -22,11 +22,27 @@ function seconds(value: unknown) {
   return hour * 3600 + minute * 60 + second;
 }
 
-function classify(type: string, recorded: string, shift: JsonMap) {
-  const grace = Math.max(0, Number(process.env.ATTENDANCE_GRACE_MINUTES || 5)) * 60;
-  if (type === 'checkout') return seconds(recorded) < seconds(shift.end_time) - grace ? 'early_leave' : 'valid';
-  return seconds(recorded) > seconds(shift.start_time) + grace ? 'late' : 'valid';
-}
+/**
+ * Chấm công chỉ có hai việc: xác nhận vào ca và xác nhận ra ca.
+ *
+ * Hàm phân loại trễ muộn cũ đã bị bỏ, không phải vì nó viết sai mà vì nó dựa
+ * trên một thứ không đáng tin: ca làm mà nó đem ra so.
+ *
+ * Chuyện đã xảy ra thật ngày 28/08/2026. Nhân viên check-in lúc 07:25, màn
+ * hình ghi rõ "Ca 07:30-17:00", vậy mà bản ghi bị gắn "Đi muộn". Vì backend
+ * lấy shift_code từ bảng phân ca, và khi không có phân ca thì rơi về mặc định
+ * clinic-0800. Ca đem ra so không phải ca người đó nhìn thấy, nên kết luận
+ * trễ hay không trễ là kết luận về một ca khác.
+ *
+ * Sửa cho khớp thì phải sửa cả chuỗi phân ca, và đó là việc khác. Trong khi
+ * đó, một nhãn "Đi muộn" sai làm người bị gắn mất lòng tin vào cả hệ thống,
+ * còn tính công thì vẫn phải làm tay. Nên bỏ nhãn, giữ nguyên dữ liệu thô.
+ *
+ * Giờ chấm, ca làm, khoảng cách, sai số GPS đều được ghi đầy đủ như cũ. Việc
+ * đối chiếu trễ muộn chuyển sang bước đồng bộ Google Sheet, nơi có đủ lịch
+ * làm việc thật để so.
+ */
+const DA_GHI_NHAN = 'valid';
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
   const radians = (number: number) => number * Math.PI / 180;
@@ -117,7 +133,7 @@ export class AttendanceController {
     const payload: JsonMap = {
       id: randomUUID(), client_event_id: eventId, employee_code: user.employeeCode, shift_code: shiftCode,
       record_type: type, work_date: local.date, recorded_at: effectiveAt.toISOString(), lat, lng,
-      distance_m: distance, accuracy_m: accuracy, status: classify(type, local.time, shift), created_by: user.id,
+      distance_m: distance, accuracy_m: accuracy, status: DA_GHI_NHAN, created_by: user.id,
       device_id: String(body.deviceId || '').slice(0, 120) || null, captured_offline: Boolean(body.capturedOffline),
       synced_at: now.toISOString(), note: `[BRANCH:${branchId}]`, created_at: now.toISOString(), updated_at: now.toISOString(),
     };
