@@ -71,6 +71,16 @@ jobs:
           done < <(find . -name '*.mjs' -not -path '*/node_modules/*' 2>/dev/null)
           echo "Đã kiểm $n file"
           exit $loi
+      - name: Menu và quyền phải khớp nhau
+        # Thêm view vào danh sách quyền mà quên thêm vào danh sách menu thì
+        # quyền có cho phép cũng không hiện ra. View vẫn vào được nếu gõ thẳng
+        # đường dẫn nên nó không hỏng theo cách dễ thấy — nó chỉ vô hình.
+        #
+        # Đã xảy ra thật ngày 28/08/2026 với màn Duyệt hoa hồng: cấp quyền cho
+        # sáu vai trò, triển khai lên production, và không ai tìm thấy nó.
+        run: node scripts/kiem-menu.mjs
+
+
 
       - name: Cú pháp mọi script bash
         run: |

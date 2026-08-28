@@ -109,6 +109,10 @@ const NAV_ITEMS = [
     { view: 'pg-workflow', label: 'Điều phối PG', icon: 'ri-route-line' },
     { view: 'pg-attendance', label: 'Chấm công PG', icon: 'ri-time-line' },
     { view: 'gift-inventory', label: 'Kho quà tặng', icon: 'ri-gift-2-line' },
+    // Thêm mục vào ROLE_VIEWS thôi thì CHƯA ĐỦ. getNavForRole lọc NAV_ITEMS
+    // theo danh sách quyền, nên view nào không có mặt ở đây thì quyền có cho
+    // phép cũng không hiện ra menu. Hai danh sách phải khớp nhau.
+    { view: 'hoa-hong', label: 'Duyệt hoa hồng', icon: 'ri-hand-coin-line' },
   ]},
 ];
 
