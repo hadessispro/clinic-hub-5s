@@ -1385,6 +1385,253 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     );
     return { data: result.rows };
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // HOA HỒNG PG / SUP
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Tính tự động → SUP xác nhận → Admin xác nhận → Chốt → kế toán hạch toán.
+  //
+  // Mọi ràng buộc chống nhầm lẫn nằm ở database (migration 030) chứ không nằm
+  // ở đây. Tầng này chỉ chuẩn bị số liệu và ghi nhật ký; nếu nó có lỗi thì
+  // database vẫn chặn được, còn nếu chỉ chặn ở đây thì gọi thẳng SQL là qua.
+
+  // Chỉ kiểm định dạng. Mốc đầu và cuối kỳ do SQL tự tính từ mã kỳ, để một
+  // nơi duy nhất quyết định "tháng 8 là từ ngày nào tới ngày nào".
+  private kiemKy(kyCode: string) {
+    if (!/^\d{4}-\d{2}$/.test(String(kyCode || ''))) {
+      throw new BadRequestException('Kỳ hoa hồng phải có dạng YYYY-MM, ví dụ 2026-08.');
+    }
+  }
+
+  // Phép chọn ứng viên nằm trong database, hàm marketing.hoa_hong_ung_vien
+  // (migration 032). Đặt ở đó thì bộ kiểm thử trong CI gọi đúng cái ứng dụng
+  // gọi; để trong chuỗi TypeScript thì muốn thử phải chép lại, mà chép lại là
+  // tạo hai nguồn sự thật về cách tính tiền.
+  private readonly SQL_UNG_VIEN = 'select * from marketing.hoa_hong_ung_vien($1)';
+
+  async hoaHongBieuGia(user: AuthUser) {
+    requireRole(user, reportRoles);
+    const r = await this.infrastructure.postgres.query(
+      'select * from marketing.hoa_hong_bieu_gia order by tong_hoa_hong',
+    );
+    return { data: r.rows };
+  }
+
+  // Xem trước: lead nào sẽ vào đợt, lead nào bị loại và vì sao. Không ghi gì.
+  async hoaHongXemTruoc(user: AuthUser, kyCode: string) {
+    requireRole(user, supportRoles);
+    this.kiemKy(kyCode);
+    const r = await this.infrastructure.postgres.query(
+      `${this.SQL_UNG_VIEN} order by trong_han desc, ngay_den`, [kyCode]);
+    const rows = r.rows as JsonMap[];
+    const trongHan = rows.filter((x) => x.trong_han);
+    return {
+      data: rows,
+      meta: {
+        ky_code: kyCode,
+        tong_ung_vien: rows.length,
+        trong_han: trongHan.length,
+        qua_han: rows.length - trongHan.length,
+        thieu_sup: trongHan.filter((x) => !x.sup_ma).length,
+        suy_ra_sup: trongHan.filter((x) => x.sup_nguon === 'suy_ra_duy_nhat').length,
+        lui_ve_ngay_bam: trongHan.filter((x) => x.ngay_den_nguon === 'xac_nhan').length,
+        den_truoc_ngay_hen: rows.filter((x) => x.den_truoc_ngay_hen).length,
+        tong_tien: trongHan.reduce((s, x) => s + Number(x.don_gia_pg || 0)
+          + (x.sup_ma ? Number(x.don_gia_sup || 0) : 0), 0),
+      },
+    };
+  }
+
+  async hoaHongTinh(user: AuthUser, kyCode: string) {
+    requireRole(user, supportRoles);
+    this.kiemKy(kyCode);
+
+    const dangCo = await this.infrastructure.postgres.query(
+      `select id, trang_thai from marketing.hoa_hong_dot
+        where ky_code = $1 and trang_thai <> 'tu_choi'`, [kyCode],
+    );
+    if (dangCo.rowCount) {
+      throw new BadRequestException(
+        `Kỳ ${kyCode} đã có một đợt hoa hồng đang ở trạng thái "${dangCo.rows[0].trang_thai}". `
+        + 'Từ chối đợt đó trước nếu muốn tính lại.');
+    }
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const dot = await client.query(
+        `insert into marketing.hoa_hong_dot (ky_code, ky_tu, ky_den, tinh_boi)
+         values ($1, ($1 || '-01')::date,
+                 (date_trunc('month', ($1 || '-01')::date) + interval '1 month - 1 day')::date, $2)
+         returning id`, [kyCode, user.employeeCode],
+      );
+      const dotId = dot.rows[0].id as string;
+
+      // Một lead sinh hai dòng: phần PG và phần SUP. Dòng SUP bị bỏ qua khi
+      // không suy ra được người hưởng, thay vì gán bừa cho ai đó.
+      const them = await client.query(
+        `with loc as (
+           select * from marketing.hoa_hong_ung_vien($1) where trong_han
+         )
+         insert into marketing.hoa_hong_dong (
+           dot_id, lead_id, loai, vai_tro, nguoi_ma, nguoi_ten, sup_nguon,
+           don_gia, so_tien, anh_pg_ma, anh_data_class, anh_net_level,
+           anh_xac_nhan_den, anh_khach_ten, anh_lead_tao_luc, anh_lich_hen,
+           ngay_den, ngay_den_nguon, so_ngay_cho)
+         select $2, t.lead_id, t.loai, v.vai_tro, v.ma, v.ten,
+                case when v.vai_tro = 'sup' then t.sup_nguon end,
+                v.don_gia, v.don_gia, t.created_by_pg_code, t.data_class, t.net_level,
+                t.pg_arrival_confirmed_at, t.customer_name, t.created_at, t.appointment_at,
+                t.ngay_den, t.ngay_den_nguon, t.so_ngay_cho
+           from loc t
+           cross join lateral (values
+             ('pg',  t.created_by_pg_code, t.pg_ten,  t.don_gia_pg),
+             ('sup', t.sup_ma,             t.sup_ten, t.don_gia_sup)
+           ) as v(vai_tro, ma, ten, don_gia)
+          where v.ma is not null
+         returning 1`,
+        [kyCode, dotId],
+      );
+
+      await client.query(
+        `update marketing.hoa_hong_dot d set
+           so_dong = t.n, tong_tien = t.tong,
+           tong_tien_pg = t.pg, tong_tien_sup = t.sup
+         from (
+           select count(*)::int n, coalesce(sum(so_tien),0) tong,
+                  coalesce(sum(so_tien) filter (where vai_tro='pg'),0) pg,
+                  coalesce(sum(so_tien) filter (where vai_tro='sup'),0) sup
+             from marketing.hoa_hong_dong where dot_id = $1
+         ) t where d.id = $1`, [dotId],
+      );
+
+      await client.query(
+        `insert into marketing.hoa_hong_nhat_ky
+           (dot_id, tu_trang_thai, den_trang_thai, boi, vai_tro_boi, ghi_chu, so_dong, tong_tien)
+         select $1, null, 'cho_sup', $2, $3, 'Hệ thống tính tự động', so_dong, tong_tien
+           from marketing.hoa_hong_dot where id = $1`,
+        [dotId, user.employeeCode, user.role],
+      );
+      await client.query('commit');
+
+      await this.audit(user, 'hoa_hong.tinh', 'marketing.hoa_hong', dotId,
+        { ky_code: kyCode, so_dong: them.rowCount });
+      return this.hoaHongChiTiet(user, dotId);
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async hoaHongDanhSach(user: AuthUser, trangThai?: string) {
+    requireRole(user, reportRoles);
+    const dk: string[] = [];
+    const p: unknown[] = [];
+    if (trangThai) { p.push(trangThai); dk.push(`trang_thai = $${p.length}`); }
+    const r = await this.infrastructure.postgres.query(
+      `select * from marketing.hoa_hong_dot
+        ${dk.length ? `where ${dk.join(' and ')}` : ''}
+        order by ky_code desc, created_at desc limit 60`, p,
+    );
+    return { data: r.rows };
+  }
+
+  async hoaHongChiTiet(user: AuthUser, id: string) {
+    requireRole(user, reportRoles);
+    const dot = await this.infrastructure.postgres.query(
+      'select * from marketing.hoa_hong_dot where id = $1', [id],
+    );
+    if (!dot.rowCount) throw new BadRequestException('Không tìm thấy đợt hoa hồng.');
+
+    const dong = await this.infrastructure.postgres.query(
+      `select l.*, d.ky_code
+         from marketing.hoa_hong_dong l
+         join marketing.hoa_hong_dot d on d.id = l.dot_id
+        where l.dot_id = $1 and not l.huy
+        order by l.vai_tro, l.nguoi_ten nulls last, l.ngay_den`, [id],
+    );
+    const gop = await this.infrastructure.postgres.query(
+      `select vai_tro, nguoi_ma, nguoi_ten, loai,
+              count(*)::int so_luong, sum(so_tien) so_tien
+         from marketing.hoa_hong_dong
+        where dot_id = $1 and not huy
+        group by vai_tro, nguoi_ma, nguoi_ten, loai
+        order by vai_tro, nguoi_ten nulls last, loai`, [id],
+    );
+    const nk = await this.infrastructure.postgres.query(
+      `select * from marketing.hoa_hong_nhat_ky where dot_id = $1 order by created_at`, [id],
+    );
+    return { data: { dot: dot.rows[0], dong: dong.rows, gop: gop.rows, nhat_ky: nk.rows } };
+  }
+
+  // Một hàm cho cả bốn bước chuyển. Trạng thái hợp lệ do database quyết định
+  // qua trigger, nên ở đây không lặp lại bảng chuyển trạng thái: lặp lại là
+  // tạo ra hai nguồn sự thật và sớm muộn chúng lệch nhau.
+  private async hoaHongChuyen(
+    user: AuthUser, id: string, den: string, roles: Set<string>,
+    cot: { luc: string; boi: string }, ghiChu?: string, lyDo?: string,
+  ) {
+    requireRole(user, roles);
+    const truoc = await this.infrastructure.postgres.query(
+      'select trang_thai, so_dong, tong_tien from marketing.hoa_hong_dot where id = $1', [id],
+    );
+    if (!truoc.rowCount) throw new BadRequestException('Không tìm thấy đợt hoa hồng.');
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      await client.query(
+        `update marketing.hoa_hong_dot
+            set trang_thai = $2, ${cot.luc} = now(), ${cot.boi} = $3
+                ${den === 'tu_choi' ? ', tu_choi_ly_do = $4' : ''}
+          where id = $1`,
+        den === 'tu_choi' ? [id, den, user.employeeCode, lyDo || null] : [id, den, user.employeeCode],
+      );
+      await client.query(
+        `insert into marketing.hoa_hong_nhat_ky
+           (dot_id, tu_trang_thai, den_trang_thai, boi, vai_tro_boi, ghi_chu, so_dong, tong_tien)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [id, truoc.rows[0].trang_thai, den, user.employeeCode, user.role,
+         lyDo || ghiChu || null, truoc.rows[0].so_dong, truoc.rows[0].tong_tien],
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit(user, `hoa_hong.${den}`, 'marketing.hoa_hong', id, { ly_do: lyDo || null });
+    return this.hoaHongChiTiet(user, id);
+  }
+
+  hoaHongXacNhanSup(user: AuthUser, id: string) {
+    return this.hoaHongChuyen(user, id, 'cho_admin',
+      new Set([...adminRoles, 'support_marketing']),
+      { luc: 'sup_luc', boi: 'sup_boi' }, 'SUP xác nhận');
+  }
+
+  hoaHongXacNhanAdmin(user: AuthUser, id: string) {
+    return this.hoaHongChuyen(user, id, 'admin_da_duyet', adminRoles,
+      { luc: 'admin_luc', boi: 'admin_boi' }, 'Admin xác nhận');
+  }
+
+  hoaHongChot(user: AuthUser, id: string) {
+    return this.hoaHongChuyen(user, id, 'da_chot', adminRoles,
+      { luc: 'chot_luc', boi: 'chot_boi' }, 'Chốt và đẩy sang kế toán');
+  }
+
+  hoaHongTuChoi(user: AuthUser, id: string, lyDo: string) {
+    const ly = String(lyDo || '').trim();
+    if (ly.length < 5) throw new BadRequestException('Phải ghi lý do từ chối, ít nhất 5 ký tự.');
+    return this.hoaHongChuyen(user, id, 'tu_choi',
+      new Set([...adminRoles, 'support_marketing']),
+      { luc: 'tu_choi_luc', boi: 'tu_choi_boi' }, undefined, ly);
+  }
+
 }
 
 @Controller('/api/v2/marketing')
@@ -1431,6 +1678,52 @@ export class MarketingController {
   @Patch('/pg-support-requests/:id') actionSupportRequest(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.actionSupportRequest(request.user, id, body); }
   @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }
   @Get('/pg-attendance') attendanceList(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string) { return this.service.listPgAttendance(request.user, from, to); }
+  // ── Hoa hồng PG/SUP ───────────────────────────────────────────────────
+  @Get('/hoa-hong/bieu-gia') hhBieuGia(@Req() r: ActorRequest) { return this.service.hoaHongBieuGia(r.user); }
+  @Get('/hoa-hong') hhDanhSach(@Req() r: ActorRequest, @Query('trangThai') tt?: string) { return this.service.hoaHongDanhSach(r.user, tt); }
+  @Get('/hoa-hong/xem-truoc') hhXemTruoc(@Req() r: ActorRequest, @Query('ky') ky: string) { return this.service.hoaHongXemTruoc(r.user, ky); }
+  @Get('/hoa-hong/:id') hhChiTiet(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.hoaHongChiTiet(r.user, id); }
+  @Post('/hoa-hong/tinh') hhTinh(@Req() r: ActorRequest, @Body() b: JsonMap) { return this.service.hoaHongTinh(r.user, String(b.ky || '')); }
+  @Post('/hoa-hong/:id/sup-xac-nhan') hhSup(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.hoaHongXacNhanSup(r.user, id); }
+  @Post('/hoa-hong/:id/admin-xac-nhan') hhAdmin(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.hoaHongXacNhanAdmin(r.user, id); }
+  @Post('/hoa-hong/:id/chot') hhChot(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.hoaHongChot(r.user, id); }
+  @Post('/hoa-hong/:id/tu-choi') hhTuChoi(@Req() r: ActorRequest, @Param('id') id: string, @Body() b: JsonMap) { return this.service.hoaHongTuChoi(r.user, id, String(b.lyDo || '')); }
+
+  @Get('/hoa-hong/:id/xuat')
+  async hhXuat(@Req() r: ActorRequest, @Res({ passthrough: true }) reply: FastifyReply, @Param('id') id: string) {
+    const kq = await this.service.hoaHongChiTiet(r.user, id) as { data: { dot: JsonMap; dong: JsonMap[] } };
+    const { dot, dong } = kq.data;
+
+    // Xuất TỪNG DÒNG chứ không xuất bản đã gộp. Bảng gộp trả lời "ai được bao
+    // nhiêu"; đối chiếu thì cần trả lời "vì sao lại là con số đó", và câu đó
+    // chỉ trả lời được khi có đủ khách nào, ngày nào, cách lịch hẹn mấy ngày.
+    const header = ['Kỳ', 'Vai trò', 'Người hưởng', 'Mã người hưởng', 'Nguồn SUP',
+      'Loại DV', 'Khách hàng', 'Mã PG nhập', 'Lịch hẹn', 'Ngày khách đến',
+      'Nguồn ngày đến', 'Số ngày so với mốc', 'Đơn giá', 'Thành tiền'];
+    const nguonSup: Record<string, string> = {
+      khai_bao: 'Khai báo trên hồ sơ', suy_ra_duy_nhat: 'Suy ra · SUP duy nhất',
+    };
+    const nguonNgay: Record<string, string> = {
+      arrival_date: 'Ngày khách đến do SUP nhập', xac_nhan: 'Lùi về lúc bấm xác nhận',
+    };
+    const ngay = (v: unknown) => (v ? new Date(String(v)).toLocaleDateString('vi-VN') : '');
+    const csv = '﻿' + [header.map(csvCell).join(','), ...dong.map((x) => [
+      dot.ky_code,
+      x.vai_tro === 'pg' ? 'PG' : 'SUP',
+      x.nguoi_ten || x.nguoi_ma, x.nguoi_ma,
+      x.vai_tro === 'sup' ? (nguonSup[String(x.sup_nguon)] || '') : '',
+      x.loai, x.anh_khach_ten, x.anh_pg_ma,
+      ngay(x.anh_lich_hen), ngay(x.ngay_den),
+      nguonNgay[String(x.ngay_den_nguon)] || '',
+      x.so_ngay_cho, x.don_gia, x.so_tien,
+    ].map(csvCell).join(','))].join('\n');
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="Hoa_hong_${dot.ky_code}_${dot.trang_thai}.csv"`);
+    return csv;
+  }
+
+
   @Get('/pg-attendance/export')
   async attendanceExport(@Req() request: ActorRequest, @Res({ passthrough: true }) reply: FastifyReply, @Query('from') from?: string, @Query('to') to?: string) {
     const result = await this.service.listPgAttendance(request.user, from, to);

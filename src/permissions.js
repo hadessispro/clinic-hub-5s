@@ -7,16 +7,16 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'pg-attendance'],
-  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong'],
+  support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
-  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks'],
+  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'hoa-hong'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
   // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
-  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance'],
+  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong'],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
   leader: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
   finance: ['dashboard', 'tasks', 'chat', 'attendance', 'leave', 'payroll'],

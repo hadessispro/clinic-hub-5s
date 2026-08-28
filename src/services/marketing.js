@@ -710,3 +710,98 @@ export function subscribeToRealtime(callback) {
     window.removeEventListener('clinic_data_updated', handleUpdate);
   };
 }
+
+/* ── Hoa hồng PG / SUP ───────────────────────────────────────────────────
+ *
+ * Tính tự động → SUP xác nhận → Admin xác nhận → Chốt → kế toán hạch toán.
+ * Chỉ chạy trên VPS: phân hệ này đọc bảng hoa_hong_* và chúng chỉ tồn tại ở
+ * database chính, không có bản Supabase tương ứng.
+ */
+
+const canVps = (viec) => {
+  if (!useVps) throw new Error(`${viec} chỉ khả dụng khi chạy trên VPS.`);
+};
+
+export async function getHoaHongBieuGia() {
+  canVps('Biểu giá hoa hồng');
+  return (await vpsRequest('/hoa-hong/bieu-gia')).data || [];
+}
+
+export async function getHoaHongDanhSach(trangThai = '') {
+  canVps('Danh sách đợt hoa hồng');
+  const q = trangThai ? `?trangThai=${encodeURIComponent(trangThai)}` : '';
+  return (await vpsRequest(`/hoa-hong${q}`)).data || [];
+}
+
+export async function getHoaHongChiTiet(id) {
+  canVps('Chi tiết đợt hoa hồng');
+  return (await vpsRequest(`/hoa-hong/${encodeURIComponent(id)}`)).data;
+}
+
+// Xem trước không ghi gì. Người duyệt nhìn đúng danh sách sẽ được tính, kèm
+// lý do loại từng dòng, TRƯỚC khi tạo ra một đợt phải đi hết quy trình duyệt.
+export async function getHoaHongXemTruoc(ky) {
+  canVps('Xem trước hoa hồng');
+  return await vpsRequest(`/hoa-hong/xem-truoc?ky=${encodeURIComponent(ky)}`);
+}
+
+export async function tinhHoaHong(ky) {
+  canVps('Tính hoa hồng');
+  const r = await vpsRequest('/hoa-hong/tinh', { method: 'POST', body: JSON.stringify({ ky }) });
+  notifyDataChange('marketing_hoa_hong');
+  return r.data;
+}
+
+async function chuyenHoaHong(id, buoc, body) {
+  canVps('Duyệt hoa hồng');
+  const r = await vpsRequest(`/hoa-hong/${encodeURIComponent(id)}/${buoc}`, {
+    method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  notifyDataChange('marketing_hoa_hong');
+  return r.data;
+}
+
+export const supXacNhanHoaHong   = (id) => chuyenHoaHong(id, 'sup-xac-nhan');
+export const adminXacNhanHoaHong = (id) => chuyenHoaHong(id, 'admin-xac-nhan');
+export const chotHoaHong         = (id) => chuyenHoaHong(id, 'chot');
+export const tuChoiHoaHong       = (id, lyDo) => chuyenHoaHong(id, 'tu-choi', { lyDo });
+
+// Dựng file đối chiếu ngay tại trình duyệt, cùng cách exportPgAttendanceCsv
+// đang làm. Gọi thẳng URL để tải thì trình duyệt không gắn được thẻ đăng nhập
+// và chỉ nhận về 401.
+//
+// Xuất TỪNG DÒNG chứ không xuất bản đã gộp. Bảng gộp trả lời "ai được bao
+// nhiêu"; đối chiếu thì cần trả lời "vì sao lại là con số đó", mà câu đó chỉ
+// trả lời được khi có đủ khách nào, ngày nào, cách mốc mấy ngày.
+export async function xuatHoaHongCsv(id) {
+  const { dot, dong } = await getHoaHongChiTiet(id);
+  const nguonSup = { khai_bao: 'Khai báo trên hồ sơ', suy_ra_duy_nhat: 'Suy ra · SUP duy nhất' };
+  const nguonNgay = { arrival_date: 'Ngày khách đến do SUP nhập', xac_nhan: 'Lùi về lúc bấm xác nhận' };
+  const ngay = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '');
+  const o = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const headers = ['Kỳ', 'Vai trò', 'Người hưởng', 'Mã người hưởng', 'Nguồn SUP', 'Loại DV',
+    'Khách hàng', 'Mã PG nhập', 'Lịch hẹn', 'Ngày khách đến', 'Nguồn ngày đến',
+    'Số ngày so với mốc', 'Đơn giá', 'Thành tiền'];
+  const dongs = (dong || []).map((x) => [
+    dot.ky_code, x.vai_tro === 'pg' ? 'PG' : 'SUP', x.nguoi_ten || x.nguoi_ma, x.nguoi_ma,
+    x.vai_tro === 'sup' ? (nguonSup[x.sup_nguon] || '') : '', x.loai,
+    x.anh_khach_ten, x.anh_pg_ma, ngay(x.anh_lich_hen), ngay(x.ngay_den),
+    nguonNgay[x.ngay_den_nguon] || '', x.so_ngay_cho, x.don_gia, x.so_tien,
+  ].map(o).join(','));
+
+  const tong = (dong || []).reduce((s, x) => s + Number(x.so_tien || 0), 0);
+  const cuoi = [
+    '', '', '', '', '', '', '', '', '', '', '', '', 'TỔNG CỘNG', tong,
+  ].map(o).join(',');
+
+  const noi_dung = '\uFEFF' + [headers.map(o).join(','), ...dongs, cuoi].join('\n');
+  const blob = new Blob([noi_dung], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Hoa_hong_${dot.ky_code}_${dot.trang_thai}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  return (dong || []).length;
+}

@@ -29,6 +29,7 @@ const viewImports = {
   'pg-locations': () => import('./views/pg-locations.js'),
   'pg-workflow': () => import('./views/pg-workflow.js'),
   'pg-attendance': () => import('./views/pg-attendance.js'),
+  'hoa-hong': () => import('./views/hoa-hong.js'),
   'gift-inventory': () => import('./views/gift-inventory.js'),
 };
 
@@ -59,6 +60,7 @@ const viewTitles = {
   'pg-locations': 'Địa điểm chấm công PG',
   'pg-workflow': 'Điều phối & hỗ trợ PG',
   'pg-attendance': 'Chấm công PG',
+  'hoa-hong': 'Duyệt hoa hồng PG & SUP',
   'gift-inventory': 'Kho quà tặng khách hàng',
 };
 

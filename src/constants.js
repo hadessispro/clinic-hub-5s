@@ -81,6 +81,7 @@ export const VIEW_TITLES = {
   'telesale-workspace': 'Workspace Telesale',
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
   'pg-management': 'Quản lý PG',
+  'hoa-hong': 'Duyệt hoa hồng PG & SUP',
   'pg-attendance': 'Chấm công PG',
 };
 

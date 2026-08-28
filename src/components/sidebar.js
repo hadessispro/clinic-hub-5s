@@ -32,6 +32,7 @@ const MOBILE_NAV_LABELS = {
   reports: 'Báo cáo',
   'marketing-leads': 'Nạp Lead',
   'telesale-management': 'QL Telesale',
+  'hoa-hong': 'Hoa hồng',
   'telesale-workspace': 'Telesale',
   'marketing-analytics': 'Báo cáo MKT',
 };
@@ -87,8 +88,8 @@ export function renderSidebar(role) {
     telesale_leader: ['telesale-management', 'dashboard', 'marketing-analytics', 'chat'],
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
     pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],
-    admin_marketing: ['telesale-management', 'marketing-leads', 'marketing-analytics', 'pg-management'],
-    support_marketing: ['pg-management', 'pg-workflow', 'pg-locations', 'chat'],
+    admin_marketing: ['telesale-management', 'hoa-hong', 'marketing-leads', 'pg-management'],
+    support_marketing: ['pg-management', 'hoa-hong', 'pg-workflow', 'pg-locations'],
   };
   const preferredViews = preferredByRole[role] || ['dashboard', 'attendance', 'schedule', 'chat'];
   const preferredItems = preferredViews
