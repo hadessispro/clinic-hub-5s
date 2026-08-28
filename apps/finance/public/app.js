@@ -207,7 +207,12 @@ function veCong(thongBao) {
     el('div', { class: 'cong' },
       el('div', { class: 'cong-hop' },
         el('div', { class: 'cong-hieu' },
-          el('div', { class: 'dau' }, '₫'),
+          // Logo chung với hệ vận hành. Hai hệ tách biệt hoàn toàn về chức
+          // năng và về quyền truy cập, nhưng là một thương hiệu — người dùng
+          // phải nhận ra ngay đây vẫn là hệ thống của phòng khám, không phải
+          // một trang lạ đòi mật khẩu.
+          el('img', { class: 'dau', src: 'logo-5s.png', alt: 'Nha Khoa 5S' }),
+          el('p', { class: 'cong-thuonghieu' }, 'Nha Khoa 5S'),
           el('h1', {}, 'Két Kế Toán'),
           el('p', {}, 'Sổ sách tài chính nội bộ · tách biệt hoàn toàn với hệ vận hành'),
         ),
@@ -356,10 +361,10 @@ function ve() {
     el('div', { class: 'khung' },
       el('aside', { class: 'canh' },
         el('div', { class: 'hieu' },
-          el('div', { class: 'hieu-dau' }, '₫'),
+          el('img', { class: 'hieu-dau', src: 'logo-5s.png', alt: 'Nha Khoa 5S' }),
           el('div', {},
             el('div', { class: 'hieu-ten' }, 'Két Kế Toán'),
-            el('div', { class: 'hieu-phu' }, 'Nội bộ'),
+            el('div', { class: 'hieu-phu' }, 'Nha Khoa 5S · Nội bộ'),
           ),
         ),
         dieuHuong,

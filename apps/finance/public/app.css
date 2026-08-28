@@ -204,13 +204,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--vien);
   display: flex; gap: 11px; align-items: center;
 }
+/* Logo 5S. Trước đây là một ô vuông gradient mang ký hiệu ₫ — nó đẹp nhưng
+ * không nói được đây là hệ thống của ai. Két kế toán tách biệt hoàn toàn với
+ * hệ vận hành về chức năng và quyền truy cập, nhưng là cùng một thương hiệu:
+ * người dùng gõ mật khẩu vào đây phải nhận ra ngay đây là hệ thống của phòng
+ * khám chứ không phải một trang lạ trông giông giống.
+ *
+ * Nền trắng thay vì gradient xanh, vì logo là ngôi sao vàng và đặt lên nền
+ * xanh đậm thì mất hết độ tương phản. */
 .hieu-dau {
   width: 34px; height: 34px; flex: none;
   border-radius: 9px;
-  background: linear-gradient(150deg, var(--xanh-sang), var(--xanh));
-  display: grid; place-items: center;
-  color: #fff; font-weight: 700; font-size: 15px;
-  box-shadow: 0 2px 8px rgba(21, 87, 176, .3);
+  background: #fff; border: 1px solid var(--vien);
+  object-fit: contain; padding: 3px;
+  box-shadow: 0 2px 8px rgba(21, 87, 176, .16);
 }
 .hieu-ten { font-weight: 660; letter-spacing: -.015em; line-height: 1.15; font-size: 15px; }
 .hieu-phu {
@@ -453,10 +460,18 @@ tfoot td {
 .cong-hop { width: 100%; max-width: 384px; }
 .cong-hieu { text-align: center; margin-bottom: 22px; }
 .cong-hieu .dau {
-  width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 14px;
-  background: linear-gradient(150deg, var(--xanh-sang), var(--xanh));
-  color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 21px;
-  box-shadow: 0 6px 20px rgba(21, 87, 176, .32);
+  width: 60px; height: 60px; margin: 0 auto 10px; border-radius: 16px;
+  background: #fff; border: 1px solid var(--vien);
+  object-fit: contain; padding: 7px; display: block;
+  box-shadow: 0 6px 20px rgba(21, 87, 176, .18);
+}
+/* Tên thương hiệu đứng trên tên hệ thống, cùng thứ tự với hệ vận hành:
+ * "Nha Khoa 5S" rồi mới tới tên phân hệ. */
+.cong-thuonghieu {
+  margin: 0 0 2px !important;
+  font-size: 11px !important; font-weight: 700;
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--xanh) !important;
 }
 .cong-hieu h1 { margin: 0; font-size: 20px; font-weight: 660; letter-spacing: -.02em; }
 .cong-hieu p { margin: 6px 0 0; color: var(--muc-nhat); font-size: 12.5px; }
