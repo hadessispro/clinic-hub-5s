@@ -780,19 +780,25 @@ export async function xuatHoaHongCsv(id) {
   const ngay = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '');
   const o = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
-  const headers = ['Kỳ', 'Vai trò', 'Người hưởng', 'Mã người hưởng', 'Nguồn SUP', 'Loại DV',
-    'Khách hàng', 'Mã PG nhập', 'Lịch hẹn', 'Ngày khách đến', 'Nguồn ngày đến',
-    'Số ngày so với mốc', 'Đơn giá', 'Thành tiền'];
+  // Có cả dòng bị loại. Đó chính là thứ cần đối chiếu: mất khoản nào và vì
+  // sao. Xuất mỗi dòng được trả thì file chỉ xác nhận lại con số đã biết.
+  const headers = ['Kỳ', 'Kết quả', 'Vai trò', 'Người hưởng', 'Mã người hưởng', 'Nguồn SUP',
+    'Loại DV', 'Khách hàng', 'Mã PG nhập', 'Lịch hẹn', 'Ngày khách đến', 'Nguồn ngày đến',
+    'Số ngày so với mốc', 'Đơn giá', 'Thành tiền', 'Lý do bị loại'];
   const dongs = (dong || []).map((x) => [
-    dot.ky_code, x.vai_tro === 'pg' ? 'PG' : 'SUP', x.nguoi_ten || x.nguoi_ma, x.nguoi_ma,
+    dot.ky_code, x.tinh_tien ? 'Được trả' : 'Bị loại',
+    x.vai_tro === 'pg' ? 'PG' : 'SUP', x.nguoi_ten || x.nguoi_ma, x.nguoi_ma,
     x.vai_tro === 'sup' ? (nguonSup[x.sup_nguon] || '') : '', x.loai,
     x.anh_khach_ten, x.anh_pg_ma, ngay(x.anh_lich_hen), ngay(x.ngay_den),
     nguonNgay[x.ngay_den_nguon] || '', x.so_ngay_cho, x.don_gia, x.so_tien,
+    x.ly_do_loai || '',
   ].map(o).join(','));
 
   const tong = (dong || []).reduce((s, x) => s + Number(x.so_tien || 0), 0);
+  const soLoai = (dong || []).filter((x) => !x.tinh_tien).length;
   const cuoi = [
-    '', '', '', '', '', '', '', '', '', '', '', '', 'TỔNG CỘNG', tong,
+    '', '', '', '', '', '', '', '', '', '', '', '', '', 'TỔNG CỘNG', tong,
+    soLoai ? `${soLoai} dòng bị loại, không tính tiền` : '',
   ].map(o).join(',');
 
   const noi_dung = '\uFEFF' + [headers.map(o).join(','), ...dongs, cuoi].join('\n');

@@ -124,9 +124,42 @@ begin
   update marketing.hoa_hong_dot
      set trang_thai = 'tu_choi', tu_choi_luc = now(), tu_choi_boi = 'ci',
          tu_choi_ly_do = 'thử' where id = dot2;
-  select count(*) = 1 into ok from marketing.hoa_hong_dong
+  select count(*) >= 1 into ok from marketing.hoa_hong_dong
    where dot_id = dot2 and huy;
   insert into kq values (8, 'Từ chối đợt thì huỷ dòng để lead được tính lại', ok, null);
+
+  ------------------------------------------------------------------ 9
+  -- Dòng không tính tiền phải mang số tiền bằng 0. Ghi dòng bị loại mà vẫn
+  -- để nguyên đơn giá vào cột thành tiền là cách tạo ra một tờ trình duyệt
+  -- cộng ra số lớn hơn số thật sự chi.
+  begin
+    insert into marketing.hoa_hong_dong
+      (dot_id, lead_id, loai, vai_tro, nguoi_ma, don_gia, so_tien,
+       tinh_tien, ly_do_loai, anh_pg_ma)
+      values (dot2, lead1, 'DVCB', 'pg', 'PG-THU', 7000, 7000,
+              false, 'quá hạn', 'PG-THU');
+    ok := false;
+  exception when check_violation then ok := true;
+  end;
+  insert into kq values (9, 'Chặn dòng bị loại mà vẫn mang số tiền', ok, null);
+
+  ------------------------------------------------------------------ 10
+  -- Lead bị loại vì quá hạn KHÔNG được khoá vĩnh viễn. SUP sửa lại ngày khách
+  -- đến thì kỳ sau nó phải vào được. Chỉ số chống trả trùng chỉ phủ dòng thật
+  -- sự tính tiền, nên dòng bị loại không chiếm chỗ.
+  insert into marketing.hoa_hong_dong
+    (dot_id, lead_id, loai, vai_tro, nguoi_ma, don_gia, so_tien,
+     tinh_tien, ly_do_loai, anh_pg_ma)
+    values (dot2, lead1, 'DVCS', 'sup', 'SUP-THU', 90000, 0,
+            false, 'quá hạn 3 ngày', 'PG-THU');
+  begin
+    insert into marketing.hoa_hong_dong
+      (dot_id, lead_id, loai, vai_tro, nguoi_ma, don_gia, so_tien, anh_pg_ma)
+      values (dot2, lead1, 'DVCS', 'sup', 'SUP-THU', 90000, 90000, 'PG-THU');
+    ok := true;
+  exception when others then ok := false;
+  end;
+  insert into kq values (10, 'Lead bị loại vẫn tính lại được ở đợt sau', ok, null);
 
   ------------------------------------------------------------------ dọn
   -- Không xoá dòng của dot1 bằng lệnh thường: nó đã chốt và trigger đóng băng

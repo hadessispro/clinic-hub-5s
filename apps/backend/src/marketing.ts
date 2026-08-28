@@ -1471,17 +1471,29 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       // Một lead sinh hai dòng: phần PG và phần SUP. Dòng SUP bị bỏ qua khi
       // không suy ra được người hưởng, thay vì gán bừa cho ai đó.
       const them = await client.query(
-        `with loc as (
-           select * from marketing.hoa_hong_ung_vien($1) where trong_han
-         )
+        // Ghi MỌI ứng viên, kể cả dòng quá hạn. Dòng quá hạn mang so_tien = 0
+        // kèm lý do, để SUP đối chiếu được "tháng này mất bao nhiêu khoản vì
+        // lý do gì". Bỏ chúng đi thì con số cuối tháng không giải thích được,
+        // mà con số không giải thích được là con số không đối chiếu được.
+        `with loc as (select * from marketing.hoa_hong_ung_vien($1))
          insert into marketing.hoa_hong_dong (
            dot_id, lead_id, loai, vai_tro, nguoi_ma, nguoi_ten, sup_nguon,
-           don_gia, so_tien, anh_pg_ma, anh_data_class, anh_net_level,
+           don_gia, so_tien, tinh_tien, ly_do_loai,
+           anh_pg_ma, anh_data_class, anh_net_level,
            anh_xac_nhan_den, anh_khach_ten, anh_lead_tao_luc, anh_lich_hen,
            ngay_den, ngay_den_nguon, so_ngay_cho)
          select $2, t.lead_id, t.loai, v.vai_tro, v.ma, v.ten,
                 case when v.vai_tro = 'sup' then t.sup_nguon end,
-                v.don_gia, v.don_gia, t.created_by_pg_code, t.data_class, t.net_level,
+                v.don_gia,
+                case when t.trong_han then v.don_gia else 0 end,
+                t.trong_han,
+                case when t.trong_han then null
+                     when t.den_truoc_ngay_hen then 'Khách đến trước ngày hẹn'
+                     when t.so_ngay_cho is null then 'Không xác định được ngày khách đến'
+                     else format('Quá hạn %s ngày (đến sau %s ngày, trần %s ngày)',
+                                 t.so_ngay_cho - t.so_ngay_toi_da, t.so_ngay_cho, t.so_ngay_toi_da)
+                end,
+                t.created_by_pg_code, t.data_class, t.net_level,
                 t.pg_arrival_confirmed_at, t.customer_name, t.created_at, t.appointment_at,
                 t.ngay_den, t.ngay_den_nguon, t.so_ngay_cho
            from loc t
@@ -1499,7 +1511,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
            so_dong = t.n, tong_tien = t.tong,
            tong_tien_pg = t.pg, tong_tien_sup = t.sup
          from (
-           select count(*)::int n, coalesce(sum(so_tien),0) tong,
+           select count(*) filter (where tinh_tien)::int n,
+                  coalesce(sum(so_tien),0) tong,
                   coalesce(sum(so_tien) filter (where vai_tro='pg'),0) pg,
                   coalesce(sum(so_tien) filter (where vai_tro='sup'),0) sup
              from marketing.hoa_hong_dong where dot_id = $1
@@ -1551,13 +1564,13 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
          from marketing.hoa_hong_dong l
          join marketing.hoa_hong_dot d on d.id = l.dot_id
         where l.dot_id = $1 and not l.huy
-        order by l.vai_tro, l.nguoi_ten nulls last, l.ngay_den`, [id],
+        order by l.tinh_tien desc, l.vai_tro, l.nguoi_ten nulls last, l.ngay_den`, [id],
     );
     const gop = await this.infrastructure.postgres.query(
       `select vai_tro, nguoi_ma, nguoi_ten, loai,
               count(*)::int so_luong, sum(so_tien) so_tien
          from marketing.hoa_hong_dong
-        where dot_id = $1 and not huy
+        where dot_id = $1 and not huy and tinh_tien
         group by vai_tro, nguoi_ma, nguoi_ten, loai
         order by vai_tro, nguoi_ten nulls last, loai`, [id],
     );

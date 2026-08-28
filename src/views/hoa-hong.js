@@ -171,6 +171,32 @@ function khoiDanhSach() {
   </section>`;
 }
 
+// Hai bảng dùng chung một hàm. Dòng bị loại phải bày ra cùng mức chi tiết
+// với dòng được trả, vì đó chính là thứ SUP cần đối chiếu: mất khoản nào và
+// vì sao. Một con số không giải thích được là con số không đối chiếu được.
+function bangDong(ds, tieuDe, laLoai) {
+  if (!ds.length) return '';
+  return `<h4>${escapeHTML(tieuDe)}${laLoai ? ` <span class="hh-pill is-tuchoi">${ds.length} dòng</span>` : ''}</h4>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Vai trò</th><th>Người hưởng</th><th>Khách hàng</th><th>Loại</th>
+      <th>Lịch hẹn</th><th>Ngày đến</th><th>Số ngày</th>
+      <th>${laLoai ? 'Lý do bị loại' : 'Số tiền'}</th>
+    </tr></thead><tbody>
+      ${ds.map((l) => `<tr class="${laLoai ? 'hh-loai' : ''}">
+        <td>${l.vai_tro === 'pg' ? 'PG' : 'SUP'}</td>
+        <td>${oNguoiPhuTrach(l.nguoi_ten, l.nguoi_ma)}
+          ${l.sup_nguon === 'suy_ra_duy_nhat' ? '<small class="hh-suyra">suy ra</small>' : ''}</td>
+        <td>${escapeHTML(l.anh_khach_ten || '')}</td>
+        <td>${escapeHTML(l.loai)}</td>
+        <td>${ngay(l.anh_lich_hen)}</td>
+        <td>${ngay(l.ngay_den)}${l.ngay_den_nguon === 'xac_nhan' ? '<small class="hh-suyra">lùi về lúc bấm</small>' : ''}</td>
+        <td class="hh-so">${l.so_ngay_cho == null ? '—' : l.so_ngay_cho}</td>
+        <td>${laLoai ? `<span class="hh-lydo">${escapeHTML(l.ly_do_loai || '')}</span>`
+          : `<span class="hh-so">${tien(l.so_tien)}</span>`}</td>
+      </tr>`).join('')}
+    </tbody></table></div>`;
+}
+
 function khoiChiTiet(laAdmin, laSup) {
   const { dot, gop, dong, nhat_ky: nk } = chiTiet;
   const tt = dot.trang_thai;
@@ -190,6 +216,7 @@ function khoiChiTiet(laAdmin, laSup) {
       <div><span>${tien(dot.tong_tien_pg)}</span><small>phần PG</small></div>
       <div><span>${tien(dot.tong_tien_sup)}</span><small>phần SUP</small></div>
       <div><span>${tien(dot.tong_tien)}</span><small>tổng chi</small></div>
+      <div><span>${dong.filter((l) => !l.tinh_tien).length}</span><small>dòng bị loại</small></div>
     </div>
 
     <p class="hh-note">Định khoản đề xuất: Nợ ${escapeHTML(dot.tk_no)} / Có ${escapeHTML(dot.tk_co)}
@@ -213,23 +240,8 @@ function khoiChiTiet(laAdmin, laSup) {
       </tr>`).join('')}
     </tbody></table></div>
 
-    <h4>Chi tiết từng dòng</h4>
-    <div class="table-wrap"><table><thead><tr>
-      <th>Vai trò</th><th>Người hưởng</th><th>Khách hàng</th><th>Loại</th>
-      <th>Lịch hẹn</th><th>Ngày đến</th><th>Số ngày</th><th>Số tiền</th>
-    </tr></thead><tbody>
-      ${dong.map((l) => `<tr>
-        <td>${l.vai_tro === 'pg' ? 'PG' : 'SUP'}</td>
-        <td>${oNguoiPhuTrach(l.nguoi_ten, l.nguoi_ma)}
-          ${l.sup_nguon === 'suy_ra_duy_nhat' ? '<small class="hh-suyra">suy ra</small>' : ''}</td>
-        <td>${escapeHTML(l.anh_khach_ten || '')}</td>
-        <td>${escapeHTML(l.loai)}</td>
-        <td>${ngay(l.anh_lich_hen)}</td>
-        <td>${ngay(l.ngay_den)}${l.ngay_den_nguon === 'xac_nhan' ? '<small class="hh-suyra">lùi về lúc bấm</small>' : ''}</td>
-        <td class="hh-so">${l.so_ngay_cho == null ? '—' : l.so_ngay_cho}</td>
-        <td class="hh-so">${tien(l.so_tien)}</td>
-      </tr>`).join('')}
-    </tbody></table></div>
+    ${bangDong(dong.filter((l) => l.tinh_tien), 'Chi tiết dòng được trả', false)}
+    ${bangDong(dong.filter((l) => !l.tinh_tien), 'Dòng bị loại · SUP đối chiếu lại', true)}
 
     <h4>Nhật ký duyệt</h4>
     <ul class="hh-nhatky">
