@@ -33,6 +33,7 @@ const MOBILE_NAV_LABELS = {
   'marketing-leads': 'Nạp Lead',
   'telesale-management': 'QL Telesale',
   'hoa-hong': 'Hoa hồng',
+  'luong-pg': 'Lương PG',
   'telesale-workspace': 'Telesale',
   'marketing-analytics': 'Báo cáo MKT',
 };

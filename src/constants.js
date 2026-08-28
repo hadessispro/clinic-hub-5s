@@ -82,6 +82,7 @@ export const VIEW_TITLES = {
   'marketing-analytics': 'Báo cáo Marketing & Telesale',
   'pg-management': 'Quản lý PG',
   'hoa-hong': 'Duyệt hoa hồng PG & SUP',
+  'luong-pg': 'Lương PG',
   'pg-attendance': 'Chấm công PG',
 };
 

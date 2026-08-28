@@ -393,6 +393,7 @@ app.get(`${BASE}/api/van-hanh`, guard, doc('xem_so_lieu_van_hanh',
 // Kế toán quan sát hoa hồng PG/SUP. Chỉ đọc: két không có đường ghi nào sang
 // marketing, và quy trình duyệt cũng không cần kế toán ký.
 app.get(`${BASE}/api/hoa-hong`, guard, doc('xem_hoa_hong_pg', () => q.hoaHong()));
+app.get(`${BASE}/api/luong-pg`, guard, doc('xem_luong_pg', () => q.luongPg()));
 
 /* ── Danh mục ──────────────────────────────────────────────────────────── */
 

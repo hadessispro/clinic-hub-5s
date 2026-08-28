@@ -811,3 +811,91 @@ export async function xuatHoaHongCsv(id) {
   URL.revokeObjectURL(url);
   return (dong || []).length;
 }
+
+/* ── Lương PG ─────────────────────────────────────────────────────────────
+ *
+ * Tính từ ca phân công và chấm công thật → SUP đối chiếu → chốt → kế toán
+ * quan sát. Lương SUP KHÔNG nằm ở đây; phần đó đi theo cách khác.
+ */
+
+export async function getPgLuongBieuGia() {
+  canVps('Biểu giá lương PG');
+  return (await vpsRequest('/pg-luong/bieu-gia')).data;
+}
+
+export async function getPgLuongDanhSach(trangThai = '') {
+  canVps('Danh sách đợt lương PG');
+  const q = trangThai ? `?trangThai=${encodeURIComponent(trangThai)}` : '';
+  return (await vpsRequest(`/pg-luong${q}`)).data || [];
+}
+
+export async function getPgLuongChiTiet(id) {
+  canVps('Chi tiết đợt lương PG');
+  return (await vpsRequest(`/pg-luong/${encodeURIComponent(id)}`)).data;
+}
+
+export async function getPgLuongXemTruoc(ky) {
+  canVps('Xem trước lương PG');
+  return await vpsRequest(`/pg-luong/xem-truoc?ky=${encodeURIComponent(ky)}`);
+}
+
+export async function tinhPgLuong(ky) {
+  canVps('Tính lương PG');
+  const r = await vpsRequest('/pg-luong/tinh', { method: 'POST', body: JSON.stringify({ ky }) });
+  notifyDataChange('marketing_pg_luong');
+  return r.data;
+}
+
+async function chuyenPgLuong(id, buoc, body) {
+  canVps('Chốt lương PG');
+  const r = await vpsRequest(`/pg-luong/${encodeURIComponent(id)}/${buoc}`, {
+    method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  notifyDataChange('marketing_pg_luong');
+  return r.data;
+}
+
+export const chotPgLuong   = (id) => chuyenPgLuong(id, 'chot');
+export const tuChoiPgLuong = (id, lyDo) => chuyenPgLuong(id, 'tu-choi', { lyDo });
+
+/* Báo cáo đối chiếu. Xuất TỪNG CA chứ không xuất bản đã gộp.
+ *
+ * Bảng gộp trả lời "ai được bao nhiêu"; đối chiếu thì cần trả lời "vì sao lại
+ * là con số đó", mà câu đó chỉ trả lời được khi có đủ ngày nào, điểm nào, ca
+ * mấy giờ, chấm vào lúc nào, chấm ra lúc nào.
+ */
+export async function xuatPgLuongCsv(id) {
+  const { dot, dong } = await getPgLuongChiTiet(id);
+  const gio = (v) => (v ? new Date(v).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '');
+  const ngay = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '');
+  const o = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const headers = ['Kỳ', 'Kết quả', 'Nhân viên PG', 'Mã PG', 'Ngày', 'Điểm làm việc', 'Loại điểm',
+    'Ca phân công', 'Chấm vào', 'Chấm ra', 'Giờ theo ca', 'Giờ thực tế', 'Giờ tính lương',
+    'Đơn giá', 'Thành tiền', 'Lý do bị loại', 'Cảnh báo'];
+  const dongs = (dong || []).map((x) => [
+    dot.ky_code, x.tinh_tien ? 'Được trả' : 'Bị loại',
+    x.pg_ten || x.pg_ma, x.pg_ma, ngay(x.ngay), x.diem_ten, x.loai_diem,
+    x.ca_bat_dau && x.ca_ket_thuc ? `${String(x.ca_bat_dau).slice(0, 5)}–${String(x.ca_ket_thuc).slice(0, 5)}` : '',
+    gio(x.vao_luc), gio(x.ra_luc),
+    x.gio_phan_cong, x.gio_thuc_te, x.gio_tinh_luong, x.don_gia, x.so_tien,
+    x.ly_do_loai || '', x.canh_bao || '',
+  ].map(o).join(','));
+
+  const tong = (dong || []).reduce((s, x) => s + Number(x.so_tien || 0), 0);
+  const tongGio = (dong || []).reduce((s, x) => s + Number(x.gio_tinh_luong || 0), 0);
+  const soLoai = (dong || []).filter((x) => !x.tinh_tien).length;
+  const cuoi = ['', '', '', '', '', '', '', '', '', '', '', '',
+    Math.round(tongGio * 100) / 100, 'TỔNG CỘNG', tong,
+    soLoai ? `${soLoai} ca bị loại` : '', ''].map(o).join(',');
+
+  const noiDung = '\uFEFF' + [headers.map(o).join(','), ...dongs, cuoi].join('\n');
+  const blob = new Blob([noiDung], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Luong_PG_${dot.ky_code}_${dot.trang_thai}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  return (dong || []).length;
+}

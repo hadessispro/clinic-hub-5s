@@ -286,6 +286,7 @@ const MAN = [
   { ma: 'tong-quan', ten: 'Tổng quan', icon: 'M3 13h4v6H3zM10 5h4v14h-4zM17 9h4v10h-4z' },
   { ma: 'van-hanh', ten: 'Số liệu vận hành', icon: 'M4 19V9M10 19V4M16 19v-7M22 19H2' },
   { ma: 'hoa-hong-pg', ten: 'Hoa hồng PG · SUP', icon: 'M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8L3.5 9.2l5.9-.9z' },
+  { ma: 'luong-pg', ten: 'Lương PG', icon: 'M12 2v20M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 3 5 3.5 5 1.6 5 3.5-2.2 3-5 3-5-1.1-5-3' },
   { nhom: 'Sổ gốc' },
   { ma: 'nhat-ky', ten: 'Nhật ký chung', icon: 'M4 4h13l3 3v13H4zM8 9h8M8 13h8M8 17h5' },
   { ma: 'bc-so-chi-tiet', ten: 'Sổ chi tiết tài khoản', icon: 'M5 4h14v16H5zM9 8h6M9 12h6M9 16h3' },
@@ -1814,6 +1815,72 @@ VE['ky'] = async (than) => {
 };
 
 /* ── Màn: Số liệu vận hành ─────────────────────────────────────────────── */
+
+VE['luong-pg'] = async (than) => {
+  const d = await goi('/luong-pg');
+  const MAU = { da_chot: 'duong', tu_choi: 'am', cho_sup: 'vang' };
+
+  const dongDot = d.dot.map((x) => el('tr', { class: x.trang_thai === 'tu_choi' ? 'mo' : null },
+    el('td', {}, el('strong', {}, x.ky_code),
+      el('div', { class: 'phu' }, `${ngay(x.ky_tu)} – ${ngay(x.ky_den)}`)),
+    el('td', {}, el('span', { class: `nhan ${MAU[x.trang_thai] || ''}` }, x.trang_thai_ten)),
+    el('td', { class: 'tien' }, dinhDangSo.format(x.so_ca)),
+    el('td', { class: 'tien' }, dinhDangSo.format(x.so_nguoi)),
+    el('td', { class: 'tien' }, Number(x.tong_gio || 0).toFixed(2)),
+    el('td', { class: 'tien' }, el('strong', {}, tien(x.tong_tien))),
+    el('td', {}, `Nợ ${x.tk_no} / Có ${x.tk_co}`,
+      el('div', { class: 'phu' }, `khoản mục ${x.khoan_muc}`)),
+    el('td', {}, x.finance_voucher_no || el('span',
+      { class: x.da_chot ? 'nhan vang' : 'phu' }, x.da_chot ? 'chưa ghi sổ' : '—')),
+  ));
+
+  const nguoi = new Map();
+  for (const x of d.dot) {
+    if (!x.da_chot) continue;
+    for (const c of x.chi_tiet) {
+      const k = c.pg_ma;
+      if (!nguoi.has(k)) nguoi.set(k, { ma: k, ten: c.pg_ten, ca: 0, gio: 0, tien: 0 });
+      const g = nguoi.get(k);
+      g.ca += Number(c.so_ca || 0);
+      g.gio += Number(c.tong_gio || 0);
+      g.tien += Number(c.so_tien || 0);
+    }
+  }
+  const dongNguoi = [...nguoi.values()].sort((a, b) => b.tien - a.tien).map((g) => el('tr', {},
+    el('td', {}, el('strong', {}, g.ten || g.ma), el('div', { class: 'phu' }, g.ma)),
+    el('td', { class: 'tien' }, dinhDangSo.format(g.ca)),
+    el('td', { class: 'tien' }, g.gio.toFixed(2)),
+    el('td', { class: 'tien' }, el('strong', {}, tien(g.tien))),
+  ));
+
+  than.replaceChildren(
+    dauTrang('Lương PG',
+      'Khoản chi do phân hệ vận hành tính từ ca phân công và chấm công thật. Kế toán QUAN SÁT '
+      + 'để cuối kỳ còn giải thích được con số, không phải là một cửa duyệt.'),
+
+    el('div', { class: 'bao' },
+      'Lương PG tính theo giờ làm thực tế nhân đơn giá của loại điểm làm việc: siêu thị '
+      + '50.000đ mỗi giờ, chợ và tuyến đường và công viên và trường học 75.000đ mỗi giờ. '
+      + 'LƯƠNG CỦA SUP KHÔNG nằm trong bảng này. Chỉ đợt ĐÃ CHỐT mới là khoản phải ghi sổ.'),
+
+    el('div', { class: 'luoi luoi-3 cach-duoi' },
+      theChiSo('Đã chốt · phải ghi sổ', tien(d.tong_da_chot), 'đồng', 'duong'),
+      theChiSo('Đang chờ SUP chốt', tien(d.tong_dang_cho), 'đồng, chưa chắc chắn', 'vang'),
+      theChiSo('Đợt đã chốt chưa có chứng từ', dinhDangSo.format(d.so_cho_ghi_so),
+        d.so_cho_ghi_so ? 'cần lập chứng từ' : 'không còn đợt nào', d.so_cho_ghi_so ? 'vang' : ''),
+    ),
+
+    el('h3', { class: 'muc' }, 'Các đợt lương'),
+    bang([{ ten: 'Kỳ' }, { ten: 'Trạng thái' }, { ten: 'Số ca', tien: true },
+      { ten: 'Số người', tien: true }, { ten: 'Tổng giờ', tien: true },
+      { ten: 'Tổng lương', tien: true }, { ten: 'Định khoản đề xuất' }, { ten: 'Chứng từ' }],
+      dongDot),
+
+    el('h3', { class: 'muc' }, 'Tổng hợp theo người · chỉ đợt đã chốt'),
+    bang([{ ten: 'Nhân viên PG' }, { ten: 'Số ca', tien: true },
+      { ten: 'Tổng giờ', tien: true }, { ten: 'Thành tiền', tien: true }], dongNguoi),
+  );
+};
 
 VE['hoa-hong-pg'] = async (than) => {
   const d = await goi('/hoa-hong');

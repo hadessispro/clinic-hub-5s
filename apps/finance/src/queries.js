@@ -288,6 +288,30 @@ async function hoaHong() {
   };
 }
 
+/* Lương PG mà phân hệ vận hành tính. Kế toán QUAN SÁT, không duyệt.
+ *
+ * Lương SUP không nằm ở đây — phần đó đi theo cách khác và không kê vào bảng
+ * lương PG.
+ */
+async function luongPg() {
+  const [dot, chiTiet] = await Promise.all([
+    rows(`select * from finance_src.luong_pg order by ky_code desc, tinh_luc desc limit 36`),
+    rows(`select * from finance_src.luong_pg_chi_tiet order by ky_code desc, so_tien desc`),
+  ]);
+  const theoDot = new Map();
+  for (const d of chiTiet) {
+    if (!theoDot.has(d.dot_id)) theoDot.set(d.dot_id, []);
+    theoDot.get(d.dot_id).push(d);
+  }
+  return {
+    dot: dot.map((d) => ({ ...d, chi_tiet: theoDot.get(d.dot_id) || [] })),
+    tong_da_chot: dot.filter((d) => d.da_chot).reduce((t, d) => t + Number(d.tong_tien || 0), 0),
+    tong_dang_cho: dot.filter((d) => !d.da_chot && d.trang_thai !== 'tu_choi')
+      .reduce((t, d) => t + Number(d.tong_tien || 0), 0),
+    so_cho_ghi_so: dot.filter((d) => d.da_chot && !d.finance_voucher_no).length,
+  };
+}
+
 async function opsSummary({ canSeeIndividualPay }) {
   const [leadsByChannel, leadsByMonth, pgWork, payroll] = await Promise.all([
     rows(
@@ -523,6 +547,6 @@ async function batches() {
 
 module.exports = {
   overview, journal, voucher, trialBalance, ledger, partnerBalances,
-  nondeductible, issues, opsSummary, hoaHong, accounts, partners, periods,
+  nondeductible, issues, opsSummary, hoaHong, luongPg, accounts, partners, periods,
   costItems, batches, charts,
 };

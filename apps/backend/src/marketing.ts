@@ -1648,6 +1648,202 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       { luc: 'tu_choi_luc', boi: 'tu_choi_boi' }, undefined, ly);
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════
+  // LƯƠNG PG
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Tính từ ca phân công và chấm công thật → SUP đối chiếu → chốt → kế toán
+  // quan sát. Lương SUP KHÔNG nằm ở đây; phần đó đi theo cách khác.
+  //
+  // Phép chọn ca nằm trong hàm marketing.pg_luong_ung_vien (migration 037),
+  // để bộ kiểm thử trong CI gọi đúng cái ứng dụng gọi.
+
+  async pgLuongBieuGia(user: AuthUser) {
+    requireRole(user, reportRoles);
+    const [gia, ca] = await Promise.all([
+      this.infrastructure.postgres.query('select * from marketing.pg_bieu_gia order by don_gia_gio, ma'),
+      this.infrastructure.postgres.query('select * from marketing.pg_ca_chuan where active order by thu_tu'),
+    ]);
+    return { data: { bieu_gia: gia.rows, ca_chuan: ca.rows } };
+  }
+
+  async pgLuongXemTruoc(user: AuthUser, kyCode: string) {
+    requireRole(user, supportRoles);
+    this.kiemKy(kyCode);
+    const r = await this.infrastructure.postgres.query(
+      'select * from marketing.pg_luong_ung_vien($1)', [kyCode]);
+    const rows = r.rows as JsonMap[];
+    const du = rows.filter((x) => x.du_dieu_kien);
+    return {
+      data: rows,
+      meta: {
+        ky_code: kyCode,
+        tong_ca: rows.length,
+        du_dieu_kien: du.length,
+        bi_loai: rows.length - du.length,
+        thieu_loai_diem: rows.filter((x) => !x.loai_diem).length,
+        thieu_cham_cong: rows.filter((x) => !x.vao_luc || !x.ra_luc).length,
+        co_canh_bao: rows.filter((x) => x.canh_bao).length,
+        so_nguoi: new Set(du.map((x) => x.pg_ma)).size,
+        tong_gio: du.reduce((s, x) => s + Number(x.gio_tinh_luong || 0), 0),
+        tong_tien: du.reduce((s, x) => s + Number(x.so_tien || 0), 0),
+      },
+    };
+  }
+
+  async pgLuongTinh(user: AuthUser, kyCode: string) {
+    requireRole(user, supportRoles);
+    this.kiemKy(kyCode);
+    const dangCo = await this.infrastructure.postgres.query(
+      `select trang_thai from marketing.pg_luong_dot
+        where ky_code = $1 and trang_thai <> 'tu_choi'`, [kyCode],
+    );
+    if (dangCo.rowCount) {
+      throw new BadRequestException(
+        `Kỳ ${kyCode} đã có một đợt lương ở trạng thái "${dangCo.rows[0].trang_thai}". `
+        + 'Từ chối đợt đó trước nếu muốn tính lại.');
+    }
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const dot = await client.query(
+        `insert into marketing.pg_luong_dot (ky_code, ky_tu, ky_den, tinh_boi)
+         values ($1, ($1 || '-01')::date,
+                 (date_trunc('month', ($1 || '-01')::date) + interval '1 month - 1 day')::date, $2)
+         returning id`, [kyCode, user.employeeCode],
+      );
+      const dotId = dot.rows[0].id as string;
+
+      // Ghi MỌI ca, kể cả ca bị loại. Ca bị loại mang số tiền 0 kèm lý do, để
+      // SUP đối chiếu được "tháng này mất bao nhiêu ca và vì sao". Bỏ chúng đi
+      // thì con số cuối tháng không giải thích được.
+      await client.query(
+        `insert into marketing.pg_luong_dong (
+           dot_id, assignment_id, pg_ma, pg_ten, ngay, diem_ten, loai_diem,
+           ca_bat_dau, ca_ket_thuc, vao_luc, ra_luc,
+           gio_phan_cong, gio_thuc_te, gio_tinh_luong, cach_tinh,
+           don_gia, so_tien, tinh_tien, ly_do_loai, canh_bao)
+         select $2, u.assignment_id, u.pg_ma, u.pg_ten, u.ngay, u.diem_ten, u.loai_diem,
+                u.ca_bat_dau, u.ca_ket_thuc, u.vao_luc, u.ra_luc,
+                u.gio_phan_cong, u.gio_thuc_te, u.gio_tinh_luong, u.cach_tinh,
+                u.don_gia, u.so_tien, u.du_dieu_kien, u.ly_do_loai, u.canh_bao
+           from marketing.pg_luong_ung_vien($1) u`, [kyCode, dotId],
+      );
+
+      await client.query(
+        `update marketing.pg_luong_dot d set
+           so_ca = t.n, so_nguoi = t.nguoi, tong_gio = t.gio, tong_tien = t.tien
+         from (
+           select count(*) filter (where tinh_tien)::int n,
+                  count(distinct pg_ma) filter (where tinh_tien)::int nguoi,
+                  coalesce(sum(gio_tinh_luong), 0) gio,
+                  coalesce(sum(so_tien), 0) tien
+             from marketing.pg_luong_dong where dot_id = $1
+         ) t where d.id = $1`, [dotId],
+      );
+
+      await client.query(
+        `insert into marketing.pg_luong_nhat_ky
+           (dot_id, tu_trang_thai, den_trang_thai, boi, vai_tro_boi, ghi_chu, so_ca, tong_tien)
+         select $1, null, 'cho_sup', $2, $3, 'Hệ thống tính tự động', so_ca, tong_tien
+           from marketing.pg_luong_dot where id = $1`,
+        [dotId, user.employeeCode, user.role],
+      );
+      await client.query('commit');
+      await this.audit(user, 'pg_luong.tinh', 'marketing.pg_luong', dotId, { ky_code: kyCode });
+      return this.pgLuongChiTiet(user, dotId);
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async pgLuongDanhSach(user: AuthUser, trangThai?: string) {
+    requireRole(user, reportRoles);
+    const p: unknown[] = [];
+    const dk: string[] = [];
+    if (trangThai) { p.push(trangThai); dk.push(`trang_thai = $${p.length}`); }
+    const r = await this.infrastructure.postgres.query(
+      `select * from marketing.pg_luong_dot
+        ${dk.length ? `where ${dk.join(' and ')}` : ''}
+        order by ky_code desc, created_at desc limit 60`, p,
+    );
+    return { data: r.rows };
+  }
+
+  async pgLuongChiTiet(user: AuthUser, id: string) {
+    requireRole(user, reportRoles);
+    const dot = await this.infrastructure.postgres.query(
+      'select * from marketing.pg_luong_dot where id = $1', [id],
+    );
+    if (!dot.rowCount) throw new BadRequestException('Không tìm thấy đợt lương.');
+    const [dong, gop, nk] = await Promise.all([
+      this.infrastructure.postgres.query(
+        `select * from marketing.pg_luong_dong where dot_id = $1 and not huy
+          order by tinh_tien desc, pg_ten nulls last, ngay`, [id]),
+      this.infrastructure.postgres.query(
+        `select pg_ma, pg_ten, loai_diem, count(*)::int so_ca,
+                sum(gio_tinh_luong) tong_gio, sum(so_tien) so_tien
+           from marketing.pg_luong_dong where dot_id = $1 and not huy and tinh_tien
+          group by pg_ma, pg_ten, loai_diem order by sum(so_tien) desc`, [id]),
+      this.infrastructure.postgres.query(
+        'select * from marketing.pg_luong_nhat_ky where dot_id = $1 order by created_at', [id]),
+    ]);
+    return { data: { dot: dot.rows[0], dong: dong.rows, gop: gop.rows, nhat_ky: nk.rows } };
+  }
+
+  private async pgLuongChuyen(user: AuthUser, id: string, den: string,
+    cot: { luc: string; boi: string }, ghiChu?: string, lyDo?: string) {
+    requireRole(user, supportRoles);
+    const truoc = await this.infrastructure.postgres.query(
+      'select trang_thai, so_ca, tong_tien from marketing.pg_luong_dot where id = $1', [id],
+    );
+    if (!truoc.rowCount) throw new BadRequestException('Không tìm thấy đợt lương.');
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      await client.query(
+        `update marketing.pg_luong_dot
+            set trang_thai = $2, ${cot.luc} = now(), ${cot.boi} = $3
+                ${den === 'tu_choi' ? ', tu_choi_ly_do = $4' : ''}
+          where id = $1`,
+        den === 'tu_choi' ? [id, den, user.employeeCode, lyDo || null] : [id, den, user.employeeCode],
+      );
+      await client.query(
+        `insert into marketing.pg_luong_nhat_ky
+           (dot_id, tu_trang_thai, den_trang_thai, boi, vai_tro_boi, ghi_chu, so_ca, tong_tien)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [id, truoc.rows[0].trang_thai, den, user.employeeCode, user.role,
+         lyDo || ghiChu || null, truoc.rows[0].so_ca, truoc.rows[0].tong_tien],
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await this.audit(user, `pg_luong.${den}`, 'marketing.pg_luong', id, { ly_do: lyDo || null });
+    return this.pgLuongChiTiet(user, id);
+  }
+
+  pgLuongChot(user: AuthUser, id: string) {
+    return this.pgLuongChuyen(user, id, 'da_chot',
+      { luc: 'chot_luc', boi: 'chot_boi' }, 'SUP chốt · kế toán thấy khoản chi này');
+  }
+
+  pgLuongTuChoi(user: AuthUser, id: string, lyDo: string) {
+    const ly = String(lyDo || '').trim();
+    if (ly.length < 5) throw new BadRequestException('Phải ghi lý do từ chối, ít nhất 5 ký tự.');
+    return this.pgLuongChuyen(user, id, 'tu_choi',
+      { luc: 'tu_choi_luc', boi: 'tu_choi_boi' }, undefined, ly);
+  }
+
 }
 
 @Controller('/api/v2/marketing')
@@ -1694,6 +1890,16 @@ export class MarketingController {
   @Patch('/pg-support-requests/:id') actionSupportRequest(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.actionSupportRequest(request.user, id, body); }
   @Post('/pg-attendance') attendance(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.recordPgAttendance(request.user, body); }
   @Get('/pg-attendance') attendanceList(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string) { return this.service.listPgAttendance(request.user, from, to); }
+  // ── Lương PG ──────────────────────────────────────────────────────────
+  @Get('/pg-luong/bieu-gia') plGia(@Req() r: ActorRequest) { return this.service.pgLuongBieuGia(r.user); }
+  @Get('/pg-luong') plDs(@Req() r: ActorRequest, @Query('trangThai') tt?: string) { return this.service.pgLuongDanhSach(r.user, tt); }
+  @Get('/pg-luong/xem-truoc') plXem(@Req() r: ActorRequest, @Query('ky') ky: string) { return this.service.pgLuongXemTruoc(r.user, ky); }
+  @Get('/pg-luong/:id') plCt(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.pgLuongChiTiet(r.user, id); }
+  @Post('/pg-luong/tinh') plTinh(@Req() r: ActorRequest, @Body() b: JsonMap) { return this.service.pgLuongTinh(r.user, String(b.ky || '')); }
+  @Post('/pg-luong/:id/chot') plChot(@Req() r: ActorRequest, @Param('id') id: string) { return this.service.pgLuongChot(r.user, id); }
+  @Post('/pg-luong/:id/tu-choi') plTc(@Req() r: ActorRequest, @Param('id') id: string, @Body() b: JsonMap) { return this.service.pgLuongTuChoi(r.user, id, String(b.lyDo || '')); }
+
+
   // ── Hoa hồng PG/SUP ───────────────────────────────────────────────────
   @Get('/hoa-hong/bieu-gia') hhBieuGia(@Req() r: ActorRequest) { return this.service.hoaHongBieuGia(r.user); }
   @Get('/hoa-hong') hhDanhSach(@Req() r: ActorRequest, @Query('trangThai') tt?: string) { return this.service.hoaHongDanhSach(r.user, tt); }
