@@ -199,6 +199,28 @@ export class RpcService {
       await this.put('profiles', next, current.record_key);
       return next;
     }
+    // Mở khoá tài khoản bị chặn vì nhập sai mật khẩu nhiều lần.
+    //
+    // Trước đó không có đường nào làm việc này từ giao diện: tài khoản bị khoá
+    // thì hoặc ngồi đợi hết mười phút, hoặc phải chạy SQL tay trên máy chủ.
+    // Người quản trị không nên phải mở terminal để làm một việc thường ngày.
+    //
+    // KHÔNG đặt lại mật khẩu ở đây. Mở khoá chỉ xoá bộ đếm sai; mật khẩu vẫn
+    // là mật khẩu cũ. Đặt lại mật khẩu đi đường /auth/provision, nơi người
+    // quản trị phải tự nhập mật khẩu mới và biết mình vừa đặt gì.
+    if (name === 'system_unlock_account') {
+      if (!admins.has(user.role)) throw new ForbiddenException();
+      const ma = String(args.p_employee_code || '').trim();
+      if (!ma) throw new Error('Thiếu mã nhân sự cần mở khoá.');
+      const kq = await this.infrastructure.postgres.query(
+        `update app.local_accounts
+            set failed_attempts = 0, locked_until = null, updated_at = now()
+          where lower(trim(employee_code)) = lower($1)
+        returning employee_code, email`, [ma],
+      );
+      if (!kq.rowCount) throw new Error(`Không tìm thấy tài khoản đăng nhập của ${ma}.`);
+      return { employee_code: kq.rows[0].employee_code, email: kq.rows[0].email, unlocked: true };
+    }
     if (name === 'resolve_system_error') {
       if (!admins.has(user.role)) throw new ForbiddenException();
       const current = await this.byId('system_error_logs', String(args.p_error_id || ''));

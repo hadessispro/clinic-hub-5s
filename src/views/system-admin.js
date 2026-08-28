@@ -1,17 +1,41 @@
 import {
   getSystemHealth, getBugLogs, createBugLog, updateBugLog,
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
-  updateUserAccess, getTechnicalAudit, getIntegrationFailures,
+  updateUserAccess, unlockAccount, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { store } from '../store.js';
+import { ROLE_PROFILES } from '../constants.js';
+
+// Thẻ đang mở. Giữ ngoài hàm dựng vì router dựng lại cả view mỗi lần điều
+// hướng, và nhảy về thẻ đầu sau mỗi thao tác thì không ai làm việc được.
+let theDangMo = 'tai-khoan';
+const TEN_THE = {
+  'tai-khoan': 'Tài khoản và phân quyền',
+  bug: 'Bug và thông báo',
+  log: 'Log lỗi hệ thống',
+  audit: 'Lịch sử thay đổi',
+};
 
 const severityLabel = { low: 'Thấp', medium: 'Trung bình', high: 'Cao', critical: 'Nghiêm trọng' };
 const statusLabel = { open: 'Mới', investigating: 'Đang kiểm tra', resolved: 'Đã sửa', closed: 'Đã đóng' };
-const roleLabel = { staff: 'Nhân viên', leader: 'Trưởng bộ phận', hr: 'Nhân sự', finance: 'Kế toán', admin: 'Admin', admin_it: 'Admin IT', superadmin: 'Superadmin' };
+// Nhãn vai trò lấy từ danh mục chuẩn ROLE_PROFILES, không chép lại.
+//
+// Bản chép tay trước đây chỉ có bảy vai trò và THIẾU cả năm vai trò marketing.
+// Hậu quả không dừng ở hiển thị sai: ô chọn không tìm thấy mục nào khớp
+// admin_marketing nên trình duyệt hiện mục đầu tiên là "Nhân viên", và bấm
+// Cập nhật là hạ thẳng Admin Marketing xuống nhân viên thường. Một bản sao
+// thiếu sót của danh mục là một cái bẫy chứ không phải một tiện lợi.
+const roleLabel = Object.fromEntries(
+  Object.entries(ROLE_PROFILES).map(([ma, v]) => [ma, v.label]),
+);
+
+// Vai trò không cấp được từ màn này. Muốn cấp thì phải đi đường khác.
+const VAI_TRO_BAO_VE = ['admin', 'admin_it', 'superadmin'];
+const VAI_TRO_CAP_DUOC = Object.keys(ROLE_PROFILES).filter((r) => !VAI_TRO_BAO_VE.includes(r));
 let logSub = null;
 let bugFilterTimer = null;
 let logFilterTimer = null;
@@ -94,12 +118,21 @@ function errorRows(logs) {
 
 function profileRows(profiles, currentUserId) {
   return profiles.map((profile) => {
-    const protectedRole = ['admin', 'admin_it', 'superadmin'].includes(profile.role) || profile.id === currentUserId;
+    const protectedRole = VAI_TRO_BAO_VE.includes(profile.role) || profile.id === currentUserId;
+    // Vai trò hiện tại LUÔN có mặt trong danh sách, kể cả khi nó không thuộc
+    // nhóm cấp được. Thiếu nó thì ô chọn rơi về mục đầu tiên và người dùng
+    // nhìn thấy một vai trò không phải của mình.
+    const dsVaiTro = VAI_TRO_CAP_DUOC.includes(profile.role)
+      ? VAI_TRO_CAP_DUOC : [profile.role, ...VAI_TRO_CAP_DUOC];
     return `<tr><td><strong>${escapeHTML(profile.full_name)}</strong><small>${escapeHTML(profile.employee_code || 'Tài khoản hệ thống')}</small></td>
       <td>${escapeHTML(profile.department || '—')}</td><td>${escapeHTML(profile.branch_id || '—')}</td>
-      <td><select data-user-role="${profile.id}" ${protectedRole ? 'disabled' : ''}>${['staff','leader','hr','finance'].map((role) => `<option value="${role}" ${profile.role === role ? 'selected' : ''}>${roleLabel[role]}</option>`).join('')}${protectedRole ? `<option selected>${escapeHTML(roleLabel[profile.role] || profile.role)}</option>` : ''}</select></td>
+      <td><select data-user-role="${profile.id}" ${protectedRole ? 'disabled' : ''}>${dsVaiTro.map((role) => `<option value="${escapeHTML(role)}" ${profile.role === role ? 'selected' : ''}>${escapeHTML(roleLabel[role] || role)}</option>`).join('')}</select></td>
       <td><label class="system-toggle"><input type="checkbox" data-user-active="${profile.id}" ${profile.active ? 'checked' : ''} ${protectedRole ? 'disabled' : ''}><span>${profile.active ? 'Hoạt động' : 'Đã khóa'}</span></label></td>
-      <td>${protectedRole ? '<span class="subtle">Được bảo vệ</span>' : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}</td></tr>`;
+      <td class="sa-thaotac">${protectedRole ? '<span class="subtle">Được bảo vệ</span>'
+        : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}
+        ${profile.employee_code ? `<button class="secondary-button compact-button" type="button"
+          data-unlock="${escapeHTML(profile.employee_code)}"
+          title="Xoá bộ đếm nhập sai mật khẩu. Không đổi mật khẩu.">Mở khoá</button>` : ''}</td></tr>`;
   }).join('');
 }
 
@@ -108,10 +141,14 @@ export async function renderView(state) {
     getSystemHealth(), getBugLogs(), getSystemAnnouncements(), getSystemProfiles(), getTechnicalAudit(), getIntegrationFailures(), getSystemErrorLogs(),
   ]);
   const failed = outbox.filter((item) => item.status === 'failed');
-  return `<div class="view-header"><div><p class="eyebrow">SYSTEM CONTROL CENTER</p><h3>Thông báo phát hành, theo dõi lỗi, quản lý bug và quyền truy cập.</h3></div><button class="secondary-button" type="button" id="refreshSystem">↻ Làm mới dữ liệu</button></div>
-    <section class="system-health-grid">${metric('Database', health.database === 'online' ? 'Đang hoạt động' : 'Có lỗi', `Kiểm tra ${formatDateTime(health.checked_at)}`)}${metric('Tài khoản hoạt động', health.active_profiles, `${health.inactive_profiles || 0} tài khoản bị khóa`)}${metric('Dữ liệu chấm công', health.attendance_records, `Lần cuối ${health.last_attendance_at ? formatDateTime(health.last_attendance_at) : 'chưa có'}`)}${metric('Đồng bộ lỗi', health.failed_sync, `${health.pending_sync || 0} đang chờ`)}${metric('Lỗi ứng dụng', errorLogs.filter((x) => !x.resolved).length, `${errorLogs.filter((x) => x.level === 'critical' && !x.resolved).length} nghiêm trọng`)}</section>
-
-    <div class="grid cols-2 system-admin-grid">
+  const the = theDangMo;
+  // Bốn thẻ thay vì bảy khối chồng lên nhau. Trước đó màn này nhồi sức khỏe,
+  // thông báo, form bug, danh sách bug, log realtime, tài khoản và audit vào
+  // cùng một trang; muốn sửa quyền một người phải cuộn qua toàn bộ nhật ký
+  // lỗi. Dải sức khỏe giữ nguyên ở trên vì nó là tóm tắt, đúng với mọi thẻ.
+  const KHOI = {
+    'tai-khoan': `<section class="panel"><div class="section-title"><div><p class="eyebrow">PHÂN QUYỀN CÓ KIỂM SOÁT</p><h3>Tài khoản hệ thống</h3></div><span class="subtle">Không thể cấp Admin IT/Superadmin tại đây</span></div><div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>${profileRows(profiles, state.user.id)}</tbody></table></div></section>`,
+    'bug': `<div class="grid cols-2 system-admin-grid">
       <section class="panel"><div class="section-title"><div><p class="eyebrow">THÔNG BÁO PHÁT HÀNH</p><h3>Gửi cập nhật đến người dùng</h3></div></div>
         <form id="announcementForm" class="system-form"><label class="span-2">Tiêu đề<input name="title" required maxlength="160" placeholder="VD: Đã cập nhật chức năng chấm công"></label><label>Loại<select name="category"><option value="feature">Tính năng mới</option><option value="maintenance">Bảo trì</option><option value="security">Bảo mật</option><option value="general">Thông báo chung</option></select></label><label>Người nhận<select name="audience"><option value="all">Tất cả người dùng</option><option value="staff">Nhân viên</option><option value="leader">Trưởng bộ phận</option><option value="hr">Nhân sự</option><option value="finance">Kế toán</option><option value="admin">Admin</option></select></label><label class="span-2">Nội dung<textarea name="body" required maxlength="2000" placeholder="Mô tả thay đổi, thời gian áp dụng và hướng dẫn..."></textarea></label><button class="primary-button span-2" type="submit">🔔 Phát hành thông báo realtime</button></form>
         <div class="system-recent-list">${announcements.slice(0, 3).map((item) => `<article><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.body)}</span><small>${formatDateTime(item.created_at)} · ${escapeHTML(item.audience)}</small></article>`).join('') || '<p class="subtle">Chưa có thông báo phát hành.</p>'}</div>
@@ -121,19 +158,20 @@ export async function renderView(state) {
         <div class="system-sync-status"><strong>Hàng đợi đồng bộ</strong><span>${failed.length ? `${failed.length} lỗi cần kiểm tra` : 'Không có lỗi đồng bộ gần đây'}</span></div>
       </section>
     </div>
-
-    <section class="panel"><div class="section-title"><div><p class="eyebrow">BỘ LỌC BUG</p><h3>Danh sách bug</h3></div><span class="subtle" id="bugResultCount">${bugs.length} bản ghi</span></div>
+<section class="panel"><div class="section-title"><div><p class="eyebrow">BỘ LỌC BUG</p><h3>Danh sách bug</h3></div><span class="subtle" id="bugResultCount">${bugs.length} bản ghi</span></div>
       <div class="system-filterbar" id="bugFilters"><label>Tìm kiếm<input type="search" name="search" placeholder="Tên lỗi hoặc mô tả"></label><label>Khu vực<input name="area" placeholder="VD: Chấm công"></label><label>Mức độ<select name="severity">${filterOptions(severityLabel)}</select></label><label>Trạng thái<select name="status">${filterOptions(statusLabel)}</select></label><button class="secondary-button" type="button" data-clear-filters="bug">Xóa lọc</button></div>
-      <div class="system-log-groups" id="bugTableBody">${groupedPanels(bugs, bugRows, 'bug')}</div></section>
-
-    <section class="panel"><div class="section-title"><div><p class="eyebrow">LOG HỆ THỐNG REALTIME</p><h3>Lỗi ứng dụng và lỗi đồng bộ</h3></div><span class="live-indicator">Đang theo dõi</span></div>
+      <div class="system-log-groups" id="bugTableBody">${groupedPanels(bugs, bugRows, 'bug')}</div></section>`,
+    'log': `<section class="panel"><div class="section-title"><div><p class="eyebrow">LOG HỆ THỐNG REALTIME</p><h3>Lỗi ứng dụng và lỗi đồng bộ</h3></div><span class="live-indicator">Đang theo dõi</span></div>
       <div class="system-filterbar" id="logFilters"><label>Tìm trong log<input type="search" name="search" placeholder="Thông báo, nguồn hoặc URL"></label><label>Nguồn<select name="source"><option value="all">Tất cả</option><option value="client">Ứng dụng client</option><option value="sync">Đồng bộ dữ liệu</option></select></label><label>Mức độ<select name="level"><option value="all">Tất cả</option><option value="warning">Cảnh báo</option><option value="error">Lỗi</option><option value="critical">Nghiêm trọng</option></select></label><label>Trạng thái<select name="resolved"><option value="all">Tất cả</option><option value="false">Chưa xử lý</option><option value="true">Đã xử lý</option></select></label><button class="secondary-button" type="button" data-clear-filters="log">Xóa lọc</button></div>
       <div class="system-log-groups" id="systemLogBody">${groupedPanels(errorLogs, errorRows, 'log')}</div>
       <details class="sync-error-details"><summary>Lỗi đồng bộ dữ liệu (${failed.length})</summary>${failed.length ? failed.map((item) => `<article><strong>${escapeHTML(item.entity_type)} · ${escapeHTML(item.entity_id || '')}</strong><span>${escapeHTML(item.last_error || 'Không có mô tả')}</span><small>${formatDateTime(item.created_at)} · thử ${item.attempts || 0} lần</small></article>`).join('') : '<p class="subtle">Không có lỗi đồng bộ.</p>'}</details>
-    </section>
-
-    <section class="panel"><div class="section-title"><div><p class="eyebrow">PHÂN QUYỀN CÓ KIỂM SOÁT</p><h3>Tài khoản hệ thống</h3></div><span class="subtle">Không thể cấp Admin IT/Superadmin tại đây</span></div><div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>${profileRows(profiles, state.user.id)}</tbody></table></div></section>
-    <section class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT TRAIL</p><h3>Lịch sử thay đổi hệ thống</h3></div><span class="subtle">${audits.length} thao tác gần nhất</span></div><div class="system-audit-list">${audits.slice(0, 30).map((item) => `<article><strong>${escapeHTML(item.action)} · ${escapeHTML(item.entity)}</strong><span>${escapeHTML(item.entity_id || '')}</span><small>${formatDateTime(item.created_at)}</small></article>`).join('') || '<p class="subtle">Chưa có audit log.</p>'}</div></section>`;
+    </section>`,
+    'audit': `<section class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT TRAIL</p><h3>Lịch sử thay đổi hệ thống</h3></div><span class="subtle">${audits.length} thao tác gần nhất</span></div><div class="system-audit-list">${audits.slice(0, 30).map((item) => `<article><strong>${escapeHTML(item.action)} · ${escapeHTML(item.entity)}</strong><span>${escapeHTML(item.entity_id || '')}</span><small>${formatDateTime(item.created_at)}</small></article>`).join('') || '<p class="subtle">Chưa có audit log.</p>'}</div></section>`,
+  };
+  return `<div class="view-header"><div><p class="eyebrow">TRUNG TÂM QUẢN TRỊ</p><h3>${escapeHTML(TEN_THE[the])}</h3></div><button class="secondary-button" type="button" id="refreshSystem">↻ Làm mới dữ liệu</button></div>
+    <section class="system-health-grid">${metric('Database', health.database === 'online' ? 'Đang hoạt động' : 'Có lỗi', `Kiểm tra ${formatDateTime(health.checked_at)}`)}${metric('Tài khoản hoạt động', health.active_profiles, `${health.inactive_profiles || 0} tài khoản bị khóa`)}${metric('Dữ liệu chấm công', health.attendance_records, `Lần cuối ${health.last_attendance_at ? formatDateTime(health.last_attendance_at) : 'chưa có'}`)}${metric('Đồng bộ lỗi', health.failed_sync, `${health.pending_sync || 0} đang chờ`)}${metric('Lỗi ứng dụng', errorLogs.filter((x) => !x.resolved).length, `${errorLogs.filter((x) => x.level === 'critical' && !x.resolved).length} nghiêm trọng`)}</section>
+    <nav class="sa-the">${Object.entries(TEN_THE).map(([ma, ten]) => `<button type="button" class="sa-the-nut ${ma === the ? 'is-active' : ''}" data-the="${ma}">${escapeHTML(ten)}</button>`).join('')}</nav>
+    ${KHOI[the]}`;
 }
 
 function bindLiveFilters() {
@@ -185,6 +223,24 @@ export function initView() {
   document.getElementById('announcementForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang phát hành…'; try { await publishSystemAnnouncement(data); showToast('Đã phát hành thông báo đến người dùng.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '🔔 Phát hành thông báo realtime'; showToast(error.message || 'Không thể phát hành thông báo.', true); } });
   document.getElementById('bugForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang lưu bug…'; try { await createBugLog(data); showToast('Đã thêm bug log.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '+ Thêm bug log'; showToast(error.message || 'Không thể thêm bug log.', true); } });
   bindLiveFilters(); bindBugActions(); bindLogActions();
+  document.querySelectorAll('[data-the]').forEach((b) => b.addEventListener('click', () => {
+    theDangMo = b.dataset.the;
+    store.notify();
+  }));
+
+  document.querySelectorAll('[data-unlock]').forEach((button) => button.addEventListener('click', async () => {
+    const ma = button.dataset.unlock;
+    if (!await confirmAction(
+      `Xoá bộ đếm nhập sai mật khẩu của ${ma} để họ đăng nhập lại ngay. `
+      + 'Mật khẩu KHÔNG đổi — nếu họ quên hẳn mật khẩu thì mở khoá không giúp được gì.',
+      { title: `Mở khoá tài khoản ${ma}?`, confirmText: 'Mở khoá' })) return;
+    try {
+      await unlockAccount(ma);
+      showToast(`Đã mở khoá ${ma}. Mật khẩu giữ nguyên.`);
+      store.notify();
+    } catch (error) { showToast(error.message || 'Không mở khoá được.', true); }
+  }));
+
   document.querySelectorAll('[data-save-access]').forEach((button) => button.addEventListener('click', async () => { const id = button.dataset.saveAccess; const role = document.querySelector(`[data-user-role="${id}"]`).value; const active = document.querySelector(`[data-user-active="${id}"]`).checked; if (!await confirmAction(`Xác nhận cập nhật quyền ${roleLabel[role]} và trạng thái tài khoản?`, { title: 'Cập nhật phân quyền', confirmText: 'Lưu phân quyền' })) return; try { await updateUserAccess(id, role, active); showToast('Đã cập nhật quyền tài khoản và lưu audit.'); store.notify(); } catch (error) { showToast(error.message || 'Không thể cập nhật tài khoản.', true); } }));
   logSub?.unsubscribe(); logSub = subscribeToSystemErrors(() => { if (store.getState().currentView === 'system-admin') store.notify(); });
 }

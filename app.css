@@ -7023,24 +7023,45 @@ body.dialog-open {
  * "suy ra". Còn lại dùng chung.
  */
 
-/* Hàng bộ lọc. Cùng khuôn với .tsm-filters của màn Quản lý Telesale để hai
- * màn thao tác giống nhau, thay vì mỗi màn một kiểu lọc. */
+/* HAI kiểu hàng, không phải một.
+ *
+ * Bản đầu dùng chung một lưới 6 cột cho mọi biểu mẫu, kể cả biểu mẫu chỉ có
+ * ba phần tử. Ba phần tử rải trên sáu cột thì chúng bị kéo giãn ra và giữa
+ * chúng là những khoảng trống không ai giải thích được. Một lưới cố định chỉ
+ * hợp khi số ô đúng bằng số cột.
+ *
+ *   .hh-hang  vài phần tử, xếp liền nhau theo chiều ngang
+ *   .hh-loc   nhiều ô lọc, chia đều thành lưới
+ */
+.hh-hang, .hh-loc { margin: 14px 0; }
+
+.hh-hang { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.hh-hang label { flex: 0 1 210px; }
+
 .hh-loc {
-  display: grid; align-items: end; gap: 10px; margin: 14px 0;
-  grid-template-columns: minmax(190px, 1.3fr) repeat(4, minmax(130px, 1fr)) auto;
+  display: grid; align-items: end; gap: 10px;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(125px, 1fr)) minmax(150px, 1fr) auto;
 }
-.hh-loc label span {
+
+.hh-hang label span, .hh-loc label span {
   display: block; margin-bottom: 6px;
   color: #55716b; font-size: .72rem; font-weight: 800;
   text-transform: uppercase; letter-spacing: .04em;
 }
-.hh-loc input, .hh-loc select {
-  width: 100%; height: 44px; padding: 0 12px;
-  border: 1px solid #cbdcd8; border-radius: 11px;
+.hh-hang input, .hh-hang select, .hh-loc input, .hh-loc select {
+  width: 100%; height: 42px; padding: 0 12px;
+  border: 1px solid #cbdcd8; border-radius: 10px;
   background: #fff; color: #17312e; font: inherit;
 }
-.hh-loc .secondary-button, .hh-loc .primary-button { height: 44px; white-space: nowrap; }
-.hh-loc-ket { grid-column: 1 / -1; margin: -4px 0 0; color: var(--muted); font-size: .84rem; }
+/* Nút cao đúng bằng ô nhập để đáy chúng thẳng hàng. Không cần nhãn giả
+ * &nbsp; phía trên nữa — align-items: flex-end lo phần đó. */
+.hh-hang > button, .hh-loc > button { height: 42px; white-space: nowrap; }
+
+/* Dòng giải thích luôn xuống hàng riêng và chiếm trọn bề ngang. */
+.hh-ghi {
+  flex-basis: 100%; grid-column: 1 / -1;
+  margin: 2px 0 0; color: var(--muted); font-size: .84rem;
+}
 
 /* Bảng. Cùng khuôn .tsm-table. */
 .hh-bang-wrap { overflow: auto; border: 1px solid #d7e2df; border-radius: 13px; }
@@ -7097,5 +7118,38 @@ body.dialog-open {
 }
 .hh-nhatky li small { display: block; margin-top: 2px; color: var(--muted); }
 
-@media (max-width: 1050px) { .hh-loc { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 700px)  { .hh-loc { grid-template-columns: 1fr; } }
+@media (max-width: 1050px) {
+  .hh-loc { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+  .hh-loc { grid-template-columns: 1fr; }
+  .hh-hang label { flex: 1 1 100%; }
+  .hh-hang > button { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ── Thẻ của màn Quản trị hệ thống ────────────────────────────────────────
+ *
+ * Bảy khối trong một trang thì muốn sửa quyền một người phải cuộn qua toàn bộ
+ * nhật ký lỗi. Bốn thẻ tách chúng ra mà không cần thêm bốn đường dẫn và bốn
+ * lần khai quyền — cùng một màn, cùng một quyền, chỉ khác phần đang hiện.
+ */
+.sa-the {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin: 4px 0 16px; padding: 5px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface-soft);
+}
+.sa-the-nut {
+  padding: 9px 16px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--muted);
+  font: inherit; font-size: .88rem; font-weight: 700;
+  cursor: pointer; transition: background .12s, color .12s;
+}
+.sa-the-nut:hover { background: var(--mint); color: var(--teal-dark); }
+.sa-the-nut.is-active {
+  background: var(--surface); color: var(--teal-dark);
+  box-shadow: 0 1px 3px rgba(42, 61, 52, .12);
+}
+
+/* Hai nút thao tác trên một hàng tài khoản, không dính vào nhau. */
+.sa-thaotac { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

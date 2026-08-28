@@ -70,6 +70,17 @@ export async function updateUserAccess(userId, role, active) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+// Mở khoá tài khoản bị chặn vì nhập sai mật khẩu nhiều lần.
+//
+// KHÔNG đổi mật khẩu. Mở khoá chỉ xoá bộ đếm sai; người dùng vẫn đăng nhập
+// bằng mật khẩu cũ. Nếu họ quên hẳn mật khẩu thì mở khoá không giúp gì, và
+// đó là lúc cần đặt lại — một việc khác, có người khác biết.
+export async function unlockAccount(employeeCode) {
+  const { data, error } = await supabase.rpc('system_unlock_account', { p_employee_code: employeeCode });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 export async function getTechnicalAudit() {
   const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(60);
   if (error) throw error;

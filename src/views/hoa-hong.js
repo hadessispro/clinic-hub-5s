@@ -32,6 +32,31 @@ let fTrangThaiDot = '';
 
 const kyMacDinh = () => new Date().toISOString().slice(0, 7);
 
+// Danh sách kỳ tự dựng, không dùng <input type="month">.
+//
+// Ô month gốc của trình duyệt hiển thị theo ngôn ngữ TRÌNH DUYỆT chứ không
+// theo lang của trang, nên Chrome cài tiếng Anh luôn hiện "August 2026" giữa
+// một màn tiếng Việt. Không ép được bằng CSS hay thuộc tính HTML nào.
+//
+// Đi lùi 18 tháng là đủ: hoa hồng chốt theo tháng và không ai duyệt lại kỳ
+// cách đây hơn một năm rưỡi.
+function danhSachKy(dangChon) {
+  const nay = new Date();
+  const ds = [];
+  for (let i = 0; i < 18; i += 1) {
+    const d = new Date(nay.getFullYear(), nay.getMonth() - i, 1);
+    const ma = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    ds.push(opt(ma, `Tháng ${d.getMonth() + 1} · ${d.getFullYear()}`, dangChon));
+  }
+  // Kỳ đang chọn có thể nằm ngoài 18 tháng nếu người dùng vừa mở một đợt cũ.
+  // Thiếu nó thì select tự nhảy về tháng này và người ta tính nhầm kỳ.
+  if (dangChon && !ds.some((o) => o.includes(`value="${dangChon}"`))) {
+    const [nam, thang] = dangChon.split('-');
+    ds.unshift(opt(dangChon, `Tháng ${Number(thang)} · ${nam}`, dangChon));
+  }
+  return ds.join('');
+}
+
 // Năm mốc trong quy trình gộp thành bốn trạng thái sống. "SUP đã xác nhận" và
 // "Chờ Admin xác nhận" là cùng một thời điểm nhìn từ hai phía, nên nhãn nói cả
 // hai vế thay vì tách thành hai trạng thái mà một trong hai không bao giờ tồn
@@ -92,12 +117,12 @@ function khoiTinh() {
     <div class="section-title"><h3>Tính hoa hồng theo kỳ</h3>
       <span class="pill">Máy tính · người duyệt hai vòng</span></div>
 
-    <form id="hhFormKy" class="hh-loc">
-      <label><span>Kỳ tính</span><input type="month" name="ky" value="${escapeHTML(kyChon)}" required></label>
-      <label><span>&nbsp;</span><button type="submit" class="secondary-button"><i class="ri-search-eye-line"></i> Xem trước</button></label>
-      <label><span>&nbsp;</span><button type="button" id="hhNutTinh" class="primary-button"
-        ${xemTruoc && m?.trong_han ? '' : 'disabled'}><i class="ri-add-circle-line"></i> Tạo đợt duyệt</button></label>
-      <p class="hh-loc-ket">${xemTruoc
+    <form id="hhFormKy" class="hh-hang">
+      <label><span>Kỳ tính</span><select name="ky">${danhSachKy(kyChon)}</select></label>
+      <button type="submit" class="secondary-button"><i class="ri-search-eye-line"></i> Xem trước</button>
+      <button type="button" id="hhNutTinh" class="primary-button"
+        ${xemTruoc && m?.trong_han ? '' : 'disabled'}><i class="ri-add-circle-line"></i> Tạo đợt duyệt</button>
+      <p class="hh-ghi">${xemTruoc
         ? `Kỳ ${escapeHTML(m.ky_code)}: ${m.trong_han} dòng đủ điều kiện, ${m.qua_han} dòng quá hạn.`
         : 'Xem trước trước đã. Nó không ghi gì, chỉ cho thấy đợt sắp tạo gồm những gì và loại những gì.'}</p>
     </form>
@@ -130,7 +155,7 @@ function khoiCanhBao(m) {
 
 function bangXemTruoc() {
   const rows = xemTruoc.data || [];
-  if (!rows.length) return '<p class="hh-loc-ket">Không có lead nào đủ điều kiện trong kỳ này.</p>';
+  if (!rows.length) return '<p class="hh-ghi">Không có lead nào đủ điều kiện trong kỳ này.</p>';
   return `<div class="hh-bang-wrap"><table class="hh-bang"><thead><tr>
     <th>Khách hàng</th><th>Loại</th><th>PG nhập</th><th>SUP hưởng</th>
     <th>Lịch hẹn</th><th>Ngày đến</th><th class="hh-so">Số ngày</th><th>Kết quả</th>
@@ -158,15 +183,15 @@ function khoiDanhSach() {
     <div class="section-title"><h3>Các đợt hoa hồng</h3>
       <span class="pill">${ds.length}${fTrangThaiDot ? ` trên ${dsDot.length}` : ''} đợt</span></div>
 
-    <form id="hhLocDot" class="hh-loc">
+    <form id="hhLocDot" class="hh-hang">
       <label><span>Trạng thái đợt</span><select name="tt">
         ${opt('', 'Tất cả trạng thái', fTrangThaiDot)}
         ${BUOC.concat('tu_choi').map((k) => opt(k, NHAN[k].chu, fTrangThaiDot)).join('')}
       </select></label>
-      <label><span>&nbsp;</span><button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button></label>
+      <button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button>
     </form>
 
-    ${!ds.length ? '<p class="hh-loc-ket">Chưa có đợt nào khớp bộ lọc.</p>' : `
+    ${!ds.length ? '<p class="hh-ghi">Chưa có đợt nào khớp bộ lọc.</p>' : `
     <div class="hh-bang-wrap"><table class="hh-bang"><thead><tr>
       <th>Kỳ</th><th>Trạng thái</th><th class="hh-so">Dòng trả</th>
       <th class="hh-so">Phần PG</th><th class="hh-so">Phần SUP</th><th class="hh-so">Tổng chi</th><th></th>
@@ -238,7 +263,7 @@ function khoiChiTiet(laAdmin, laSup) {
       ${the('Tổng chi', tien(dot.tong_tien), `${soLoai} dòng bị loại, tiền bằng 0`)}
     </div>
 
-    <p class="hh-loc-ket">Định khoản đề xuất: <strong>Nợ ${escapeHTML(dot.tk_no)} / Có ${escapeHTML(dot.tk_co)}</strong>
+    <p class="hh-ghi">Định khoản đề xuất: <strong>Nợ ${escapeHTML(dot.tk_no)} / Có ${escapeHTML(dot.tk_co)}</strong>
       · khoản mục ${escapeHTML(dot.khoan_muc)}. Kế toán thấy khoản này trong két để đối chiếu, nhưng không phải một cửa duyệt.</p>
 
     <div class="hh-nut">
@@ -270,8 +295,8 @@ function khoiChiTiet(laAdmin, laSup) {
         ${opt('', 'Được trả và bị loại', fKetQua)}${opt('tra', 'Chỉ dòng được trả', fKetQua)}${opt('loai', 'Chỉ dòng bị loại', fKetQua)}</select></label>
       <label><span>Người hưởng</span><select name="nguoi">
         ${opt('', 'Tất cả', fNguoi)}${nguoiCo.map((l) => opt(l.nguoi_ma, `${l.nguoi_ten || l.nguoi_ma} · ${l.vai_tro === 'pg' ? 'PG' : 'SUP'}`, fNguoi)).join('')}</select></label>
-      <label><span>&nbsp;</span><button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button></label>
-      <p class="hh-loc-ket">Hiện ${daLoc.length} trên ${dong.length} dòng.
+      <button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button>
+      <p class="hh-ghi">Hiện ${daLoc.length} trên ${dong.length} dòng.
         ${daLoc.length !== dong.length ? ' <button type="button" id="hhXoaLoc" class="secondary-button">Xóa lọc</button>' : ''}</p>
     </form>
     ${bangDong(daLoc)}
@@ -292,7 +317,7 @@ function khoiChiTiet(laAdmin, laSup) {
 // phải chạy hai lần và người đọc phải so hai chỗ; gộp lại rồi đánh dấu bằng
 // vạch đỏ bên trái thì so sánh nằm ngay trong tầm mắt.
 function bangDong(ds) {
-  if (!ds.length) return '<p class="hh-loc-ket">Không có dòng nào khớp bộ lọc.</p>';
+  if (!ds.length) return '<p class="hh-ghi">Không có dòng nào khớp bộ lọc.</p>';
   return `<div class="hh-bang-wrap"><table class="hh-bang"><thead><tr>
     <th>Vai trò</th><th>Người hưởng</th><th>Khách hàng</th><th>Loại</th>
     <th>Lịch hẹn</th><th>Ngày đến</th><th class="hh-so">Số ngày</th><th class="hh-so">Số tiền</th><th>Ghi chú</th>
