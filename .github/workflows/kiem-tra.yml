@@ -17,8 +17,11 @@
 #              dữ liệu khách hàng. Hiện chỉ có .gitignore canh, mà .gitignore
 #              thì gõ thêm git add -f là qua được.
 #
-#   dung-goi   npm ci đòi package-lock.json khớp package.json. Lệch là dấu
-#              hiệu ai đó sửa tay package.json mà quên cài lại.
+#   dựng ảnh   Dựng đúng ba image mà production chạy. Kiểm cùng lúc pnpm
+#              lockfile còn khớp, TypeScript biên dịch được, và vite dựng
+#              được PWA. Mô phỏng bằng lệnh npm rời rạc thì chứng minh một
+#              chuyện không ai quan tâm: lần chạy đầu của CI này hỏng đúng vì
+#              dùng npm ci trong khi production dùng pnpm workspace.
 #
 # Repo đang công khai nên chỉ chạy trên runner của GitHub. Runner tự đặt trên
 # repo công khai là lỗ hổng: ai fork cũng mở được pull request chứa workflow
@@ -42,7 +45,7 @@ concurrency:
 
 jobs:
   cu-phap:
-    name: Cú pháp và biên dịch
+    name: Cú pháp và dựng được image thật
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +53,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Cú pháp mọi file JavaScript
+        # Rẻ và nhanh, chạy trước để hỏng cú pháp thì biết ngay thay vì đợi
+        # hết một lượt build Docker.
         run: |
           loi=0
           n=0
@@ -68,28 +72,40 @@ jobs:
           echo "Đã kiểm $n file"
           exit $loi
 
-      - name: Cài gói của PWA vận hành
-        run: npm ci
+      - name: Cú pháp mọi script bash
+        run: |
+          loi=0
+          for f in scripts/*.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f" || { echo "::error file=$f::Lỗi cú pháp"; loi=1; }
+          done
+          exit $loi
 
-      - name: Dựng PWA vận hành
-        # Giá trị giả cho biến VITE: bước này chỉ chứng minh mã dựng được,
-        # không kết nối đi đâu cả. Giá trị thật nằm trong .env.vps trên VPS.
+      - name: Dựng đúng ba image mà production chạy
+        # Dựng image THẬT thay vì chạy npm ci hay tsc rời rạc.
+        #
+        # Lần chạy đầu của CI này dùng "npm ci" trong apps/backend và hỏng, vì
+        # hai lý do mà chỉ nhìn thấy khi đọc Dockerfile: apps/backend không có
+        # package-lock.json, và production không dùng npm mà dùng pnpm với
+        # workspace. Một phép kiểm mô phỏng cách build khác với cách build thật
+        # thì nó chứng minh một chuyện không ai quan tâm.
+        #
+        # Dựng image thật kiểm cùng lúc: pnpm lockfile còn khớp, TypeScript
+        # biên dịch được, vite dựng được PWA, và npm install của két kế toán
+        # chạy được. Đúng những gì sẽ xảy ra khi triển khai.
         env:
           VITE_SUPABASE_URL: https://kiem-tra.local
           VITE_SUPABASE_PUBLISHABLE_KEY: kiem-tra
           VITE_SUPABASE_ANON_KEY: kiem-tra
           VITE_DATA_BACKEND: vps
-        run: npm run build
-
-      - name: Biên dịch backend TypeScript
-        working-directory: apps/backend
         run: |
-          npm ci
-          npx tsc -p tsconfig.json --noEmit
+          loi=0
+          for s in backend finance web; do
+            echo "── dựng $s"
+            docker compose build "$s" || { echo "::error::Không dựng được image $s"; loi=1; }
+          done
+          exit $loi
 
-      - name: Cài gói của Két kế toán
-        working-directory: apps/finance
-        run: npm ci --omit=dev
 
   migration:
     name: Migration chạy được và chạy lại được
@@ -176,12 +192,12 @@ jobs:
           fetch-depth: 0
 
       - name: Chặn loại file cấm commit
-        # Quy tắc 9 của dự án. Kiểm trên toàn bộ lịch sử chứ không chỉ bản
+        # Quy tắc 9 của dự án. Kiểm trên TOÀN BỘ lịch sử chứ không chỉ bản
         # hiện tại: repo công khai thì mọi thứ từng commit đều còn đọc được,
         # xóa ở bản mới không lấy lại được gì.
         run: |
-          cam='\.env$|\.env\.|\.pem$|\.key$|id_rsa|id_ed25519|\.sql\.gz$|\.dump$|\.xlsx?$|\.xlsm$'
-          giu='\.env\.example$'
+          cam='[.]env$|[.]env[.]|[.]pem$|[.]key$|id_rsa|id_ed25519|[.]sql[.]gz$|[.]dump$|[.]xlsx?$|[.]xlsm$'
+          giu='[.]env[.]example$'
           lot=$(git log --all --pretty=format: --name-only --diff-filter=A \
                 | sort -u | grep -E "$cam" | grep -vE "$giu" || true)
           if [ -n "$lot" ]; then
@@ -192,26 +208,48 @@ jobs:
           echo "Không có file cấm nào trong lịch sử"
 
       - name: Chặn chuỗi giống bí mật thật
+        # Ba điều chỉnh, cả ba đều rút từ lần chạy đầu tiên của CI này:
+        #
+        #   Chỉ quét file GIT ĐANG THEO DÕI. File .env thật nằm trên máy lập
+        #   trình viên, đã bị .gitignore chặn và chưa từng rời khỏi máy đó.
+        #   Quét cả nó chỉ tạo báo động về một thứ không ai thấy được.
+        #
+        #   Bỏ qua mọi file .example. Cả công dụng của chúng là chứa chỗ điền
+        #   mẫu, mà chỗ điền mẫu thì trông y hệt bí mật thật với mọi biểu thức
+        #   tìm kiếm. Lần chạy đầu đã báo động vì đúng chỗ đó.
+        #
+        #   Bỏ qua chính file workflow này, vì nó chứa các mẫu tìm kiếm và sẽ
+        #   tự bắt được chính mình.
+        #
+        # Một cảnh báo sai lặp lại là cách nhanh nhất khiến người ta tắt cảnh
+        # báo đi, và lúc đó cảnh báo thật cũng mất theo.
         run: |
-          # Bắt giá trị dài đặt cho biến bí mật. Cố ý không bắt ${BIEN} vì đó
-          # là tham chiếu, không phải giá trị.
           mau='(POSTGRES_PASSWORD|APP_JWT_SECRET|FINANCE_JWT_SECRET|SERVICE_ROLE_KEY|SECRET_KEY|BACKEND_DB_PASSWORD|FINANCE_DB_PASSWORD)[[:space:]]*[:=][[:space:]]*['"'"'"]?[A-Za-z0-9+/=_-]{20,}'
-          lot=$(grep -rInE "$mau" --exclude-dir=.git --exclude-dir=node_modules . \
-                | grep -v '\${' | grep -v 'generate-a-long-random' || true)
+          lot=$(git ls-files -z \
+                | grep -zZvE '[.]example$|^[.]github/workflows/' \
+                | xargs -0 grep -InE "$mau" 2>/dev/null \
+                | grep -v '[$]{' || true)
           if [ -n "$lot" ]; then
-            echo "::error::Có chuỗi giống bí mật thật trong mã nguồn:"
+            echo "::error::Có chuỗi giống bí mật thật trong file đã commit:"
             echo "$lot" | cut -c1-160
             exit 1
           fi
-          echo "Không thấy bí mật nào trong mã nguồn"
+          echo "Không thấy bí mật nào trong file đã commit"
 
       - name: Chặn khóa riêng
+        # Mẫu tìm ghép từ hai mảnh để chuỗi hoàn chỉnh không bao giờ xuất hiện
+        # nguyên vẹn trong file này. Viết thẳng ra thì phép quét bắt được chính
+        # file workflow, và CI đỏ vì đúng cái nó dùng để kiểm.
         run: |
-          lot=$(grep -rl 'BEGIN .*PRIVATE KEY' --exclude-dir=.git --exclude-dir=node_modules . || true)
+          mau="BEGIN [A-Z ]*PRIVATE"" KEY"
+          lot=$(git ls-files -z \
+                | grep -zZvE '^[.]github/workflows/' \
+                | xargs -0 grep -lE "$mau" 2>/dev/null || true)
           if [ -n "$lot" ]; then
             echo "::error::Có khóa riêng trong repo:"; echo "$lot"; exit 1
           fi
           echo "Không có khóa riêng"
+
 
   ket-luan:
     name: Tổng kết
