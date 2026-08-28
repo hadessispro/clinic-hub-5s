@@ -1,0 +1,145 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# KHÔI PHỤC · quay lại một bản đã triển khai trước đó
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Chạy không điền gì thì nó LIỆT KÊ những bản có thể quay về, kèm thời điểm và
+# commit tương ứng. Điền mã vào thì nó quay về bản đó.
+#
+# Thiết kế như vậy vì lúc cần khôi phục là lúc có sự cố, và lúc có sự cố thì
+# không ai nhớ mã lần chạy. Bắt người ta đi tìm mã ở chỗ khác trước khi cho
+# bấm nút là thiết kế sai chỗ.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# KHÔI PHỤC NÀY TRẢ LẠI FILE, KHÔNG TRẢ LẠI DATABASE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Phân biệt này quan trọng và phải nói rõ:
+#
+#   File nguồn      quay về được, tự động, an toàn.
+#   Lược đồ database KHÔNG tự quay về. Migration đã chạy thì đã đổi lược đồ,
+#                   và quay về file cũ không hoàn tác nó.
+#   Dữ liệu          KHÔNG tự quay về. Trong lúc sự cố, PG vẫn chấm công và
+#                   telesale vẫn nhập lead. Khôi phục database là XÓA công
+#                   việc thật của họ.
+#
+# Nên khi lỗi nằm ở lược đồ database, đường đi đúng là viết một migration mới
+# để sửa, không phải nạp lại bản sao lưu. Bản sao lưu chỉ dùng khi dữ liệu đã
+# hỏng thật sự, và đó là quyết định phải có người cân nhắc, không phải một nút
+# bấm trong workflow.
+
+name: Khôi phục
+
+on:
+  workflow_dispatch:
+    inputs:
+      ma_lan_chay:
+        description: 'Mã lần triển khai muốn quay về. Để trống để xem danh sách.'
+        required: false
+        type: string
+      ly_do:
+        description: 'Vì sao cần quay lại'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trien-khai-production
+  cancel-in-progress: false
+
+jobs:
+  khoi-phuc:
+    name: ${{ inputs.ma_lan_chay == '' && 'Xem các bản quay về được' || format('Quay về {0}', inputs.ma_lan_chay) }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chuẩn bị khóa SSH
+        env:
+          KHOA: ${{ secrets.VPS_SSH_KEY }}
+          BIET_TRUOC: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$KHOA" ] || [ -z "$BIET_TRUOC" ]; then
+            echo "::error::Thiếu secret VPS_SSH_KEY hoặc VPS_KNOWN_HOSTS."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KHOA" > ~/.ssh/vps && chmod 600 ~/.ssh/vps
+          printf '%s\n' "$BIET_TRUOC" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Liệt kê các bản quay về được
+        id: danh-sach
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_KEY: /home/runner/.ssh/vps
+        run: |
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh lich-su | tee /tmp/ls.txt
+          {
+            echo "## Các bản có thể quay về"
+            echo
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' /tmp/ls.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dừng ở đây nếu chỉ xem danh sách
+        if: inputs.ma_lan_chay == ''
+        run: |
+          {
+            echo
+            echo "> Chạy lại workflow này và điền **mã lần chạy** ở trên để quay về bản đó."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Chỉ xem danh sách, không khôi phục gì."
+
+      - name: Sao lưu database trước khi động vào
+        if: inputs.ma_lan_chay != ''
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          # Khôi phục không chạm vào database, nhưng vẫn sao lưu. Lúc đang có
+          # sự cố là lúc dễ làm hỏng thêm nhất, và một bản sao lưu thừa chưa
+          # bao giờ hại ai.
+          ssh -i ~/.ssh/vps -o BatchMode=yes "$VPS_HOST" \
+            'F=/opt/backups/pg-truoc-khoi-phuc-$(date +%Y%m%d-%H%M%S).sql.gz
+             cd /opt/clinic-hub-5s
+             docker compose --env-file .env.vps exec -T postgres sh -c "pg_dump -U \$POSTGRES_USER -d \$POSTGRES_DB" < /dev/null | gzip > "$F"
+             gzip -t "$F" && echo "  đã sao lưu: $F ($(du -h "$F" | cut -f1))"'
+
+      - name: Quay về bản đã chọn
+        if: inputs.ma_lan_chay != ''
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_KEY: /home/runner/.ssh/vps
+        run: |
+          echo "Lý do: ${{ inputs.ly_do || 'không ghi' }}"
+          echo "Người bấm: ${{ github.actor }}"
+          echo
+          ./scripts/deploy.sh khoi-phuc "${{ inputs.ma_lan_chay }}"
+
+      - name: Ghi lại kết quả
+        if: always() && inputs.ma_lan_chay != ''
+        run: |
+          {
+            echo
+            echo "## Kết quả khôi phục"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Quay về bản | \`${{ inputs.ma_lan_chay }}\` |"
+            echo "| Người bấm | ${{ github.actor }} |"
+            echo "| Lý do | ${{ inputs.ly_do || 'không ghi' }} |"
+            echo "| Kết quả | ${{ job.status }} |"
+            echo
+            echo "**Lưu ý:** việc này trả lại FILE NGUỒN. Lược đồ database và dữ liệu"
+            echo "không quay về. Nếu lỗi nằm ở lược đồ, hãy viết một migration mới để"
+            echo "sửa thay vì nạp lại bản sao lưu — nạp lại là xóa mất công việc mà"
+            echo "phòng khám đã làm trong lúc xảy ra sự cố."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dọn khóa
+        if: always()
+        run: rm -f ~/.ssh/vps

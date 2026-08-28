@@ -1,0 +1,116 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# THEO DÕI HỆ THỐNG
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Sinh một báo cáo đầy đủ vào phần tóm tắt của lần chạy, nơi GitHub tự dựng
+# thành bảng. Mở tab Actions là đọc được, không cần vào VPS, không cần biết
+# lệnh nào.
+#
+# Chạy tự động mỗi sáng 08:00 giờ Việt Nam, và bấm được bất cứ lúc nào.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# BÁO CÁO TRẢ LỜI BA CÂU
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   Hệ thống có đang sống không     dịch vụ, độ trễ từng đường, tài nguyên
+#   Luồng nghiệp vụ chạy ra sao     lead vào, PG chấm công, kế toán ghi sổ,
+#                                   theo từng ngày trong bảy ngày gần nhất
+#   Chức năng nào đang được dùng    màn nào mở bao nhiêu lần, mấy người dùng
+#
+# Câu thứ ba là câu ít hệ thống nào trả lời được mà lại quyết định nhiều nhất
+# khi chọn làm tiếp cái gì. Một màn hình dựng công phu mà ba tuần không ai mở
+# thì đó là công đổ đi, và chỉ số liệu mới nói ra điều đó.
+#
+# Báo cáo CHỈ ĐỌC. Nó không sửa gì trên VPS, nên chạy bao nhiêu lần cũng được.
+
+name: Theo dõi hệ thống
+
+on:
+  schedule:
+    # 01:00 UTC là 08:00 giờ Việt Nam. GitHub chạy theo UTC, không theo múi
+    # giờ của kho mã, nên phải tự quy đổi.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: theo-doi
+  cancel-in-progress: true
+
+jobs:
+  bao-cao:
+    name: Sinh báo cáo tình trạng
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chuẩn bị khóa SSH
+        env:
+          KHOA: ${{ secrets.VPS_SSH_KEY }}
+          BIET_TRUOC: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$KHOA" ] || [ -z "$BIET_TRUOC" ]; then
+            echo "::error::Thiếu secret VPS_SSH_KEY hoặc VPS_KNOWN_HOSTS."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KHOA" > ~/.ssh/vps && chmod 600 ~/.ssh/vps
+          printf '%s\n' "$BIET_TRUOC" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Sinh báo cáo
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_KEY: /home/runner/.ssh/vps
+        run: |
+          chmod +x scripts/bao-cao-he-thong.sh
+          ./scripts/bao-cao-he-thong.sh | tee /tmp/bao-cao.md
+          cat /tmp/bao-cao.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Báo động nếu có dấu hiệu hỏng
+        # Đọc đúng một dòng máy đọc được ở cuối báo cáo, không bóc tách bảng
+        # Markdown. Bóc tách bảng là cách dễ nhầm: dấu đỏ còn xuất hiện ở mục
+        # đăng nhập thất bại, vốn là chuyện bình thường của mọi hệ thống.
+        run: |
+          dong="$(grep -o '<!-- MAY-DOC .* -->' /tmp/bao-cao.md | head -1)"
+          if [ -z "$dong" ]; then
+            echo "::error::Báo cáo không có dòng MAY-DOC. Script hỏng giữa chừng."
+            exit 1
+          fi
+          echo "$dong"
+          doc() { echo "$dong" | grep -o "$1=[0-9]*" | cut -d= -f2; }
+
+          hong="$(doc dich_vu_hong)"
+          lead="$(doc lead_hom_qua)"
+          can="$(doc so_can)"
+          chet="$(doc sao_luu_chet)"
+
+          loi=0
+
+          if [ "${can:-0}" != "1" ]; then
+            echo "::error::SỔ KẾ TOÁN KHÔNG CÂN. Đây là lỗi nghiêm trọng nhất của phân hệ tài chính."
+            loi=1
+          fi
+
+          if [ "${hong:-0}" != "0" ]; then
+            echo "::error::$hong dịch vụ hoặc đường vào không đạt. Xem phần 1 của báo cáo."
+            loi=1
+          fi
+
+          # Lead về 0 cả ngày nghĩa là luồng marketing đứng. Bảy ngày gần nhất
+          # thấp nhất là 54, nên 0 là bất thường rõ ràng chứ không phải ngày ế.
+          if [ "${lead:-1}" = "0" ]; then
+            echo "::warning::Hôm qua không có lead mới nào. Kiểm tra luồng marketing."
+          fi
+
+          # Ngăn thư chết phình thêm nghĩa là lược đồ Supabase vẫn chưa được sửa.
+          if [ "${chet:-0}" -gt 2000 ]; then
+            echo "::warning::Hàng đợi sao lưu đã bỏ cuộc $chet bản ghi. Cần sửa lược đồ Supabase."
+          fi
+
+          [ "$loi" = "0" ] && echo "Không có dấu hiệu bất thường." || exit 1
+
+      - name: Dọn khóa
+        if: always()
+        run: rm -f ~/.ssh/vps
