@@ -1,0 +1,233 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# KIỂM TRA · chạy trên mọi lần đẩy mã và mọi pull request
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Bốn việc kiểm ở đây đều bắt được lỗi ĐÃ THỰC SỰ xảy ra trong dự án này, chứ
+# không phải lỗi giả định:
+#
+#   cu-phap    src/views/incidents.js từng thiếu import DEPARTMENTS và lỗi đó
+#              lên tới production. Đây là loại lỗi máy bắt trong ba giây.
+#
+#   migration  Migration 022 tham chiếu cột work_date không tồn tại, và 008
+#              từng drop rồi add lại ràng buộc trên bảng Lead đang lớn dần.
+#              Chạy toàn bộ migration lên một database TRỐNG, rồi chạy LẦN HAI
+#              để chứng minh chạy lại được mà không hỏng.
+#
+#   an-toan    Quy tắc 9 của dự án cấm commit .env, khóa riêng, dump database,
+#              dữ liệu khách hàng. Hiện chỉ có .gitignore canh, mà .gitignore
+#              thì gõ thêm git add -f là qua được.
+#
+#   dung-goi   npm ci đòi package-lock.json khớp package.json. Lệch là dấu
+#              hiệu ai đó sửa tay package.json mà quên cài lại.
+#
+# Repo đang công khai nên chỉ chạy trên runner của GitHub. Runner tự đặt trên
+# repo công khai là lỗ hổng: ai fork cũng mở được pull request chứa workflow
+# tùy ý và mã đó chạy trên máy mình.
+
+name: Kiểm tra
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Đẩy liên tiếp lên cùng một nhánh thì hủy lượt cũ, đỡ xếp hàng.
+  group: kiem-tra-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cu-phap:
+    name: Cú pháp và biên dịch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Cú pháp mọi file JavaScript
+        run: |
+          loi=0
+          n=0
+          while IFS= read -r f; do
+            n=$((n+1))
+            node --check "$f" || { echo "::error file=$f::Lỗi cú pháp"; loi=1; }
+          done < <(find src apps/finance/src apps/finance/public scripts \
+                     -name '*.js' -not -path '*/node_modules/*' 2>/dev/null)
+          while IFS= read -r f; do
+            n=$((n+1))
+            node --check "$f" || { echo "::error file=$f::Lỗi cú pháp"; loi=1; }
+          done < <(find . -name '*.mjs' -not -path '*/node_modules/*' 2>/dev/null)
+          echo "Đã kiểm $n file"
+          exit $loi
+
+      - name: Cài gói của PWA vận hành
+        run: npm ci
+
+      - name: Dựng PWA vận hành
+        # Giá trị giả cho biến VITE: bước này chỉ chứng minh mã dựng được,
+        # không kết nối đi đâu cả. Giá trị thật nằm trong .env.vps trên VPS.
+        env:
+          VITE_SUPABASE_URL: https://kiem-tra.local
+          VITE_SUPABASE_PUBLISHABLE_KEY: kiem-tra
+          VITE_SUPABASE_ANON_KEY: kiem-tra
+          VITE_DATA_BACKEND: vps
+        run: npm run build
+
+      - name: Biên dịch backend TypeScript
+        working-directory: apps/backend
+        run: |
+          npm ci
+          npx tsc -p tsconfig.json --noEmit
+
+      - name: Cài gói của Két kế toán
+        working-directory: apps/finance
+        run: npm ci --omit=dev
+
+  migration:
+    name: Migration chạy được và chạy lại được
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: kiem_tra
+          POSTGRES_USER: kiem_tra
+          POSTGRES_PASSWORD: kiem_tra
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kiem_tra"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chạy script khởi tạo trước
+        # Trên máy thật, thư mục infra/postgres/init được nạp qua
+        # docker-entrypoint-initdb.d ngay khi container Postgres sinh ra lần
+        # đầu, nên migration mặc nhiên coi nó đã chạy. Migration 002 đọc bảng
+        # migration.raw_records do 001-shadow.sql tạo. Bỏ bước này thì
+        # migration 002 hỏng ngay, và đó chính là điều CI phát hiện ra lần
+        # chạy đầu tiên.
+        env:
+          PGPASSWORD: kiem_tra
+        run: |
+          set -e
+          for f in $(ls infra/postgres/init/*.sql | sort); do
+            echo "── init $(basename "$f")"
+            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Chạy toàn bộ migration lên database trống
+        env:
+          PGPASSWORD: kiem_tra
+        run: |
+          set -e
+          n=0
+          for f in $(ls infra/postgres/migrations/*.sql | sort); do
+            n=$((n+1))
+            echo "── $(basename "$f")"
+            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          echo "Đã áp $n migration"
+
+      - name: Chạy lại lần hai để chứng minh chạy lại được
+        # Migration phải an toàn khi chạy lại, vì thực tế nó sẽ chạy lại: mỗi
+        # lần dựng lại container migrate là một lần cả thư mục được áp lại.
+        # Migration 008 từng drop rồi add ràng buộc, chạy lần hai là hỏng.
+        env:
+          PGPASSWORD: kiem_tra
+        run: |
+          set -e
+          for f in $(ls infra/postgres/migrations/*.sql | sort); do
+            psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1 -q -f "$f" \
+              || { echo "::error file=$f::Chạy lần hai bị lỗi, migration không an toàn khi chạy lại"; exit 1; }
+          done
+          echo "Toàn bộ migration chạy lại được"
+
+      - name: Bất biến kế toán còn nguyên trên lược đồ trống
+        # File này đã chạy thật trên một Postgres 17 trống ngày 27/08/2026 và
+        # cả tám phép thử đều đạt. Nó kiểm những ràng buộc mà nếu hỏng thì sổ
+        # sách sai mà không ai biết: một dòng ghi cả hai vế, sửa được nhật ký
+        # truy cập, tự nâng quyền, ghi vào kỳ đã khóa.
+        env:
+          PGPASSWORD: kiem_tra
+        run: |
+          set -e
+          psql -h localhost -U kiem_tra -d kiem_tra -v ON_ERROR_STOP=1                -f infra/postgres/kiem-thu/bat-bien.sql 2>&1 | tee /tmp/kq.txt
+          if grep -q 'HONG' /tmp/kq.txt; then
+            echo "::error::Có bất biến kế toán bị hỏng"
+            exit 1
+          fi
+          echo "Số phép thử đạt: $(grep -c 'OK ·' /tmp/kq.txt)"
+
+  an-toan:
+    name: Không lọt bí mật và dữ liệu khách hàng
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Chặn loại file cấm commit
+        # Quy tắc 9 của dự án. Kiểm trên toàn bộ lịch sử chứ không chỉ bản
+        # hiện tại: repo công khai thì mọi thứ từng commit đều còn đọc được,
+        # xóa ở bản mới không lấy lại được gì.
+        run: |
+          cam='\.env$|\.env\.|\.pem$|\.key$|id_rsa|id_ed25519|\.sql\.gz$|\.dump$|\.xlsx?$|\.xlsm$'
+          giu='\.env\.example$'
+          lot=$(git log --all --pretty=format: --name-only --diff-filter=A \
+                | sort -u | grep -E "$cam" | grep -vE "$giu" || true)
+          if [ -n "$lot" ]; then
+            echo "::error::Có file thuộc loại cấm trong lịch sử git:"
+            echo "$lot"
+            exit 1
+          fi
+          echo "Không có file cấm nào trong lịch sử"
+
+      - name: Chặn chuỗi giống bí mật thật
+        run: |
+          # Bắt giá trị dài đặt cho biến bí mật. Cố ý không bắt ${BIEN} vì đó
+          # là tham chiếu, không phải giá trị.
+          mau='(POSTGRES_PASSWORD|APP_JWT_SECRET|FINANCE_JWT_SECRET|SERVICE_ROLE_KEY|SECRET_KEY|BACKEND_DB_PASSWORD|FINANCE_DB_PASSWORD)[[:space:]]*[:=][[:space:]]*['"'"'"]?[A-Za-z0-9+/=_-]{20,}'
+          lot=$(grep -rInE "$mau" --exclude-dir=.git --exclude-dir=node_modules . \
+                | grep -v '\${' | grep -v 'generate-a-long-random' || true)
+          if [ -n "$lot" ]; then
+            echo "::error::Có chuỗi giống bí mật thật trong mã nguồn:"
+            echo "$lot" | cut -c1-160
+            exit 1
+          fi
+          echo "Không thấy bí mật nào trong mã nguồn"
+
+      - name: Chặn khóa riêng
+        run: |
+          lot=$(grep -rl 'BEGIN .*PRIVATE KEY' --exclude-dir=.git --exclude-dir=node_modules . || true)
+          if [ -n "$lot" ]; then
+            echo "::error::Có khóa riêng trong repo:"; echo "$lot"; exit 1
+          fi
+          echo "Không có khóa riêng"
+
+  ket-luan:
+    name: Tổng kết
+    runs-on: ubuntu-latest
+    needs: [cu-phap, migration, an-toan]
+    if: always()
+    steps:
+      - name: Chốt kết quả
+        run: |
+          echo "cú pháp   : ${{ needs.cu-phap.result }}"
+          echo "migration : ${{ needs.migration.result }}"
+          echo "an toàn   : ${{ needs.an-toan.result }}"
+          if [ "${{ needs.cu-phap.result }}" != "success" ] \
+          || [ "${{ needs.migration.result }}" != "success" ] \
+          || [ "${{ needs.an-toan.result }}" != "success" ]; then
+            echo "::error::Chưa đạt. Không được triển khai commit này."
+            exit 1
+          fi
+          echo "Đạt cả ba. Commit này đủ điều kiện triển khai."

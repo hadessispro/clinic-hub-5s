@@ -1,0 +1,140 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TRIỂN KHAI LÊN PRODUCTION
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# CỐ Ý KHÔNG TỰ ĐỘNG CHẠY KHI GỘP VÀO MAIN.
+#
+# Production ở đây là phòng khám đang mở cửa: PG đang chấm công, telesale đang
+# nhập lead, kế toán đang mở sổ. Một lần triển khai tự động vào 15 giờ chiều
+# thứ Ba là quyết định của cái máy, không phải của người. Nên phải có người
+# bấm, và người đó chọn thời điểm.
+#
+# Ba lớp chặn trước khi chạm vào VPS:
+#
+#   1. Chỉ chạy được bằng tay, và chỉ từ nhánh của chính repo này. Pull
+#      request từ bản fork không kích hoạt được, và GitHub cũng không cấp
+#      secrets cho fork.
+#   2. Bắt buộc workflow Kiểm tra của đúng commit đó phải xanh. Không xanh
+#      thì dừng ngay, không hỏi.
+#   3. Gọi scripts/deploy.sh, tức là vẫn đi qua đủ bảy bước: sao lưu, chụp số
+#      liệu, so mã băm, chép, migration, khởi động, kiểm tra sức khỏe. Hỏng ở
+#      bước nào cũng tự khôi phục.
+#
+# Cần đặt trước ba secrets trong Settings → Secrets and variables → Actions:
+#
+#   VPS_SSH_KEY    nội dung khóa riêng ed25519 dùng để vào VPS
+#   VPS_HOST       root@31.97.191.177
+#   VPS_KNOWN_HOSTS   kết quả của: ssh-keyscan -H 31.97.191.177
+#
+# VPS_KNOWN_HOSTS là bắt buộc, không được bỏ qua bằng StrictHostKeyChecking=no.
+# Bỏ qua nghĩa là chấp nhận bất kỳ máy chủ nào tự xưng là VPS của mình, và
+# khóa deploy sẽ được gửi cho nó.
+
+name: Triển khai
+
+on:
+  workflow_dispatch:
+    inputs:
+      che_do:
+        description: 'Chạy thử để xem sẽ đổi gì, hay triển khai thật'
+        required: true
+        default: kiem-tra
+        type: choice
+        options: [kiem-tra, chay]
+      ly_do:
+        description: 'Triển khai cái gì và vì sao'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # Hai lần triển khai chồng nhau lên cùng một VPS là cách chắc chắn nhất để
+  # có một trạng thái không ai giải thích được.
+  group: trien-khai-production
+  cancel-in-progress: false
+
+jobs:
+  trien-khai:
+    name: ${{ inputs.che_do == 'chay' && 'Triển khai thật' || 'Chạy thử' }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bắt buộc Kiểm tra của commit này đã xanh
+        if: inputs.che_do == 'chay'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          echo "Commit: ${{ github.sha }}"
+          kq=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}" \
+                --jq '[.workflow_runs[] | select(.name == "Kiểm tra")] | first | .conclusion // "chua-chay"')
+          echo "Kết quả workflow Kiểm tra: $kq"
+          if [ "$kq" != "success" ]; then
+            echo "::error::Workflow Kiểm tra của commit này chưa xanh (đang là: $kq)."
+            echo "::error::Chạy Kiểm tra cho commit này trước, xanh rồi mới triển khai."
+            exit 1
+          fi
+
+      - name: Chuẩn bị khóa SSH
+        env:
+          KHOA: ${{ secrets.VPS_SSH_KEY }}
+          BIET_TRUOC: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$KHOA" ] || [ -z "$BIET_TRUOC" ]; then
+            echo "::error::Thiếu secret VPS_SSH_KEY hoặc VPS_KNOWN_HOSTS."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KHOA" > ~/.ssh/vps
+          chmod 600 ~/.ssh/vps
+          printf '%s\n' "$BIET_TRUOC" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Kết nối được tới VPS chưa
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          ssh -i ~/.ssh/vps -o BatchMode=yes -o ConnectTimeout=15 \
+              "$VPS_HOST" 'echo "  kết nối OK · $(hostname) · $(uptime -p)"'
+
+      - name: ${{ inputs.che_do == 'chay' && 'Triển khai' || 'Chạy thử, không đụng vào VPS' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_KEY: /home/runner/.ssh/vps
+        run: |
+          echo "Lý do: ${{ inputs.ly_do }}"
+          echo "Người bấm: ${{ github.actor }}"
+          echo
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh ${{ inputs.che_do }}
+
+      - name: Ghi lại vào tóm tắt lần chạy
+        if: always()
+        run: |
+          {
+            echo "## Triển khai · ${{ inputs.che_do }}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Người bấm | ${{ github.actor }} |"
+            echo "| Lý do | ${{ inputs.ly_do }} |"
+            echo "| Kết quả | ${{ job.status }} |"
+            echo
+            if [ "${{ inputs.che_do }}" = "chay" ]; then
+              echo "Muốn quay lại bản trước: xem mã lần chạy trong nhật ký bên trên rồi chạy"
+              echo '```bash'
+              echo "./scripts/deploy.sh khoi-phuc <mã>"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dọn khóa
+        if: always()
+        run: rm -f ~/.ssh/vps

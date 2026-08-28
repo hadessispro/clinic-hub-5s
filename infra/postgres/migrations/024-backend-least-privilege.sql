@@ -69,15 +69,31 @@ grant execute
   to clinic_backend;
 
 -- Bảng migrate tạo về sau cũng phải dùng được ngay, không phải sửa tay.
-alter default privileges for role clinic_app
-  in schema app, marketing, public, source_pg, migration
-  grant select, insert, update, delete, truncate on tables to clinic_backend;
-alter default privileges for role clinic_app
-  in schema app, marketing, public, source_pg, migration
-  grant usage, select, update on sequences to clinic_backend;
-alter default privileges for role clinic_app
-  in schema app, marketing, public, source_pg, migration
-  grant execute on functions to clinic_backend;
+-- Dùng current_user chứ không ghi cứng tên chủ sở hữu.
+--
+-- Bản đầu ghi thẳng "clinic_app", và nó chỉ đúng trên đúng một máy: tên đó
+-- do biến POSTGRES_USER của container quyết định. Dựng lại database ở chỗ
+-- khác, hay chạy trong kiểm thử tự động, là migration hỏng ngay với lỗi
+-- role "clinic_app" does not exist. Một migration chỉ chạy được trên một máy
+-- thì không phải migration, nó là một lần sửa tay được lưu lại.
+--
+-- Trên máy thật current_user vẫn là clinic_app vì service migrate chạy bằng
+-- tài khoản đó, nên kết quả không đổi.
+do $$
+declare chu text := current_user;
+begin
+  execute format(
+    'alter default privileges for role %I in schema app, marketing, public, '
+    'source_pg, migration grant select, insert, update, delete, truncate '
+    'on tables to clinic_backend', chu);
+  execute format(
+    'alter default privileges for role %I in schema app, marketing, public, '
+    'source_pg, migration grant usage, select, update on sequences '
+    'to clinic_backend', chu);
+  execute format(
+    'alter default privileges for role %I in schema app, marketing, public, '
+    'source_pg, migration grant execute on functions to clinic_backend', chu);
+end $$;
 
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -91,10 +107,16 @@ revoke all on all tables in schema finance, finance_src from clinic_backend, pub
 revoke all on all sequences in schema finance from clinic_backend, public;
 revoke all on all functions in schema finance from clinic_backend, public;
 
-alter default privileges for role clinic_app in schema finance, finance_src
-  revoke all on tables from clinic_backend, public;
-alter default privileges for role clinic_app in schema finance
-  revoke all on sequences from clinic_backend, public;
+do $$
+declare chu text := current_user;
+begin
+  execute format(
+    'alter default privileges for role %I in schema finance, finance_src '
+    'revoke all on tables from clinic_backend, public', chu);
+  execute format(
+    'alter default privileges for role %I in schema finance '
+    'revoke all on sequences from clinic_backend, public', chu);
+end $$;
 
 
 -- ───────────────────────────────────────────────────────────────────────────
