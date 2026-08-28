@@ -9,7 +9,7 @@ import { getNotifications, subscribeToNotifications } from './services/notificat
 import { syncOfflineAttendance } from './services/attendance.js';
 import { syncPendingProofs } from './services/attendance-proofs.js';
 import { showToast } from './components/toast.js';
-import { canAccessView, getDefaultView, isOpsRole } from './permissions.js';
+import { canAccessView, getDefaultView, isOpsRole, khongPhaiChamCong } from './permissions.js';
 import { loadClinicLocation } from './services/clinic.js';
 import { BRANCH, branchSettings, getEffectiveBranchId, setActiveBranch } from './branch.js';
 import { subscribeToLeaveRequests } from './services/leave.js';
@@ -144,6 +144,13 @@ async function bootstrap() {
       setActiveBranch(activeBranchId);
       store.updateSettings(branchSettings());
       
+      // Dải nhắc chấm công chỉ hiện với người thật sự phải chấm. Trưởng bộ
+      // phận và trưởng phòng nhìn thấy nó trên MỌI màn, kể cả màn duyệt hoa
+      // hồng, mà họ lại không chấm công — một lời nhắc không dành cho mình
+      // xuất hiện khắp nơi thì người ta học được cách không đọc lời nhắc nào.
+      const dai = document.querySelector('.manager-strip');
+      if (dai) dai.hidden = khongPhaiChamCong(store.getState().profile?.role);
+
       const managerNotesTitle = document.getElementById('managerNotesTitle');
       if (managerNotesTitle) {
         managerNotesTitle.textContent = `Chấm công tại ${BRANCH.address} bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.`;

@@ -9,10 +9,10 @@
 const ROLE_VIEWS = {
   admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong'],
-  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong'],
+  admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
-  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'attendance', 'schedule', 'chat', 'tasks', 'hoa-hong'],
+  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'schedule', 'chat', 'tasks', 'hoa-hong'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
   // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
@@ -132,6 +132,27 @@ export function canPerform(role, action) {
 }
 
 /** Check if role is an ops role (admin/hr/leader/finance) */
+/* Vai trò KHÔNG tự chấm công GPS.
+ *
+ * Trưởng bộ phận và trưởng phòng đi lại giữa hai chi nhánh và ra ngoài gặp
+ * đối tác, nên bắt họ đứng trong bán kính 100 m mới bấm được là bắt họ nói
+ * dối hoặc bỏ chấm. Cả hai kết cục đều làm số liệu chấm công kém tin hơn là
+ * bỏ hẳn yêu cầu.
+ *
+ * Miễn CHẤM CÔNG, không miễn XEM CÔNG. Nhân sự và trưởng bộ phận vẫn cần
+ * bảng theo dõi công của đội, nên màn Chấm công vẫn mở với họ — chỉ ẩn phần
+ * tự bấm và dải nhắc, giữ lại phần lịch sử.
+ */
+export const VAI_TRO_KHONG_CHAM_CONG = [
+  'admin', 'admin_it', 'superadmin',
+  'admin_marketing', 'support_marketing',
+  'leader', 'telesale_leader', 'hr',
+];
+
+export function khongPhaiChamCong(role) {
+  return VAI_TRO_KHONG_CHAM_CONG.includes(role);
+}
+
 export function isOpsRole(role) {
   return ['admin', 'hr', 'leader', 'finance', 'admin_it'].includes(role);
 }

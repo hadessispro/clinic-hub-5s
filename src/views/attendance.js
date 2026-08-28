@@ -12,7 +12,7 @@ import { captureWorkplacePhoto, startWorkplaceCamera, stopWorkplaceCamera } from
 import { listPendingProofs, movePendingProof, removePendingProof, savePendingProof, syncPendingProofs, uploadAttendanceProof } from '../services/attendance-proofs.js';
 import { BRANCH, branchSettings, clinicDateISO, clinicTimeLabel } from '../branch.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
-import { isOpsRole } from '../permissions.js';
+import { isOpsRole, khongPhaiChamCong } from '../permissions.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
@@ -282,6 +282,18 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
   `;
 }
 
+// Đầu trang rút gọn cho người không tự chấm công. Không có nút bấm, không
+// có bán kính, không có sai số GPS — những thứ đó không nói gì với họ.
+function dauTrangGon() {
+  return `<header class="attendance-page-header">
+    <div>
+      <p class="eyebrow">Theo dõi chấm công</p>
+      <h3>Công của đội</h3>
+      <p>Vai trò của bạn không chấm công GPS. Bảng dưới đây để theo dõi và đối chiếu công của người khác.</p>
+    </div>
+  </header>`;
+}
+
 export async function renderView(state) {
   if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
     return renderPgAttendance();
@@ -366,11 +378,16 @@ export async function renderView(state) {
     return `<section class="panel attendance-account-error"><h3>Tài khoản chưa liên kết nhân viên</h3><p>Quản trị viên cần gán mã nhân viên cho tài khoản này trước khi chấm công.</p></section>`;
   }
 
+  // Trưởng bộ phận và trưởng phòng không tự chấm công GPS, nhưng vẫn cần
+  // bảng theo dõi công của đội. Nên ẩn phần tự bấm, giữ phần lịch sử — chứ
+  // không chặn cả màn.
+  const tuChamCong = !khongPhaiChamCong(state.profile?.role || state.role);
+
   const mapUrl = `https://www.google.com/maps?q=${settings.latitude},${settings.longitude}`;
   const pendingCount = offlineQueue.length + pendingProofs.length;
   return `
     <div class="attendance-page">
-      <header class="attendance-page-header">
+      ${tuChamCong ? `<header class="attendance-page-header">
         <div>
           <p class="eyebrow">GPS Attendance · ${escapeHTML(BRANCH.shortName)}</p>
           <h3>Chấm công vào ca</h3>
@@ -420,6 +437,7 @@ export async function renderView(state) {
         </section>
       </div>
 
+      ` : dauTrangGon()}
       <section class="attendance-history-panel">
         <div class="section-title">
           <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
