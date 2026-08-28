@@ -243,3 +243,43 @@ export function oNguoiPhuTrach(ten, ma, khiTrong = 'Chưa gán') {
   if (!m || t.toLowerCase() === m.toLowerCase()) return `<strong>${escapeHTML(t)}</strong>`;
   return `<strong>${escapeHTML(t)}</strong><small>${escapeHTML(m)}</small>`;
 }
+
+/* ── Phân trang ──────────────────────────────────────────────────────────
+ *
+ * Một bộ dùng chung cho mọi bảng dài, thay vì mỗi màn tự dựng một kiểu.
+ * Bảng lương và hoa hồng có thể lên hàng nghìn dòng sau vài tháng; đổ hết ra
+ * một lần thì trình duyệt dựng chậm và người đọc không định vị được mình
+ * đang ở đâu.
+ *
+ * Cắt ở phía trình duyệt chứ không phía máy chủ, vì bộ lọc cũng chạy ở đây:
+ * lọc trên máy chủ rồi phân trang trên máy chủ thì mỗi lần đổi bộ lọc là một
+ * vòng mạng, mà số dòng của một kỳ thì vẫn nằm trong tầm xử lý của trình
+ * duyệt.
+ */
+
+export function phanTrang(ds, trang = 1, moiTrang = 50) {
+  const tong = ds.length;
+  const tongTrang = Math.max(1, Math.ceil(tong / moiTrang));
+  // Xoá bộ lọc có thể làm số trang giảm xuống dưới trang đang xem. Kẹp lại
+  // thay vì trả về một trang rỗng khiến người dùng tưởng mất dữ liệu.
+  const hienTai = Math.min(Math.max(1, trang), tongTrang);
+  const tu = (hienTai - 1) * moiTrang;
+  return { ds: ds.slice(tu, tu + moiTrang), trang: hienTai, tongTrang, tong, tu };
+}
+
+/** Thanh điều hướng trang. `ma` là tiền tố id để một màn có nhiều bảng. */
+export function thanhPhanTrang(kq, ma, tenDonVi = 'dòng') {
+  if (kq.tong === 0) return '';
+  const den = Math.min(kq.tu + kq.ds.length, kq.tong);
+  // Một trang thì không cần nút, nhưng vẫn nói rõ đang xem bao nhiêu — con số
+  // đó là thứ người ta đối chiếu với bảng Excel.
+  const nut = kq.tongTrang <= 1 ? '' : `
+    <div class="pt-nut">
+      <button type="button" class="secondary-button" data-pt="${ma}:1" ${kq.trang <= 1 ? 'disabled' : ''}>Đầu</button>
+      <button type="button" class="secondary-button" data-pt="${ma}:${kq.trang - 1}" ${kq.trang <= 1 ? 'disabled' : ''}>Trước</button>
+      <span>Trang ${kq.trang}/${kq.tongTrang}</span>
+      <button type="button" class="secondary-button" data-pt="${ma}:${kq.trang + 1}" ${kq.trang >= kq.tongTrang ? 'disabled' : ''}>Sau</button>
+      <button type="button" class="secondary-button" data-pt="${ma}:${kq.tongTrang}" ${kq.trang >= kq.tongTrang ? 'disabled' : ''}>Cuối</button>
+    </div>`;
+  return `<div class="pt-thanh"><span class="pt-dem">Đang xem ${kq.tu + 1}–${den} trên ${kq.tong} ${escapeHTML(tenDonVi)}</span>${nut}</div>`;
+}

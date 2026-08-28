@@ -12,7 +12,9 @@
  * như dán thêm vào chứ không thuộc về phần mềm.
  */
 import { store } from '../store.js';
-import { escapeHTML, formatCurrency, formatDateTime, oNguoiPhuTrach } from '../utils.js';
+import {
+  escapeHTML, formatCurrency, formatDateTime, oNguoiPhuTrach, phanTrang, thanhPhanTrang,
+} from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
@@ -29,6 +31,7 @@ let dotDangMo = ''; let kyChon = '';
 // và mất bộ lọc giữa chừng thì không ai đối chiếu nổi.
 let fVaiTro = ''; let fLoai = ''; let fKetQua = ''; let fNguoi = ''; let fTim = '';
 let fTrangThaiDot = '';
+let trangXem = 1; let trangCt = 1; let trangDot = 1;
 
 const kyMacDinh = () => new Date().toISOString().slice(0, 7);
 
@@ -154,8 +157,10 @@ function khoiCanhBao(m) {
 }
 
 function bangXemTruoc() {
-  const rows = xemTruoc.data || [];
-  if (!rows.length) return '<p class="hh-ghi">Không có lead nào đủ điều kiện trong kỳ này.</p>';
+  const tatCa = xemTruoc.data || [];
+  if (!tatCa.length) return '<p class="hh-ghi">Không có lead nào đủ điều kiện trong kỳ này.</p>';
+  const tr = phanTrang(tatCa, trangXem);
+  const rows = tr.ds;
   return `<div class="hh-bang-wrap"><table class="hh-bang"><thead><tr>
     <th>Khách hàng</th><th>Loại</th><th>PG nhập</th><th>SUP hưởng</th>
     <th>Lịch hẹn</th><th>Ngày đến</th><th class="hh-so">Số ngày</th><th>Kết quả</th>
@@ -172,7 +177,7 @@ function bangXemTruoc() {
       <td>${r.trong_han ? '<span class="status-pill good">Đủ điều kiện</span>'
         : `<span class="status-pill bad">${r.den_truoc_ngay_hen ? 'Đến trước ngày hẹn' : 'Quá hạn'}</span>`}</td>
     </tr>`).join('')}
-  </tbody></table></div>`;
+  </tbody></table></div>${thanhPhanTrang(tr, 'xem', 'dòng')}`;
 }
 
 /* ── Danh sách đợt ───────────────────────────────────────────────────────── */
@@ -196,7 +201,7 @@ function khoiDanhSach() {
       <th>Kỳ</th><th>Trạng thái</th><th class="hh-so">Dòng trả</th>
       <th class="hh-so">Phần PG</th><th class="hh-so">Phần SUP</th><th class="hh-so">Tổng chi</th><th></th>
     </tr></thead><tbody>
-      ${ds.map((d) => `<tr>
+      ${phanTrang(ds, trangDot, 20).ds.map((d) => `<tr>
         <td><strong>${escapeHTML(d.ky_code)}</strong><small>${ngay(d.ky_tu)} – ${ngay(d.ky_den)}</small></td>
         <td>${nhanTT(d.trang_thai)}</td>
         <td class="hh-so">${d.so_dong}</td>
@@ -206,7 +211,7 @@ function khoiDanhSach() {
         <td><button type="button" class="secondary-button" data-hh-mo="${escapeHTML(d.id)}">
           ${dotDangMo === d.id ? 'Đang xem' : 'Mở'}</button></td>
       </tr>`).join('')}
-    </tbody></table></div>`}
+    </tbody></table></div>${thanhPhanTrang(phanTrang(ds, trangDot, 20), 'dot', 'đợt')}`}
   </section>`;
 }
 
@@ -299,7 +304,8 @@ function khoiChiTiet(laAdmin, laSup) {
       <p class="hh-ghi">Hiện ${daLoc.length} trên ${dong.length} dòng.
         ${daLoc.length !== dong.length ? ' <button type="button" id="hhXoaLoc" class="secondary-button">Xóa lọc</button>' : ''}</p>
     </form>
-    ${bangDong(daLoc)}
+    ${(() => { const tr = phanTrang(daLoc, trangCt);
+      return bangDong(tr.ds) + thanhPhanTrang(tr, 'ct', 'dòng'); })()}
 
     <h4>Nhật ký duyệt</h4>
     <ul class="hh-nhatky">
@@ -392,6 +398,7 @@ export function initView() {
   document.getElementById('hhLocDot')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     fTrangThaiDot = new FormData(e.currentTarget).get('tt') || '';
+    trangDot = 1;
     await navigateTo('hoa-hong');
   });
 
@@ -400,8 +407,18 @@ export function initView() {
     const f = new FormData(e.currentTarget);
     fTim = f.get('tim') || ''; fVaiTro = f.get('vaiTro') || '';
     fLoai = f.get('loai') || ''; fKetQua = f.get('ketQua') || ''; fNguoi = f.get('nguoi') || '';
+    trangCt = 1;   // Đổi bộ lọc thì về trang đầu, nếu không người dùng thấy trang rỗng.
     await navigateTo('hoa-hong');
   });
+
+  document.querySelectorAll('[data-pt]').forEach((b) => b.addEventListener('click', async () => {
+    const [ma, trang] = b.dataset.pt.split(':');
+    const n = Number(trang);
+    if (ma === 'xem') trangXem = n;
+    else if (ma === 'ct') trangCt = n;
+    else if (ma === 'dot') trangDot = n;
+    await navigateTo('hoa-hong');
+  }));
 
   document.getElementById('hhXoaLoc')?.addEventListener('click', async () => {
     fTim = ''; fVaiTro = ''; fLoai = ''; fKetQua = ''; fNguoi = '';

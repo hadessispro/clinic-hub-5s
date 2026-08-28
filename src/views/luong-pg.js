@@ -10,7 +10,9 @@
  * Lương SUP KHÔNG nằm ở màn này. Phần đó đi theo cách khác.
  */
 import { store } from '../store.js';
-import { escapeHTML, formatCurrency, formatDateTime, oNguoiPhuTrach } from '../utils.js';
+import {
+  escapeHTML, formatCurrency, formatDateTime, oNguoiPhuTrach, phanTrang, thanhPhanTrang,
+} from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
@@ -22,6 +24,10 @@ import {
 let dsDot = []; let bieuGia = { bieu_gia: [], ca_chuan: [] };
 let chiTiet = null; let xemTruoc = null; let dotDangMo = ''; let kyChon = '';
 let fNguoi = ''; let fKetQua = ''; let fLoaiDiem = ''; let fTim = '';
+// Bộ lọc riêng cho bảng xem trước. Dùng chung biến với bảng chi tiết thì đổi
+// lọc ở màn này lại làm đổi màn kia, và người dùng không hiểu vì sao.
+let xNguoi = ''; let xKetQua = ''; let xLoaiDiem = ''; let xTim = '';
+let trangXem = 1; let trangCt = 1; let trangDot = 1;
 
 const NHAN = {
   cho_sup: { chu: 'Chờ SUP chốt', lop: 'warn' },
@@ -109,7 +115,15 @@ function khoiTinh() {
         ${the('Tổng lương', tien(m.tong_tien), 'chưa gồm phần của SUP')}
       </div>
       ${khoiCanhBao(m)}
-      ${bangCa(xemTruoc.data || [], true)}`}
+      ${(() => {
+        const tatCa = xemTruoc.data || [];
+        const f = { tim: xTim, nguoi: xNguoi, loaiDiem: xLoaiDiem, ketQua: xKetQua };
+        const daLoc = locChung(tatCa, f, true);
+        const nguoiCo = [...new Map(tatCa.map((l) => [l.pg_ma, l])).values()];
+        const tr = phanTrang(daLoc, trangXem);
+        return hangLoc('xem', f, nguoiCo, daLoc.length, tatCa.length)
+          + bangCa(tr.ds, true) + thanhPhanTrang(tr, 'xem', 'ca');
+      })()}`}
   </section>`;
 }
 
@@ -154,25 +168,57 @@ function bangCa(ds, laXemTruoc) {
 }
 
 function khoiDanhSach() {
-  return `<section class="panel">
-    <div class="section-title"><h3>Các đợt lương</h3><span class="pill">${dsDot.length} đợt</span></div>
-    ${!dsDot.length ? '<p class="hh-ghi">Chưa có đợt nào.</p>' : `
+  const tr = phanTrang(dsDot, trangDot, 20);
+  const bang = !dsDot.length ? '<p class="hh-ghi">Chưa có đợt nào.</p>' : `
     <div class="hh-bang-wrap"><table class="hh-bang"><thead><tr>
       <th>Kỳ</th><th>Trạng thái</th><th class="hh-so">Ca trả</th><th class="hh-so">Người</th>
       <th class="hh-so">Tổng giờ</th><th class="hh-so">Tổng lương</th><th></th>
     </tr></thead><tbody>
-      ${dsDot.map((d) => `<tr>
-        <td><strong>${escapeHTML(d.ky_code)}</strong><small>${ngay(d.ky_tu)} – ${ngay(d.ky_den)}</small></td>
-        <td>${nhanTT(d.trang_thai)}</td>
-        <td class="hh-so">${d.so_ca}</td>
-        <td class="hh-so">${d.so_nguoi}</td>
-        <td class="hh-so">${so(d.tong_gio)}</td>
-        <td class="hh-so"><strong>${tien(d.tong_tien)}</strong></td>
-        <td><button type="button" class="secondary-button" data-pl-mo="${escapeHTML(d.id)}">
-          ${dotDangMo === d.id ? 'Đang xem' : 'Mở'}</button></td>
+      ${tr.ds.map((x) => `<tr>
+        <td><strong>${escapeHTML(x.ky_code)}</strong><small>${ngay(x.ky_tu)} – ${ngay(x.ky_den)}</small></td>
+        <td>${nhanTT(x.trang_thai)}</td>
+        <td class="hh-so">${x.so_ca}</td>
+        <td class="hh-so">${x.so_nguoi}</td>
+        <td class="hh-so">${so(x.tong_gio)}</td>
+        <td class="hh-so"><strong>${tien(x.tong_tien)}</strong></td>
+        <td><button type="button" class="secondary-button" data-pl-mo="${escapeHTML(x.id)}">
+          ${dotDangMo === x.id ? 'Đang xem' : 'Mở'}</button></td>
       </tr>`).join('')}
-    </tbody></table></div>`}
+    </tbody></table></div>${thanhPhanTrang(tr, 'dot', 'đợt')}`;
+
+  return `<section class="panel">
+    <div class="section-title"><h3>Các đợt lương</h3><span class="pill">${dsDot.length} đợt</span></div>
+    ${bang}
   </section>`;
+}
+
+// Một hàm lọc cho cả bảng xem trước lẫn bảng chi tiết. Hai bảng cùng nội
+// dung mà lọc theo hai cách là hai cơ hội cho hai kết quả khác nhau.
+function locChung(ds, f, laXemTruoc) {
+  const tim = f.tim.trim().toLocaleLowerCase('vi');
+  const duocTra = (x) => (laXemTruoc ? x.du_dieu_kien : x.tinh_tien);
+  return ds.filter((l) => {
+    if (f.nguoi && l.pg_ma !== f.nguoi) return false;
+    if (f.loaiDiem && l.loai_diem !== f.loaiDiem) return false;
+    if (f.ketQua === 'tra' && !duocTra(l)) return false;
+    if (f.ketQua === 'loai' && duocTra(l)) return false;
+    if (tim && !`${l.pg_ten || ''} ${l.pg_ma || ''} ${l.diem_ten || ''}`
+      .toLocaleLowerCase('vi').includes(tim)) return false;
+    return true;
+  });
+}
+
+// Hàng lọc dùng chung. `ma` phân biệt hai bảng để id không đụng nhau.
+function hangLoc(ma, f, nguoiCo, soHien, soTong) {
+  return `<form data-loc="${ma}" class="hh-loc">
+    <label><span>Tìm người hoặc điểm</span><input type="search" name="tim" value="${escapeHTML(f.tim)}" placeholder="Tên PG, mã, hoặc tên điểm"></label>
+    <label><span>Nhân viên PG</span><select name="nguoi">${opt('', 'Tất cả', f.nguoi)}${nguoiCo.map((l) => opt(l.pg_ma, l.pg_ten || l.pg_ma, f.nguoi)).join('')}</select></label>
+    <label><span>Loại điểm</span><select name="loaiDiem">${opt('', 'Tất cả loại', f.loaiDiem)}${bieuGia.bieu_gia.map((g) => opt(g.ma, g.ten, f.loaiDiem)).join('')}</select></label>
+    <label><span>Kết quả</span><select name="ketQua">${opt('', 'Được trả và bị loại', f.ketQua)}${opt('tra', 'Chỉ ca được trả', f.ketQua)}${opt('loai', 'Chỉ ca bị loại', f.ketQua)}</select></label>
+    <button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button>
+    <p class="hh-ghi">Hiện ${soHien} trên ${soTong} ca.
+      ${soHien !== soTong ? ` <button type="button" data-xoa-loc="${ma}" class="secondary-button">Xóa lọc</button>` : ''}</p>
+  </form>`;
 }
 
 function locDong(dong) {
@@ -191,7 +237,7 @@ function locDong(dong) {
 function khoiChiTiet(duocQuanLy) {
   const { dot, gop, dong, nhat_ky: nk } = chiTiet;
   const tt = dot.trang_thai;
-  const daLoc = locDong(dong);
+  const daLoc = locChung(dong, { tim: fTim, nguoi: fNguoi, loaiDiem: fLoaiDiem, ketQua: fKetQua }, false);
   const nguoiCo = [...new Map(dong.map((l) => [l.pg_ma, l])).values()];
   const soLoai = dong.filter((l) => !l.tinh_tien).length;
 
@@ -230,16 +276,10 @@ function khoiChiTiet(duocQuanLy) {
     </tbody></table></div>
 
     <h4>Chi tiết từng ca</h4>
-    <form id="plLoc" class="hh-loc">
-      <label><span>Tìm người hoặc điểm</span><input type="search" name="tim" value="${escapeHTML(fTim)}" placeholder="Tên PG, mã, hoặc tên điểm"></label>
-      <label><span>Nhân viên PG</span><select name="nguoi">${opt('', 'Tất cả', fNguoi)}${nguoiCo.map((l) => opt(l.pg_ma, l.pg_ten || l.pg_ma, fNguoi)).join('')}</select></label>
-      <label><span>Loại điểm</span><select name="loaiDiem">${opt('', 'Tất cả loại', fLoaiDiem)}${bieuGia.bieu_gia.map((g) => opt(g.ma, g.ten, fLoaiDiem)).join('')}</select></label>
-      <label><span>Kết quả</span><select name="ketQua">${opt('', 'Được trả và bị loại', fKetQua)}${opt('tra', 'Chỉ ca được trả', fKetQua)}${opt('loai', 'Chỉ ca bị loại', fKetQua)}</select></label>
-      <button type="submit" class="secondary-button"><i class="ri-filter-3-line"></i> Lọc</button>
-      <p class="hh-ghi">Hiện ${daLoc.length} trên ${dong.length} ca.
-        ${daLoc.length !== dong.length ? ' <button type="button" id="plXoaLoc" class="secondary-button">Xóa lọc</button>' : ''}</p>
-    </form>
-    ${bangCa(daLoc, false)}
+    ${hangLoc('ct', { tim: fTim, nguoi: fNguoi, loaiDiem: fLoaiDiem, ketQua: fKetQua },
+      nguoiCo, daLoc.length, dong.length)}
+    ${(() => { const tr = phanTrang(daLoc, trangCt);
+      return bangCa(tr.ds, false) + thanhPhanTrang(tr, 'ct', 'ca'); })()}
 
     <h4>Nhật ký</h4>
     <ul class="hh-nhatky">
@@ -299,22 +339,45 @@ export function initView() {
 
   document.querySelectorAll('[data-pl-mo]').forEach((b) => b.addEventListener('click', async () => {
     dotDangMo = b.dataset.plMo;
-    fTim = ''; fNguoi = ''; fLoaiDiem = ''; fKetQua = '';
+    fTim = ''; fNguoi = ''; fLoaiDiem = ''; fKetQua = ''; trangCt = 1;
     await navigateTo('luong-pg');
   }));
 
-  document.getElementById('plLoc')?.addEventListener('submit', async (e) => {
+  // Hai hàng lọc dùng chung một bộ xử lý, phân biệt bằng data-loc. Viết hai
+  // bộ riêng thì sớm muộn một bộ được sửa còn bộ kia thì không.
+  const datLoc = (ma, v) => {
+    if (ma === 'xem') {
+      xTim = v.tim; xNguoi = v.nguoi; xLoaiDiem = v.loaiDiem; xKetQua = v.ketQua;
+      trangXem = 1;   // Đổi bộ lọc thì về trang đầu, nếu không người dùng
+    } else {          // thấy một trang rỗng và tưởng mất dữ liệu.
+      fTim = v.tim; fNguoi = v.nguoi; fLoaiDiem = v.loaiDiem; fKetQua = v.ketQua;
+      trangCt = 1;
+    }
+  };
+
+  document.querySelectorAll('[data-loc]').forEach((form) => form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    fTim = f.get('tim') || ''; fNguoi = f.get('nguoi') || '';
-    fLoaiDiem = f.get('loaiDiem') || ''; fKetQua = f.get('ketQua') || '';
+    datLoc(e.currentTarget.dataset.loc, {
+      tim: f.get('tim') || '', nguoi: f.get('nguoi') || '',
+      loaiDiem: f.get('loaiDiem') || '', ketQua: f.get('ketQua') || '',
+    });
     await navigateTo('luong-pg');
-  });
+  }));
 
-  document.getElementById('plXoaLoc')?.addEventListener('click', async () => {
-    fTim = ''; fNguoi = ''; fLoaiDiem = ''; fKetQua = '';
+  document.querySelectorAll('[data-xoa-loc]').forEach((b) => b.addEventListener('click', async () => {
+    datLoc(b.dataset.xoaLoc, { tim: '', nguoi: '', loaiDiem: '', ketQua: '' });
     await navigateTo('luong-pg');
-  });
+  }));
+
+  document.querySelectorAll('[data-pt]').forEach((b) => b.addEventListener('click', async () => {
+    const [ma, trang] = b.dataset.pt.split(':');
+    const n = Number(trang);
+    if (ma === 'xem') trangXem = n;
+    else if (ma === 'ct') trangCt = n;
+    else if (ma === 'dot') trangDot = n;
+    await navigateTo('luong-pg');
+  }));
 
   document.getElementById('plChot')?.addEventListener('click', async () => {
     const ok = await confirmAction(

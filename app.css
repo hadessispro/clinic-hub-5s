@@ -7153,3 +7153,14 @@ body.dialog-open {
 
 /* Hai nút thao tác trên một hàng tài khoản, không dính vào nhau. */
 .sa-thaotac { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Thanh phân trang, dùng chung cho mọi bảng dài. */
+.pt-thanh {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 10px; color: var(--muted); font-size: .84rem;
+}
+.pt-dem { font-variant-numeric: tabular-nums; }
+.pt-nut { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pt-nut span { padding: 0 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pt-nut button { padding: 6px 12px; font-size: .82rem; }
+.pt-nut button:disabled { opacity: .4; cursor: not-allowed; }
