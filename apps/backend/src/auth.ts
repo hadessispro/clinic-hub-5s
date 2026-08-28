@@ -100,15 +100,46 @@ export class AuthService {
        end
        limit 5`, [identifier]);
 
-    // PG works at temporary Support-assigned sites, so the clinic selected on
-    // the login screen must never block authentication. GPS/shift validation
-    // remains enforced by the dedicated PG attendance workflow.
-    const branchFlexible = new Set(['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'pg_staff']);
+    /* Vai trò không bị chi nhánh trên màn đăng nhập chặn.
+     *
+     * PG làm ở điểm tạm do Support giao, cấp quản lý thì đi lại giữa hai chi
+     * nhánh — cả hai nhóm không gắn với một chi nhánh cố định. Kiểm GPS và ca
+     * làm vẫn do luồng chấm công lo, không phải màn đăng nhập.
+     *
+     * DANH SÁCH NÀY PHẢI KHỚP với canUseManagedBranch trong src/auth.js.
+     * Trước đó backend thiếu ba vai trò marketing mà frontend có, nên frontend
+     * nói "được miễn" và không chặn, rồi backend lọc theo chi nhánh và từ
+     * chối. Người dùng thấy một thông báo trông như sai mật khẩu, gõ lại mật
+     * khẩu năm lần, và bị khoá tài khoản vì một lỗi không liên quan gì tới
+     * mật khẩu.
+     *
+     * scripts/kiem-vai-tro-chi-nhanh.mjs so hai danh sách này trong CI.
+     */
+    const branchFlexible = new Set([
+      'admin', 'hr', 'leader', 'admin_it', 'superadmin',
+      'admin_marketing', 'support_marketing', 'telesale_leader',
+      'pg_staff',
+    ]);
     const candidate = result.rows.find((row) => {
       const role = String(row.profile.role || 'staff');
       return !branchId || branchFlexible.has(role) || String(row.profile.branch_id || '') === branchId;
     });
-    if (!candidate) throw new UnauthorizedException('Sai tài khoản, chi nhánh hoặc mật khẩu.');
+
+    /* Thông báo phải nói ĐÚNG chuyện gì sai.
+     *
+     * "Sai tài khoản, chi nhánh hoặc mật khẩu" gộp ba nguyên nhân vào một
+     * câu, và người dùng luôn đoán là mật khẩu — nên họ gõ lại mật khẩu tới
+     * khi bị khoá, trong khi thứ sai là ô chi nhánh ngay phía trên.
+     *
+     * Nói rõ "sai chi nhánh" không làm lộ gì thêm: kẻ tấn công gõ bừa một mã
+     * không tồn tại vẫn nhận đúng câu chung ở nhánh dưới.
+     */
+    if (!candidate) {
+      const coNhungKhacChiNhanh = result.rows.length > 0;
+      throw new UnauthorizedException(coNhungKhacChiNhanh
+        ? 'Tài khoản này không thuộc chi nhánh đã chọn. Hãy chọn "Chi nhánh tổng" hoặc đúng chi nhánh của bạn.'
+        : 'Sai tài khoản hoặc mật khẩu.');
+    }
 
     const profile = candidate.profile;
     const employee = candidate.employee || {};

@@ -81,6 +81,16 @@ jobs:
         run: node scripts/kiem-menu.mjs
 
 
+      - name: Miễn chi nhánh phải khớp giữa hai tầng
+        # Frontend và backend giữ hai danh sách riêng cho cùng một luật.
+        # Lệch nhau thì frontend nói "được miễn" và không chặn, rồi backend
+        # từ chối với thông báo trông như sai mật khẩu — người dùng gõ lại
+        # mật khẩu tới khi bị khoá tài khoản vì một lỗi không liên quan.
+        #
+        # Đã xảy ra thật ngày 28/08/2026 với tài khoản Admin Marketing.
+        run: node scripts/kiem-vai-tro-chi-nhanh.mjs
+
+
 
       - name: Cú pháp mọi script bash
         run: |
