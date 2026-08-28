@@ -391,7 +391,16 @@ create trigger hoa_hong_nhat_ky_guard
 -- giờ ghi ngược về marketing. Kế toán thấy khoản chi đã chốt, đối chiếu, rồi
 -- tự hạch toán bằng màn chứng từ của két.
 
-create or replace view finance_src.hoa_hong_pg as
+-- Xoá rồi tạo, không dùng "create or replace".
+--
+-- create or replace view chỉ thêm được cột vào cuối; nó không đổi tên, không
+-- đổi thứ tự, không bỏ cột. Nên một migration sau này đổi hình dạng view là
+-- file NÀY hỏng khi chạy lại: nó cố ép view về hình dạng cũ và Postgres từ
+-- chối. Trình chạy thật bỏ qua file đã áp nên production không gặp, nhưng
+-- phép kiểm "chạy lại được" trong CI thì gặp ngay — và đó chính là chuyện đã
+-- xảy ra khi migration 034 đổi view này.
+drop view if exists finance_src.hoa_hong_pg;
+create view finance_src.hoa_hong_pg as
   select d.id                     dot_id,
          d.ky_code,
          d.ky_tu,
@@ -414,7 +423,8 @@ create or replace view finance_src.hoa_hong_pg as
 comment on view finance_src.hoa_hong_pg is
   'Các đợt hoa hồng PG/SUP đã chốt, chờ kế toán hạch toán. Chỉ đọc.';
 
-create or replace view finance_src.hoa_hong_pg_chi_tiet as
+drop view if exists finance_src.hoa_hong_pg_chi_tiet;
+create view finance_src.hoa_hong_pg_chi_tiet as
   select l.dot_id,
          d.ky_code,
          l.vai_tro,
