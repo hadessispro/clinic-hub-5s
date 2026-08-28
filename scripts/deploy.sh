@@ -486,8 +486,28 @@ lenh_chay() {
     ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps build $dv < /dev/null 2>&1 | grep -iE 'error|Built' | sed 's/^/    /'" \
       || { do_ "Dựng ảnh hỏng. Khôi phục."; khoi_phuc "$MA_LAN"; exit 1; }
     ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps up -d --force-recreate $dv < /dev/null 2>&1 | tail -3 | sed 's/^/    /'"
-    echo "    chờ dịch vụ ổn định…"
-    sleep 18
+    # Chờ tới khi container THẬT SỰ khoẻ, không chờ một khoảng cố định.
+    #
+    # Trước đây là "sleep 18". Con số đó đúng phần lớn thời gian, nhưng lần
+    # nào máy chủ bận hơn thường lệ thì backend chưa kịp lên và bước kiểm sức
+    # khoẻ ngay sau đó thất bại — script khôi phục một bản triển khai hoàn
+    # toàn tốt. Đã xảy ra thật ngày 28/08/2026.
+    #
+    # Khôi phục oan gần như tệ ngang bỏ sót lỗi thật: nó dạy người ta rằng
+    # lưới an toàn hay báo nhầm, và lần sau họ sẽ tìm cách đi vòng qua nó.
+    echo "    chờ dịch vụ khoẻ trở lại…"
+    local cho=0
+    while [ "$cho" -lt 90 ]; do
+      local chua_khoe
+      chua_khoe="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps ps --format '{{.Service}} {{.Status}}'         | grep -E 'starting|unhealthy|Restarting' || true")"
+      [ -z "$chua_khoe" ] && break
+      sleep 3
+      cho=$((cho + 3))
+    done
+    echo "    khoẻ sau ${cho}s"
+    # Vẫn chờ thêm một nhịp ngắn: container báo khoẻ là cổng đã mở, chưa chắc
+    # Caddy đã nhận ra nó quay lại.
+    sleep 4
   fi
 
   echo
