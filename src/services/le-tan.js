@@ -12,6 +12,7 @@
  */
 
 import { todayISO } from '../utils.js';
+import { BRANCHES } from '../branch.js';
 
 /* ── Danh mục ────────────────────────────────────────────────────────── */
 
@@ -75,10 +76,10 @@ export const HANG_DOI = {
   },
 };
 
-export const CHI_NHANH = [
-  { ma: 'q7', ten: 'Chi nhánh Quận 7' },
-  { ma: 'bt', ten: 'Chi nhánh Bình Thạnh' },
-];
+// Chi nhánh lấy từ BRANCHES của hệ thống, không tự khai lại. Khai lại là tạo
+// nguồn sự thật thứ hai về chi nhánh, rồi hai bên lệch nhau lúc nào không hay.
+export const CHI_NHANH = Object.values(BRANCHES)
+  .map((b) => ({ ma: b.id, ten: b.shortName }));
 
 export const BAC_SI = [
   { ma: 'BS01', ten: 'BS. Trần Minh Quân', chuyen: 'Chỉnh nha' },
@@ -145,74 +146,74 @@ const KIA = ngayLech(2);
 let LICH_HEN = [
   // ── Hôm nay ──
   lich(HOM_NAY, '08:00', 45, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
-    'q7', 'BS01', 'Phòng 1', 'tai_kham', 'hoan_tat', 'telesale',
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'tai_kham', 'hoan_tat', 'telesale',
     { noi_dung: 'Siết mắc cài lần 4', den_luc: luc(HOM_NAY, '07:52'), co_dich_vu: true }),
   lich(HOM_NAY, '08:30', 60, k('Trần Văn Hùng', '0912445566', '1986-11-02', 'nam'),
-    'q7', 'BS02', 'Phòng VIP', 'dieu_tri', 'dang_kham', 'gioi_thieu',
+    'pham-van-chieu', 'BS02', 'Phòng VIP', 'dieu_tri', 'dang_kham', 'gioi_thieu',
     { noi_dung: 'Cấy ghép Implant răng 36', den_luc: luc(HOM_NAY, '08:25') }),
   lich(HOM_NAY, '09:00', 30, k('Lê Thị Mai Anh', '0938778899', '2001-06-24', 'nu', { khach_moi: true }),
-    'q7', 'BS03', 'Phòng 2', 'kham_moi', 'da_den', 'pg',
+    'pham-van-chieu', 'BS03', 'Phòng 2', 'kham_moi', 'da_den', 'pg',
     { noi_dung: 'Khám tổng quát, tư vấn tẩy trắng', den_luc: luc(HOM_NAY, '08:58') }),
   lich(HOM_NAY, '09:30', 30, k('Phạm Quốc Đạt', '0977001122', '1999-01-30', 'nam'),
-    'q7', 'BS03', 'Phòng 2', 'tai_kham', 'cho_den', 'telesale',
+    'pham-van-chieu', 'BS03', 'Phòng 2', 'tai_kham', 'cho_den', 'telesale',
     { noi_dung: 'Kiểm tra sau nhổ răng khôn' }),
   lich(HOM_NAY, '10:00', 45, k('Vũ Hoàng Yến', '0908334455', '1992-09-08', 'nu'),
-    'bt', 'BS04', 'Phòng 1', 'dieu_tri', 'cho_den', 'vang_lai',
+    'le-van-tho', 'BS04', 'Phòng 1', 'dieu_tri', 'cho_den', 'vang_lai',
     { noi_dung: 'Cạo vôi, điều trị viêm nướu' }),
   lich(HOM_NAY, '10:30', 30, k('Đặng Minh Tuấn', '0965223344', '1978-04-17', 'nam'),
-    'bt', 'BS03', 'Phòng 3', 'kham_moi', 'cho_den', 'pg',
+    'le-van-tho', 'BS03', 'Phòng 3', 'kham_moi', 'cho_den', 'pg',
     { noi_dung: 'Tư vấn răng sứ thẩm mỹ' }),
   lich(HOM_NAY, '14:00', 60, k('Hoàng Thị Lan', '0919556677', '1989-12-01', 'nu'),
-    'q7', 'BS01', 'Phòng 1', 'dieu_tri', 'cho_den', 'telesale',
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'dieu_tri', 'cho_den', 'telesale',
     { noi_dung: 'Gắn mắc cài hàm dưới' }),
   lich(HOM_NAY, '14:30', 30, k('Bùi Anh Khoa', '0902889900', '2005-08-19', 'nam'),
-    'q7', 'BS03', 'Phòng 2', 'tai_kham', 'cho_den', 'goi_lai',
+    'pham-van-chieu', 'BS03', 'Phòng 2', 'tai_kham', 'cho_den', 'goi_lai',
     { noi_dung: 'Tái khám định kỳ 6 tháng' }),
   lich(HOM_NAY, '15:00', 45, k('Trịnh Thu Trang', '0947118822', '1996-02-14', 'nu'),
-    'bt', 'BS02', 'Phòng VIP', 'dieu_tri', 'cho_den', 'gioi_thieu',
+    'le-van-tho', 'BS02', 'Phòng VIP', 'dieu_tri', 'cho_den', 'gioi_thieu',
     { noi_dung: 'Phục hình răng số 46' }),
   lich(HOM_NAY, '07:30', 30, k('Ngô Gia Bảo', '0933667788', '1991-07-07', 'nam'),
-    'q7', 'BS04', 'Phòng 3', 'tai_kham', 'khong_den', 'telesale',
+    'pham-van-chieu', 'BS04', 'Phòng 3', 'tai_kham', 'khong_den', 'telesale',
     { noi_dung: 'Tái khám nha chu', ghi_chu: 'Gọi 2 lần không nghe máy' }),
   lich(HOM_NAY, '11:00', 30, k('Dương Khánh Linh', '0987443322', '2000-05-21', 'nu'),
-    'q7', 'BS01', 'Phòng 1', 'kham_moi', 'huy', 'pg',
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'kham_moi', 'huy', 'pg',
     { noi_dung: 'Tư vấn niềng răng', ghi_chu: 'Khách báo bận, xin dời tuần sau' }),
   lich(HOM_NAY, '13:00', 30, k('Lý Thanh Sơn', '0905998877', '1983-10-11', 'nam'),
-    'bt', 'BS03', 'Phòng 3', 'kham_moi', 'da_den', 'vang_lai',
+    'le-van-tho', 'BS03', 'Phòng 3', 'kham_moi', 'da_den', 'vang_lai',
     { noi_dung: 'Đau răng hàm trên', den_luc: luc(HOM_NAY, '12:55'), co_dich_vu: false }),
 
   // ── Ngày mai và ngày kia · dùng cho hàng đợi nhắc hẹn ──
   lich(MAI, '08:00', 45, k('Nguyễn Hải Đăng', '0916334411', '1995-03-03', 'nam'),
-    'q7', 'BS01', 'Phòng 1', 'dieu_tri', 'cho_den', 'telesale',
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'dieu_tri', 'cho_den', 'telesale',
     { noi_dung: 'Siết mắc cài' }),
   lich(MAI, '09:00', 30, k('Phan Thị Kim Chi', '0978220033', '1988-06-30', 'nu'),
-    'q7', 'BS04', 'Phòng 2', 'tai_kham', 'cho_den', 'gioi_thieu',
+    'pham-van-chieu', 'BS04', 'Phòng 2', 'tai_kham', 'cho_den', 'gioi_thieu',
     { noi_dung: 'Kiểm tra sau cạo vôi' }),
   lich(MAI, '15:00', 60, k('Trương Văn Phúc', '0902114477', '1974-09-15', 'nam'),
-    'bt', 'BS02', 'Phòng VIP', 'dieu_tri', 'cho_den', 'goi_lai',
+    'le-van-tho', 'BS02', 'Phòng VIP', 'dieu_tri', 'cho_den', 'goi_lai',
     { noi_dung: 'Implant giai đoạn 2' }),
   lich(KIA, '10:00', 30, k('Đỗ Ngọc Hân', '0939887766', '2003-11-27', 'nu'),
-    'q7', 'BS03', 'Phòng 3', 'kham_moi', 'cho_den', 'pg',
+    'pham-van-chieu', 'BS03', 'Phòng 3', 'kham_moi', 'cho_den', 'pg',
     { noi_dung: 'Khám và tư vấn tẩy trắng' }),
 
   // ── Đã qua · dùng cho hàng đợi hẹn không đến và sau điều trị ──
   lich(ngayLech(-1), '09:00', 30, k('Cao Thị Thuỳ Dương', '0908224466', '1997-01-09', 'nu'),
-    'q7', 'BS03', 'Phòng 2', 'tai_kham', 'khong_den', 'telesale',
+    'pham-van-chieu', 'BS03', 'Phòng 2', 'tai_kham', 'khong_den', 'telesale',
     { noi_dung: 'Tái khám sau trám răng' }),
   lich(ngayLech(-2), '14:00', 30, k('Hồ Minh Nhật', '0912778855', '1990-08-08', 'nam'),
-    'bt', 'BS04', 'Phòng 1', 'kham_moi', 'khong_den', 'pg',
+    'le-van-tho', 'BS04', 'Phòng 1', 'kham_moi', 'khong_den', 'pg',
     { noi_dung: 'Tư vấn răng sứ' }),
   lich(ngayLech(-4), '10:00', 60, k('Đinh Thị Hồng Nhung', '0983556644', '1993-04-22', 'nu'),
-    'q7', 'BS02', 'Phòng VIP', 'dieu_tri', 'hoan_tat', 'gioi_thieu',
+    'pham-van-chieu', 'BS02', 'Phòng VIP', 'dieu_tri', 'hoan_tat', 'gioi_thieu',
     { noi_dung: 'Nhổ răng khôn hàm dưới', co_dich_vu: true }),
   lich(ngayLech(-5), '15:30', 45, k('Lâm Tuấn Kiệt', '0946113399', '1985-12-19', 'nam'),
-    'q7', 'BS01', 'Phòng 1', 'dieu_tri', 'hoan_tat', 'telesale',
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'dieu_tri', 'hoan_tat', 'telesale',
     { noi_dung: 'Trám răng thẩm mỹ 3 răng', co_dich_vu: true }),
   lich(ngayLech(-6), '08:30', 30, k('Nguyễn Thảo My', '0975664488', '1998-07-04', 'nu'),
-    'bt', 'BS03', 'Phòng 3', 'kham_moi', 'hoan_tat', 'vang_lai',
+    'le-van-tho', 'BS03', 'Phòng 3', 'kham_moi', 'hoan_tat', 'vang_lai',
     { noi_dung: 'Cạo vôi răng', co_dich_vu: true }),
   lich(ngayLech(-3), '11:00', 30, k('Võ Thành Trung', '0901447722', '1982-02-28', 'nam'),
-    'q7', 'BS04', 'Phòng 2', 'kham_moi', 'hoan_tat', 'pg',
+    'pham-van-chieu', 'BS04', 'Phòng 2', 'kham_moi', 'hoan_tat', 'pg',
     { noi_dung: 'Khám tổng quát', co_dich_vu: false }),
 ];
 
@@ -220,19 +221,19 @@ let LICH_HEN = [
 let PHAN_HOI = [
   {
     id: 'PH-001', khach: k('Cao Thị Thuỳ Dương', '0908224466', '1997-01-09', 'nu'),
-    chi_nhanh: 'q7', tao_luc: luc(ngayLech(-1), '16:20'),
+    chi_nhanh: 'pham-van-chieu', tao_luc: luc(ngayLech(-1), '16:20'),
     muc: 'cao', noi_dung: 'Trám răng bị cộm, ăn nhai vướng.',
     trang_thai: 'moi', nguoi_nhan: 'LT01',
   },
   {
     id: 'PH-002', khach: k('Lâm Tuấn Kiệt', '0946113399', '1985-12-19', 'nam'),
-    chi_nhanh: 'q7', tao_luc: luc(ngayLech(-3), '10:05'),
+    chi_nhanh: 'pham-van-chieu', tao_luc: luc(ngayLech(-3), '10:05'),
     muc: 'thuong', noi_dung: 'Chờ quá lâu dù đã đặt hẹn trước.',
     trang_thai: 'dang_xu_ly', nguoi_nhan: 'LT01',
   },
   {
     id: 'PH-003', khach: k('Nguyễn Thảo My', '0975664488', '1998-07-04', 'nu'),
-    chi_nhanh: 'bt', tao_luc: luc(ngayLech(-6), '09:40'),
+    chi_nhanh: 'le-van-tho', tao_luc: luc(ngayLech(-6), '09:40'),
     muc: 'thap', noi_dung: 'Đề nghị có thêm chỗ gửi xe máy.',
     trang_thai: 'moi', nguoi_nhan: 'LT02',
   },
