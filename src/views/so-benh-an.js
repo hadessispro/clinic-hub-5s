@@ -86,6 +86,19 @@ const chuDau = (ten) => {
 const CANH_TOI_DA = 2000;
 const CHAT_LUONG = 0.82;
 
+/* Mã băm sha256 của nội dung ảnh, tính ngay trên máy trạm.
+ *
+ * crypto.subtle chỉ có trong ngữ cảnh an toàn — https hoặc localhost. Production
+ * chạy https nên vẫn có; nếu ai đó mở qua http thuần thì báo rõ thay vì lặng lẽ
+ * lưu ảnh không có mã băm. */
+async function bamNoiDung(buf) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Trình duyệt không cho tính mã băm ở kết nối này. Hãy mở bằng HTTPS.');
+  }
+  const h = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function doKb(n) {
   return n >= 1024 * 1024
     ? `${(n / 1024 / 1024).toFixed(1)} MB`
@@ -108,11 +121,15 @@ function nenWebp(tep) {
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
         c.getContext('2d').drawImage(anh, 0, 0, w, h);
-        c.toBlob((b) => {
+        c.toBlob(async (b) => {
           if (!b) { hong(new Error('Trình duyệt này không mã hoá được WebP.')); return; }
+          // Băm nội dung ĐÃ NÉN, không băm tệp gốc: hai người xuất cùng một
+          // tấm phim từ hai máy khác nhau sẽ ra hai tệp gốc khác nhau nhưng
+          // cùng một ảnh sau khi nén, và đó mới là thứ đáng gộp.
+          const bam = await bamNoiDung(await b.arrayBuffer());
           const d = new FileReader();
           d.onload = () => xong({
-            tep: d.result, ten_goc: tep.name,
+            tep: d.result, ten_goc: tep.name, ma_bam: bam, byte: b.size,
             kb: `${doKb(tep.size)} → ${doKb(b.size)}`,
             giam: Math.round((1 - b.size / tep.size) * 100),
           });
@@ -689,6 +706,7 @@ function veAnhCuaLuot(l) {
         <b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
         <small>${a.rang ? `Răng ${escapeHTML(a.rang)}` : escapeHTML(a.ghi_chu || '')}</small>
         ${a.kb ? `<small class="sbn-anh-kb">${escapeHTML(a.kb)}</small>` : ''}
+        ${a.dung_lai ? '<small class="sbn-anh-lai"><i class="ri-links-line"></i>Dùng lại, không tốn thêm chỗ</small>' : ''}
       </figcaption>
     </figure>`).join('')}
     ${l.da_ky ? '' : `<label class="sbn-them-anh">
@@ -981,8 +999,10 @@ export function initView() {
         const xong = [];
         for (const f of ds) xong.push(await nenWebp(f));
         const giam = Math.round(xong.reduce((t, x) => t + x.giam, 0) / xong.length);
-        await themAnh(o.dataset.taiAnh, xong, maToi);
-        showToast(`Đã thêm ${xong.length} ảnh, nhẹ đi ${giam}% sau khi nén WebP.`);
+        const kq = await themAnh(o.dataset.taiAnh, xong, maToi);
+        showToast(kq.trung
+          ? `Đã thêm ${xong.length} ảnh, nhẹ đi ${giam}%. ${kq.trung} ảnh trùng nội dung đã có nên không lưu thêm bản sao.`
+          : `Đã thêm ${xong.length} ảnh, nhẹ đi ${giam}% sau khi nén WebP.`);
         await ve();
       } catch (err) { showToast(err.message, true); }
     });

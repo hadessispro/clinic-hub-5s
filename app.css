@@ -8856,3 +8856,8 @@ body.dialog-open {
   .sbn-anh-hang .sbn-anh-o, .sbn-them-anh { width: calc(50% - 5px); }
   .sbn-chon-gon { max-width: none; flex: 1 1 auto; }
 }
+.sbn-anh-lai {
+  display: inline-flex !important; align-items: center; gap: 4px;
+  color: var(--teal-dark) !important; font-weight: 700;
+}
+.sbn-anh-lai i { font-size: .8rem; }

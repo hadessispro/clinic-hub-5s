@@ -713,13 +713,27 @@ export function dinhChinh(luotId, du, boi) {
   return ghiLuotKham(cu.ho_so, { ...cu, ...du, sua_cho: luotId }, boi);
 }
 
-/* Thêm ảnh vào một lượt khám.
+/* Kho ảnh theo MÃ BĂM NỘI DUNG.
  *
- * Lượt đã ký thì không thêm được: bản ghi lâm sàng đã đóng, thêm ảnh vào sau
- * là sửa nội dung đã ký. Muốn bổ sung thì ghi một bản đính chính.
+ * Tên tệp là mã băm sha256 của chính nội dung ảnh sau khi nén. Ba thứ có được
+ * từ đó, và cả ba đều là thứ không thêm vào sau được:
  *
- * Ảnh vào đây đã được nén WebP ở phía trình duyệt trước khi gọi hàm này.
+ *   Trùng thì lưu một lần. Một tấm phim toàn cảnh thường được gắn vào nhiều
+ *   buổi khám — chỉnh nha lấy phim đầu đợt rồi tham chiếu suốt hai năm. Băm
+ *   nội dung thì hai lần tải cùng một tấm chỉ tốn chỗ một lần.
+ *
+ *   Chứng minh ảnh chưa bị đổi. Bệnh án phải chứng minh được nội dung nguyên
+ *   vẹn; với ảnh thì mã băm CHÍNH LÀ bằng chứng đó. Đổi một pixel là mã băm
+ *   khác, và đối chiếu được bất cứ lúc nào.
+ *
+ *   Tên tệp không đoán được. Tên kiểu "benhnhan-nguyenvana-rang26.webp" thì
+ *   đoán ra được đường dẫn của người khác; mã băm thì không.
+ *
+ * Khi lên máy chủ thật, tệp nằm ở uploads/<2 ký tự đầu>/<mã băm>.webp — chia
+ * thư mục con để một thư mục không chứa hàng chục nghìn tệp.
  */
+let KHO_ANH = {};   // ma_bam -> { tep, byte, lan_dung }
+
 export function themAnh(luotId, ds, boi) {
   const l = LUOT_KHAM.find((x) => x.id === luotId);
   if (!l) throw new Error('Không tìm thấy lượt khám này.');
@@ -727,18 +741,43 @@ export function themAnh(luotId, ds, boi) {
     throw new Error('Lượt khám đã ký thì không thêm ảnh được. Ghi một bản đính chính nếu cần bổ sung.');
   }
   if (!ds || !ds.length) throw new Error('Chưa chọn ảnh nào.');
-  ds.forEach((a, i) => {
+
+  let trung = 0;
+  ds.forEach((a) => {
+    if (!a.ma_bam) throw new Error('Ảnh thiếu mã băm, không lưu được.');
+
+    if (KHO_ANH[a.ma_bam]) { KHO_ANH[a.ma_bam].lan_dung += 1; trung += 1; }
+    else KHO_ANH[a.ma_bam] = { tep: a.tep, byte: a.byte || 0, lan_dung: 1 };
+
+    // Cùng một ảnh gắn hai lần vào cùng một lượt là nhầm, không phải dùng lại.
+    if (l.anh.some((x) => x.ma_bam === a.ma_bam)) return;
+
     l.anh.push({
-      id: `A${Date.now()}${i}`,
+      id: a.ma_bam.slice(0, 12),
+      ma_bam: a.ma_bam,
       loai: a.loai || 'trong_mieng',
       ghi_chu: a.ghi_chu || a.ten_goc || '',
       rang: a.rang || null,
-      tep: a.tep,
+      tep: KHO_ANH[a.ma_bam].tep,
       kb: a.kb,
+      dung_lai: KHO_ANH[a.ma_bam].lan_dung > 1,
       tao_boi: boi, tao_luc: new Date().toISOString(),
     });
   });
-  return cho(l.anh);
+  return cho({ anh: l.anh, trung });
+}
+
+/** Số liệu kho ảnh, để biết băm nội dung tiết kiệm được bao nhiêu. */
+export function thongKeKhoAnh() {
+  const ds = Object.values(KHO_ANH);
+  const tong = ds.reduce((t, x) => t + x.byte, 0);
+  const neuKhongBam = ds.reduce((t, x) => t + x.byte * x.lan_dung, 0);
+  return {
+    so_tep: ds.length,
+    so_lan_dung: ds.reduce((t, x) => t + x.lan_dung, 0),
+    byte: tong,
+    tiet_kiem: neuKhongBam - tong,
+  };
 }
 
 export function kyLuotKham(luotId, boi) {
