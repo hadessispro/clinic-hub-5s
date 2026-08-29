@@ -47,6 +47,26 @@ function mobileNavLabel(item) {
  * @param {string} role - The user's role (admin, hr, leader, finance, staff)
  * @returns {string} - HTML string representing navigation
  */
+/* Mỗi phân hệ một sắc độ riêng.
+ *
+ * Sáu nhóm và ba mươi mục cùng một màu xám thì mắt không có chỗ bám: muốn tìm
+ * "Chấm công GPS" phải đọc lần lượt từng dòng. Màu ở đây mang THÔNG TIN — mục
+ * này thuộc phân hệ nào — chứ không phải trang trí, nên nó bám theo nhóm chứ
+ * không rải ngẫu nhiên.
+ *
+ * Mã nhóm suy ra từ tên nhóm trong NAV_ITEMS. Nhóm mới chưa khai ở đây vẫn
+ * chạy, chỉ là dùng sắc xám mặc định — thêm nhóm không làm hỏng sidebar.
+ */
+const MAU_NHOM = {
+  'Điều hành':            'dieu-hanh',
+  'Nhân sự':              'nhan-su',
+  'Công & lịch':          'cong-lich',
+  'Tài chính & kho':      'tai-chinh',
+  'Marketing & Telesale': 'marketing',
+  'Phòng khám':           'phong-kham',
+};
+const maNhom = (ten) => MAU_NHOM[ten] || 'khac';
+
 export function renderSidebar(role) {
   const currentView = store.getState()?.currentView || 'dashboard';
   const navGroups = getNavForRole(role);
@@ -65,12 +85,13 @@ export function renderSidebar(role) {
         .join('');
         
       return `
-        <div class="nav-group ${isExpanded ? 'is-open' : 'is-collapsed'}">
+        <div class="nav-group nh-${maNhom(group.group)} ${isExpanded ? 'is-open' : 'is-collapsed'}${hasActive ? ' co-man-dang-mo' : ''}">
           <button type="button" class="nav-group-title" aria-expanded="${isExpanded}">
             <div class="nav-group-title-content">
               <svg class="nav-group-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               <span>${escapeHTML(group.group)}</span>
             </div>
+            <span class="nav-group-dem">${group.items.length}</span>
             <span class="nav-group-plus" title="Đóng/Mở">+</span>
           </button>
           <div class="nav-group-items">

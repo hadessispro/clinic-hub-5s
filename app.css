@@ -8363,3 +8363,104 @@ body.dialog-open {
   .lt-hs-ten h2 { font-size: 1.15rem; }
   .lt-hs-phu-trach { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 }
+
+/* ══ SIDEBAR · phân tách nhóm bằng sắc độ ════════════════════════════════
+ *
+ * Sáu nhóm và ba mươi mục cùng một màu xám thì mắt không có chỗ bám: muốn tìm
+ * một mục phải đọc lần lượt từng dòng. Mỗi phân hệ nay có một sắc riêng, và
+ * sắc đó mang THÔNG TIN — mục này thuộc phân hệ nào — nên nó bám theo nhóm
+ * chứ không rải ngẫu nhiên.
+ *
+ * Sắc chỉ hiện ở ba chỗ: vạch bên trái đầu nhóm, biểu tượng mục, và mục đang
+ * mở. Tô sắc lên cả dòng thì ba mươi dòng thành ba mươi mảng màu, còn tệ hơn
+ * ba mươi dòng xám.
+ *
+ * Sáu mực đều đã đo tương phản trên chính nền nhạt của nhóm mình, thấp nhất
+ * 5.19 — trên ngưỡng 4.5 của chữ thường. Ba mực đầu tiên tôi chọn chỉ đạt
+ * 4.32 tới 4.45 nên đã làm đậm lại. Đừng chỉnh sáng lên cho tươi mắt: chữ
+ * trên nền nhạt sẽ tụt xuống dưới ngưỡng đọc.
+ */
+
+.nav-group {
+  --nh: #64748b;        /* mực của nhóm */
+  --nh-nen: #f1f5f9;    /* nền nhạt cùng tông */
+  --nh-vien: #dbe3ec;
+}
+
+.nav-group.nh-dieu-hanh  { --nh: #076e6b; --nh-nen: #e3f2f0; --nh-vien: #b3ddd9; }
+.nav-group.nh-nhan-su    { --nh: #6b4fa8; --nh-nen: #efeafa; --nh-vien: #d3c6ee; }
+.nav-group.nh-cong-lich  { --nh: #8d5606; --nh-nen: #fbf3de; --nh-vien: #ecd9a5; }
+.nav-group.nh-tai-chinh  { --nh: #1d5fa8; --nh-nen: #e6eefa; --nh-vien: #bed3ee; }
+.nav-group.nh-marketing  { --nh: #a83a68; --nh-nen: #fbe9f0; --nh-vien: #eec3d5; }
+.nav-group.nh-phong-kham { --nh: #117042; --nh-nen: #e3f3ea; --nh-vien: #b6dcc5; }
+
+/* Khoảng cách giữa các nhóm phải lớn hơn khoảng cách giữa các mục trong một
+ * nhóm, nếu không nhóm chỉ là một cái nhãn chứ không phải một khối. */
+.nav-list { gap: 4px; }
+.nav-group { gap: 2px; padding-bottom: 10px; }
+.nav-group + .nav-group { border-top: 1px solid #eceff3; padding-top: 10px; }
+
+.nav-group-title {
+  gap: 9px;
+  padding: 9px 11px 9px 12px;
+  margin: 0 0 3px;
+  border: 1px solid transparent;
+  border-left: 3px solid var(--nh);
+  border-radius: 4px 9px 9px 4px;
+  background: transparent;
+  color: #55606d;
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  box-shadow: none;
+}
+.nav-group-title:hover {
+  background: var(--nh-nen);
+  border-color: transparent;
+  border-left-color: var(--nh);
+  color: var(--nh);
+  box-shadow: none;
+}
+/* Nhóm đang chứa màn mở: nền nhạt và chữ theo sắc của nhóm. Cả sidebar chỉ
+ * một nhóm như vậy, nên nó là dấu "mình đang ở đây". */
+.nav-group.co-man-dang-mo > .nav-group-title {
+  background: var(--nh-nen);
+  border-color: var(--nh-vien);
+  border-left-color: var(--nh);
+  color: var(--nh);
+}
+.nav-group-title-content { gap: 8px; margin-right: auto; }
+.nav-group-chevron { color: var(--nh); opacity: .75; }
+
+.nav-group-dem {
+  min-width: 20px; padding: 1px 7px; border-radius: 999px;
+  background: #eef1f5; color: #7b8794;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0;
+  font-variant-numeric: tabular-nums; text-align: center;
+}
+.nav-group.co-man-dang-mo .nav-group-dem { background: #fff; color: var(--nh); }
+.nav-group-title:hover .nav-group-dem { background: #fff; color: var(--nh); }
+
+/* ── Mục ── */
+
+.nav-item { padding: 7px 10px 7px 13px; color: #4a5563; }
+.nav-item:hover { background: var(--nh-nen); color: var(--nh); }
+
+/* Biểu tượng mang sắc của nhóm ngay cả khi mục chưa mở, nhưng nhạt — đủ để
+ * mắt gom các mục cùng nhóm, không đủ để chúng tranh nhau. */
+.nav-item .nav-icon { color: var(--nh); opacity: .55; transition: opacity .14s; }
+.nav-item:hover .nav-icon { opacity: .95; }
+
+/* Mục đang mở: nền đặc theo sắc nhóm và vạch trái. Bản trước là thẻ trắng
+ * trên nền trắng, gần như không thấy. */
+.nav-item.active {
+  background: var(--nh-nen);
+  border-color: var(--nh-vien);
+  box-shadow: inset 3px 0 0 var(--nh);
+  color: var(--nh);
+  font-weight: 700;
+}
+.nav-item.active .nav-icon { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item .nav-icon { transition: none; }
+}
