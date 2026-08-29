@@ -8252,3 +8252,114 @@ body.dialog-open {
   .ht-cham { width: 32px; height: 32px; border-radius: 10px; }
   .ht-moc:not(:last-child)::before { left: 15px; top: 32px; }
 }
+
+/* ══ LỄ TÂN · hồ sơ khách hàng và điều phối ══════════════════════════════ */
+
+.lt-ho-so-dau { display: grid; gap: 16px; }
+
+.lt-hs-tren {
+  display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+}
+.lt-hs-ten { min-width: 0; margin-right: auto; display: grid; gap: 4px; }
+.lt-hs-ten h2 { margin: 0; font-size: 1.35rem; color: #14312d; line-height: 1.2; }
+.lt-hs-ma { margin: 0; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.lt-hs-ma code {
+  font-size: .76rem; background: #eef4f2; border: 1px solid var(--line);
+  padding: 2px 8px; border-radius: 6px; color: #4b6560; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lt-hs-phu { margin: 0; color: #4b6560; font-size: .83rem; }
+
+/* Ba người phụ trách đứng ngay đầu hồ sơ. Đây là câu hỏi lễ tân hỏi trước
+ * khi bấm máy: khách này ai đang theo. Chôn nó vào tab con là bắt họ mở
+ * thêm một lớp nữa mới trả lời được. */
+.lt-hs-phu-trach {
+  display: flex; gap: 22px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: 12px;
+  background: #f4f9f8; border: 1px solid #dbe9e6;
+}
+.lt-hs-phu-trach > div { display: grid; gap: 2px; }
+.lt-hs-phu-trach small {
+  color: #7d928d; font-size: .67rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.lt-hs-phu-trach b { font-size: .84rem; color: #1d3a36; }
+.lt-chua-gan { font-style: normal; color: #b5844a; font-weight: 600; }
+
+/* ── Tab con trong hồ sơ ── */
+
+.lt-tab-con {
+  display: flex; gap: 5px; padding: 5px;
+  background: #eef4f2; border: 1px solid var(--line); border-radius: 12px;
+}
+.lt-tab-c {
+  flex: 1 1 0; min-width: 0; min-height: 40px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 8px 12px; border: 1px solid transparent; border-radius: 9px;
+  background: transparent; color: #4b6560; cursor: pointer;
+  font-family: inherit; font-size: .8rem; font-weight: 700; white-space: nowrap;
+  transition: background .13s, color .13s, box-shadow .13s;
+}
+.lt-tab-c i { font-size: 1.05rem; }
+.lt-tab-c:hover { color: var(--teal-dark); background: #e3efec; }
+.lt-tab-c.is-active {
+  background: #fff; color: var(--teal-dark);
+  border-color: #cfe2dd; box-shadow: 0 1px 3px rgba(8, 127, 123, .12);
+}
+.lt-tab-c:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* ── Nhãn lần khám ──
+ *
+ * Chỉ đếm buổi khách thật sự tới. Buổi hủy hoặc không đến mang gạch ngang mờ
+ * thay vì một số thứ tự — cho nó một số là nói dối về tiến trình điều trị. */
+.lt-lan {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  background: var(--mint); color: var(--teal-dark);
+  font-size: .68rem; font-weight: 800; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lt-lan.lon { font-size: .76rem; padding: 4px 12px; }
+.lt-lan.trong {
+  background: transparent; color: #b3c2be; border: 1px dashed var(--line);
+}
+
+/* ── Điều phối ── */
+
+.lt-dp-luoi {
+  display: grid; gap: 14px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.lt-o { display: grid; gap: 6px; min-width: 0; }
+.lt-o > span { color: #62807a; font-size: .73rem; font-weight: 700; }
+.lt-o select, .lt-o input {
+  min-height: 42px; width: 100%; min-width: 0; max-width: 100%;
+}
+
+.lt-dp-luu-y {
+  display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 0;
+  padding: 12px 15px; border-radius: 11px;
+  background: #eef4fb; border: 1px solid #cbdcef;
+  color: #35597e; font-size: .81rem; line-height: 1.5;
+}
+.lt-dp-luu-y i { font-size: 1.05rem; color: #4a7fb5; flex: none; margin-top: 1px; }
+.lt-dp-luu-y b { color: #234563; }
+
+.lt-dp-nut {
+  display: flex; justify-content: flex-end; margin-top: 16px;
+  padding-top: 15px; border-top: 1px solid var(--line);
+}
+
+@media (max-width: 860px) {
+  .lt-hs-phu-trach { width: 100%; gap: 16px; }
+  .lt-tab-c span { display: none; }
+  .lt-tab-c.is-active span { display: block; }
+  .lt-tab-c { flex: 0 0 auto; }
+  .lt-tab-c.is-active { flex: 1 1 auto; }
+  .lt-bang td[data-label="Lần"] { grid-column: 1 / -1; }
+  .lt-dp-nut > button { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 520px) {
+  .lt-hs-ten h2 { font-size: 1.15rem; }
+  .lt-hs-phu-trach { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+}

@@ -20,6 +20,8 @@ import {
   layLichHomNay,
   tenBacSi, tenChiNhanh, tiepDon, xuLyPhanHoi, xuatCsvLichHen,
   LOAI_SU_KIEN, baoCaoThang, layDanhSachKhach, layHanhTrinh, xuatCsvBaoCao,
+  CHAM_SOC, NHOM_KHACH, TELESALE, doiBacSiLich, doiDieuPhoi,
+  tenChamSoc, tenTelesale,
 } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -56,6 +58,7 @@ let khachMo = '';
 let dsKhach = [];
 let hanhTrinh = null;
 let hTim = ''; let hChiNhanh = ''; let hNguon = '';
+let tabHoSo = 'hanh-trinh';  // hanh-trinh | lich-su | dieu-phoi
 
 // Tab Báo cáo
 let baoCao = null;
@@ -83,6 +86,14 @@ const the = (nhan, giaTri, phu) => `<article class="metric-card">
   <p class="metric-detail">${escapeHTML(phu || '')}</p></article>`;
 
 const gioHien = (iso) => (iso ? iso.slice(11, 16) : '—');
+const tuoiTu = (sinh) => {
+  if (!sinh) return '';
+  const d = new Date(sinh); const n = new Date();
+  let t = n.getFullYear() - d.getFullYear();
+  if (n.getMonth() < d.getMonth()
+    || (n.getMonth() === d.getMonth() && n.getDate() < d.getDate())) t -= 1;
+  return `${t} tuổi`;
+};
 
 /* Ô <input type="month"> gốc hiển thị theo ngôn ngữ trình duyệt, nên Chrome
  * tiếng Anh ra "August 2026". Tự dựng danh sách kỳ để nó luôn là tiếng Việt. */
@@ -567,9 +578,12 @@ function veHanhTrinh() {
   if (!khachMo) {
     const dong = dsKhach.map((k) => `<tr>
       <td data-label="Khách hàng">${oKhach({ khach: k.khach })}</td>
-      <td data-label="Chi nhánh">${escapeHTML(tenChiNhanh(k.chi_nhanh))}</td>
+      <td data-label="Chi nhánh">
+        <b>${escapeHTML(tenChiNhanh(k.chi_nhanh))}</b>
+        <small>${escapeHTML(tenBacSi(k.dieu_phoi.bac_si))}</small></td>
       <td data-label="Nguồn"><span class="lt-the-nho">${
         escapeHTML(NGUON[k.nguon] || k.nguon)}</span></td>
+      <td data-label="Lần khám" class="lh-so"><b>${k.lan_kham}</b></td>
       <td data-label="Lịch hẹn" class="lh-so">${k.so_lich}</td>
       <td data-label="Đã đến" class="lh-so">${k.so_lan_den}</td>
       <td data-label="Không đến" class="lh-so">${k.so_khong_den || '—'}</td>
@@ -607,25 +621,91 @@ function veHanhTrinh() {
       <div class="hh-bang-wrap lt-bang">
         <table class="hh-bang">
           <thead><tr>
-            <th>Khách hàng</th><th>Chi nhánh</th><th>Nguồn</th><th>Lịch hẹn</th>
+            <th>Khách hàng</th><th>Chi nhánh</th><th>Nguồn</th><th>Lần khám</th><th>Lịch hẹn</th>
             <th>Đã đến</th><th>Không đến</th><th>Tỷ lệ đến</th><th>Gần nhất</th><th></th>
           </tr></thead>
-          <tbody>${dong || '<tr><td colspan="9" class="empty-state">Không có khách nào khớp bộ lọc.</td></tr>'}</tbody>
+          <tbody>${dong || '<tr><td colspan="10" class="empty-state">Không có khách nào khớp bộ lọc.</td></tr>'}</tbody>
         </table>
       </div>
     </section>`;
   }
 
   const h = hanhTrinh;
-  if (!h) return '<p class="empty-state">Không mở được hành trình của khách này.</p>';
+  if (!h) return '<p class="empty-state">Không mở được hồ sơ của khách này.</p>';
 
+  const dp = h.dieu_phoi;
+  const nhom = NHOM_KHACH[dp.nhom] || NHOM_KHACH.thuong;
+  const dem = (loai) => h.su_kien.filter((e) => e.loai === loai).length;
+  const daDen = h.lich.filter((x) => x.den_luc
+    || ['da_den', 'dang_kham', 'hoan_tat'].includes(x.trang_thai)).length;
+
+  const TAB_HO_SO = [
+    { ma: 'hanh-trinh', ten: 'Hành trình', icon: 'ri-route-line' },
+    { ma: 'lich-su', ten: 'Lần khám và dịch vụ', icon: 'ri-list-check-2' },
+    { ma: 'dieu-phoi', ten: 'Điều phối', icon: 'ri-user-shared-line' },
+  ];
+
+  return `
+    <button type="button" class="ghost-button lt-quay-lai" id="htDong">
+      <i class="ri-arrow-left-line"></i> Danh sách khách
+    </button>
+
+    <section class="panel lt-ho-so-dau">
+      <div class="lt-hs-tren">
+        <span class="lt-avatar lon">${escapeHTML(chuDau(h.khach.ten))}</span>
+        <div class="lt-hs-ten">
+          <h2>${escapeHTML(h.khach.ten)}</h2>
+          <p class="lt-hs-ma">
+            <code>${escapeHTML(h.khach.ma || h.khach.dien_thoai)}</code>
+            <span class="status-pill ${nhom.lop}">${escapeHTML(nhom.ten)}</span>
+          </p>
+          <p class="lt-hs-phu">
+            ${escapeHTML(h.khach.dien_thoai)}
+            ${h.khach.ngay_sinh ? ` · ${ngayHien(h.khach.ngay_sinh)} · ${
+              escapeHTML(tuoiTu(h.khach.ngay_sinh))}` : ''}
+            · ${h.khach.gioi === 'nam' ? 'Nam' : 'Nữ'}
+            · ${escapeHTML(tenChiNhanh(h.chi_nhanh))}
+          </p>
+        </div>
+        <div class="lt-hs-phu-trach">
+          <div><small>Bác sĩ phụ trách</small><b>${escapeHTML(tenBacSi(dp.bac_si))}</b></div>
+          <div><small>Telesale</small><b>${escapeHTML(tenTelesale(dp.telesale))}</b></div>
+          <div><small>Chăm sóc</small><b>${dp.cham_soc
+            ? escapeHTML(tenChamSoc(dp.cham_soc))
+            : '<em class="lt-chua-gan">Chưa gán</em>'}</b></div>
+        </div>
+      </div>
+      <div class="lt-ht-so">
+        <div><b>${h.tong_lan}</b><span>lần đã khám</span></div>
+        <div><b>${h.lich.length}</b><span>lịch hẹn</span></div>
+        <div><b>${daDen}</b><span>lần tới</span></div>
+        <div><b>${dem('khong_den')}</b><span>lần không tới</span></div>
+        <div><b>${dem('goi')}</b><span>cuộc gọi telesale</span></div>
+      </div>
+    </section>
+
+    <nav class="lt-tab-con" role="tablist">
+      ${TAB_HO_SO.map((t) => `<button type="button" role="tab"
+        class="lt-tab-c${tabHoSo === t.ma ? ' is-active' : ''}"
+        aria-selected="${tabHoSo === t.ma}" data-tabhs="${t.ma}">
+        <i class="${t.icon}"></i><span>${escapeHTML(t.ten)}</span></button>`).join('')}
+    </nav>
+
+    ${tabHoSo === 'hanh-trinh' ? veDongThoiGian(h) : ''}
+    ${tabHoSo === 'lich-su' ? veLanKham(h) : ''}
+    ${tabHoSo === 'dieu-phoi' ? veDieuPhoi(h, dp) : ''}`;
+}
+
+function veDongThoiGian(h) {
   const moc = h.su_kien.map((e) => {
     const l = LOAI_SU_KIEN[e.loai] || { ten: e.loai, icon: 'ri-circle-line', nhom: 'le_tan' };
+    const lan = e.lich_id && h.so_lan[e.lich_id];
     return `<li class="ht-moc nhom-${l.nhom}${e.sap_toi ? ' sap-toi' : ''}">
       <span class="ht-cham"><i class="${escapeHTML(l.icon)}"></i></span>
       <div class="ht-noi">
         <p class="ht-dau">
           <b>${escapeHTML(l.ten)}</b>
+          ${lan ? `<span class="lt-lan">Lần ${lan}</span>` : ''}
           <time>${escapeHTML(e.luc.slice(0, 10).split('-').reverse().join('/'))} · ${
             escapeHTML(e.luc.slice(11, 16))}</time>
         </p>
@@ -636,37 +716,111 @@ function veHanhTrinh() {
     </li>`;
   }).join('');
 
-  const dem = (loai) => h.su_kien.filter((e) => e.loai === loai).length;
+  return `<section class="panel">
+    <header class="section-title lt-header">
+      <h3>Dòng thời gian</h3>
+      <span class="pill">Từ lúc là lead cho tới lần chăm sóc gần nhất</span>
+    </header>
+    <ol class="ht-doc">${moc}</ol>
+  </section>`;
+}
 
-  return `
-    <button type="button" class="ghost-button lt-quay-lai" id="htDong">
-      <i class="ri-arrow-left-line"></i> Danh sách khách
-    </button>
-    <section class="panel lt-ht-dau">
-      <div class="lt-nguoi-lon">
-        <span class="lt-avatar lon">${escapeHTML(chuDau(h.khach.ten))}</span>
-        <div>
-          <h2>${escapeHTML(h.khach.ten)}</h2>
-          <p>${escapeHTML(h.khach.dien_thoai)}${h.khach.ngay_sinh
-            ? ` · ${ngayHien(h.khach.ngay_sinh)}` : ''} · ${
-            escapeHTML(tenChiNhanh(h.chi_nhanh))}</p>
-        </div>
-      </div>
-      <div class="lt-ht-so">
-        <div><b>${h.su_kien.length}</b><span>sự kiện</span></div>
-        <div><b>${dem('goi')}</b><span>cuộc gọi telesale</span></div>
-        <div><b>${h.lich.length}</b><span>lịch hẹn</span></div>
-        <div><b>${dem('den')}</b><span>lần tới khám</span></div>
-        <div><b>${dem('khong_den')}</b><span>lần không tới</span></div>
-      </div>
-    </section>
-    <section class="panel">
-      <header class="section-title lt-header">
-        <h3>Dòng thời gian</h3>
-        <span class="pill">Từ lúc là lead cho tới lần chăm sóc gần nhất</span>
-      </header>
-      <ol class="ht-doc">${moc}</ol>
-    </section>`;
+/* Lần khám và dịch vụ.
+ *
+ * Số thứ tự chỉ đếm buổi khách THẬT SỰ tới. "Lần 3" mà tính cả hai buổi khách
+ * không đến thì con số đó không nói gì về tiến trình điều trị. Buổi hủy hoặc
+ * không đến vẫn hiện đủ, nhưng mang nhãn riêng thay vì một số thứ tự. */
+function veLanKham(h) {
+  const dong = h.lich.map((x) => {
+    const lan = h.so_lan[x.id];
+    return `<tr class="tt-${x.trang_thai}">
+      <td data-label="Lần">${lan
+        ? `<span class="lt-lan lon">${lan === 1 ? 'Lần đầu' : `Lần ${lan}`}</span>`
+        : '<span class="lt-lan trong">—</span>'}</td>
+      <td data-label="Ngày">
+        <b>${ngayHien(x.ngay)}</b><small>${escapeHTML(x.gio)} · ${x.phut} phút</small></td>
+      <td data-label="Nội dung">
+        <span class="lh-viec">${escapeHTML(x.noi_dung || '—')}</span>
+        <span class="lt-the-nho">${escapeHTML(LOAI_LICH[x.loai] || x.loai)}</span></td>
+      <td data-label="Bác sĩ">
+        <b>${escapeHTML(tenBacSi(x.bac_si))}</b>
+        <small>${escapeHTML(x.phong)} · ${escapeHTML(tenChiNhanh(x.chi_nhanh))}</small></td>
+      <td data-label="Nguồn"><span class="lt-the-nho">${
+        escapeHTML(NGUON[x.nguon] || x.nguon)}</span></td>
+      <td data-label="Trạng thái">${pill(x.trang_thai)}</td>
+      <td data-label="" class="lt-cot-nut">
+        ${['cho_den', 'da_den', 'khong_den'].includes(x.trang_thai)
+          ? `<button type="button" class="ghost-button lt-nho" data-chuyen-bs="${escapeHTML(x.id)}">
+               <i class="ri-user-shared-line"></i> Chuyển bác sĩ</button>`
+          : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<section class="panel">
+    <header class="section-title lt-header">
+      <h3>Lần khám và dịch vụ</h3>
+      <span class="pill">${h.tong_lan} lần đã tới · chỉ đếm buổi khách thật sự đến</span>
+    </header>
+    <div class="hh-bang-wrap lt-bang">
+      <table class="hh-bang">
+        <thead><tr>
+          <th>Lần</th><th>Ngày</th><th>Nội dung</th><th>Bác sĩ</th>
+          <th>Nguồn</th><th>Trạng thái</th><th></th>
+        </tr></thead>
+        <tbody>${dong}</tbody>
+      </table>
+    </div>
+  </section>`;
+}
+
+/* Điều phối.
+ *
+ * Ba người phụ trách gắn với KHÁCH chứ không gắn với từng buổi hẹn. Gắn vào
+ * buổi hẹn thì mỗi lần đặt lịch mới lại phải chọn lại, và hai buổi của cùng
+ * một người có thể ra hai bác sĩ phụ trách khác nhau mà không ai biết. */
+function veDieuPhoi(h, dp) {
+  const sapToi = h.lich.filter((x) => x.trang_thai === 'cho_den').length;
+  return `<section class="panel lt-dp">
+    <header class="section-title lt-header">
+      <h3>Điều phối khách</h3>
+      <span class="pill">Người phụ trách gắn với khách, không gắn với từng buổi hẹn</span>
+    </header>
+
+    <div class="lt-dp-luoi">
+      <label class="lt-o"><span>Bác sĩ phụ trách</span>
+        <select id="dpBacSi">
+          ${opt('', 'Chưa gán', dp.bac_si)}
+          ${BAC_SI.map((b) => opt(b.ma, `${b.ten} · ${b.chuyen}`, dp.bac_si)).join('')}
+        </select></label>
+      <label class="lt-o"><span>Telesale phụ trách</span>
+        <select id="dpTelesale">
+          ${opt('', 'Chưa gán', dp.telesale)}
+          ${TELESALE.map((t) => opt(t.ma, t.ten, dp.telesale)).join('')}
+        </select></label>
+      <label class="lt-o"><span>Người chăm sóc</span>
+        <select id="dpChamSoc">
+          ${opt('', 'Chưa gán', dp.cham_soc)}
+          ${CHAM_SOC.map((c) => opt(c.ma, c.ten, dp.cham_soc)).join('')}
+        </select></label>
+      <label class="lt-o"><span>Nhóm khách hàng</span>
+        <select id="dpNhom">
+          ${Object.entries(NHOM_KHACH).map(([v, n]) => opt(v, n.ten, dp.nhom)).join('')}
+        </select></label>
+    </div>
+
+    <p class="lt-dp-luu-y">
+      <i class="ri-information-line"></i>
+      Đổi bác sĩ phụ trách thì ${sapToi} buổi hẹn <b>chưa diễn ra</b> sẽ chuyển theo.
+      Buổi đã khám xong giữ nguyên bác sĩ đã làm — sửa lại là viết lại lịch sử.
+    </p>
+
+    <div class="lt-dp-nut">
+      <button type="button" class="primary-button" id="dpLuu">
+        <i class="ri-save-3-line"></i> Lưu điều phối
+      </button>
+    </div>
+  </section>`;
 }
 
 /* ── Tab: Báo cáo tháng ──────────────────────────────────────────────── */
@@ -1048,7 +1202,33 @@ export function initView() {
   document.querySelectorAll('[data-khach]').forEach((b) => {
     b.addEventListener('click', () => { khachMo = b.dataset.khach; ve(); });
   });
-  g('htDong')?.addEventListener('click', () => { khachMo = ''; ve(); });
+  g('htDong')?.addEventListener('click', () => { khachMo = ''; tabHoSo = 'hanh-trinh'; ve(); });
+
+  document.querySelectorAll('[data-tabhs]').forEach((b) => {
+    b.addEventListener('click', () => { tabHoSo = b.dataset.tabhs; ve(); });
+  });
+
+  g('dpLuu')?.addEventListener('click', () => {
+    lamRoiVe(() => doiDieuPhoi(khachMo, {
+      bac_si: g('dpBacSi').value,
+      telesale: g('dpTelesale').value,
+      cham_soc: g('dpChamSoc').value,
+      nhom: g('dpNhom').value,
+    }), 'Đã lưu điều phối. Các buổi chưa diễn ra đã chuyển theo bác sĩ mới.');
+  });
+
+  document.querySelectorAll('[data-chuyen-bs]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const ma = await requestInput(
+        'Nhập mã bác sĩ tiếp nhận buổi này. Các buổi khác của khách giữ nguyên.',
+        { title: 'Chuyển bác sĩ cho một buổi',
+          label: BAC_SI.map((x) => `${x.ma} = ${x.ten}`).join(' · '),
+          placeholder: 'BS02', confirmText: 'Chuyển' });
+      if (!ma) return;
+      lamRoiVe(() => doiBacSiLich(b.dataset.chuyenBs, ma.trim().toUpperCase()),
+        'Đã chuyển buổi hẹn sang bác sĩ khác.');
+    });
+  });
   goTimHt('hTim', (v) => { hTim = v; });
   g('hChiNhanh')?.addEventListener('change', (e) => { hChiNhanh = e.target.value; ve(); });
   g('hNguon')?.addEventListener('change', (e) => { hNguon = e.target.value; ve(); });

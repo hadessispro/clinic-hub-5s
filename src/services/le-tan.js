@@ -90,6 +90,31 @@ export const BAC_SI = [
 
 export const PHONG = ['Phòng 1', 'Phòng 2', 'Phòng 3', 'Phòng VIP'];
 
+export const TELESALE = [
+  { ma: 'TS-001', ten: 'Nguyễn Thu Hằng' },
+  { ma: 'TS-002', ten: 'Trần Bảo Ngọc' },
+  { ma: 'TS-003', ten: 'Lê Minh Thư' },
+  { ma: 'TS-005', ten: 'Phạm Kiều Oanh' },
+];
+
+export const CHAM_SOC = [
+  { ma: 'LT01', ten: 'Vũ Thanh Hà · lễ tân' },
+  { ma: 'LT02', ten: 'Đỗ Kim Chi · lễ tân' },
+  { ma: 'CS01', ten: 'Ngô Bích Trâm · CSKH' },
+];
+
+// Nhóm khách quyết định cách chăm và mức ưu tiên xếp lịch.
+export const NHOM_KHACH = {
+  moi:     { ten: 'Khách mới',     lop: 'warn' },
+  thuong:  { ten: 'Khách thường',  lop: 'neutral' },
+  than:    { ten: 'Khách thân thiết', lop: 'good' },
+  vip:     { ten: 'Khách VIP',     lop: 'good' },
+  can_giu: { ten: 'Cần giữ chân',  lop: 'bad' },
+};
+
+export const tenTelesale = (ma) => (TELESALE.find((x) => x.ma === ma) || {}).ten || ma || '—';
+export const tenChamSoc = (ma) => (CHAM_SOC.find((x) => x.ma === ma) || {}).ten || ma || '—';
+
 /* ── Dữ liệu dựng màn ────────────────────────────────────────────────── */
 
 const ngayLech = (n) => {
@@ -196,6 +221,29 @@ let LICH_HEN = [
     'pham-van-chieu', 'BS03', 'Phòng 3', 'kham_moi', 'cho_den', 'pg',
     { noi_dung: 'Khám và tư vấn tẩy trắng' }),
 
+  // ── Buổi cũ của Nguyễn Thị Bích Ngọc · để thấy chuỗi Lần 1, 2, 3 ──
+  //
+  // Một khách điều trị dài như chỉnh nha đi rất nhiều buổi; số thứ tự chỉ có
+  // nghĩa khi nhìn được cả chuỗi.
+  lich(ngayLech(-84), '09:00', 60, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'kham_moi', 'hoan_tat', 'telesale',
+    { noi_dung: 'Khám, chụp phim, lập kế hoạch chỉnh nha',
+      den_luc: luc(ngayLech(-84), '08:54'), co_dich_vu: true }),
+  lich(ngayLech(-56), '09:30', 90, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'dieu_tri', 'hoan_tat', 'telesale',
+    { noi_dung: 'Gắn mắc cài hàm trên',
+      den_luc: luc(ngayLech(-56), '09:28'), co_dich_vu: true }),
+  lich(ngayLech(-28), '09:00', 45, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'tai_kham', 'khong_den', 'telesale',
+    { noi_dung: 'Siết mắc cài lần 3', ghi_chu: 'Khách kẹt công việc, không báo trước' }),
+  lich(ngayLech(-21), '14:00', 45, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'tai_kham', 'hoan_tat', 'telesale',
+    { noi_dung: 'Siết mắc cài lần 3 · dời từ buổi trước',
+      den_luc: luc(ngayLech(-21), '13:55'), co_dich_vu: true }),
+  lich(ngayLech(28), '09:00', 45, k('Nguyễn Thị Bích Ngọc', '0903112233', '1994-03-12', 'nu'),
+    'pham-van-chieu', 'BS01', 'Phòng 1', 'tai_kham', 'cho_den', 'telesale',
+    { noi_dung: 'Siết mắc cài lần 5' }),
+
   // ── Đã qua · dùng cho hàng đợi hẹn không đến và sau điều trị ──
   lich(ngayLech(-1), '09:00', 30, k('Cao Thị Thuỳ Dương', '0908224466', '1997-01-09', 'nu'),
     'pham-van-chieu', 'BS03', 'Phòng 2', 'tai_kham', 'khong_den', 'telesale',
@@ -216,6 +264,20 @@ let LICH_HEN = [
     'pham-van-chieu', 'BS04', 'Phòng 2', 'kham_moi', 'hoan_tat', 'pg',
     { noi_dung: 'Khám tổng quát', co_dich_vu: false }),
 ];
+
+/* Điều phối: mỗi khách có một bác sĩ, một telesale và một người chăm sóc.
+ *
+ * Khoá là số điện thoại, cùng khoá với hành trình. Để riêng khỏi lịch hẹn vì
+ * đây là quan hệ dài hạn với KHÁCH, không phải thuộc tính của một buổi hẹn —
+ * gắn nó vào lịch hẹn thì mỗi lần đặt lịch mới lại phải chọn lại từ đầu và
+ * hai buổi của cùng một người có thể ra hai bác sĩ phụ trách khác nhau.
+ */
+let DIEU_PHOI = {
+  '0903112233': { bac_si: 'BS01', telesale: 'TS-003', cham_soc: 'LT01', nhom: 'than' },
+  '0912445566': { bac_si: 'BS02', telesale: 'TS-001', cham_soc: 'CS01', nhom: 'vip' },
+  '0938778899': { bac_si: 'BS03', telesale: 'TS-005', cham_soc: '', nhom: 'moi' },
+  '0933667788': { bac_si: 'BS04', telesale: 'TS-002', cham_soc: 'LT02', nhom: 'can_giu' },
+};
 
 // Phản hồi và khiếu nại. Cũng thuộc lễ tân vì khách thường nói ngay tại quầy.
 let PHAN_HOI = [
@@ -466,6 +528,66 @@ const TRUOC_KHI_TOI = {
   ],
 };
 
+/* Đánh số lần khám của một khách.
+ *
+ * Đếm theo thứ tự THỜI GIAN và chỉ đếm buổi khách thật sự tới, vì "lần 3" mà
+ * tính cả hai buổi khách không đến thì con số đó không nói lên điều gì về
+ * tiến trình điều trị. Buổi bị hủy hoặc không đến vẫn hiện trong hồ sơ, nhưng
+ * mang nhãn riêng thay vì một số thứ tự.
+ */
+export function danhSoLanKham(dsLich) {
+  const theoNgay = dsLich.slice().sort((a, b) =>
+    (`${a.ngay}${a.gio}` < `${b.ngay}${b.gio}` ? -1 : 1));
+  let n = 0;
+  const so = {};
+  theoNgay.forEach((x) => {
+    const daToi = !!x.den_luc || ['da_den', 'dang_kham', 'hoan_tat'].includes(x.trang_thai);
+    if (daToi) { n += 1; so[x.id] = n; }
+  });
+  return { so, tong: n };
+}
+
+export function layDieuPhoi(dienThoai) {
+  return DIEU_PHOI[dienThoai] || { bac_si: '', telesale: '', cham_soc: '', nhom: 'thuong' };
+}
+
+export function doiDieuPhoi(dienThoai, du) {
+  const co = LICH_HEN.some((x) => x.khach.dien_thoai === dienThoai);
+  if (!co) throw new Error('Không tìm thấy khách này.');
+  const cu = layDieuPhoi(dienThoai);
+  const moi = {
+    bac_si: du.bac_si ?? cu.bac_si,
+    telesale: du.telesale ?? cu.telesale,
+    cham_soc: du.cham_soc ?? cu.cham_soc,
+    nhom: du.nhom ?? cu.nhom,
+  };
+  DIEU_PHOI[dienThoai] = moi;
+
+  // Đổi bác sĩ phụ trách thì các buổi CHƯA diễn ra đi theo. Buổi đã xong giữ
+  // nguyên bác sĩ đã làm — sửa lại là viết lại lịch sử.
+  if (du.bac_si && du.bac_si !== cu.bac_si) {
+    LICH_HEN.filter((x) => x.khach.dien_thoai === dienThoai
+      && x.trang_thai === 'cho_den').forEach((x) => { x.bac_si = du.bac_si; });
+  }
+  return cho(moi);
+}
+
+/** Chuyển một buổi hẹn sang bác sĩ khác, không đụng tới các buổi còn lại. */
+export function doiBacSiLich(id, bacSi) {
+  const x = LICH_HEN.find((l) => l.id === id);
+  if (!x) throw new Error('Không tìm thấy lịch hẹn này.');
+  if (!BAC_SI.some((b) => b.ma === bacSi)) throw new Error('Bác sĩ không hợp lệ.');
+  if (['hoan_tat', 'dang_kham'].includes(x.trang_thai)) {
+    throw new Error('Buổi đã khám xong hoặc đang khám thì không đổi bác sĩ được.');
+  }
+  const dung = LICH_HEN.find((l) => l.bac_si === bacSi && l.ngay === x.ngay && l.id !== x.id
+    && !['huy', 'khong_den'].includes(l.trang_thai)
+    && l.gio < cong(x.gio, x.phut) && cong(l.gio, l.phut) > x.gio);
+  if (dung) throw new Error(`${tenBacSi(bacSi)} đã có lịch ${dung.gio} với ${dung.khach.ten}.`);
+  x.bac_si = bacSi;
+  return cho(x);
+}
+
 /** Danh sách khách có mặt trong lịch hẹn, kèm số liệu tóm tắt hành trình. */
 export function layDanhSachKhach({ tim, chiNhanh, nguon } = {}) {
   const theoSdt = new Map();
@@ -488,6 +610,8 @@ export function layDanhSachKhach({ tim, chiNhanh, nguon } = {}) {
       ty_le_den: hen ? Math.round((den / hen) * 100) : 0,
       lich_gan_nhat: k.lich.map((x) => x.ngay).sort().pop(),
       truoc_khi_toi: (TRUOC_KHI_TOI[k.khach.dien_thoai] || []).length,
+      dieu_phoi: layDieuPhoi(k.khach.dien_thoai),
+      lan_kham: danhSoLanKham(k.lich).tong,
     };
   });
 
@@ -541,8 +665,17 @@ export function layHanhTrinh(dienThoai) {
       phu: `Mức ${p.muc} · ${p.trang_thai === 'xong' ? 'đã xử lý' : 'chưa xử lý'}` });
   });
 
+  const danhSo = danhSoLanKham(lich);
   sk.sort((a, b) => (a.luc < b.luc ? 1 : -1));
-  return cho({ khach: lich[0].khach, chi_nhanh: lich[0].chi_nhanh, su_kien: sk, lich });
+  return cho({
+    khach: lich[0].khach,
+    chi_nhanh: lich[0].chi_nhanh,
+    su_kien: sk,
+    lich: lich.slice().sort((a, b) => (`${a.ngay}${a.gio}` < `${b.ngay}${b.gio}` ? 1 : -1)),
+    dieu_phoi: layDieuPhoi(dienThoai),
+    so_lan: danhSo.so,
+    tong_lan: danhSo.tong,
+  });
 }
 
 /* ── Báo cáo tháng ────────────────────────────────────────────────────
