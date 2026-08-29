@@ -226,10 +226,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 .dieu-huong { padding: 9px 9px 14px; display: flex; flex-direction: column; gap: 1px; flex: 1; }
+/* Nhóm gập, cùng khuôn với hệ vận hành.
+ *
+ * Két có bảy nhóm và mười tám màn. Trải phẳng hết thì thanh bên dài hơn màn
+ * hình và người ta phải cuộn thanh điều hướng để tìm một báo cáo — cuộn trong
+ * thanh điều hướng là dấu hiệu điều hướng đã quá tải. */
+.dh-khoi { display: flex; flex-direction: column; }
+.dh-khoi + .dh-khoi { margin-top: 3px; }
+
 .dh-nhom {
-  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--muc-mo); padding: 15px 9px 5px; font-weight: 700;
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 9px 9px 7px; margin: 4px 0 1px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muc-mo); text-align: left;
+  transition: color .12s;
 }
+.dh-nhom:hover { color: var(--xanh); }
+/* Nhóm chứa màn đang mở không gập được, nên bỏ luôn dấu hiệu bấm được. */
+.dh-nhom:disabled { cursor: default; color: var(--xanh); }
+
+.dh-nhom-mui { display: inline-flex; transition: transform .16s ease; }
+.dh-nhom-mui svg { width: 13px; height: 13px; opacity: .9; }
+.dh-khoi.is-gap .dh-nhom-mui { transform: rotate(-90deg); }
+
+.dh-nhom-dem {
+  margin-left: auto; padding: 1px 6px; border-radius: 999px;
+  background: var(--chim); color: var(--muc-mo);
+  font-size: 10px; letter-spacing: 0; font-weight: 700;
+}
+
+.dh-nhom-muc { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.dh-khoi.is-gap .dh-nhom-muc { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .dh-nhom-mui { transition: none; } }
 .dh-muc {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: 8px;

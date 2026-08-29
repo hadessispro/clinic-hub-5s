@@ -342,20 +342,78 @@ function ghiSoDuoc() {
   return ['accountant', 'vault_admin'].includes(S.toi.role);
 }
 
-function ve() {
-  if (!S.toi) return veCong();
-  if (S.toi.must_change_password) return veDoiMatKhauBatBuoc();
+/* Điều hướng dạng nhóm gập, cùng khuôn với hệ vận hành.
+ *
+ * Két có bảy nhóm và mười tám màn. Trải phẳng hết ra thì thanh bên dài hơn
+ * màn hình và người ta phải cuộn thanh bên để tìm một báo cáo — cuộn trong
+ * thanh điều hướng là dấu hiệu điều hướng đã quá tải.
+ *
+ * Nhóm chứa màn đang mở LUÔN mở, kể cả khi người dùng đã gập nó trước đó.
+ * Không có luật này thì mở một màn xong nhìn lên thanh bên không thấy nó đâu.
+ */
+const KHOA_NHOM_GAP = 'ket_nhom_gap';
 
-  const dieuHuong = el('nav', { class: 'dieu-huong' });
+function nhomDangGap() {
+  try { return new Set(JSON.parse(localStorage.getItem(KHOA_NHOM_GAP) || '[]')); }
+  catch { return new Set(); }
+}
+
+function luuNhomGap(tap) {
+  try { localStorage.setItem(KHOA_NHOM_GAP, JSON.stringify([...tap])); } catch { /* riêng tư */ }
+}
+
+function dungNhomDieuHuong() {
+  // Gom MAN phẳng thành các nhóm. Giữ MAN phẳng vì thứ tự khai báo ở đó là
+  // thứ tự hiển thị, và tách thành cấu trúc lồng thì mỗi lần thêm màn phải
+  // sửa hai chỗ.
+  const nhom = [];
   for (const m of MAN) {
-    if (m.nhom) { dieuHuong.appendChild(el('div', { class: 'dh-nhom' }, m.nhom)); continue; }
+    if (m.nhom) { nhom.push({ ten: m.nhom, muc: [] }); continue; }
     if (m.quyen && !m.quyen.includes(S.toi.role)) continue;
-    dieuHuong.appendChild(el('button', {
+    if (!nhom.length) nhom.push({ ten: 'Khác', muc: [] });
+    nhom[nhom.length - 1].muc.push(m);
+  }
+
+  const dangGap = nhomDangGap();
+  return nhom.filter((n) => n.muc.length).map((n) => {
+    const coManDangMo = n.muc.some((m) => m.ma === S.man);
+    const mo = coManDangMo || !dangGap.has(n.ten);
+
+    const cacMuc = n.muc.map((m) => el('button', {
       class: 'dh-muc',
       'aria-current': S.man === m.ma ? 'page' : null,
       onclick: () => { S.man = m.ma; ve(); },
     }, bieuTuong(m.icon), m.ten));
-  }
+
+    const dau = el('button', {
+      class: 'dh-nhom',
+      type: 'button',
+      'aria-expanded': String(mo),
+      // Nhóm đang chứa màn mở thì không gập được — bấm vào chỉ gây khó hiểu
+      // vì nó sẽ tự mở lại ngay.
+      disabled: coManDangMo ? '' : null,
+      onclick: () => {
+        const t = nhomDangGap();
+        if (t.has(n.ten)) t.delete(n.ten); else t.add(n.ten);
+        luuNhomGap(t);
+        ve();
+      },
+    },
+      el('span', { class: 'dh-nhom-mui' }, bieuTuong('M6 9l6 6 6-6')),
+      el('span', {}, n.ten),
+      el('span', { class: 'dh-nhom-dem' }, String(n.muc.length)),
+    );
+
+    return el('div', { class: `dh-khoi ${mo ? 'is-mo' : 'is-gap'}` },
+      dau, el('div', { class: 'dh-nhom-muc' }, ...cacMuc));
+  });
+}
+
+function ve() {
+  if (!S.toi) return veCong();
+  if (S.toi.must_change_password) return veDoiMatKhauBatBuoc();
+
+  const dieuHuong = el('nav', { class: 'dieu-huong' }, ...dungNhomDieuHuong());
 
   const than = el('main', { class: 'than' }, el('div', { class: 'trong' }, 'Đang tải…'));
 
