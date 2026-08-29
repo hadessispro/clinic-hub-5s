@@ -32,9 +32,11 @@ const viewImports = {
   'hoa-hong': () => import('./views/hoa-hong.js'),
   'luong-pg': () => import('./views/luong-pg.js'),
   'gift-inventory': () => import('./views/gift-inventory.js'),
+  'le-tan': () => import('./views/le-tan.js'),
 };
 
 const viewTitles = {
+  'le-tan': 'Lễ tân · tiếp đón và chăm sóc',
   dashboard: 'Tổng quan vận hành',
   tasks: 'Quản lý công việc',
   chat: 'Tin nhắn nội bộ',

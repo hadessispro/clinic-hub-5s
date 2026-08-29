@@ -24,3 +24,10 @@ gui-bao/
 
 # Cai dat cuc bo cua cong cu, khong thuoc du an.
 .claude/
+
+# Ban khao sat he thong VTTECH (nk5ssg.vttechsolution.com), 33 MB.
+# Dung lam backlog nghiep vu de dung le tan / CSKH, KHONG phai ma nguon cua
+# du an nay. Repo nay la public, nen bundle va stylesheet cua nha cung cap
+# tuyet doi khong duoc day len. Muon dua hai tai lieu phan tich vao git thi
+# chep rieng chung sang docs/, dung bo cam nay.
+tham-khao/vttech/

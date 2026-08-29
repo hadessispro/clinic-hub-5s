@@ -7164,3 +7164,234 @@ body.dialog-open {
 .pt-nut span { padding: 0 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pt-nut button { padding: 6px 12px; font-size: .82rem; }
 .pt-nut button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ══ LỄ TÂN ═══════════════════════════════════════════════════════════════
+ *
+ * Quầy lễ tân dùng máy tính bảng và điện thoại nhiều hơn máy bàn, và lúc đông
+ * khách thì thao tác bằng ngón tay. Nên mọi nút bấm ở đây tối thiểu 38px, và
+ * dưới 860px bảng lịch hẹn đổi thành thẻ xếp dọc thay vì cuộn ngang. Cuộn
+ * ngang để tìm nút Tiếp đón là thao tác không ai làm nổi khi đang có khách
+ * đứng trước mặt.
+ */
+
+.lt-tabs {
+  display: flex; gap: 6px; margin-bottom: 4px;
+  padding: 5px; background: #eef4f2; border: 1px solid var(--line);
+  border-radius: 13px; overflow-x: auto;
+}
+.lt-tab {
+  flex: 1 1 0; min-width: 104px; min-height: 42px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 14px; border: 1px solid transparent; border-radius: 9px;
+  background: transparent; color: #4b6560; cursor: pointer;
+  font-family: inherit; font-size: .82rem; font-weight: 700;
+  transition: background .14s, color .14s, box-shadow .14s;
+}
+.lt-tab i { font-size: 1.05rem; }
+.lt-tab:hover { color: var(--teal-dark); background: #e2eeeb; }
+.lt-tab.is-active {
+  background: #fff; color: var(--teal-dark);
+  border-color: #cfe2dd; box-shadow: 0 1px 3px rgba(8, 127, 123, .12);
+}
+.lt-tab:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* Khách kế tiếp: thứ lễ tân nhìn nhiều nhất trong ngày, nên tách hẳn khỏi
+ * danh sách và nằm ngay dưới các thẻ số. */
+.lt-ke-tiep {
+  display: flex; align-items: center; gap: 15px; flex-wrap: wrap;
+  padding: 15px 18px; border-radius: 14px;
+  background: linear-gradient(105deg, #eaf6f3, #f6fbfa);
+  border: 1px solid #bfdfd9;
+}
+.lt-ke-tiep > i { font-size: 1.7rem; color: var(--teal); }
+.lt-ke-tiep > div { display: grid; gap: 1px; margin-right: auto; min-width: 0; }
+.lt-ke-tiep small {
+  color: #62807a; font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.lt-ke-tiep b { font-size: 1.02rem; color: #163f3a; }
+.lt-ke-tiep span { color: #4b6560; font-size: .78rem; }
+
+.lt-header { flex-wrap: wrap; gap: 10px; }
+/* .pill dùng chung có white-space: nowrap và flex: 0 0 auto — hợp lý cho nhãn
+ * ngắn, nhưng ở đây nó mang câu mô tả hàng đợi nên trên điện thoại nó đẩy cả
+ * trang cuộn ngang. Cho xuống dòng, chỉ trong phạm vi lễ tân. */
+.lt-header > .pill {
+  white-space: normal; flex: 0 1 auto; min-width: 0;
+  text-align: left; line-height: 1.35;
+}
+.lt-header-nut { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.lt-header .ghost-button { margin-left: auto; }
+.lt-header-nut .ghost-button { margin-left: 0; }
+.lt-loc-nhanh { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.lt-loc-nhanh > span { color: #62807a; font-size: .74rem; font-weight: 700; }
+.lt-loc-nhanh select { min-height: 38px; }
+
+/* ── Danh sách lịch hẹn dạng thẻ ── */
+
+.lt-danh-sach { display: grid; gap: 9px; margin-top: 13px; }
+
+.lt-dong, .lt-viec-hang {
+  display: grid; gap: 13px; align-items: start;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  padding: 13px 15px; border: 1px solid var(--line);
+  border-radius: 13px; background: #fff;
+}
+.lt-viec-hang { grid-template-columns: minmax(0, 1fr) auto; }
+
+/* Đã tiếp đón thì đánh dấu bằng một vạch bên trái, không tô cả thẻ: tô cả thẻ
+ * làm chữ khó đọc mà chẳng nói thêm được gì. */
+.lt-dong.da-den { box-shadow: inset 3px 0 0 var(--teal); }
+.lt-dong.xong { background: #fafcfb; }
+.lt-dong.xong .lt-viec, .lt-dong.xong .lt-meta { color: #7f918d; }
+
+.lt-gio {
+  display: grid; gap: 1px; justify-items: center;
+  padding: 7px 4px; border-radius: 10px; background: #f2f8f6;
+}
+.lt-gio b { font-size: 1rem; color: #163f3a; font-variant-numeric: tabular-nums; }
+.lt-gio small { color: #7f918d; font-size: .68rem; }
+
+.lt-noi { min-width: 0; display: grid; gap: 5px; }
+
+.lt-khach { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.lt-avatar {
+  flex: none; width: 32px; height: 32px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--mint); color: var(--teal-dark);
+  font-weight: 800; font-size: .85rem;
+}
+.lt-khach-chu { display: grid; gap: 0; min-width: 0; }
+.lt-khach-chu b { font-size: .9rem; color: #1d3a36; }
+.lt-khach-chu small { color: #75908b; font-size: .74rem; font-variant-numeric: tabular-nums; }
+.lt-moi {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border-radius: 999px; background: #fdf1dc; color: #8a6508;
+  font-size: .62rem; font-style: normal; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+.lt-viec { margin: 0; color: #2b4844; font-size: .84rem; }
+.lt-meta {
+  margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  color: #75908b; font-size: .74rem;
+}
+.lt-meta .lt-den { color: var(--teal-dark); font-weight: 700; }
+.lt-ghi {
+  margin: 0; padding: 6px 9px; border-radius: 8px;
+  background: #fdf7e8; color: #7a5f13; font-size: .76rem;
+}
+
+.lt-thao-tac { display: grid; gap: 8px; justify-items: end; }
+.lt-nut { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.lt-nho { min-height: 38px; padding: 7px 13px; font-size: .76rem; }
+.lt-huy { color: #a3382a; }
+
+/* ── Hàng đợi chăm sóc ── */
+
+.lt-queue-luoi {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+}
+.lt-queue {
+  display: grid; gap: 3px; text-align: left;
+  padding: 15px 17px; border: 1px solid var(--line);
+  border-radius: 14px; background: #fff; cursor: pointer;
+  font-family: inherit;
+  transition: border-color .14s, box-shadow .14s, background .14s;
+}
+.lt-queue:hover { border-color: #a9d3cd; box-shadow: 0 2px 10px rgba(8, 127, 123, .09); }
+.lt-queue:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.lt-queue.is-open { background: var(--mint); border-color: var(--teal); }
+.lt-queue > i { font-size: 1.25rem; color: var(--teal); }
+.lt-queue-so {
+  font-size: 1.7rem; font-weight: 800; line-height: 1.1;
+  color: #163f3a; font-variant-numeric: tabular-nums;
+}
+.lt-queue-ten { font-size: .86rem; font-weight: 700; color: #1d3a36; }
+.lt-queue-mo { font-size: .73rem; color: #75908b; line-height: 1.4; }
+
+/* ── Bộ lọc và biểu mẫu ── */
+
+.lt-loc {
+  display: grid; gap: 10px; margin-top: 13px;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  align-items: end;
+}
+.lt-loc label, .lt-form-luoi label { display: grid; gap: 4px; min-width: 0; }
+.lt-loc label > span, .lt-form-luoi label > span {
+  color: #62807a; font-size: .72rem; font-weight: 700;
+}
+/* width:100% + min-width:0 la cap doi bat buoc trong luoi: thieu cai nao thi
+ * o nhap cung theo noi dung dai nhat cua no ma nong ra khoi cot. */
+.lt-loc input, .lt-loc select,
+.lt-form-luoi input, .lt-form-luoi select {
+  min-height: 40px; width: 100%; min-width: 0; max-width: 100%;
+}
+.lt-loc .ghost-button { min-height: 40px; }
+.lt-tim { grid-column: span 2; }
+
+.lt-form-luoi {
+  display: grid; gap: 12px; margin-top: 13px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.lt-form-luoi .lt-rong { grid-column: 1 / -1; }
+.lt-form-nut { display: flex; justify-content: flex-end; margin-top: 15px; }
+.lt-form { border-color: #bfdfd9; }
+
+.lt-bang { margin-top: 13px; }
+.lt-bang .lt-cot-nut { white-space: nowrap; }
+.lt-bang .lt-khach { gap: 8px; }
+.lt-bang td small { display: block; margin-top: 2px; color: #758782; font-size: .7rem; }
+
+/* ── Màn hẹp ─────────────────────────────────────────────────────────────
+ *
+ * Bảng lịch hẹn đổi hẳn sang thẻ. Mỗi ô lấy nhãn cột từ data-label, nên không
+ * phải dựng hai bản HTML cho hai kích thước: một nguồn, hai cách bày.
+ */
+
+@media (max-width: 860px) {
+  .lt-dong { grid-template-columns: 56px minmax(0, 1fr); }
+  .lt-dong .lt-thao-tac { grid-column: 1 / -1; justify-items: stretch; }
+  .lt-viec-hang { grid-template-columns: minmax(0, 1fr); }
+  .lt-viec-hang .lt-thao-tac { justify-items: stretch; }
+  .lt-nut { justify-content: stretch; }
+  .lt-nut > * { flex: 1 1 auto; justify-content: center; }
+
+  .lt-bang.hh-bang-wrap { border: 0; overflow: visible; border-radius: 0; }
+  .lt-bang table.hh-bang { min-width: 0; width: 100%; }
+  .lt-bang thead { display: none; }
+  .lt-bang tr {
+    display: grid; gap: 5px 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 13px 15px; margin-bottom: 9px;
+    border: 1px solid var(--line); border-radius: 13px; background: #fff;
+  }
+  .lt-bang td { display: grid; gap: 1px; padding: 0; border: 0; }
+  .lt-bang td::before {
+    content: attr(data-label);
+    color: #839995; font-size: .64rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .lt-bang td:not([data-label])::before,
+  .lt-bang td[data-label=""]::before { content: none; }
+  .lt-bang td[data-label="Khách hàng"],
+  .lt-bang td[data-label="Nội dung"],
+  .lt-bang td[data-label=""] { grid-column: 1 / -1; }
+  .lt-bang .lt-cot-nut { display: flex; gap: 6px; white-space: normal; }
+  .lt-bang .lt-cot-nut > * { flex: 1 1 auto; justify-content: center; }
+
+  .lt-tim { grid-column: 1 / -1; }
+  .lt-header-nut, .lt-loc-nhanh { width: 100%; margin-left: 0; }
+  .lt-header-nut > button { flex: 1 1 auto; justify-content: center; }
+  .lt-loc-nhanh select { flex: 1 1 auto; }
+}
+
+@media (max-width: 520px) {
+  .lt-tab span { display: none; }
+  .lt-tab { min-width: 0; }
+  .lt-tab i { font-size: 1.2rem; }
+  .lt-loc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .lt-bang tr { grid-template-columns: minmax(0, 1fr); }
+  .lt-ke-tiep > button { width: 100%; justify-content: center; }
+}
