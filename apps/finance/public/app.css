@@ -246,7 +246,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * được, nên không ai nghĩ tới việc bấm vào. Một điều khiển mà người dùng
  * không nhận ra là điều khiển thì coi như không tồn tại.
  *
- * Nay có nền trắng nổi trên nền chìm của thanh bên, viền, và bóng đổ nhẹ —
+ * Nay là một mặt riêng nổi trên nền thanh bên, có viền và bóng đổ nhẹ —
  * cùng cách hệ vận hành làm. Bóng dày lên khi rê chuột và lún xuống khi bấm,
  * để cái nút phản hồi lại thay vì đứng im. */
 .dh-nhom {
@@ -284,11 +284,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .dh-nhom-dem {
   margin-left: auto; min-width: 20px; padding: 2px 7px;
-  border-radius: 999px; background: var(--chim); color: var(--muc-mo);
+  border-radius: 999px; background: var(--the); color: var(--muc-mo);
   font-size: 10px; letter-spacing: 0; font-weight: 700; text-align: center;
 }
-.dh-nhom:hover .dh-nhom-dem { background: var(--xanh-nhat); color: var(--xanh); }
-.dh-nhom:disabled .dh-nhom-dem { background: var(--the); color: var(--xanh); border-color: var(--xanh-vien); }
+.dh-nhom:hover .dh-nhom-dem { color: var(--xanh); }
+.dh-nhom:disabled .dh-nhom-dem { color: var(--xanh); }
 
 /* Mục con thụt vào một chút để mắt thấy chúng thuộc về nhóm phía trên. */
 .dh-nhom-muc .dh-muc { padding-left: 16px; }
