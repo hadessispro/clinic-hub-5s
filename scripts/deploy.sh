@@ -541,7 +541,17 @@ lenh_chay() {
     do_ "Bản sao lưu database: $file_sl"
   fi
 
-  # Ghi manifest để lần sau phát hiện được ai sửa thẳng trên VPS
+  # Ghi manifest để lần sau phát hiện được ai sửa thẳng trên VPS.
+  #
+  # Chụp LẠI mã băm ngay tại đây thay vì dùng bảng đã chụp lúc nãy. Bảng đó
+  # được điền ở nhiều chỗ trong lượt chạy, và nếu nó còn giữ trạng thái TRƯỚC
+  # lúc chép thì manifest chậm một nhịp — lần deploy sau chạm đúng file đó sẽ
+  # báo "có người sửa thẳng trên VPS" trong khi không ai sửa gì.
+  #
+  # Đã xảy ra thật ngày 29/08/2026. Một chốt chặn kêu oan thì sẽ bị tắt đi,
+  # rồi nó không còn bảo vệ được gì nữa — đúng bài học của lần tự khôi phục
+  # nhầm vì chờ chưa đủ lâu.
+  so_sanh "$TAM/ds.txt" >/dev/null 2>&1
   awk '{print $1, $2}' "$TAM/bam_vps.txt" | ssh_ "cat > $VPS_DIR/.deploy-state/manifest.txt"
   ssh_ "cd $VPS_DIR && printf '%s\t%s\t%s\t%s\n' '$MA_LAN' \"\$(date -Iseconds)\" '$(git rev-parse --short HEAD)' '$dv' >> .deploy-state/lich-su.tsv"
 
