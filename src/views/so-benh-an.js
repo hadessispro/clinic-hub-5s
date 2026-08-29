@@ -51,6 +51,11 @@ let khoangKham = 'tat-ca';
 
 let rangChon = '';
 let anhLoc = '';
+// Cảnh 3D bật/tắt và giữ tay cầm để huỷ khi rời màn. Không giữ thì mỗi lần
+// vẽ lại màn lại tạo thêm một vòng lặp render chạy ngầm.
+let hien3D = false;
+let canh3D = null;
+let goc3D = 'truoc';
 let hienFormKham = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -224,6 +229,45 @@ function veSoDo(soDo) {
       <span class="sdr-nhan">Hàm dưới</span>
     </div>
     <div class="sdr-chu-thich">${chuThich}</div>
+  </div>`;
+}
+
+/* Cảnh 3D cho bệnh nhân xem.
+ *
+ * Mặc định TẮT. Nó tải thêm một thư viện và dựng 32 khối, mà bác sĩ ghi bệnh
+ * án thì không cần tới nó — chỉ khi quay màn hình cho bệnh nhân xem mới bật.
+ * Bật sẵn cho mọi lần mở hồ sơ là bắt mọi người trả giá cho một việc thỉnh
+ * thoảng mới làm.
+ */
+function ve3D() {
+  const GOC = {
+    truoc: 'Nhìn trước', tren: 'Hàm trên', duoi: 'Hàm dưới',
+    trai: 'Bên trái', phai: 'Bên phải',
+  };
+  if (!hien3D) {
+    return `<div class="sbn-3d-moi">
+      <button type="button" class="secondary-button" id="sbnMo3D">
+        <i class="ri-box-3-line"></i> Xem cung hàm 3D cho bệnh nhân
+      </button>
+      <small>Xoay được, bấm vào răng để chỉ cho khách. Chỉ tải khi bật.</small>
+    </div>`;
+  }
+  return `<div class="sbn-3d">
+    <div class="sbn-3d-thanh">
+      <span class="lt-nhanh-nhan">Góc nhìn</span>
+      ${Object.entries(GOC).map(([m, t]) => `<button type="button"
+        class="lt-chip${goc3D === m ? ' is-chon' : ''}" data-goc3d="${m}">${t}</button>`).join('')}
+      <button type="button" class="ghost-button sbn-nho" id="sbnDong3D">
+        <i class="ri-close-line"></i> Đóng
+      </button>
+    </div>
+    <div class="sbn-3d-khung" id="sbn3DKhung"></div>
+    <p class="sbn-3d-ghi">
+      <i class="ri-information-line"></i>
+      Hình răng dựng theo công thức: đúng loại răng, số múi và vị trí trên cung hàm.
+      Không phải bản quét thật của bệnh nhân, nên dùng để chỉ chỗ và giải thích,
+      không dùng để đo đạc.
+    </p>
   </div>`;
 }
 
@@ -808,7 +852,10 @@ function veSoChiTiet() {
         <span class="pill">Ghi theo từng mặt của từng răng</span>
       </header>
       <div class="sbn-so-do-khung">
-        ${veSoDo(h.so_do_rang)}
+        <div>
+          ${veSoDo(h.so_do_rang)}
+          ${ve3D()}
+        </div>
         <aside class="sbn-ben">${veChiTietRang(h.so_do_rang)}</aside>
       </div>
     </section>
@@ -984,6 +1031,39 @@ export function initView() {
     });
   });
   g('sbnBoChon')?.addEventListener('click', () => { rangChon = ''; ve(); });
+
+  /* Cảnh 3D. Huỷ cảnh cũ trước khi dựng cảnh mới: mỗi cảnh giữ một vòng lặp
+   * render riêng, không huỷ thì sau vài lần vẽ lại màn sẽ có nhiều vòng cùng
+   * chạy và máy nóng lên mà không ai hiểu vì sao. */
+  if (canh3D) { canh3D.huy(); canh3D = null; }
+
+  g('sbnMo3D')?.addEventListener('click', () => { hien3D = true; ve(); });
+  g('sbnDong3D')?.addEventListener('click', () => { hien3D = false; ve(); });
+
+  const khung3D = g('sbn3DKhung');
+  if (khung3D && duLieu?.ho_so) {
+    import('../components/rang-3d.js')
+      .then((m) => {
+        canh3D = m.taoCanh(khung3D, duLieu.ho_so.so_do_rang, (ma) => {
+          rangChon = ma;
+          ve();
+        });
+        canh3D.datGoc(goc3D);
+        if (rangChon) canh3D.danhDauRang(rangChon);
+      })
+      .catch(() => {
+        khung3D.innerHTML = '<p class="empty-state">Không tải được cảnh 3D trên trình duyệt này.</p>';
+      });
+  }
+
+  document.querySelectorAll('[data-goc3d]').forEach((b) => {
+    b.addEventListener('click', () => {
+      goc3D = b.dataset.goc3d;
+      canh3D?.datGoc(goc3D);
+      document.querySelectorAll('[data-goc3d]').forEach((x) =>
+        x.classList.toggle('is-chon', x === b));
+    });
+  });
 
   document.querySelectorAll('[data-tai-anh]').forEach((o) => {
     o.addEventListener('change', async (e) => {

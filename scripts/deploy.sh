@@ -88,6 +88,18 @@ PHAM_VI=(
   "index.html|web"
   "app.css|web"
   "vite.config.js|web"
+  # package.json goc va pnpm-lock.yaml phai di cung nhau len VPS.
+  #
+  # Dockerfile.web dung "pnpm install --frozen-lockfile", nghia la no TU CHOI
+  # dung neu package.json va pnpm-lock.yaml khong khop. Dong bo mot trong hai
+  # file thoi la lan dung tiep theo hong ngay, va hong o buoc dung anh chu
+  # khong phai o buoc chep — luc do da xoa anh cu roi.
+  #
+  # Them thu vien moi thi phai cap nhat pnpm-lock.yaml, khong phai
+  # package-lock.json: ban dung dung pnpm.
+  "package.json|web"
+  "pnpm-lock.yaml|web"
+  "pnpm-workspace.yaml|web"
 )
 
 xanh()  { printf '\033[36m%s\033[0m\n' "$*"; }

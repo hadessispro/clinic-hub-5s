@@ -8861,3 +8861,34 @@ body.dialog-open {
   color: var(--teal-dark) !important; font-weight: 700;
 }
 .sbn-anh-lai i { font-size: .8rem; }
+
+/* ── Cung hàm 3D ──────────────────────────────────────────────────────── */
+
+.sbn-3d-moi {
+  display: grid; gap: 7px; justify-items: center; text-align: center;
+  margin-top: 14px; padding: 18px;
+  border: 1px dashed #c3d6d2; border-radius: 13px; background: #f6faf9;
+}
+.sbn-3d-moi small { color: #8095a0; font-size: .76rem; }
+
+.sbn-3d { margin-top: 14px; display: grid; gap: 10px; }
+.sbn-3d-thanh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sbn-3d-thanh .ghost-button { margin-left: auto; }
+/* Nền tối: men răng sáng màu chỉ nổi được trên nền tối, và đó cũng là nền mà
+ * phần mềm xem phim nha khoa nào cũng dùng. */
+.sbn-3d-khung {
+  height: 420px; border-radius: 14px; overflow: hidden;
+  background: #101d1b; border: 1px solid #24403b;
+  cursor: grab; touch-action: none;
+}
+.sbn-3d-khung:active { cursor: grabbing; }
+.sbn-3d-khung canvas { display: block; width: 100%; height: 100%; }
+.sbn-3d-ghi {
+  display: flex; gap: 9px; align-items: flex-start; margin: 0;
+  padding: 10px 13px; border-radius: 10px;
+  background: #eef4fb; border: 1px solid #cbdcef;
+  color: #35597e; font-size: .79rem; line-height: 1.5;
+}
+.sbn-3d-ghi i { font-size: .95rem; color: #4a7fb5; flex: none; margin-top: 2px; }
+
+@media (max-width: 860px) { .sbn-3d-khung { height: 320px; } }
