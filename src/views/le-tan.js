@@ -27,6 +27,9 @@ import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '.
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
+// Lễ tân đọc lưu ý mà bác sĩ đánh dấu. Chỉ mục dành cho quầy — hàm bên
+// sổ bệnh án đã lọc sẵn, màn này không tự quyết được cái gì nên đọc.
+import { MUC_LUU_Y, layLuuYTheoSdt } from '../services/so-benh-an.js';
 
 /* ── Trạng thái màn hình ─────────────────────────────────────────────── */
 
@@ -57,6 +60,7 @@ let khoangNgay = 'hom-nay';
 let khachMo = '';
 let dsKhach = [];
 let hanhTrinh = null;
+let luuYBacSi = [];
 let hTim = ''; let hChiNhanh = ''; let hNguon = '';
 let tabHoSo = 'hanh-trinh';  // hanh-trinh | lich-su | dieu-phoi
 
@@ -684,6 +688,8 @@ function veHanhTrinh() {
       </div>
     </section>
 
+    ${veLuuYQuay()}
+
     <nav class="lt-tab-con" role="tablist">
       ${TAB_HO_SO.map((t) => `<button type="button" role="tab"
         class="lt-tab-c${tabHoSo === t.ma ? ' is-active' : ''}"
@@ -694,6 +700,40 @@ function veHanhTrinh() {
     ${tabHoSo === 'hanh-trinh' ? veDongThoiGian(h) : ''}
     ${tabHoSo === 'lich-su' ? veLanKham(h) : ''}
     ${tabHoSo === 'dieu-phoi' ? veDieuPhoi(h, dp) : ''}`;
+}
+
+/* Lưu ý bác sĩ gửi cho quầy.
+ *
+ * Đặt ngay dưới đầu hồ sơ, trên cả các tab: lễ tân cần đọc nó TRƯỚC khi bấm
+ * máy gọi khách, không phải sau khi đã mở đúng tab. Cảnh báo lên đầu.
+ *
+ * Chỉ hiện mục bác sĩ đánh dấu là dành cho quầy. Ghi chú chuyên môn giữa hai
+ * buổi khám thì lễ tân không cần biết, và đọc cho khách nghe là sai. */
+function veLuuYQuay() {
+  if (!luuYBacSi.length) return '';
+  return `<section class="panel lt-luu-y">
+    <header class="section-title lt-header">
+      <h3>Lưu ý từ bác sĩ</h3>
+      <span class="pill">${luuYBacSi.length} điều cần nắm trước khi gọi khách</span>
+    </header>
+    <ul class="lt-ly-ds">
+      ${luuYBacSi.map((x) => {
+        const m = MUC_LUU_Y[x.muc] || { ten: x.muc, lop: 'neutral', icon: 'ri-bookmark-line' };
+        return `<li class="lt-ly ly-${escapeHTML(x.muc)}">
+          <span class="lt-ly-icon"><i class="${escapeHTML(m.icon)}"></i></span>
+          <div>
+            <p class="lt-ly-dau">
+              <span class="status-pill ${m.lop}">${escapeHTML(m.ten)}</span>
+              <time>${escapeHTML(x.luc.slice(0, 10).split('-').reverse().join('/'))} · ${
+                escapeHTML(x.boi)}</time>
+            </p>
+            ${x.ghi_chu ? `<p class="lt-ly-ghi">${escapeHTML(x.ghi_chu)}</p>` : ''}
+            <p class="lt-ly-doan">Trích bệnh án: “${escapeHTML(x.doan)}”</p>
+          </div>
+        </li>`;
+      }).join('')}
+    </ul>
+  </section>`;
 }
 
 function veDongThoiGian(h) {
@@ -1017,7 +1057,10 @@ export async function renderView() {
     [demQueue, dsHangDoi] = await Promise.all([demHangDoi(), layHangDoi(hangDoiMo)]);
   } else if (tab === 'hanh-trinh') {
     if (khachMo) {
-      hanhTrinh = await layHanhTrinh(khachMo).catch(() => null);
+      [hanhTrinh, luuYBacSi] = await Promise.all([
+        layHanhTrinh(khachMo).catch(() => null),
+        layLuuYTheoSdt(khachMo).catch(() => []),
+      ]);
       if (!hanhTrinh) khachMo = '';
     }
     if (!khachMo) {

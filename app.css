@@ -8607,3 +8607,157 @@ body.dialog-open {
   .sbn-muc-o { grid-template-columns: minmax(0, 1fr); gap: 3px; }
   .sbn-chi-so { flex: 1 1 calc(50% - 5px); min-width: 0; }
 }
+
+/* ══ SỔ BỆNH ÁN · một cột nhãn và đánh dấu lưu ý ═════════════════════════
+ *
+ * Mọi mục của một lượt khám nằm trên CÙNG một trục: nhãn bên trái, nội dung
+ * bên phải, từ trên xuống. Bản trước để sinh hiệu một hàng riêng rồi mới tới
+ * cột nhãn rồi nha chu lại một hàng riêng — mắt phải nhảy qua ba kiểu bố cục
+ * trong cùng một bản ghi, nên nó trông rời rạc dù nội dung đã đủ.
+ */
+
+.sbn-hang-ds { display: grid; gap: 0; margin: 0; }
+.sbn-hang {
+  display: grid; grid-template-columns: 148px minmax(0, 1fr);
+  gap: 16px; padding: 11px 0;
+  border-bottom: 1px solid #f0f4f3;
+}
+.sbn-hang:last-child { border-bottom: 0; padding-bottom: 0; }
+.sbn-hang dt {
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: #8ba09b;
+  padding-top: 3px; line-height: 1.4;
+}
+.sbn-hang dd { margin: 0; font-size: .87rem; color: #2b4844; line-height: 1.6; min-width: 0; }
+/* Chỉ chẩn đoán được tô nền: đó là dòng người ta tìm trước tiên. Tô thêm mục
+ * nào nữa là mất chỗ neo. */
+.sbn-hang.noi-bat dt { color: var(--teal-dark); }
+
+.sbn-chan-doan {
+  padding: 12px 15px; border-radius: 11px;
+  background: var(--mint); border: 1px solid #b6ddd7;
+}
+.sbn-chan-doan .sbn-cd-chinh {
+  margin: 0; font-size: .93rem; font-weight: 650; color: #10312d; line-height: 1.45;
+}
+
+/* ── Đoạn được đánh dấu ──
+ *
+ * Ba mức ba sắc, và sắc nói ai đọc được: đỏ là cảnh báo, hổ phách là dặn quầy,
+ * xám xanh là ghi nhớ chuyên môn chỉ bác sĩ thấy. */
+.sbn-hl {
+  padding: 1px 3px; border-radius: 4px; color: inherit;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
+  cursor: help;
+}
+.sbn-hl.hl-canh_bao { background: #fbdad4; box-shadow: inset 0 -2px 0 #d4705f; }
+.sbn-hl.hl-quay     { background: #fbeecd; box-shadow: inset 0 -2px 0 #c99b31; }
+.sbn-hl.hl-bac_si   { background: #dceef0; box-shadow: inset 0 -2px 0 #6fa3ab; }
+
+.sbn-boi { display: inline; }
+
+.sbn-dem-hl {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  background: #fbeecd; border: 1px solid #ecd9a4; color: #8a6508;
+  font-size: .7rem; font-weight: 800;
+}
+
+/* ── Thanh công cụ khi bôi đen ── */
+
+.sbn-thanh-hl {
+  position: absolute; z-index: 60;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; border-radius: 11px;
+  background: #14312d; box-shadow: 0 8px 26px rgba(10, 30, 27, .3);
+}
+.sbn-thanh-hl[hidden] { display: none; }
+.sbn-thanh-chu {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #a9c6c0; font-size: .72rem; font-weight: 700; padding-right: 4px;
+  border-right: 1px solid #2c4b46;
+}
+.sbn-hl-nut {
+  min-height: 30px; padding: 5px 11px; border-radius: 8px;
+  border: 1px solid transparent; cursor: pointer;
+  font-family: inherit; font-size: .74rem; font-weight: 700;
+  transition: filter .13s;
+}
+.sbn-hl-nut:hover { filter: brightness(1.09); }
+.sbn-hl-nut:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.sbn-hl-nut.hl-canh_bao { background: #fbdad4; color: #8a2f20; }
+.sbn-hl-nut.hl-quay     { background: #fbeecd; color: #7a5f13; }
+.sbn-hl-nut.hl-bac_si   { background: #dceef0; color: #2b5b62; }
+
+/* ── Bảng lưu ý ── */
+
+.sbn-luu-y { border-color: #e3d5ac; }
+.sbn-ly-ds { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.sbn-ly {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 13px; align-items: start;
+  padding: 13px 15px; border-radius: 12px;
+  border: 1px solid var(--line); background: #fff;
+}
+.sbn-ly.ly-canh_bao { background: #fdeceb; border-color: #f0c4bf; }
+.sbn-ly.ly-quay { background: #fdf9ef; border-color: #eddfbc; }
+.sbn-ly-icon {
+  width: 36px; height: 36px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid var(--line);
+}
+.sbn-ly-icon i { font-size: 1.05rem; color: #6d857f; }
+.sbn-ly.ly-canh_bao .sbn-ly-icon i { color: #a3382a; }
+.sbn-ly.ly-quay .sbn-ly-icon i { color: #8a6508; }
+.sbn-ly > div { min-width: 0; display: grid; gap: 3px; }
+.sbn-ly-dau { margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sbn-ly-dau em {
+  font-style: normal; font-size: .7rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: #8ba09b;
+}
+.sbn-ly-dau time { color: #a4b5b1; font-size: .73rem; margin-left: auto; }
+.sbn-ly-doan { margin: 0; font-size: .87rem; color: #2b4844; line-height: 1.55; font-style: italic; }
+.sbn-ly-ghi { margin: 0; font-size: .84rem; color: #4b6560; }
+.sbn-ly-boi { margin: 2px 0 0; font-size: .71rem; color: #a4b5b1; }
+
+@media (max-width: 860px) {
+  .sbn-hang { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 0; }
+  .sbn-hang dt { padding-top: 0; }
+  .sbn-ly { grid-template-columns: 30px minmax(0, 1fr); }
+  .sbn-ly > button { grid-column: 1 / -1; justify-self: end; }
+  .sbn-ly-icon { width: 30px; height: 30px; border-radius: 9px; }
+  .sbn-thanh-hl { flex-wrap: wrap; max-width: calc(100vw - 20px); }
+}
+
+/* ── Lưu ý bác sĩ gửi cho quầy ────────────────────────────────────────── */
+
+.lt-luu-y { border-color: #e3d5ac; }
+.lt-ly-ds { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.lt-ly {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr);
+  gap: 13px; align-items: start;
+  padding: 13px 15px; border-radius: 12px;
+  border: 1px solid var(--line); background: #fff;
+}
+.lt-ly.ly-canh_bao { background: #fdeceb; border-color: #f0c4bf; }
+.lt-ly.ly-quay { background: #fdf9ef; border-color: #eddfbc; }
+.lt-ly-icon {
+  width: 36px; height: 36px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid var(--line);
+}
+.lt-ly-icon i { font-size: 1.05rem; color: #6d857f; }
+.lt-ly.ly-canh_bao .lt-ly-icon i { color: #a3382a; }
+.lt-ly.ly-quay .lt-ly-icon i { color: #8a6508; }
+.lt-ly > div { min-width: 0; display: grid; gap: 4px; }
+.lt-ly-dau { margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lt-ly-dau time { color: #a4b5b1; font-size: .73rem; margin-left: auto; }
+/* Câu dặn của bác sĩ là thứ lễ tân nói với khách, nên nó đứng trước; câu trích
+ * từ bệnh án chỉ để đối chiếu nên nhỏ và mờ hơn. */
+.lt-ly-ghi { margin: 0; font-size: .88rem; color: #2b4844; line-height: 1.55; font-weight: 500; }
+.lt-ly-doan { margin: 0; font-size: .78rem; color: #8095a0; font-style: italic; line-height: 1.5; }
+
+@media (max-width: 860px) {
+  .lt-ly { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+  .lt-ly-icon { width: 30px; height: 30px; border-radius: 9px; }
+}

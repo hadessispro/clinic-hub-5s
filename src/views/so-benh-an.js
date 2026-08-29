@@ -24,6 +24,7 @@ import {
   layDanhSachHoSo, loaiCuaRang, locLuotKham, moHoSo, phanHamCuaRang,
   tomTatSoDo, xuatCsvLuotKham,
   CHI_SO_NHA_CHU, GIAI_DOAN, LOAI_THU_THUAT, SINH_HIEU, TRANG_THAI_KE_HOACH,
+  MUC_LUU_Y, TRUONG_DANH_DAU, boDanhDau, themDanhDau,
 } from '../services/so-benh-an.js';
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
@@ -324,10 +325,54 @@ function veFormKham() {
  * hiệu thì không biết có gây tê được không, thiếu chỉ số nha chu thì không
  * biết có làm phục hình được không, thiếu thuốc tê đã dùng thì buổi sau không
  * biết ngưỡng của khách. */
-function veMuc(nhan, noi, lop = '') {
+/* Một cột nhãn duy nhất cho MỌI mục trong lượt khám.
+ *
+ * Bản trước để sinh hiệu một hàng riêng, rồi tới cột nhãn, rồi nha chu lại
+ * một hàng riêng — mắt phải nhảy qua ba kiểu bố cục trong cùng một bản ghi,
+ * nên nó trông rời rạc dù nội dung đã đủ. Nay mọi thứ nằm trên cùng một trục:
+ * nhãn bên trái, nội dung bên phải, từ trên xuống.
+ */
+function veHang(nhan, noi, lop = '') {
   if (!noi) return '';
-  return `<div class="sbn-muc-o ${lop}">
+  return `<div class="sbn-hang ${lop}">
     <dt>${escapeHTML(nhan)}</dt><dd>${noi}</dd></div>`;
+}
+
+/* Bôi sáng những đoạn bác sĩ đã đánh dấu.
+ *
+ * Tách theo ĐOẠN VĂN chứ không theo vị trí ký tự: vị trí hỏng ngay khi bản ghi
+ * được đính chính và nội dung dịch đi một chữ. Đoạn không tìm thấy thì lặng lẽ
+ * bỏ qua, chứ không sáng nhầm chỗ khác.
+ */
+function boiSang(chu, dsDanhDau) {
+  const goc = String(chu || '');
+  if (!dsDanhDau || !dsDanhDau.length) return escapeHTML(goc);
+
+  // Đoạn dài trước, để đoạn ngắn nằm trong nó không cắt nó làm đôi.
+  const dd = dsDanhDau.slice().sort((a, b) => b.doan.length - a.doan.length);
+  const moc = [];
+  dd.forEach((d) => {
+    let tu = goc.indexOf(d.doan);
+    while (tu >= 0) {
+      const den = tu + d.doan.length;
+      if (!moc.some((m) => tu < m.den && den > m.tu)) moc.push({ tu, den, d });
+      tu = goc.indexOf(d.doan, tu + 1);
+    }
+  });
+  if (!moc.length) return escapeHTML(goc);
+  moc.sort((a, b) => a.tu - b.tu);
+
+  let ra = ''; let i = 0;
+  moc.forEach((m) => {
+    ra += escapeHTML(goc.slice(i, m.tu));
+    const mk = MUC_LUU_Y[m.d.muc] || { ten: m.d.muc, lop: 'neutral' };
+    ra += `<mark class="sbn-hl hl-${escapeHTML(m.d.muc)}"
+      data-danh-dau="${escapeHTML(m.d.id)}"
+      title="${escapeHTML(`${mk.ten}${m.d.ghi_chu ? ` · ${m.d.ghi_chu}` : ''} — ${m.d.boi}`)}"
+      >${escapeHTML(goc.slice(m.tu, m.den))}</mark>`;
+    i = m.den;
+  });
+  return ra + escapeHTML(goc.slice(i));
 }
 
 function veNhaChu(nc) {
@@ -338,8 +383,7 @@ function veNhaChu(nc) {
     const xau = Number(v) > c.tot;
     return `<span class="sbn-chi-so ${xau ? 'canh' : 'on'}">
       <small>${escapeHTML(c.ten)}</small>
-      <b>${escapeHTML(String(v))}<i>${escapeHTML(c.don_vi)}</i></b>
-    </span>`;
+      <b>${escapeHTML(String(v))}<i>${escapeHTML(c.don_vi)}</i></b></span>`;
   }).join('');
   return o ? `<div class="sbn-chi-so-hang">${o}</div>` : '';
 }
@@ -359,7 +403,13 @@ function veLuotKham(ds) {
   if (!ds.length) {
     return '<p class="empty-state">Không có lượt khám nào khớp bộ lọc.</p>';
   }
+  const banDo = duLieu?.danh_dau || {};
+
   return ds.map((l) => {
+    const dd = banDo[l.id] || {};
+    const chu = (truong) => boiSang(l[truong], dd[truong]);
+    const boi = (truong) => `data-truong="${truong}" data-luot="${escapeHTML(l.id)}"`;
+
     const rang = (l.rang_lien_quan || []).map((r) =>
       `<button type="button" class="sbn-rang-tag" data-rang="${escapeHTML(r)}">${
         escapeHTML(r)}</button>`).join('');
@@ -368,8 +418,7 @@ function veLuotKham(ds) {
       <b>${escapeHTML(t.ten)}</b>
       <span class="lt-the-nho">${escapeHTML(LOAI_THU_THUAT[t.loai] || t.loai)}</span>
       ${t.rang ? `<em>răng ${escapeHTML(t.rang)}${
-        t.mat ? ` · mặt ${escapeHTML(t.mat)}` : ''}</em>` : ''}
-    </li>`).join('');
+        t.mat ? ` · mặt ${escapeHTML(t.mat)}` : ''}</em>` : ''}</li>`).join('');
 
     const clsang = (l.can_lam_sang || []).map((c) => `<li>
       <b>${escapeHTML(LOAI_ANH[c.loai] || c.loai)}</b>
@@ -382,6 +431,8 @@ function veLuotKham(ds) {
     const vatTu = (l.vat_tu || []).map((v) =>
       `<span class="lt-the-nho">${escapeHTML(v.ten)} · ${escapeHTML(v.so_luong)}</span>`).join('');
 
+    const soDanhDau = Object.values(dd).flat().length;
+
     return `<article class="sbn-luot${l.da_ky ? ' da-ky' : ''}">
       <header class="sbn-luot-dau">
         <div class="sbn-luot-moc">
@@ -389,6 +440,8 @@ function veLuotKham(ds) {
           <small>${escapeHTML(l.gio)}</small>
           ${l.da_ky ? '<span class="status-pill good">Đã ký</span>'
                     : '<span class="status-pill warn">Chưa ký</span>'}
+          ${soDanhDau ? `<span class="sbn-dem-hl" title="Số đoạn đã đánh dấu lưu ý">
+            <i class="ri-mark-pen-line"></i>${soDanhDau}</span>` : ''}
         </div>
         <p class="sbn-ly-do">${escapeHTML(l.ly_do)}</p>
         <div class="sbn-luot-nut">
@@ -400,55 +453,41 @@ function veLuotKham(ds) {
         </div>
       </header>
 
-      ${veSinhHieu(l.sinh_hieu)}
-
-      <dl class="sbn-muc">
-        ${veMuc('Khám ngoài mặt', escapeHTML(l.kham_ngoai_mat || ''))}
-        ${veMuc('Khám trong miệng', escapeHTML(l.kham_trong_mieng || l.kham || ''))}
+      <dl class="sbn-hang-ds">
+        ${veHang('Sinh hiệu', veSinhHieu(l.sinh_hieu))}
+        ${veHang('Khám ngoài mặt',
+          l.kham_ngoai_mat ? `<span class="sbn-boi" ${boi('kham_ngoai_mat')}>${chu('kham_ngoai_mat')}</span>` : '')}
+        ${veHang('Khám trong miệng',
+          l.kham_trong_mieng ? `<span class="sbn-boi" ${boi('kham_trong_mieng')}>${chu('kham_trong_mieng')}</span>` : '')}
+        ${veHang('Chỉ số nha chu', veNhaChu(l.nha_chu))}
+        ${veHang('Cận lâm sàng', clsang ? `<ul class="sbn-ds">${clsang}</ul>` : '')}
+        ${veHang('Chẩn đoán', `<div class="sbn-chan-doan">
+          <p class="sbn-cd-chinh"><span class="sbn-boi" ${boi('chan_doan')}>${chu('chan_doan')}</span>
+            ${l.ma_benh ? `<code>${escapeHTML(l.ma_benh)}</code>` : ''}</p>
+          ${l.chan_doan_them ? `<p class="sbn-cd-them">${escapeHTML(l.chan_doan_them)}</p>` : ''}
+          ${rang ? `<p class="sbn-cd-rang"><span>Răng liên quan</span>${rang}</p>` : ''}
+        </div>`, 'noi-bat')}
+        ${veHang('Thủ thuật', thuThuat ? `<ul class="sbn-ds sbn-tt">${thuThuat}</ul>
+          ${l.thuoc_te ? `<p class="sbn-te"><i class="ri-syringe-line"></i>
+            <b>Gây tê:</b> ${escapeHTML(l.thuoc_te.ten)} · ${l.thuoc_te.so_ong} ống</p>` : ''}
+          ${vatTu ? `<p class="sbn-vat-tu"><span>Vật tư</span>${vatTu}</p>` : ''}` : '')}
+        ${veHang('Diễn biến',
+          l.dien_bien ? `<span class="sbn-boi" ${boi('dien_bien')}>${chu('dien_bien')}</span>` : '')}
+        ${veHang('Xử trí',
+          l.xu_tri ? `<span class="sbn-boi" ${boi('xu_tri')}>${chu('xu_tri')}</span>` : '')}
+        ${veHang('Đơn thuốc', thuoc ? `<ul class="sbn-ds">${thuoc}</ul>` : '')}
+        ${veHang('Dặn dò',
+          l.dan_do ? `<span class="sbn-boi" ${boi('dan_do')}>${chu('dan_do')}</span>` : '')}
+        ${veHang('Hình ảnh', l.anh && l.anh.length ? `<div class="sbn-anh">
+          ${l.anh.map((a) => `<figure class="sbn-anh-o">
+            <div class="sbn-anh-hinh"><i class="${
+              ['quanh_chop', 'toan_canh', 'ct'].includes(a.loai) ? 'ri-scan-line' : 'ri-camera-lens-line'
+            }"></i></div>
+            <figcaption><b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
+              <small>${escapeHTML(a.ghi_chu || '')}${
+                a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small></figcaption>
+          </figure>`).join('')}</div>` : '')}
       </dl>
-
-      ${l.nha_chu ? `<div class="sbn-khoi">
-        <h4>Chỉ số nha chu</h4>${veNhaChu(l.nha_chu)}</div>` : ''}
-
-      ${clsang ? `<div class="sbn-khoi">
-        <h4>Cận lâm sàng</h4><ul class="sbn-ds">${clsang}</ul></div>` : ''}
-
-      <div class="sbn-khoi sbn-chan-doan">
-        <h4>Chẩn đoán</h4>
-        <p class="sbn-cd-chinh">${escapeHTML(l.chan_doan)}
-          ${l.ma_benh ? `<code>${escapeHTML(l.ma_benh)}</code>` : ''}</p>
-        ${l.chan_doan_them ? `<p class="sbn-cd-them">${escapeHTML(l.chan_doan_them)}</p>` : ''}
-        ${rang ? `<p class="sbn-cd-rang"><span>Răng liên quan</span>${rang}</p>` : ''}
-      </div>
-
-      ${thuThuat ? `<div class="sbn-khoi">
-        <h4>Thủ thuật đã thực hiện</h4><ul class="sbn-ds sbn-tt">${thuThuat}</ul>
-        ${l.thuoc_te ? `<p class="sbn-te"><i class="ri-syringe-line"></i>
-          <b>Gây tê:</b> ${escapeHTML(l.thuoc_te.ten)} · ${l.thuoc_te.so_ong} ống</p>` : ''}
-        ${vatTu ? `<p class="sbn-vat-tu"><span>Vật tư</span>${vatTu}</p>` : ''}
-      </div>` : ''}
-
-      <dl class="sbn-muc">
-        ${veMuc('Diễn biến', escapeHTML(l.dien_bien || ''))}
-        ${veMuc('Xử trí và hướng tiếp', escapeHTML(l.xu_tri || ''))}
-      </dl>
-
-      ${thuoc ? `<div class="sbn-khoi">
-        <h4>Đơn thuốc</h4><ul class="sbn-ds">${thuoc}</ul></div>` : ''}
-
-      ${l.dan_do ? `<p class="sbn-dan-do"><i class="ri-chat-quote-line"></i>
-        <b>Dặn dò:</b> ${escapeHTML(l.dan_do)}</p>` : ''}
-
-      ${l.anh && l.anh.length ? `<div class="sbn-anh">
-        ${l.anh.map((a) => `<figure class="sbn-anh-o">
-          <div class="sbn-anh-hinh"><i class="${
-            ['quanh_chop', 'toan_canh', 'ct'].includes(a.loai) ? 'ri-scan-line' : 'ri-camera-lens-line'
-          }"></i></div>
-          <figcaption><b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
-            <small>${escapeHTML(a.ghi_chu || '')}${
-              a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small></figcaption>
-        </figure>`).join('')}
-      </div>` : ''}
 
       <footer class="sbn-chan-luot">
         ${escapeHTML(tenBacSi(l.bac_si))}
@@ -460,6 +499,42 @@ function veLuotKham(ds) {
       </footer>
     </article>`;
   }).join('');
+}
+
+/* Bảng lưu ý của bác sĩ.
+ *
+ * Đây là chỗ bác sĩ và quầy nối vào nhau: bác sĩ biết điều cần dặn, lễ tân là
+ * người ngồi trước mặt khách. Cảnh báo lên đầu, và ghi rõ mục nào lễ tân đọc
+ * được — không phải ghi chú chuyên môn nào cũng nên đọc cho khách nghe.
+ */
+function veLuuY(ds) {
+  if (!ds || !ds.length) return '';
+  return `<section class="panel sbn-luu-y">
+    <header class="section-title sbn-header">
+      <h3>Lưu ý từ bác sĩ</h3>
+      <span class="pill">${ds.length} đoạn đã đánh dấu · mục "Dặn quầy" và "Cảnh báo" thì lễ tân đọc được</span>
+    </header>
+    <ul class="sbn-ly-ds">
+      ${ds.map((x) => {
+        const m = MUC_LUU_Y[x.muc] || { ten: x.muc, lop: 'neutral', icon: 'ri-bookmark-line' };
+        return `<li class="sbn-ly ly-${escapeHTML(x.muc)}">
+          <span class="sbn-ly-icon"><i class="${escapeHTML(m.icon)}"></i></span>
+          <div>
+            <p class="sbn-ly-dau">
+              <span class="status-pill ${m.lop}">${escapeHTML(m.ten)}</span>
+              <em>${escapeHTML(TRUONG_DANH_DAU[x.truong] || x.truong)}</em>
+              <time>${escapeHTML(x.luc.slice(0, 10).split('-').reverse().join('/'))}</time>
+            </p>
+            <p class="sbn-ly-doan">“${escapeHTML(x.doan)}”</p>
+            ${x.ghi_chu ? `<p class="sbn-ly-ghi">${escapeHTML(x.ghi_chu)}</p>` : ''}
+            <p class="sbn-ly-boi">${escapeHTML(x.boi)}</p>
+          </div>
+          <button type="button" class="ghost-button sbn-nho" data-bo-dd="${escapeHTML(x.id)}"
+            title="Gỡ đánh dấu"><i class="ri-delete-bin-line"></i></button>
+        </li>`;
+      }).join('')}
+    </ul>
+  </section>`;
 }
 
 /* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
@@ -556,6 +631,8 @@ function veSoChiTiet() {
         <aside class="sbn-ben">${veChiTietRang(h.so_do_rang)}</aside>
       </div>
     </section>
+
+    ${veLuuY(duLieu.luu_y)}
 
     ${veKeHoach(duLieu.ke_hoach, duLieu.tong_chi_phi)}
 
@@ -762,6 +839,70 @@ export function initView() {
 
   document.querySelectorAll('.sbn-rang-tag').forEach((b) => {
     b.addEventListener('click', () => { rangChon = b.dataset.rang; ve(); });
+  });
+
+  /* Bôi đen để đánh dấu lưu ý.
+   *
+   * Chỉ nhận vùng bôi nằm TRỌN trong một mục có data-truong. Bôi vắt qua hai
+   * mục thì không lưu được đoạn nào cho đúng, mà lưu bừa thì lần sau nó sáng
+   * nhầm chỗ — thà từ chối và nói rõ. */
+  const thanh = document.createElement('div');
+  thanh.className = 'sbn-thanh-hl';
+  thanh.hidden = true;
+  thanh.innerHTML = `
+    <span class="sbn-thanh-chu"><i class="ri-mark-pen-line"></i> Đánh dấu lưu ý</span>
+    <button type="button" data-muc="canh_bao" class="sbn-hl-nut hl-canh_bao">Cảnh báo</button>
+    <button type="button" data-muc="quay" class="sbn-hl-nut hl-quay">Dặn quầy</button>
+    <button type="button" data-muc="bac_si" class="sbn-hl-nut hl-bac_si">Ghi nhớ</button>`;
+  document.body.appendChild(thanh);
+
+  let dangBoi = null;
+  const anThanh = () => { thanh.hidden = true; dangBoi = null; };
+
+  document.addEventListener('mouseup', () => {
+    if (!hoSoMo) return;
+    const sel = window.getSelection();
+    const doan = String(sel || '').trim();
+    if (!doan || doan.length < 3) { anThanh(); return; }
+    const o = sel.anchorNode?.parentElement?.closest('[data-truong]');
+    const o2 = sel.focusNode?.parentElement?.closest('[data-truong]');
+    if (!o || o !== o2) { anThanh(); return; }
+
+    dangBoi = { luot_id: o.dataset.luot, truong: o.dataset.truong, doan };
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    thanh.hidden = false;
+    const rong = thanh.offsetWidth || 320;
+    thanh.style.top = `${window.scrollY + r.top - thanh.offsetHeight - 9}px`;
+    thanh.style.left = `${Math.max(10,
+      Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - rong - 10))}px`;
+  });
+
+  document.addEventListener('scroll', anThanh, { passive: true });
+
+  thanh.querySelectorAll('[data-muc]').forEach((b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', async () => {
+      if (!dangBoi) return;
+      const luu = { ...dangBoi, muc: b.dataset.muc };
+      anThanh();
+      const ghi = await requestInput(
+        `Đoạn được đánh dấu: “${luu.doan.slice(0, 90)}${luu.doan.length > 90 ? '…' : ''}”`,
+        { title: 'Câu dặn kèm theo',
+          label: 'Ghi chú (có thể để trống)',
+          placeholder: 'Nhắc khách đặt lịch trước, buổi này cần 90 phút…',
+          confirmText: 'Đánh dấu' });
+      if (ghi === null) return;
+      chay(() => themDanhDau({ ...luu, ghi_chu: ghi }, maToi), 'Đã đánh dấu đoạn lưu ý.');
+    });
+  });
+
+  document.querySelectorAll('[data-bo-dd]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const ok = await confirmAction('Gỡ đánh dấu này khỏi sổ và khỏi danh sách lưu ý?',
+        { title: 'Gỡ đánh dấu', confirmText: 'Gỡ', tone: 'danger' });
+      if (!ok) return;
+      chay(() => boDanhDau(b.dataset.boDd, maToi), 'Đã gỡ đánh dấu.');
+    });
   });
 
   g('sbnMoForm')?.addEventListener('click', () => { hienFormKham = true; ve(); });

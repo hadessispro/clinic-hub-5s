@@ -468,6 +468,127 @@ let KE_HOACH = [
     chi_phi: 2500000, trang_thai: 'cho_duyet', ghi_chu: 'Chỉ làm sau khi trám ổn định' },
 ];
 
+/* Đánh dấu lưu ý.
+ *
+ * Bác sĩ bôi một đoạn trong bệnh án rồi đánh dấu, kèm một câu dặn. Đoạn đó
+ * sáng lên trong sổ, VÀ nổi lên thành danh sách "lưu ý từ bác sĩ" mà lễ tân
+ * đọc được — đó là chỗ hai vai trò nối vào nhau: bác sĩ biết điều cần dặn,
+ * lễ tân là người ngồi trước mặt khách.
+ *
+ * Lưu ĐOẠN VĂN chứ không lưu vị trí ký tự. Vị trí ký tự hỏng ngay khi bản ghi
+ * được đính chính và nội dung dịch đi một chữ; đoạn văn thì vẫn tìm lại được,
+ * và nếu không tìm thấy thì đánh dấu tự mất chứ không sáng nhầm chỗ khác.
+ *
+ * Ba mức, và mức quyết định ai thấy:
+ *   quay     lễ tân thấy — thứ cần nói với khách ở quầy
+ *   bac_si   chỉ bác sĩ thấy — ghi nhớ chuyên môn giữa các buổi
+ *   canh_bao lễ tân thấy và nổi lên đầu — thứ không được quên
+ */
+
+export const MUC_LUU_Y = {
+  canh_bao: { ten: 'Cảnh báo', lop: 'bad',  quay: true,  icon: 'ri-alert-line' },
+  quay:     { ten: 'Dặn quầy', lop: 'warn', quay: true,  icon: 'ri-service-line' },
+  bac_si:   { ten: 'Ghi nhớ chuyên môn', lop: 'neutral', quay: false, icon: 'ri-stethoscope-line' },
+};
+
+export const TRUONG_DANH_DAU = {
+  kham_ngoai_mat: 'Khám ngoài mặt',
+  kham_trong_mieng: 'Khám trong miệng',
+  chan_doan: 'Chẩn đoán',
+  dien_bien: 'Diễn biến',
+  xu_tri: 'Xử trí',
+  dan_do: 'Dặn dò',
+};
+
+let DANH_DAU = [
+  { id: 'DD-01', luot_id: 'LK-0001', ho_so: 'BN-00001',
+    truong: 'kham_trong_mieng',
+    doan: 'thử lạnh đau nhói kéo dài dưới 10 giây',
+    muc: 'bac_si', ghi_chu: 'Còn hồi phục được, chưa cần lấy tuỷ ngay nếu khách chần chừ.',
+    boi: 'BS01', luc: '2026-08-29T08:20:00' },
+  { id: 'DD-02', luot_id: 'LK-0001', ho_so: 'BN-00001',
+    truong: 'xu_tri',
+    doan: 'Răng 26 hẹn tuần sau điều trị tuỷ',
+    muc: 'quay', ghi_chu: 'Nhắc khách đặt lịch trước, buổi này cần 90 phút.',
+    boi: 'BS01', luc: '2026-08-29T08:22:00' },
+  { id: 'DD-03', luot_id: 'LK-0004', ho_so: 'BN-00002',
+    truong: 'dien_bien',
+    doan: 'Đường huyết tại chỗ 7.2 mmol/L',
+    muc: 'canh_bao', ghi_chu: 'Chưa gắn mão nếu đường huyết còn cao. Hỏi khách trước khi xếp lịch.',
+    boi: 'BS02', luc: '2026-08-29T08:50:00' },
+  { id: 'DD-04', luot_id: 'LK-0005', ho_so: 'BN-00003',
+    truong: 'xu_tri',
+    doan: 'Tẩy trắng sau khi trám ổn định 2 tuần',
+    muc: 'quay', ghi_chu: 'Khách rất muốn tẩy trắng ngay. Giải thích lại nếu khách hỏi.',
+    boi: 'BS03', luc: '2026-08-29T09:25:00' },
+];
+
+/** Đánh dấu của một lượt khám, gom theo trường để lúc vẽ tra một lần. */
+export function danhDauTheoLuot(luotId, choQuay = false) {
+  const d = {};
+  DANH_DAU.filter((x) => x.luot_id === luotId)
+    .filter((x) => !choQuay || MUC_LUU_Y[x.muc]?.quay)
+    .forEach((x) => { (d[x.truong] ||= []).push(x); });
+  return d;
+}
+
+/** Mọi lưu ý của một hồ sơ. `choQuay` lọc ra phần lễ tân được đọc. */
+export function layLuuY(hoSoId, choQuay = false) {
+  const ds = DANH_DAU.filter((x) => x.ho_so === hoSoId)
+    .filter((x) => !choQuay || MUC_LUU_Y[x.muc]?.quay);
+  // Cảnh báo lên trước, rồi tới mới nhất.
+  const uu = { canh_bao: 0, quay: 1, bac_si: 2 };
+  ds.sort((a, b) => (uu[a.muc] - uu[b.muc]) || (a.luc < b.luc ? 1 : -1));
+  return cho(ds);
+}
+
+/* Lưu ý tra theo SỐ ĐIỆN THOẠI, để màn Lễ tân dùng được.
+ *
+ * Lễ tân làm việc theo số điện thoại, sổ bệnh án theo mã hồ sơ. Số điện thoại
+ * là khoá duy nhất hai bên cùng giữ — cùng lý do với hành trình khách. Và chỉ
+ * trả về mục lễ tân được đọc: không phải ghi chú chuyên môn nào cũng nên đọc
+ * cho khách nghe. */
+export function layLuuYTheoSdt(dienThoai) {
+  const h = HO_SO.find((x) => x.dien_thoai === dienThoai);
+  if (!h) return cho([]);
+  const ds = DANH_DAU.filter((x) => x.ho_so === h.id)
+    .filter((x) => MUC_LUU_Y[x.muc]?.quay);
+  const uu = { canh_bao: 0, quay: 1 };
+  ds.sort((a, b) => (uu[a.muc] - uu[b.muc]) || (a.luc < b.luc ? 1 : -1));
+  return cho(ds.map((x) => ({ ...x, benh_nhan: h.ten, ma_ho_so: h.ma })));
+}
+
+export function themDanhDau(du, boi) {
+  const doan = String(du.doan || '').trim();
+  if (doan.length < 3) throw new Error('Hãy bôi đen đoạn cần đánh dấu, ít nhất 3 ký tự.');
+  if (!TRUONG_DANH_DAU[du.truong]) throw new Error('Không đánh dấu được ở phần này.');
+  if (!MUC_LUU_Y[du.muc]) throw new Error('Mức lưu ý không hợp lệ.');
+  const l = LUOT_KHAM.find((x) => x.id === du.luot_id);
+  if (!l) throw new Error('Không tìm thấy lượt khám này.');
+  // Đoạn phải thật sự nằm trong nội dung, nếu không nó sẽ không bao giờ sáng.
+  if (!String(l[du.truong] || '').includes(doan)) {
+    throw new Error('Đoạn vừa bôi không nằm trong phần này. Bôi lại trong đúng một mục.');
+  }
+  const moi = {
+    id: `DD-${String(DANH_DAU.length + 1).padStart(2, '0')}`,
+    luot_id: du.luot_id, ho_so: l.ho_so, truong: du.truong,
+    doan, muc: du.muc, ghi_chu: String(du.ghi_chu || '').trim(),
+    boi, luc: new Date().toISOString(),
+  };
+  DANH_DAU.push(moi);
+  return cho(moi);
+}
+
+export function boDanhDau(id, boi) {
+  const i = DANH_DAU.findIndex((x) => x.id === id);
+  if (i < 0) throw new Error('Không tìm thấy đánh dấu này.');
+  if (DANH_DAU[i].boi !== boi) {
+    throw new Error('Chỉ người đã đánh dấu mới gỡ được đánh dấu của mình.');
+  }
+  DANH_DAU.splice(i, 1);
+  return cho({ id });
+}
+
 // Nhật ký ĐỌC. Với dữ liệu sức khoẻ, mở xem cũng là sự kiện phải lưu vết.
 let NHAT_KY_DOC = [];
 
@@ -517,7 +638,12 @@ export function moHoSo(id, nguoiXem = { ma: '?', vai_tro: '?' }) {
   const luot = LUOT_KHAM.filter((l) => l.ho_so === id)
     .sort((a, b) => (a.ngay < b.ngay ? 1 : -1));
   const kh = KE_HOACH.filter((k) => k.ho_so === id);
+  const luuY = DANH_DAU.filter((x) => x.ho_so === id);
+  const uu = { canh_bao: 0, quay: 1, bac_si: 2 };
+  luuY.sort((a, b) => (uu[a.muc] - uu[b.muc]) || (a.luc < b.luc ? 1 : -1));
   return cho({
+    luu_y: luuY,
+    danh_dau: Object.fromEntries(luot.map((l) => [l.id, danhDauTheoLuot(l.id)])),
     ho_so: h,
     luot_kham: luot,
     so_lan_kham: luot.length,
