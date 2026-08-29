@@ -56,6 +56,11 @@ let anhLoc = '';
 let hien3D = false;
 let canh3D = null;
 let goc3D = 'truoc';
+/* Hai chế độ 3D cho hai câu hỏi khác nhau của bệnh nhân: "răng SÂU Ở ĐÂU"
+ * → cung hàm; "sâu ăn TỚI ĐÂU rồi, vì sao đau" → mặt cắt giải phẫu. */
+let cheDo3D = 'cung_ham';
+let canhGP = null;
+let lopGP = '';
 let banQuet = null;
 let ghiCong = '';
 let dangNapMau = false;
@@ -267,8 +272,31 @@ function ve3D() {
       <small>Xoay được, bấm vào răng để chỉ cho khách. Chỉ tải khi bật.</small>
     </div>`;
   }
+  if (cheDo3D === 'giai_phau') {
+    return `<div class="sbn-3d">
+      <div class="sbn-3d-thanh">
+        <button type="button" class="lt-chip" data-che3d="cung_ham">Cung hàm</button>
+        <button type="button" class="lt-chip is-chon" data-che3d="giai_phau">Giải phẫu răng</button>
+        <button type="button" class="ghost-button sbn-nho" id="sbnDong3D">
+          <i class="ri-close-line"></i> Đóng
+        </button>
+      </div>
+      <div class="sbn-gp-chips" id="sbnGPChips"></div>
+      <div class="sbn-3d-khung" id="sbnGPKhung"></div>
+      <p class="sbn-gp-tt" id="sbnGPThongTin">Bấm dấu <b>+</b> trên hình hoặc chọn
+        một lớp phía trên để tô sáng từng cấu trúc và xem lời giải thích cho khách.</p>
+      <p class="sbn-3d-ghi">
+        <i class="ri-information-line"></i>
+        Mặt cắt dọc răng hàm lớn hàm dưới, vẽ theo số đo giải phẫu thật (thân
+        ~7,5 mm, chân ~13 mm, men dày ~1 mm). Đây là sơ đồ giảng giải, không
+        phải hình của bệnh nhân này.
+      </p>
+    </div>`;
+  }
   return `<div class="sbn-3d">
     <div class="sbn-3d-thanh">
+      <button type="button" class="lt-chip is-chon" data-che3d="cung_ham">Cung hàm</button>
+      <button type="button" class="lt-chip" data-che3d="giai_phau">Giải phẫu răng</button>
       <span class="lt-nhanh-nhan">Góc nhìn</span>
       ${Object.entries(GOC).map(([m, t]) => `<button type="button"
         class="lt-chip${goc3D === m ? ' is-chon' : ''}" data-goc3d="${m}">${t}</button>`).join('')}
@@ -1023,6 +1051,7 @@ export function initView() {
     // Bỏ mô hình đang giữ: hồ sơ sau có sơ đồ răng khác, và bản quét của bệnh
     // nhân này tuyệt đối không được hiện ở hồ sơ người khác.
     banQuet = null; ghiCong = ''; hien3D = false;
+    cheDo3D = 'cung_ham'; lopGP = '';
     ve();
   });
 
@@ -1070,9 +1099,59 @@ export function initView() {
    * render riêng, không huỷ thì sau vài lần vẽ lại màn sẽ có nhiều vòng cùng
    * chạy và máy nóng lên mà không ai hiểu vì sao. */
   if (canh3D) { canh3D.huy(); canh3D = null; }
+  if (canhGP) { canhGP.huy(); canhGP = null; }
 
   g('sbnMo3D')?.addEventListener('click', () => { hien3D = true; ve(); });
   g('sbnDong3D')?.addEventListener('click', () => { hien3D = false; ve(); });
+  document.querySelectorAll('[data-che3d]').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (cheDo3D === b.dataset.che3d) return;
+      cheDo3D = b.dataset.che3d; lopGP = '';
+      ve();
+    });
+  });
+
+  /* Mặt cắt giải phẫu: dải nút lớp và ô giải thích dựng TỪ bảng LOP trong
+   * component — không chép danh sách ra đây, vì hai bản sẽ lệch nhau ngay
+   * lần thêm lớp đầu tiên. Chọn lớp chỉ sửa DOM tại chỗ, không vẽ lại màn:
+   * vẽ lại là huỷ cả cảnh 3D đang chạy chỉ để đổi một dòng chữ. */
+  const khungGP = g('sbnGPKhung');
+  if (khungGP) {
+    import('../components/giai-phau-rang.js')
+      .then((m) => {
+        const oChips = g('sbnGPChips');
+        const oTT = g('sbnGPThongTin');
+        const capNhat = (ma) => {
+          lopGP = ma || '';
+          oChips?.querySelectorAll('[data-lop]').forEach((x) =>
+            x.classList.toggle('is-chon', x.dataset.lop === lopGP));
+          if (oTT) {
+            const l = m.LOP[lopGP];
+            oTT.innerHTML = l
+              ? `<b>${escapeHTML(l.ten)}</b> <span class="sbn-gp-anh">(${escapeHTML(l.tenAnh)})</span> — ${escapeHTML(l.mota)}`
+              : 'Bấm dấu <b>+</b> trên hình hoặc chọn một lớp phía trên để tô sáng '
+                + 'từng cấu trúc và xem lời giải thích cho khách.';
+          }
+        };
+        if (oChips) {
+          oChips.innerHTML = Object.entries(m.LOP).map(([ma, l]) => `<button
+            type="button" class="lt-chip" data-lop="${ma}">
+            <i class="sbn-gp-cham" style="background:${l.mau}"></i>${escapeHTML(l.ten)}</button>`).join('');
+          oChips.querySelectorAll('[data-lop]').forEach((b) => {
+            b.addEventListener('click', () => {
+              const ma = b.dataset.lop === lopGP ? '' : b.dataset.lop;
+              canhGP?.chonLop(ma);
+              capNhat(ma);
+            });
+          });
+        }
+        canhGP = m.taoCanhGiaiPhau(khungGP, capNhat);
+        if (lopGP) { canhGP.chonLop(lopGP); capNhat(lopGP); }
+      })
+      .catch(() => {
+        khungGP.innerHTML = '<p class="empty-state">Không tải được cảnh 3D trên trình duyệt này.</p>';
+      });
+  }
 
   const khung3D = g('sbn3DKhung');
   if (khung3D && duLieu?.ho_so && !banQuet && !dangNapMau) {

@@ -8900,3 +8900,34 @@ body.dialog-open {
   font-size: .75rem; color: #75908b;
 }
 .sbn-3d-cong i { font-size: .9rem; color: #a4b5b1; }
+
+/* ── Chế độ giải phẫu răng ──────────────────────────────────────────────
+ * Khung cần position:relative vì các nút (+) neo theo toạ độ 3D được đặt
+ * absolute bên trong, chiếu lại vị trí mỗi khung hình. */
+.sbn-3d-khung { position: relative; }
+.sbn-gp-diem {
+  position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+  /* Đè kiểu nút toàn cục: min-height/padding chung làm nút tròn phồng thành
+   * hình bầu dục. */
+  min-height: 0; min-width: 0; padding: 0; box-sizing: border-box;
+  border-radius: 50%; border: 2px solid #365a55; background: #fff;
+  color: #14332f; font-size: 15px; font-weight: 700; line-height: 1;
+  cursor: pointer; display: grid; place-items: center;
+  box-shadow: 0 2px 6px rgba(10, 30, 27, .35);
+  transition: transform .12s ease, background .12s ease;
+}
+.sbn-gp-diem:hover { transform: scale(1.18); }
+.sbn-gp-diem.is-chon { background: var(--teal, #087f7b); border-color: #fff; color: #fff; }
+.sbn-gp-chips { display: flex; gap: 7px; flex-wrap: wrap; }
+.sbn-gp-chips .lt-chip { display: inline-flex; align-items: center; gap: 6px; }
+.sbn-gp-cham {
+  width: 10px; height: 10px; border-radius: 50%; flex: none;
+  border: 1px solid rgba(20, 40, 37, .25);
+}
+.sbn-gp-tt {
+  margin: 0; padding: 11px 14px; border-radius: 10px;
+  background: var(--mint, #eaf5f3); border: 1px solid var(--line, #d5e5e2);
+  color: var(--ink, #14332f); font-size: .84rem; line-height: 1.55;
+  min-height: 44px;
+}
+.sbn-gp-anh { color: #75908b; font-weight: 500; }

@@ -396,8 +396,13 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
     m.position.y = hamTren ? 15.5 : -15.5;
     return m;
   };
-  nhom.add(veNuou(true));
-  nhom.add(veNuou(false));
+  /* Chỉ dựng nướu ống cho hình công thức. Mô hình nạp ngoài đã có nướu của
+   * chính nó; chồng ống giả lên là che mất phần nướu thật được dựng kỹ hơn
+   * nhiều — nhìn vào chỉ còn thấy hai cái vòng trơn. */
+  if (!banQuet) {
+    nhom.add(veNuou(true));
+    nhom.add(veNuou(false));
+  }
 
   const dsRang = [];
 
@@ -588,6 +593,9 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   quay();
 
   return {
+    // Cho chỗ gọi biết cảnh đang dựng từ nguồn nào — nhìn bằng mắt không phân
+    // biệt được hình công thức với bộ mẫu khi nướu ống che mất chân răng.
+    kieuNguon: banQuet?.kieu || 'cong_thuc',
     danhDauRang(ma) {
       dsRang.forEach((k) => {
         const chon = k.userData.ma === ma;
