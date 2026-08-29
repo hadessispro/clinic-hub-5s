@@ -57,6 +57,7 @@ let hien3D = false;
 let canh3D = null;
 let goc3D = 'truoc';
 let banQuet = null;
+let ghiCong = '';
 let hienFormKham = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -267,6 +268,10 @@ function ve3D() {
       </button>
     </div>
     <div class="sbn-3d-khung" id="sbn3DKhung"></div>
+    ${ghiCong ? `<p class="sbn-3d-cong">
+      <i class="ri-copyright-line"></i>
+      Mô hình 3D: ${escapeHTML(ghiCong)}
+    </p>` : ''}
     <p class="sbn-3d-ghi">
       <i class="ri-information-line"></i>
       Hình răng dựng theo công thức: đúng loại răng, số múi và vị trí trên cung hàm.
@@ -1064,12 +1069,39 @@ export function initView() {
   g('sbnQuet')?.addEventListener('change', async (e) => {
     const t = e.target.files[0];
     if (!t) return;
-    showToast('Đang đọc bản quét…');
+    showToast('Đang đọc mô hình…');
     try {
       const m = await import('../components/rang-3d.js');
       banQuet = await m.napMoHinh(t);
-      showToast(banQuet.so_dinh.toLocaleString('vi-VN') + ' đỉnh · '
-        + banQuet.kich_thuoc_mm.join(' × ') + ' mm — đã nạp bản quét.');
+
+      /* Bộ mẫu mua hoặc tải về thường mang giấy phép buộc ghi công tác giả —
+       * CC BY là loại phổ biến nhất. Hỏi ngay lúc nạp và hiện dưới cảnh 3D,
+       * để điều kiện giấy phép được đáp ứng bằng chính cách hệ thống chạy chứ
+       * không phụ thuộc ai đó nhớ ra.
+       *
+       * Bản quét của bệnh nhân thì không hỏi: nó là dữ liệu của phòng khám. */
+      if (banQuet.kieu !== 'ban_quet') {
+        const cong = await requestInput(
+          'Nhiều bộ mẫu 3D dùng giấy phép buộc ghi công tác giả, ví dụ CC BY. '
+          + 'Câu ghi ở đây sẽ hiện dưới cảnh 3D mỗi lần mở.',
+          { title: 'Ghi công tác giả mô hình',
+            label: 'Tác giả và giấy phép',
+            placeholder: 'b2przemo · BlendSwap · CC BY 3.0',
+            confirmText: 'Lưu' });
+        ghiCong = (cong || '').trim();
+      }
+
+      if (banQuet.kieu === 'bo_mau_gop') {
+        showToast(`Mẫu này chỉ có ${banQuet.so_khoi} khối, nhận ra `
+          + `${banQuet.so_rang_nhan_ra} răng. Chưa tách từng răng nên không tô màu `
+          + 'hay bấm chọn được. Dùng scripts/tach-rang-blender.py để tách.', true);
+      }
+      const ten = { ban_quet: 'bản quét bệnh nhân',
+        bo_mau_tach_rang: `bộ mẫu, nhận ra ${banQuet.so_rang_nhan_ra} răng`,
+        bo_mau_gop: 'bộ mẫu chưa tách răng' }[banQuet.kieu];
+      showToast(`Đã nạp ${ten}: `
+        + banQuet.so_dinh.toLocaleString('vi-VN') + ' đỉnh · '
+        + banQuet.kich_thuoc_mm.join(' × ') + ' mm');
       await ve();
     } catch (err) { showToast(err.message, true); }
   });

@@ -8893,3 +8893,10 @@ body.dialog-open {
 
 @media (max-width: 860px) { .sbn-3d-khung { height: 320px; } }
 .sbn-nhap-quet { cursor: pointer; }
+/* Ghi công tác giả mô hình. CC BY buộc hiển thị, nên nó nằm ngay dưới cảnh 3D
+ * chứ không giấu trong trang giới thiệu. */
+.sbn-3d-cong {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  font-size: .75rem; color: #75908b;
+}
+.sbn-3d-cong i { font-size: .9rem; color: #a4b5b1; }
