@@ -24,7 +24,7 @@ import {
   layDanhSachHoSo, loaiCuaRang, locLuotKham, moHoSo, phanHamCuaRang,
   tomTatSoDo, xuatCsvLuotKham,
   CHI_SO_NHA_CHU, GIAI_DOAN, LOAI_THU_THUAT, SINH_HIEU, TRANG_THAI_KE_HOACH,
-  MUC_LUU_Y, TRUONG_DANH_DAU, boDanhDau, themDanhDau,
+  MUC_LUU_Y, TRUONG_DANH_DAU, boDanhDau, themAnh, themDanhDau,
 } from '../services/so-benh-an.js';
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
@@ -69,6 +69,61 @@ const chuDau = (ten) => {
   const p = String(ten || '?').trim().split(/\s+/);
   return (p[p.length - 1][0] || '?').toUpperCase();
 };
+
+/* Nén ảnh sang WebP ngay trên máy trạm, TRƯỚC khi gửi lên.
+ *
+ * Không cần thêm thư viện: trình duyệt đã mã hoá WebP sẵn qua canvas.toBlob.
+ * Thêm một thư viện nén chỉ để làm việc trình duyệt làm được là tăng dung
+ * lượng tải cho mọi người dùng, kể cả người không bao giờ tải ảnh lên.
+ *
+ * Nén ở máy trạm chứ không ở máy chủ vì ảnh nha khoa từ máy chụp thường 3–8 MB
+ * mỗi tấm. Gửi nguyên bản qua mạng 4G ở quầy là chờ rất lâu, và đó là lúc
+ * người ta bỏ không tải ảnh nữa.
+ *
+ * Cạnh dài giới hạn 2000px: đủ để phóng to xem chi tiết mà không giữ những
+ * pixel không ai nhìn tới.
+ */
+const CANH_TOI_DA = 2000;
+const CHAT_LUONG = 0.82;
+
+function doKb(n) {
+  return n >= 1024 * 1024
+    ? `${(n / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(n / 1024)} KB`;
+}
+
+function nenWebp(tep) {
+  return new Promise((xong, hong) => {
+    const doc = new FileReader();
+    doc.onerror = () => hong(new Error(`Không đọc được tệp ${tep.name}.`));
+    doc.onload = () => {
+      const anh = new Image();
+      anh.onerror = () => hong(new Error(`${tep.name} không phải ảnh đọc được.`));
+      anh.onload = () => {
+        let { width: w, height: h } = anh;
+        if (Math.max(w, h) > CANH_TOI_DA) {
+          const ty = CANH_TOI_DA / Math.max(w, h);
+          w = Math.round(w * ty); h = Math.round(h * ty);
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(anh, 0, 0, w, h);
+        c.toBlob((b) => {
+          if (!b) { hong(new Error('Trình duyệt này không mã hoá được WebP.')); return; }
+          const d = new FileReader();
+          d.onload = () => xong({
+            tep: d.result, ten_goc: tep.name,
+            kb: `${doKb(tep.size)} → ${doKb(b.size)}`,
+            giam: Math.round((1 - b.size / tep.size) * 100),
+          });
+          d.readAsDataURL(b);
+        }, 'image/webp', CHAT_LUONG);
+      };
+      anh.src = doc.result;
+    };
+    doc.readAsDataURL(tep);
+  });
+}
 
 /* ── Sơ đồ răng ───────────────────────────────────────────────────────── */
 
@@ -479,15 +534,8 @@ function veLuotKham(ds) {
         ${veHang('Đơn thuốc', thuoc ? `<ul class="sbn-ds">${thuoc}</ul>` : '')}
         ${veHang('Dặn dò',
           l.dan_do ? `<span class="sbn-boi" ${boi('dan_do')}>${chu('dan_do')}</span>` : '')}
-        ${veHang('Hình ảnh', l.anh && l.anh.length ? `<div class="sbn-anh">
-          ${l.anh.map((a) => `<figure class="sbn-anh-o">
-            <div class="sbn-anh-hinh"><i class="${
-              ['quanh_chop', 'toan_canh', 'ct'].includes(a.loai) ? 'ri-scan-line' : 'ri-camera-lens-line'
-            }"></i></div>
-            <figcaption><b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
-              <small>${escapeHTML(a.ghi_chu || '')}${
-                a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small></figcaption>
-          </figure>`).join('')}</div>` : '')}
+        ${veHang(`Ảnh và phim${(l.anh || []).length ? ` · ${l.anh.length}` : ''}`,
+          veAnhCuaLuot(l))}
       </dl>
 
       <footer class="sbn-chan-luot">
@@ -548,12 +596,9 @@ function veLuuY(ds) {
  * nhớ ra. Đây là chỗ một dòng chữ cứu được một ca sốc phản vệ.
  */
 function veThuoc(ds) {
-  if (!ds || !ds.length) {
-    return `<section class="panel">
-      <header class="section-title sbn-header"><h3>Thuốc đã dùng</h3></header>
-      <p class="empty-state">Bệnh nhân chưa được kê thuốc hay gây tê lần nào.</p>
-    </section>`;
-  }
+  // Không dựng khối khi chưa có gì. Một hộp cao 150px chỉ để nói "chưa có" thì
+  // nó chiếm chỗ đúng bằng phần có dữ liệu thật, và người đọc phải cuộn qua nó.
+  if (!ds || !ds.length) return '';
   const canh = ds.filter((t) => t.canh_bao_di_ung).length;
   return `<section class="panel${canh ? ' sbn-co-canh' : ''}">
     <header class="section-title sbn-header">
@@ -588,89 +633,74 @@ function veThuoc(ds) {
   </section>`;
 }
 
-/* Ảnh và phim.
- *
- * Gom qua mọi lượt khám ra một chỗ. Bác sĩ cần xem lại phim toàn cảnh của lần
- * trước ngay trong lúc khám, mà đi tìm nó nằm trong lượt khám nào thì mất thời
- * gian và thường là thôi không xem.
- *
- * Ô ảnh vẽ bằng SVG theo đúng loại phim, không phải một biểu tượng chung: nhìn
- * lướt là phân biệt được phim quanh chóp với phim toàn cảnh. Khi nối API thật,
- * chỗ này thay bằng ảnh thật, phần còn lại giữ nguyên.
+/* Ô ảnh vẽ theo ĐÚNG loại phim, không dùng một biểu tượng chung: nhìn lướt là
+ * phân biệt được phim toàn cảnh với phim quanh chóp. Khi nối API thật thì chỗ
+ * này thay bằng ảnh thật, phần còn lại giữ nguyên.
  */
-function veHinhPhim(ds) {
-  if (!ds || !ds.length) {
-    return `<section class="panel">
-      <header class="section-title sbn-header"><h3>Ảnh và phim</h3></header>
-      <p class="empty-state">Chưa có ảnh hay phim nào trong hồ sơ này.</p>
-    </section>`;
+function veKhungPhim(a) {
+  if (a.tep) {
+    return `<img src="${escapeHTML(a.tep)}" alt="${escapeHTML(a.ghi_chu || '')}" loading="lazy">`;
   }
-  const loai = [...new Set(ds.map((a) => a.loai))];
-  const hien = ds.filter((a) => !anhLoc || a.loai === anhLoc);
-
-  const veKhung = (a) => {
-    if (a.loai === 'toan_canh') {
-      // Phim toàn cảnh: cung hàm trải phẳng, hai hàm răng đối nhau.
-      return `<svg viewBox="0 0 120 64" class="sbn-phim pano" aria-hidden="true">
-        <rect width="120" height="64" rx="4" class="nen"/>
-        <path d="M8 30 Q60 6 112 30" class="cung"/>
-        <path d="M8 36 Q60 60 112 36" class="cung"/>
-        ${Array.from({ length: 14 }, (_, i) => {
-          const x = 12 + i * 7.2;
-          const yt = 30 - Math.sin((i / 13) * Math.PI) * 15;
-          const yd = 36 + Math.sin((i / 13) * Math.PI) * 15;
-          return `<rect x="${x - 2.4}" y="${yt}" width="4.8" height="9" rx="1.4" class="rang"/>
-                  <rect x="${x - 2.4}" y="${yd - 9}" width="4.8" height="9" rx="1.4" class="rang"/>`;
-        }).join('')}
-      </svg>`;
-    }
-    if (a.loai === 'quanh_chop' || a.loai === 'ct') {
-      // Phim quanh chóp: hai ba răng và chân răng trong xương.
-      return `<svg viewBox="0 0 120 64" class="sbn-phim quanh" aria-hidden="true">
-        <rect width="120" height="64" rx="4" class="nen"/>
-        <line x1="10" y1="26" x2="110" y2="26" class="xuong"/>
-        ${[34, 60, 86].map((x) => `
-          <rect x="${x - 11}" y="8" width="22" height="18" rx="3" class="rang"/>
-          <path d="M${x - 7} 26 L${x - 4} 50 M${x + 7} 26 L${x + 4} 50" class="chan"/>`).join('')}
-      </svg>`;
-    }
-    // Ảnh chụp: khung hình với vùng miệng.
-    return `<svg viewBox="0 0 120 64" class="sbn-phim chup" aria-hidden="true">
+  if (a.loai === 'toan_canh') {
+    return `<svg viewBox="0 0 120 64" class="sbn-phim pano" aria-hidden="true">
       <rect width="120" height="64" rx="4" class="nen"/>
-      <ellipse cx="60" cy="32" rx="34" ry="17" class="moi"/>
-      <path d="M30 32 Q60 20 90 32 Q60 44 30 32" class="rang-vung"/>
-      <line x1="60" y1="22" x2="60" y2="42" class="giua"/>
+      <path d="M8 30 Q60 6 112 30" class="cung"/>
+      <path d="M8 36 Q60 60 112 36" class="cung"/>
+      ${Array.from({ length: 14 }, (_, i2) => {
+        const x = 12 + i2 * 7.2;
+        const yt = 30 - Math.sin((i2 / 13) * Math.PI) * 15;
+        const yd = 36 + Math.sin((i2 / 13) * Math.PI) * 15;
+        return `<rect x="${x - 2.4}" y="${yt}" width="4.8" height="9" rx="1.4" class="rang"/>
+                <rect x="${x - 2.4}" y="${yd - 9}" width="4.8" height="9" rx="1.4" class="rang"/>`;
+      }).join('')}
     </svg>`;
-  };
-
-  return `<section class="panel">
-    <header class="section-title sbn-header">
-      <h3>Ảnh và phim</h3>
-      <span class="pill">${ds.length} tệp · gom từ mọi lượt khám</span>
-    </header>
-    <div class="lt-nhanh">
-      <span class="lt-nhanh-nhan">Loại</span>
-      <button type="button" class="lt-chip${!anhLoc ? ' is-chon' : ''}" data-anh="">Tất cả</button>
-      ${loai.map((l) => `<button type="button" class="lt-chip${
-        anhLoc === l ? ' is-chon' : ''}" data-anh="${escapeHTML(l)}">${
-        escapeHTML(LOAI_ANH[l] || l)}</button>`).join('')}
-    </div>
-    <div class="sbn-thu-vien">
-      ${hien.map((a) => `<figure class="sbn-anh-o lon">
-        <div class="sbn-anh-hinh">${veKhung(a)}</div>
-        <figcaption>
-          <b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
-          <small>${escapeHTML(ngayHien(a.ngay))}${
-            a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small>
-          <small class="sbn-anh-ghi">${escapeHTML(a.ghi_chu || '')}</small>
-          <small class="sbn-anh-bs">${escapeHTML(tenBacSi(a.bac_si))}</small>
-        </figcaption>
-      </figure>`).join('')}
-    </div>
-  </section>`;
+  }
+  if (a.loai === 'quanh_chop' || a.loai === 'ct') {
+    return `<svg viewBox="0 0 120 64" class="sbn-phim quanh" aria-hidden="true">
+      <rect width="120" height="64" rx="4" class="nen"/>
+      <line x1="10" y1="26" x2="110" y2="26" class="xuong"/>
+      ${[34, 60, 86].map((x) => `
+        <rect x="${x - 11}" y="8" width="22" height="18" rx="3" class="rang"/>
+        <path d="M${x - 7} 26 L${x - 4} 50 M${x + 7} 26 L${x + 4} 50" class="chan"/>`).join('')}
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 120 64" class="sbn-phim chup" aria-hidden="true">
+    <rect width="120" height="64" rx="4" class="nen"/>
+    <ellipse cx="60" cy="32" rx="34" ry="17" class="moi"/>
+    <path d="M30 32 Q60 20 90 32 Q60 44 30 32" class="rang-vung"/>
+    <line x1="60" y1="22" x2="60" y2="42" class="giua"/>
+  </svg>`;
 }
 
-/* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
+/* Ảnh nằm trong ĐÚNG lượt khám đã chụp nó, không gom thành một kho rời.
+ *
+ * Gom một chỗ thì nhìn được nhiều ảnh cùng lúc, nhưng mất mất thứ quan trọng
+ * hơn: tấm phim này chụp trong buổi nào, để làm gì, bác sĩ kết luận ra sao.
+ * Một tấm phim tách khỏi lượt khám của nó chỉ còn là một tấm ảnh.
+ */
+function veAnhCuaLuot(l) {
+  const ds = l.anh || [];
+  return `<div class="sbn-anh-hang">
+    ${ds.map((a) => `<figure class="sbn-anh-o" data-xem-anh="${escapeHTML(a.id)}"
+        data-luot="${escapeHTML(l.id)}" tabindex="0" role="button"
+        title="${escapeHTML(a.ghi_chu || LOAI_ANH[a.loai] || '')}">
+      <div class="sbn-anh-hinh">${veKhungPhim(a)}</div>
+      <figcaption>
+        <b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
+        <small>${a.rang ? `Răng ${escapeHTML(a.rang)}` : escapeHTML(a.ghi_chu || '')}</small>
+        ${a.kb ? `<small class="sbn-anh-kb">${escapeHTML(a.kb)}</small>` : ''}
+      </figcaption>
+    </figure>`).join('')}
+    ${l.da_ky ? '' : `<label class="sbn-them-anh">
+      <input type="file" accept="image/*" multiple data-tai-anh="${escapeHTML(l.id)}" hidden>
+      <i class="ri-image-add-line"></i>
+      <span>Thêm ảnh</span>
+      <small>Tự nén WebP</small>
+    </label>`}
+  </div>`;
+}
+
+/* Kế hoạch điều trị gắn với HỒ SƠ/* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
  * chạy qua nhiều buổi, và đó chính là thứ cho biết khách đang ở đâu trong lộ
  * trình. */
 function veKeHoach(ds, tongChiPhi) {
@@ -768,9 +798,6 @@ function veSoChiTiet() {
     ${veLuuY(duLieu.luu_y)}
 
     ${veThuoc(duLieu.thuoc)}
-
-    ${veHinhPhim(duLieu.anh)}
-
     ${veKeHoach(duLieu.ke_hoach, duLieu.tong_chi_phi)}
 
     ${veFormKham()}
@@ -811,16 +838,18 @@ function veSoChiTiet() {
         </span>` : ''}
       </div>
 
-      <div class="sbn-loc">
-        <label><span>Bác sĩ</span><select id="kfBacSi">
-          ${opt('', 'Tất cả bác sĩ', kBacSi)}
-          ${BAC_SI.map((b) => opt(b.ma, b.ten, kBacSi)).join('')}
-        </select></label>
-        <label><span>Lọc theo răng</span>
-          <input type="text" id="kfRang" value="${escapeHTML(kRang)}"
-                 placeholder="Nhập mã răng, ví dụ 26"></label>
-        <label class="sbn-tick"><input type="checkbox" id="kfChuaKy"${kChuaKy ? ' checked' : ''}>
-          <span>Chỉ lượt chưa ký</span></label>
+      <div class="lt-nhanh sbn-loc-hang">
+        <span class="lt-nhanh-nhan">Bác sĩ</span>
+        <select id="kfBacSi" class="sbn-chon-gon">
+          ${opt('', 'Tất cả', kBacSi)}
+          ${BAC_SI.map((b) => opt(b.ma, b.ten.replace(/^BS\.\s*/, ''), kBacSi)).join('')}
+        </select>
+        <span class="lt-nhanh-nhan">Răng</span>
+        <input type="text" id="kfRang" class="sbn-o-gon" value="${escapeHTML(kRang)}"
+               placeholder="26" inputmode="numeric" maxlength="2">
+        <button type="button" class="lt-chip${kChuaKy ? ' is-chon' : ''}" id="kfChuaKy">
+          <i class="ri-quill-pen-line"></i> Chỉ lượt chưa ký
+        </button>
       </div>
 
       <div class="sbn-luot-ds">${veLuotKham(luot)}</div>
@@ -888,6 +917,7 @@ export function initView() {
   const g = (id) => document.getElementById(id);
   const toi = store.state?.profile || {};
   const maToi = toi.employee_code || 'BS01';
+  let henRang;
 
   /* Danh sách */
   document.querySelectorAll('[data-mo]').forEach((b) => {
@@ -937,8 +967,25 @@ export function initView() {
   });
   g('sbnBoChon')?.addEventListener('click', () => { rangChon = ''; ve(); });
 
-  document.querySelectorAll('[data-anh]').forEach((b) => {
-    b.addEventListener('click', () => { anhLoc = b.dataset.anh; ve(); });
+  document.querySelectorAll('[data-tai-anh]').forEach((o) => {
+    o.addEventListener('change', async (e) => {
+      const ds = [...e.target.files];
+      if (!ds.length) return;
+      const qua = ds.filter((f) => f.size > 25 * 1024 * 1024);
+      if (qua.length) {
+        showToast(`${qua[0].name} lớn hơn 25 MB, không xử lý được.`, true);
+        return;
+      }
+      showToast(`Đang nén ${ds.length} ảnh…`);
+      try {
+        const xong = [];
+        for (const f of ds) xong.push(await nenWebp(f));
+        const giam = Math.round(xong.reduce((t, x) => t + x.giam, 0) / xong.length);
+        await themAnh(o.dataset.taiAnh, xong, maToi);
+        showToast(`Đã thêm ${xong.length} ảnh, nhẹ đi ${giam}% sau khi nén WebP.`);
+        await ve();
+      } catch (err) { showToast(err.message, true); }
+    });
   });
 
   g('sbnLuuRang')?.addEventListener('click', () => {
@@ -957,8 +1004,12 @@ export function initView() {
   locK('kfTu', (v) => { kTu = v; khoangKham = 'tu-chon'; });
   locK('kfDen', (v) => { kDen = v; khoangKham = 'tu-chon'; });
   locK('kfBacSi', (v) => { kBacSi = v; });
-  locK('kfRang', (v) => { kRang = v; });
-  locK('kfChuaKy', (v) => { kChuaKy = v; });
+  g('kfRang')?.addEventListener('input', (e) => {
+    clearTimeout(henRang);
+    const v = e.target.value;
+    henRang = setTimeout(() => { kRang = v; ve(); }, 300);
+  });
+  g('kfChuaKy')?.addEventListener('click', () => { kChuaKy = !kChuaKy; ve(); });
   g('kfXoa')?.addEventListener('click', () => {
     kTu = ''; kDen = ''; kBacSi = ''; kRang = ''; kChuaKy = false; kTim = '';
     khoangKham = 'tat-ca'; ve();

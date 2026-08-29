@@ -713,6 +713,34 @@ export function dinhChinh(luotId, du, boi) {
   return ghiLuotKham(cu.ho_so, { ...cu, ...du, sua_cho: luotId }, boi);
 }
 
+/* Thêm ảnh vào một lượt khám.
+ *
+ * Lượt đã ký thì không thêm được: bản ghi lâm sàng đã đóng, thêm ảnh vào sau
+ * là sửa nội dung đã ký. Muốn bổ sung thì ghi một bản đính chính.
+ *
+ * Ảnh vào đây đã được nén WebP ở phía trình duyệt trước khi gọi hàm này.
+ */
+export function themAnh(luotId, ds, boi) {
+  const l = LUOT_KHAM.find((x) => x.id === luotId);
+  if (!l) throw new Error('Không tìm thấy lượt khám này.');
+  if (l.da_ky) {
+    throw new Error('Lượt khám đã ký thì không thêm ảnh được. Ghi một bản đính chính nếu cần bổ sung.');
+  }
+  if (!ds || !ds.length) throw new Error('Chưa chọn ảnh nào.');
+  ds.forEach((a, i) => {
+    l.anh.push({
+      id: `A${Date.now()}${i}`,
+      loai: a.loai || 'trong_mieng',
+      ghi_chu: a.ghi_chu || a.ten_goc || '',
+      rang: a.rang || null,
+      tep: a.tep,
+      kb: a.kb,
+      tao_boi: boi, tao_luc: new Date().toISOString(),
+    });
+  });
+  return cho(l.anh);
+}
+
 export function kyLuotKham(luotId, boi) {
   const l = LUOT_KHAM.find((x) => x.id === luotId);
   if (!l) throw new Error('Không tìm thấy lượt khám này.');

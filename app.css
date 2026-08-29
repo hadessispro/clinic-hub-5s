@@ -8803,3 +8803,56 @@ body.dialog-open {
 @media (max-width: 520px) {
   .sbn-thu-vien { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
+
+/* ── Ảnh theo lượt khám, và bộ lọc gọn ────────────────────────────────── */
+
+/* Ảnh nằm trong đúng lượt khám đã chụp nó. Ô nhỏ vừa đủ nhận ra, không phải
+ * thư viện ảnh: đây là bệnh án, ảnh là bằng chứng kèm theo chứ không phải nội
+ * dung chính của trang. */
+.sbn-anh-hang { display: flex; gap: 9px; flex-wrap: wrap; }
+.sbn-anh-hang .sbn-anh-o {
+  width: 128px; margin: 0; padding: 7px;
+  border: 1px solid var(--line); border-radius: 10px; background: #f9fbfa;
+  cursor: pointer; transition: border-color .13s, box-shadow .13s;
+}
+.sbn-anh-hang .sbn-anh-o:hover {
+  border-color: #a9d3cd; box-shadow: 0 2px 9px rgba(8, 127, 123, .1);
+}
+.sbn-anh-hang .sbn-anh-o:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.sbn-anh-hang .sbn-anh-hinh {
+  height: auto; background: none; padding: 0; border-radius: 7px; overflow: hidden;
+}
+.sbn-anh-hang .sbn-anh-hinh img { width: 100%; height: 68px; object-fit: cover; display: block; }
+.sbn-anh-hang figcaption { display: grid; gap: 1px; margin-top: 6px; }
+.sbn-anh-hang b { font-size: .7rem; color: #2b4844; }
+.sbn-anh-hang small { font-size: .66rem; color: #8095a0; line-height: 1.35; }
+.sbn-anh-kb { color: var(--teal-dark) !important; font-weight: 700; }
+
+.sbn-them-anh {
+  width: 128px; min-height: 118px; display: grid; gap: 3px;
+  place-content: center; justify-items: center; cursor: pointer;
+  border: 1px dashed var(--vien-dam, #c3d2e8); border-radius: 10px;
+  background: #f6faf9; transition: border-color .13s, background .13s;
+}
+.sbn-them-anh:hover { border-color: var(--teal); background: var(--mint); }
+.sbn-them-anh i { font-size: 1.4rem; color: #7fa8a2; }
+.sbn-them-anh span { font-size: .74rem; font-weight: 700; color: #4b6560; }
+.sbn-them-anh small { font-size: .64rem; color: #8fa5a0; }
+
+/* Bộ lọc trên một hàng, cùng khuôn với chip khoảng ngày phía trên nó. Nhãn
+ * đặt trên ô thì mỗi ô cao gấp đôi và hàng lọc chiếm bằng cả một khối nội
+ * dung. */
+.sbn-loc-hang { gap: 9px; }
+.sbn-chon-gon, .sbn-o-gon {
+  min-height: 36px; padding: 6px 11px; font-size: .8rem;
+  border: 1px solid var(--line); border-radius: 9px; background: #fff;
+  min-width: 0;
+}
+.sbn-chon-gon { max-width: 190px; }
+.sbn-o-gon { width: 72px; text-align: center; font-variant-numeric: tabular-nums; }
+.sbn-loc-hang .lt-chip { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 520px) {
+  .sbn-anh-hang .sbn-anh-o, .sbn-them-anh { width: calc(50% - 5px); }
+  .sbn-chon-gon { max-width: none; flex: 1 1 auto; }
+}
