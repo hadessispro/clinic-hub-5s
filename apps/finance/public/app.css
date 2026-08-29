@@ -89,7 +89,7 @@
   --bong-cao: 0 10px 34px rgba(21, 36, 61, .16);
   --bong-nhom:     0 1px 3px rgba(21, 36, 61, .07);
   --bong-nhom-cao: 0 3px 8px rgba(21, 36, 61, .13);
-  --chu-tren-xanh: #ffffff;
+  --muc-dang-mo: #1557b0;
   --r: 10px;
   --r-nho: 6px;
 
@@ -127,7 +127,7 @@
     --bong-cao: 0 10px 34px rgba(0, 0, 0, .5);
     --bong-nhom:     0 1px 3px rgba(0, 0, 0, .45);
     --bong-nhom-cao: 0 4px 12px rgba(0, 0, 0, .55);
-    --chu-tren-xanh: #0b1524;
+    --muc-dang-mo: #7db6f7;
   }
 }
 
@@ -157,7 +157,7 @@
   --bong-cao: 0 10px 34px rgba(0, 0, 0, .5);
   --bong-nhom:     0 1px 3px rgba(0, 0, 0, .45);
   --bong-nhom-cao: 0 4px 12px rgba(0, 0, 0, .55);
-  --chu-tren-xanh: #0b1524;
+  --muc-dang-mo: #7db6f7;
 }
 
 * { box-sizing: border-box; }
@@ -308,14 +308,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   transition: background .12s, color .12s;
 }
 .dh-muc:hover { background: var(--chim); color: var(--muc); }
-/* Mục đang mở tô nền đặc, không tô nhạt.
+/* Mục đang mở chỉ sáng chữ lên, không tô nền.
  *
- * Bản trước dùng --xanh-nhat, đúng bằng nền của nút nhóm đang mở, nên mục
- * đang chọn và cái nhóm chứa nó nhoè thành một mảng nhạt duy nhất — nhìn
- * không ra mình đang đứng ở đâu. Vệt kẻ trái 2px cũng lọt thỏm cạnh góc bo
- * 8px. Nền đặc tách hẳn mục đang mở khỏi nhóm, và chữ sáng rõ lên. */
+ * Nút nhóm phía trên đã là một mảng có nền rồi; thêm một mảng nền nữa cho
+ * mục đang mở thì thanh bên đầy khối màu chồng nhau. Chữ xanh đậm hơn và
+ * nặng hơn là đủ để mắt tìm ra ngay, mà thanh bên vẫn sạch. */
 .dh-muc[aria-current="page"] {
-  background: var(--xanh); color: var(--chu-tren-xanh); font-weight: 640;
+  color: var(--muc-dang-mo); font-weight: 640;
 }
 .dh-muc[aria-current="page"] svg { opacity: 1; }
 .dh-muc svg { width: 16px; height: 16px; flex: none; opacity: .85; }
