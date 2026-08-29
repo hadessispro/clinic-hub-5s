@@ -319,6 +319,19 @@ lenh_chay() {
     exit 2
   fi
 
+  # Đồng ý ghi đè thì file trôi phải được ĐƯA VÀO danh sách chép.
+  #
+  # Trước đó nó chỉ được bỏ qua: danh sách chép dựng từ doi.txt và moi.txt,
+  # còn file trôi nằm ở troi.txt nên không bao giờ được chép. Kết quả là
+  # DONG_Y_GHI_DE=1 cho chạy tiếp, script in "XONG", mà trên VPS không có gì
+  # thay đổi. Một lần triển khai báo thành công nhưng không giao gì lên còn tệ
+  # hơn một lần báo hỏng.
+  if [ -s "$TAM/troi.txt" ]; then
+    vang "Ghi đè $(wc -l < "$TAM/troi.txt" | tr -d '[:space:]') file bị sửa trên VPS theo yêu cầu."
+    cat "$TAM/troi.txt" >> "$TAM/doi.txt"
+    : > "$TAM/troi.txt"
+  fi
+
   # Không có file nào đổi VẪN có thể còn migration chưa áp: nó đã nằm sẵn
   # trên VPS từ một lần chạy trước bị dở dang. Kiểm bất biến trước khi thoát,
   # nếu không thì lược đồ database đứng lại mãi mà không ai biết.
