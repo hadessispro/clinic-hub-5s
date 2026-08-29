@@ -87,6 +87,8 @@
 
   --bong:    0 1px 2px rgba(21, 36, 61, .05), 0 2px 10px rgba(21, 36, 61, .04);
   --bong-cao: 0 10px 34px rgba(21, 36, 61, .16);
+  --bong-nhom:     0 1px 3px rgba(21, 36, 61, .07);
+  --bong-nhom-cao: 0 3px 8px rgba(21, 36, 61, .13);
   --r: 10px;
   --r-nho: 6px;
 
@@ -122,6 +124,8 @@
     --am-nhat:    #2c1917;
     --bong:    0 1px 2px rgba(0, 0, 0, .35), 0 2px 10px rgba(0, 0, 0, .3);
     --bong-cao: 0 10px 34px rgba(0, 0, 0, .5);
+    --bong-nhom:     0 1px 3px rgba(0, 0, 0, .45);
+    --bong-nhom-cao: 0 4px 12px rgba(0, 0, 0, .55);
   }
 }
 
@@ -149,6 +153,8 @@
   --am-nhat:    #2c1917;
   --bong:    0 1px 2px rgba(0, 0, 0, .35), 0 2px 10px rgba(0, 0, 0, .3);
   --bong-cao: 0 10px 34px rgba(0, 0, 0, .5);
+  --bong-nhom:     0 1px 3px rgba(0, 0, 0, .45);
+  --bong-nhom-cao: 0 4px 12px rgba(0, 0, 0, .55);
 }
 
 * { box-sizing: border-box; }
@@ -234,28 +240,58 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .dh-khoi { display: flex; flex-direction: column; }
 .dh-khoi + .dh-khoi { margin-top: 3px; }
 
+/* Đầu nhóm là một NÚT THẬT, không phải một dòng chữ bấm được.
+ *
+ * Bản đầu chỉ là chữ hoa nhỏ màu mờ — nó gập được nhưng không trông như gập
+ * được, nên không ai nghĩ tới việc bấm vào. Một điều khiển mà người dùng
+ * không nhận ra là điều khiển thì coi như không tồn tại.
+ *
+ * Nay có nền trắng nổi trên nền chìm của thanh bên, viền, và bóng đổ nhẹ —
+ * cùng cách hệ vận hành làm. Bóng dày lên khi rê chuột và lún xuống khi bấm,
+ * để cái nút phản hồi lại thay vì đứng im. */
 .dh-nhom {
-  display: flex; align-items: center; gap: 7px; width: 100%;
-  padding: 9px 9px 7px; margin: 4px 0 1px;
-  border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: 10px; font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase;
-  color: var(--muc-mo); text-align: left;
-  transition: color .12s;
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 10px; margin: 5px 0 3px;
+  border: 1px solid var(--vien); border-radius: 9px;
+  background: var(--chim); cursor: pointer;
+  font: inherit; font-size: 10.5px; font-weight: 750;
+  letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muc-nhat); text-align: left;
+  box-shadow: var(--bong-nhom);
+  transition: color .14s, background .14s, border-color .14s, box-shadow .14s, transform .1s;
+  user-select: none;
 }
-.dh-nhom:hover { color: var(--xanh); }
-/* Nhóm chứa màn đang mở không gập được, nên bỏ luôn dấu hiệu bấm được. */
-.dh-nhom:disabled { cursor: default; color: var(--xanh); }
+.dh-nhom:hover {
+  color: var(--xanh); border-color: var(--xanh-vien);
+  background: var(--xanh-nhat);
+  box-shadow: var(--bong-nhom-cao);
+}
+.dh-nhom:active { transform: translateY(1px); box-shadow: var(--bong-nhom); }
+.dh-nhom:focus-visible { outline: 2px solid var(--xanh); outline-offset: 2px; }
 
-.dh-nhom-mui { display: inline-flex; transition: transform .16s ease; }
-.dh-nhom-mui svg { width: 13px; height: 13px; opacity: .9; }
+/* Nhóm chứa màn đang mở không gập được. Tô xanh nhạt để nó nổi lên như nhóm
+ * đang làm việc, và bỏ mọi phản hồi khi rê chuột vì bấm vào không có tác dụng. */
+.dh-nhom:disabled {
+  cursor: default; color: var(--xanh);
+  background: var(--xanh-nhat); border-color: var(--xanh-vien);
+  box-shadow: none;
+}
+.dh-nhom:disabled:hover { box-shadow: none; }
+
+.dh-nhom-mui { display: inline-flex; transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
+.dh-nhom-mui svg { width: 14px; height: 14px; stroke-width: 2.2; opacity: .95; }
 .dh-khoi.is-gap .dh-nhom-mui { transform: rotate(-90deg); }
 
 .dh-nhom-dem {
-  margin-left: auto; padding: 1px 6px; border-radius: 999px;
-  background: var(--chim); color: var(--muc-mo);
-  font-size: 10px; letter-spacing: 0; font-weight: 700;
+  margin-left: auto; min-width: 20px; padding: 2px 7px;
+  border-radius: 999px; background: var(--chim); color: var(--muc-mo);
+  font-size: 10px; letter-spacing: 0; font-weight: 700; text-align: center;
 }
+.dh-nhom:hover .dh-nhom-dem { background: var(--xanh-nhat); color: var(--xanh); }
+.dh-nhom:disabled .dh-nhom-dem { background: var(--the); color: var(--xanh); border-color: var(--xanh-vien); }
+
+/* Mục con thụt vào một chút để mắt thấy chúng thuộc về nhóm phía trên. */
+.dh-nhom-muc .dh-muc { padding-left: 16px; }
 
 .dh-nhom-muc { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
 .dh-khoi.is-gap .dh-nhom-muc { display: none; }
@@ -583,9 +619,16 @@ tfoot td {
 @media (max-width: 880px) {
   .khung { grid-template-columns: 1fr; }
   .canh { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--vien); }
+  /* Trên màn hẹp thanh bên nằm ngang, không còn chỗ cho đầu nhóm. Ẩn nút đi
+   * NHƯNG phải mở lại mọi nhóm: nhóm gập trên máy tính mà vẫn gập ở đây thì
+   * nó biến mất hẳn, và không còn nút nào để mở lại. Ẩn cái điều khiển thì
+   * phải ẩn luôn cái trạng thái nó điều khiển. */
   .dieu-huong { flex-direction: row; flex-wrap: wrap; }
+  .dh-khoi { display: contents; }
   .dh-nhom { display: none; }
+  .dh-nhom-muc, .dh-khoi.is-gap .dh-nhom-muc { display: contents; }
   .dh-muc { width: auto; }
+  .dh-nhom-muc .dh-muc { padding-left: 10px; }
   .than { padding: 16px 14px 48px; }
   .cuon { max-height: none; }
 }
