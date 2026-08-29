@@ -122,7 +122,7 @@ function veHomNay() {
         <div class="lt-nut">
           ${x.trang_thai === 'cho_den'
             ? `<button type="button" class="primary-button lt-nho" data-td="${escapeHTML(x.id)}">
-                 <i class="ri-login-circle-line"></i> Tiếp đón</button>`
+                 <i class="ri-user-follow-line"></i> Tiếp đón</button>`
             : ''}
           ${x.trang_thai === 'da_den'
             ? `<button type="button" class="ghost-button lt-nho" data-tt="dang_kham" data-id2="${escapeHTML(x.id)}">Vào khám</button>`
@@ -148,14 +148,14 @@ function veHomNay() {
     </section>
 
     ${keTiep ? `<div class="lt-ke-tiep">
-      <i class="ri-user-received-2-line"></i>
-      <div>
+      <span class="lt-ke-tiep-icon"><i class="ri-user-received-2-line"></i></span>
+      <span class="lt-ke-tiep-chu">
         <small>Khách kế tiếp</small>
         <b>${escapeHTML(keTiep.gio)} · ${escapeHTML(keTiep.khach.ten)}</b>
         <span>${escapeHTML(tenBacSi(keTiep.bac_si))} · ${escapeHTML(keTiep.phong)}</span>
-      </div>
+      </span>
       <button type="button" class="primary-button" data-td="${escapeHTML(keTiep.id)}">
-        <i class="ri-login-circle-line"></i> Tiếp đón
+        <i class="ri-user-follow-line"></i> Tiếp đón
       </button>
     </div>` : ''}
 
@@ -328,7 +328,7 @@ function veHangDoi() {
   const thePhieu = Object.entries(HANG_DOI).map(([ma, h]) => `
     <button type="button" class="lt-queue${hangDoiMo === ma ? ' is-open' : ''}"
             data-queue="${escapeHTML(ma)}">
-      <i class="${escapeHTML(h.icon)}"></i>
+      <span class="lt-queue-icon"><i class="${escapeHTML(h.icon)}"></i></span>
       <span class="lt-queue-so">${demQueue[ma] ?? 0}</span>
       <span class="lt-queue-ten">${escapeHTML(h.ten)}</span>
       <span class="lt-queue-mo">${escapeHTML(h.mo_ta)}</span>
@@ -401,7 +401,7 @@ function veHangDoi() {
 const TABS = [
   { ma: 'hom-nay', ten: 'Hôm nay', icon: 'ri-calendar-check-line' },
   { ma: 'lich-hen', ten: 'Lịch hẹn', icon: 'ri-calendar-2-line' },
-  { ma: 'cham-soc', ten: 'Chăm sóc', icon: 'ri-service-line' },
+  { ma: 'cham-soc', ten: 'Chăm sóc', icon: 'ri-customer-service-2-line' },
 ];
 
 export async function renderView() {
