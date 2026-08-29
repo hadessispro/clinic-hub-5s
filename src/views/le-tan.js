@@ -91,6 +91,152 @@ function oKhach(x) {
 
 /* ── Tab: Hôm nay ────────────────────────────────────────────────────── */
 
+/* Dải tóm tắt thay cho bốn thẻ số rời.
+ *
+ * Bốn con số đứng cạnh nhau bắt người đọc tự cộng trừ để biết ngày đang đi
+ * tới đâu. Một thanh chia đoạn nói ngay điều đó: phần đã xong, phần đang
+ * trong ghế, phần còn phải đón. */
+function veTomTat(d, dem) {
+  const tong = d.length || 1;
+  const doan = [
+    { ma: 'hoan_tat', ten: 'Hoàn tất', so: dem('hoan_tat') },
+    { ma: 'dang_kham', ten: 'Đang khám', so: dem('dang_kham') },
+    { ma: 'da_den', ten: 'Đã đến, chờ khám', so: dem('da_den') },
+    { ma: 'cho_den', ten: 'Chưa tới', so: dem('cho_den') },
+    { ma: 'khong_den', ten: 'Không đến', so: dem('khong_den') },
+    { ma: 'huy', ten: 'Đã hủy', so: dem('huy') },
+  ].filter((x) => x.so > 0);
+
+  const daDon = dem('da_den') + dem('dang_kham') + dem('hoan_tat');
+
+  return `<section class="panel lt-tom-tat">
+    <div class="lt-tt-dau">
+      <div class="lt-tt-so">
+        <b>${d.length}</b>
+        <span>lịch hẹn hôm nay</span>
+      </div>
+      <div class="lt-tt-phu">
+        <div><b>${daDon}</b><span>đã tiếp đón</span></div>
+        <div><b>${dem('cho_den')}</b><span>còn phải đón</span></div>
+        <div><b>${dem('dang_kham')}</b><span>đang trong ghế</span></div>
+      </div>
+    </div>
+    <div class="lt-thanh" role="img"
+         aria-label="${escapeHTML(doan.map((x) => `${x.ten} ${x.so}`).join(', '))}">
+      ${doan.map((x) => `<span class="lt-thanh-doan tt-${x.ma}"
+        style="flex: ${x.so} 0 0" title="${escapeHTML(x.ten)}: ${x.so}"></span>`).join('')}
+    </div>
+    <div class="lt-thanh-ct">
+      ${doan.map((x) => `<span><i class="lt-cham tt-${x.ma}"></i>${
+        escapeHTML(x.ten)} · ${x.so}</span>`).join('')}
+    </div>
+  </section>`;
+}
+
+/* Bảng ngày theo bác sĩ.
+ *
+ * Đây là thứ lễ tân cần mà một danh sách dọc không trả lời được: bác sĩ nào
+ * đang trống lúc mấy giờ. Cột là bác sĩ, trục dọc là giờ, mỗi lịch hẹn là một
+ * khối đặt đúng vị trí và cao đúng thời lượng — nên khoảng trống giữa các
+ * khối chính là chỗ còn đặt được.
+ *
+ * Vạch "bây giờ" chỉ vẽ khi đang xem đúng ngày hôm nay; vẽ nó trên một ngày
+ * khác là nói dối.
+ */
+const GIO_MO = 7;
+const GIO_DONG = 21;
+const CAO_PHUT = 1.15; // px cho mỗi phút
+
+function veBangNgay(d) {
+  const hienThi = d.filter((x) => x.trang_thai !== 'huy');
+  const bacSiCo = BAC_SI.filter((b) => hienThi.some((x) => x.bac_si === b.ma));
+  if (!bacSiCo.length) {
+    return `<section class="panel">
+      <header class="section-title lt-header">
+        <h3>Lịch ngày theo bác sĩ</h3>
+      </header>
+      <p class="empty-state">Chưa có lịch hẹn nào để xếp lên bảng ngày.</p>
+    </section>`;
+  }
+
+  const phut = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+  };
+  const tuGoc = (hhmm) => (phut(hhmm) - GIO_MO * 60) * CAO_PHUT;
+  const caoBang = (GIO_DONG - GIO_MO) * 60 * CAO_PHUT;
+
+  const nay = new Date();
+  const laHomNay = todayISO() === new Date().toISOString().slice(0, 10);
+  const phutHienTai = nay.getHours() * 60 + nay.getMinutes();
+  const trongGio = phutHienTai >= GIO_MO * 60 && phutHienTai <= GIO_DONG * 60;
+
+  const cotGio = [];
+  for (let h = GIO_MO; h <= GIO_DONG; h += 1) {
+    cotGio.push(`<div class="lt-gio-nhan" style="top:${(h - GIO_MO) * 60 * CAO_PHUT}px">
+      ${String(h).padStart(2, '0')}:00</div>`);
+  }
+  const vachGio = [];
+  for (let h = GIO_MO; h <= GIO_DONG; h += 1) {
+    vachGio.push(`<div class="lt-vach" style="top:${(h - GIO_MO) * 60 * CAO_PHUT}px"></div>`);
+    if (h < GIO_DONG) {
+      vachGio.push(`<div class="lt-vach nua" style="top:${
+        ((h - GIO_MO) * 60 + 30) * CAO_PHUT}px"></div>`);
+    }
+  }
+
+  const cot = bacSiCo.map((b) => {
+    const cua = hienThi.filter((x) => x.bac_si === b.ma);
+    const khoi = cua.map((x) => {
+      const cao = Math.max(x.phut * CAO_PHUT, 26);
+      const gon = cao < 46;
+      return `<button type="button" class="lt-khoi tt-${x.trang_thai}${gon ? ' gon' : ''}"
+        style="top:${tuGoc(x.gio)}px; height:${cao}px"
+        data-khoi="${escapeHTML(x.id)}"
+        title="${escapeHTML(`${x.gio} · ${x.khach.ten} · ${x.noi_dung || ''}`)}">
+        <b>${escapeHTML(x.gio)}</b>
+        <span>${escapeHTML(x.khach.ten)}</span>
+        ${gon ? '' : `<small>${escapeHTML(x.noi_dung || LOAI_LICH[x.loai] || '')}</small>`}
+      </button>`;
+    }).join('');
+    return `<div class="lt-cot">
+      <header class="lt-cot-dau">
+        <b>${escapeHTML(b.ten.replace(/^BS\.\s*/, ''))}</b>
+        <small>${escapeHTML(b.chuyen)} · ${cua.length} lịch</small>
+      </header>
+      <div class="lt-cot-than" style="height:${caoBang}px">
+        ${vachGio.join('')}${khoi}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<section class="panel lt-bang-ngay-panel">
+    <header class="section-title lt-header">
+      <h3>Lịch ngày theo bác sĩ</h3>
+      <span class="pill">Khoảng trống giữa các khối là chỗ còn đặt được</span>
+      <label class="lt-loc-nhanh">
+        <span>Chi nhánh</span>
+        <select id="ltHnChiNhanh2">
+          ${opt('', 'Tất cả', hnChiNhanh)}
+          ${CHI_NHANH.map((c) => opt(c.ma, c.ten, hnChiNhanh)).join('')}
+        </select>
+      </label>
+    </header>
+    <div class="lt-bang-ngay" id="ltBangNgay">
+      <div class="lt-truc-gio" style="height:${caoBang}px">${cotGio.join('')}</div>
+      <div class="lt-cot-bo">
+        ${cot}
+        ${laHomNay && trongGio ? `<div class="lt-bay-gio"
+          style="top:${(phutHienTai - GIO_MO * 60) * CAO_PHUT + 44}px">
+          <span>${String(nay.getHours()).padStart(2, '0')}:${
+            String(nay.getMinutes()).padStart(2, '0')}</span>
+        </div>` : ''}
+      </div>
+    </div>
+  </section>`;
+}
+
+
 function veHomNay() {
   const d = dsHomNay;
   const dem = (tt) => d.filter((x) => x.trang_thai === tt).length;
@@ -139,13 +285,7 @@ function veHomNay() {
   }).join('');
 
   return `
-    <section class="grid cols-4">
-      ${the('Lịch hôm nay', d.length, `${dem('cho_den')} khách chưa tới`)}
-      ${the('Đã tiếp đón', dem('da_den') + dem('dang_kham') + dem('hoan_tat'),
-        `${dem('dang_kham')} đang khám`)}
-      ${the('Hoàn tất', dem('hoan_tat'), 'Đã xong trong ngày')}
-      ${the('Không đến', dem('khong_den'), `${dem('huy')} lịch đã hủy`)}
-    </section>
+    ${veTomTat(d, dem)}
 
     ${keTiep ? `<div class="lt-ke-tiep">
       <span class="lt-ke-tiep-icon"><i class="ri-user-received-2-line"></i></span>
@@ -159,9 +299,11 @@ function veHomNay() {
       </button>
     </div>` : ''}
 
+    ${veBangNgay(d)}
+
     <section class="panel">
       <header class="section-title lt-header">
-        <h3>Lịch hẹn hôm nay</h3>
+        <h3>Danh sách lịch hẹn</h3>
         <span class="pill">${ngayHien(todayISO())} · sắp theo giờ hẹn</span>
         <label class="lt-loc-nhanh">
           <span>Chi nhánh</span>
@@ -470,9 +612,30 @@ export function initView() {
   });
 
   /* Hôm nay */
-  g('ltHnChiNhanh')?.addEventListener('change', (e) => {
-    hnChiNhanh = e.target.value; ve();
+  ['ltHnChiNhanh', 'ltHnChiNhanh2'].forEach((id) => {
+    g(id)?.addEventListener('change', (e) => { hnChiNhanh = e.target.value; ve(); });
   });
+
+  // Bấm một khối trên bảng ngày thì cuộn xuống đúng dòng của nó trong danh
+  // sách bên dưới, vì mọi nút thao tác nằm ở đó. Nhân đôi nút lên khối là
+  // nhân đôi chỗ phải sửa mỗi khi luồng trạng thái đổi.
+  document.querySelectorAll('[data-khoi]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const dong = document.querySelector(`.lt-dong[data-id="${b.dataset.khoi}"]`);
+      if (!dong) return;
+      dong.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      dong.classList.add('vua-chon');
+      setTimeout(() => dong.classList.remove('vua-chon'), 1600);
+    });
+  });
+
+  // Bảng ngày mở ra ở khung 07:00, mà lúc 15h thì lễ tân phải cuộn tay xuống.
+  // Đưa vạch bây giờ vào giữa khung ngay khi vẽ xong.
+  const bang = g('ltBangNgay');
+  const bayGio = bang?.querySelector('.lt-bay-gio');
+  if (bang && bayGio) {
+    bang.scrollTop = Math.max(0, bayGio.offsetTop - bang.clientHeight / 2);
+  }
 
   document.querySelectorAll('[data-td]').forEach((b) => {
     b.addEventListener('click', () => lamRoiVe(
