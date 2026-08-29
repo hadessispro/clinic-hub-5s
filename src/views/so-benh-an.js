@@ -56,6 +56,7 @@ let anhLoc = '';
 let hien3D = false;
 let canh3D = null;
 let goc3D = 'truoc';
+let banQuet = null;
 let hienFormKham = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -257,6 +258,10 @@ function ve3D() {
       <span class="lt-nhanh-nhan">Góc nhìn</span>
       ${Object.entries(GOC).map(([m, t]) => `<button type="button"
         class="lt-chip${goc3D === m ? ' is-chon' : ''}" data-goc3d="${m}">${t}</button>`).join('')}
+      <label class="ghost-button sbn-nho sbn-nhap-quet">
+        <input type="file" accept=".stl,.ply" id="sbnQuet" hidden>
+        <i class="ri-upload-cloud-2-line"></i> Nạp bản quét
+      </label>
       <button type="button" class="ghost-button sbn-nho" id="sbnDong3D">
         <i class="ri-close-line"></i> Đóng
       </button>
@@ -1047,7 +1052,7 @@ export function initView() {
         canh3D = m.taoCanh(khung3D, duLieu.ho_so.so_do_rang, (ma) => {
           rangChon = ma;
           ve();
-        });
+        }, banQuet);
         canh3D.datGoc(goc3D);
         if (rangChon) canh3D.danhDauRang(rangChon);
       })
@@ -1055,6 +1060,19 @@ export function initView() {
         khung3D.innerHTML = '<p class="empty-state">Không tải được cảnh 3D trên trình duyệt này.</p>';
       });
   }
+
+  g('sbnQuet')?.addEventListener('change', async (e) => {
+    const t = e.target.files[0];
+    if (!t) return;
+    showToast('Đang đọc bản quét…');
+    try {
+      const m = await import('../components/rang-3d.js');
+      banQuet = await m.napBanQuet(khung3D, t);
+      showToast(banQuet.so_dinh.toLocaleString('vi-VN') + ' đỉnh · '
+        + banQuet.kich_thuoc_mm.join(' × ') + ' mm — đã nạp bản quét.');
+      await ve();
+    } catch (err) { showToast(err.message, true); }
+  });
 
   document.querySelectorAll('[data-goc3d]').forEach((b) => {
     b.addEventListener('click', () => {

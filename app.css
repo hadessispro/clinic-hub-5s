@@ -8892,3 +8892,4 @@ body.dialog-open {
 .sbn-3d-ghi i { font-size: .95rem; color: #4a7fb5; flex: none; margin-top: 2px; }
 
 @media (max-width: 860px) { .sbn-3d-khung { height: 320px; } }
+.sbn-nhap-quet { cursor: pointer; }

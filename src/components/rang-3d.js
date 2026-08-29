@@ -32,57 +32,141 @@ const MAU = {
   mat:  0x2a3a37,
 };
 
-/* Kích thước gần đúng theo loại răng, đơn vị milimét thật.
+/* Kích thước và hình dạng theo loại răng, đơn vị milimét thật.
  *
- * Dùng số thật thay vì số cho đẹp: răng hàm lớn rộng gấp đôi răng cửa là điều
- * bệnh nhân nhận ra ngay khi nhìn, và sai tỉ lệ thì cảnh trông như đồ chơi.
+ * Số đo lấy theo khoảng trung bình của răng vĩnh viễn người trưởng thành. Dùng
+ * số thật thay vì số cho đẹp: răng hàm lớn rộng gấp đôi răng cửa, răng nanh có
+ * chân dài nhất hàm — bệnh nhân nhận ra ngay khi nhìn, và sai tỉ lệ thì cảnh
+ * trông như đồ chơi.
+ *
+ * `chan` là SỐ chân răng, không phải chiều dài. Đây là chi tiết dễ bỏ qua nhất
+ * mà lại dễ thấy nhất: răng hàm lớn hàm trên có ba chân, hàm dưới hai chân,
+ * còn răng cửa một chân. Vẽ răng hàm một chân là sai ngay ở mức người không
+ * học nha khoa cũng thấy lạ.
  */
 const CO = {
-  cua_giua: { rong: 8.5, day: 7.0, cao: 10.5, chan: 13, mui: 0 },
-  cua_ben:  { rong: 6.5, day: 6.5, cao: 9.0,  chan: 13, mui: 0 },
-  nanh:     { rong: 7.5, day: 8.0, cao: 11.0, chan: 17, mui: 1 },
-  ham_nho:  { rong: 7.0, day: 9.0, cao: 8.5,  chan: 14, mui: 2 },
-  ham_lon:  { rong: 10.5, day: 11.0, cao: 7.5, chan: 13, mui: 4 },
-  khon:     { rong: 9.0, day: 10.0, cao: 6.5,  chan: 11, mui: 3 },
+  cua_giua: { rong: 8.5, day: 7.0, cao: 10.5, dai_chan: 13, chan: 1, mui: 0, dang: 'cua' },
+  cua_ben:  { rong: 6.5, day: 6.0, cao: 9.0,  dai_chan: 13, chan: 1, mui: 0, dang: 'cua' },
+  nanh:     { rong: 7.5, day: 8.0, cao: 11.0, dai_chan: 17, chan: 1, mui: 1, dang: 'nanh' },
+  ham_nho:  { rong: 7.0, day: 9.0, cao: 8.5,  dai_chan: 14, chan: 1, mui: 2, dang: 'ham' },
+  ham_lon:  { rong: 10.5, day: 11.0, cao: 7.5, dai_chan: 13, chan: 3, mui: 4, dang: 'ham' },
+  khon:     { rong: 9.0, day: 10.0, cao: 6.5, dai_chan: 11, chan: 2, mui: 3, dang: 'ham' },
 };
 
-/* Một thân răng.
+/* Thân răng dựng theo mặt cắt xoay quanh trục, không phải khối cầu bóp méo.
  *
- * Thân là khối tròn dẹt bị bóp theo chiều gần-xa, cộng các múi nhai đặt lên
- * mặt trên. Số múi là thứ phân biệt răng hàm với răng cửa khi nhìn từ trên
- * xuống, nên nó phải đúng.
+ * Mặt cắt là thứ quyết định răng trông ra răng: cổ răng thắt lại, thân phình
+ * ra ở đường vòng lớn nhất rồi thu vào phía mặt nhai. Khối cầu bóp méo không
+ * có ba đoạn đó nên nhìn ra hình viên thuốc.
  */
+function matCatThan(co) {
+  const r = co.rong / 2;
+  const h = co.cao;
+  if (co.dang === 'cua') {
+    // Răng cửa: mỏng theo chiều ngoài-trong, rìa cắn gần như phẳng.
+    return [
+      [r * 0.62, -h * 0.50],  // cổ răng, thắt lại
+      [r * 0.92, -h * 0.24],  // đường vòng lớn nhất
+      [r * 1.00, 0.0],
+      [r * 0.96, h * 0.26],
+      [r * 0.80, h * 0.46],   // rìa cắn còn bề dày
+      [r * 0.30, h * 0.50],
+      [0.001, h * 0.50],
+    ];
+  }
+  if (co.dang === 'nanh') {
+    return [
+      [r * 0.60, -h * 0.50],
+      [r * 0.94, -h * 0.20],
+      [r * 1.00, h * 0.02],
+      [r * 0.84, h * 0.28],
+      [r * 0.42, h * 0.44],
+      [0.001, h * 0.52],      // nhọn dần về đỉnh múi
+    ];
+  }
+  // Răng hàm: thân bè, mặt nhai rộng và gần phẳng để đặt múi lên.
+  return [
+    [r * 0.66, -h * 0.50],
+    [r * 0.95, -h * 0.18],
+    [r * 1.00, h * 0.02],
+    [r * 0.97, h * 0.24],
+    [r * 0.86, h * 0.40],
+    [r * 0.40, h * 0.46],
+    [0.001, h * 0.46],
+  ];
+}
+
 function thanRang(co, hamTren) {
   const cac = [];
+  const r = co.rong / 2;
 
-  const than = new THREE.SphereGeometry(1, 20, 14);
-  than.scale(co.rong / 2, co.cao / 2, co.day / 2);
-  // Cắt bớt phần dưới của khối cầu để nó ngồi được lên cổ răng.
-  than.translate(0, 0, 0);
+  const diem = matCatThan(co).map(([x, y]) => new THREE.Vector2(x, y));
+  const than = new THREE.LatheGeometry(diem, 24);
+  // Bóp theo chiều ngoài-trong: răng thật không tròn xoay, răng cửa dẹt rõ.
+  than.scale(1, 1, co.day / co.rong);
   cac.push(than);
 
+  /* Múi nhai.
+   *
+   * Đặt thành cụm quanh một rãnh giữa. Khoảng hở giữa các múi CHÍNH LÀ rãnh —
+   * không cắt hình được nếu không kéo thêm thư viện phép toán khối, mà khoảng
+   * hở đọc ra đúng cái rãnh đó khi nhìn từ mặt nhai.
+   */
   if (co.mui === 1) {
-    const m = new THREE.ConeGeometry(co.rong * 0.3, co.cao * 0.42, 12);
-    m.translate(0, co.cao * 0.42, 0);
+    const m = new THREE.ConeGeometry(r * 0.34, co.cao * 0.34, 14);
+    m.translate(0, co.cao * 0.46, 0);
     cac.push(m);
-  } else if (co.mui >= 2) {
-    const n = co.mui;
-    for (let i = 0; i < n; i += 1) {
-      const goc = (i / n) * Math.PI * 2 + Math.PI / 4;
-      const r = n === 2 ? co.day * 0.22 : co.rong * 0.26;
-      const m = new THREE.SphereGeometry(co.rong * (n === 2 ? 0.26 : 0.22), 12, 8);
-      m.translate(
-        Math.cos(goc) * (n === 2 ? 0 : r),
-        co.cao * 0.34,
-        Math.sin(goc) * r,
-      );
+  } else if (co.mui === 2) {
+    // Răng hàm nhỏ: một múi ngoài lớn, một múi trong nhỏ hơn, rãnh chạy giữa.
+    [[0, 0.30, 0.30], [0, -0.30, 0.25]].forEach(([dx, dz, k]) => {
+      const m = new THREE.SphereGeometry(r * k, 14, 10);
+      m.scale(1, 0.9, 1);
+      m.translate(dx * r, co.cao * 0.40, dz * co.day);
       cac.push(m);
-    }
+    });
+  } else if (co.mui >= 3) {
+    // Răng hàm lớn: bốn múi ở bốn góc, rãnh hình chữ thập ở giữa.
+    const goc = co.mui === 4
+      ? [[-0.30, -0.28], [0.30, -0.28], [-0.30, 0.28], [0.30, 0.28]]
+      : [[-0.30, -0.26], [0.30, -0.26], [0, 0.30]];
+    goc.forEach(([dx, dz]) => {
+      const m = new THREE.SphereGeometry(r * 0.30, 14, 10);
+      m.scale(1, 0.78, 1);
+      m.translate(dx * co.rong, co.cao * 0.36, dz * co.day);
+      cac.push(m);
+    });
   }
 
-  const chan = new THREE.CylinderGeometry(co.rong * 0.32, co.rong * 0.14, co.chan * 0.8, 12);
-  chan.translate(0, -(co.cao / 2 + co.chan * 0.4) * 0.82, 0);
-  cac.push(chan);
+  /* Chân răng.
+   *
+   * Số chân là chi tiết dễ thấy nhất khi nhìn nghiêng: răng hàm lớn hàm trên
+   * ba chân, hàm dưới hai chân. Chân toè ra rồi chụm lại ở chóp, không phải
+   * một ống thẳng.
+   */
+  const dai = co.dai_chan;
+  const dinhChan = -(co.cao * 0.5);
+  const veChan = (dx, dz, day) => {
+    const g = new THREE.CylinderGeometry(r * day, r * day * 0.30, dai, 12);
+    g.translate(dx, dinhChan - dai / 2 + co.cao * 0.06, dz);
+    // Chân xoè: nghiêng nhẹ ra ngoài rồi chụm về chóp.
+    if (dx || dz) {
+      const m = new THREE.Matrix4().makeRotationZ(dx ? -Math.sign(dx) * 0.16 : 0);
+      if (dz) m.multiply(new THREE.Matrix4().makeRotationX(Math.sign(dz) * 0.16));
+      g.applyMatrix4(m);
+    }
+    return g;
+  };
+
+  if (co.chan === 1) cac.push(veChan(0, 0, 0.34));
+  else if (co.chan === 2) {
+    cac.push(veChan(0, -co.day * 0.20, 0.26));
+    cac.push(veChan(0, co.day * 0.20, 0.26));
+  } else {
+    // Ba chân: hai phía ngoài, một phía trong to hơn.
+    cac.push(veChan(-co.rong * 0.22, -co.day * 0.16, 0.22));
+    cac.push(veChan(co.rong * 0.22, -co.day * 0.16, 0.22));
+    cac.push(veChan(0, co.day * 0.24, 0.27));
+  }
 
   const gop = gopHinh(cac);
   // Hàm dưới lật ngược: mặt nhai của hai hàm phải hướng vào nhau.
@@ -129,7 +213,58 @@ function viTriTrenCung(chiSo, ben) {
   return { x, z, huong };
 }
 
-export function taoCanh(khung, soDoRang, khiChonRang) {
+/* Nạp bản quét thật của bệnh nhân.
+ *
+ * Đây là đường duy nhất cho ra hình ĐÚNG GIẢI PHẪU CỦA NGƯỜI NÀY. Hình dựng
+ * bằng công thức phía trên chỉ đúng loại răng, số múi, số chân và vị trí trên
+ * cung hàm — nó không có rãnh thật, không có gờ men, không có chỗ mòn, và
+ * tuyệt đối không có sai lệch riêng của bệnh nhân đang ngồi trên ghế.
+ *
+ * Máy quét trong miệng (3Shape, Medit, iTero…) xuất STL hoặc PLY. Cả hai bộ
+ * đọc đều có sẵn trong three.js, chỉ 10–21 KB, và nạp theo nhu cầu nên người
+ * không dùng máy quét không phải tải.
+ *
+ * Bản quét KHÔNG mang mã răng: nó chỉ là một khối lưới. Nên nó dùng để nhìn
+ * và giải thích; việc gắn tình trạng vào từng răng vẫn do sơ đồ 2D làm.
+ */
+export async function napBanQuet(khung, tepQuet) {
+  const ten = (tepQuet.name || '').toLowerCase();
+  const laPly = ten.endsWith('.ply');
+  const laStl = ten.endsWith('.stl');
+  if (!laPly && !laStl) {
+    throw new Error('Chỉ nhận tệp STL hoặc PLY từ máy quét trong miệng.');
+  }
+
+  const { STLLoader } = laStl
+    ? await import('three/examples/jsm/loaders/STLLoader.js')
+    : { STLLoader: null };
+  const { PLYLoader } = laPly
+    ? await import('three/examples/jsm/loaders/PLYLoader.js')
+    : { PLYLoader: null };
+
+  const buf = await tepQuet.arrayBuffer();
+  const hinh = laStl ? new STLLoader().parse(buf) : new PLYLoader().parse(buf);
+  if (!hinh.attributes.normal) hinh.computeVertexNormals();
+
+  // Đưa khối về giữa và đưa về cỡ nhìn được: máy quét xuất theo milimét thật
+  // nhưng gốc toạ độ mỗi máy một kiểu, có máy để cách gốc cả mét.
+  hinh.computeBoundingBox();
+  const hop = hinh.boundingBox;
+  const giua = hop.getCenter(new THREE.Vector3());
+  hinh.translate(-giua.x, -giua.y, -giua.z);
+  const co = hop.getSize(new THREE.Vector3());
+  const lon = Math.max(co.x, co.y, co.z);
+
+  return {
+    hinh,
+    so_dinh: hinh.attributes.position.count,
+    so_mat: hinh.index ? hinh.index.count / 3 : hinh.attributes.position.count / 3,
+    kich_thuoc_mm: [co.x, co.y, co.z].map((v) => Math.round(v)),
+    ty_le_goi_y: lon > 0 ? 62 / lon : 1,
+  };
+}
+
+export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   const canh = new THREE.Scene();
   canh.background = new THREE.Color(0x101d1b);
 
@@ -189,13 +324,27 @@ export function taoCanh(khung, soDoRang, khiChonRang) {
   nhom.add(veNuou(false));
 
   const dsRang = [];
+
+  /* Có bản quét thật thì hiện nó, và KHÔNG dựng răng công thức nữa.
+   *
+   * Hiện cả hai chồng lên nhau thì hai bộ răng lệch nhau vài milimét và bác sĩ
+   * không biết đang nhìn cái nào — tệ hơn là chỉ hiện một cái. */
+  if (banQuet) {
+    const m = new THREE.Mesh(banQuet.hinh, new THREE.MeshStandardMaterial({
+      color: 0xefe7dc, roughness: 0.55, metalness: 0.02,
+      side: THREE.DoubleSide, flatShading: false,
+    }));
+    m.scale.setScalar(banQuet.ty_le_goi_y);
+    nhom.add(m);
+  }
+
   const loai = (ma) => {
     const v = Number(String(ma)[1]);
     return v <= 2 ? (v === 1 ? 'cua_giua' : 'cua_ben')
       : v === 3 ? 'nanh' : v <= 5 ? 'ham_nho' : v === 8 ? 'khon' : 'ham_lon';
   };
 
-  Object.values(soDoRang).forEach((r) => {
+  if (!banQuet) Object.values(soDoRang).forEach((r) => {
     const ma = String(r.ma);
     const phan = Number(ma[0]);
     const viTri = Number(ma[1]);
@@ -222,6 +371,13 @@ export function taoCanh(khung, soDoRang, khiChonRang) {
     const khoi = new THREE.Mesh(hinh, chatLieu);
     khoi.position.set(x, hamTren ? 9 : -9, z);
     khoi.rotation.y = huong;
+    /* Độ nghiêng trục răng.
+     *
+     * Răng thật không cắm thẳng đứng: răng cửa hàm trên ngả ra trước, răng hàm
+     * ngả nhẹ vào trong. Dựng thẳng đứng hết thì cung hàm trông như hàng rào,
+     * và đó là thứ khiến ảnh 3D trông giả dù tỉ lệ đã đúng. */
+    const ngaTruoc = (viTri <= 3 ? 0.14 : -0.06) * (hamTren ? 1 : -1);
+    khoi.rotateOnAxis(new THREE.Vector3(1, 0, 0), ngaTruoc);
     khoi.userData = { ma, trang_thai: r.trang_thai };
     nhom.add(khoi);
     dsRang.push(khoi);
