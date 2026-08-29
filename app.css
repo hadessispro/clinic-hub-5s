@@ -7514,3 +7514,310 @@ body.dialog-open {
   .lt-ke-tiep > .primary-button { width: 100%; justify-content: center; }
   .lt-queue { padding: 16px; }
 }
+
+/* ══ SỔ BỆNH ÁN ĐIỆN TỬ ═══════════════════════════════════════════════════
+ *
+ * Phần lõi là sơ đồ răng. Mỗi răng là một ô chia năm vùng: bốn vùng quanh và
+ * một ô giữa. Vùng nào ứng với mặt răng nào thì phụ thuộc phần hàm — logic đó
+ * nằm trong so-benh-an.js, ở đây chỉ lo màu và kích thước.
+ *
+ * Màu theo tình trạng, dùng chung cho ô răng, ô mặt răng và chú thích, nên
+ * bảng chú thích luôn khớp với thứ đang hiện trên sơ đồ.
+ */
+
+.sbn-view { display: grid; gap: 20px; align-content: start; }
+
+.sbn-header { flex-wrap: wrap; gap: 10px; margin-bottom: 0; }
+.sbn-header > .pill { white-space: normal; flex: 0 1 auto; min-width: 0; text-align: left; line-height: 1.35; }
+.sbn-header-nut { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.sbn-nho { min-height: 38px; padding: 7px 13px; font-size: .77rem; }
+.sbn-mo { color: #8095a0; font-size: .75rem; }
+.sbn-so { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Người ── */
+
+.sbn-nguoi { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.sbn-nguoi > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.sbn-nguoi b { font-size: .9rem; color: #1d3a36; }
+.sbn-nguoi small { color: #75908b; font-size: .74rem; }
+.sbn-avatar {
+  flex: none; width: 34px; height: 34px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--mint); color: var(--teal-dark); font-weight: 800; font-size: .88rem;
+}
+.sbn-avatar.lon { width: 54px; height: 54px; border-radius: 17px; font-size: 1.3rem; }
+.sbn-nguoi.lon { gap: 16px; align-items: flex-start; }
+.sbn-nguoi.lon h2 { margin: 0 0 3px; font-size: 1.3rem; color: #14312d; }
+.sbn-nguoi.lon p { margin: 0; color: #4b6560; font-size: .84rem; }
+
+/* ── Đầu hồ sơ ── */
+
+.sbn-quay-lai { align-self: start; }
+
+.sbn-dau-ho-so { display: grid; gap: 16px; }
+.sbn-so-lieu {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding-top: 15px; border-top: 1px solid var(--line);
+}
+.sbn-so-lieu > div { display: grid; gap: 2px; }
+.sbn-so-lieu b { font-size: 1.3rem; color: #163f3a; font-variant-numeric: tabular-nums; }
+.sbn-so-lieu span { color: #75908b; font-size: .75rem; }
+
+/* Cảnh báo dị ứng và bệnh nền phải đập vào mắt ở mọi màn, vì nó đổi cách
+ * điều trị. Đặt nó chìm xuống là để bác sĩ bỏ sót. */
+.sbn-canh-bao {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 14px 17px; border-radius: 13px;
+  background: #fdeceb; border: 1px solid #f0c4bf;
+}
+.sbn-canh-bao > i { font-size: 1.25rem; color: #a3382a; flex: none; margin-top: 1px; }
+.sbn-canh-bao p { margin: 0; color: #7d2c21; font-size: .84rem; line-height: 1.5; }
+.sbn-canh-bao p + p { margin-top: 4px; }
+.sbn-canh-bao b { color: #6a231a; }
+
+.sbn-tien-su { margin: 0; color: #4b6560; font-size: .84rem; line-height: 1.55; }
+.sbn-tien-su b { color: #2b4844; }
+
+/* ── Sơ đồ răng ── */
+
+.sbn-so-do-khung {
+  display: grid; gap: 18px; margin-top: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 300px);
+  align-items: start;
+}
+
+.sdr { display: grid; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.sdr-ham { display: grid; gap: 6px; min-width: 620px; }
+.sdr-nhan {
+  font-size: .68rem; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #8095a0;
+}
+.sdr-day { display: flex; justify-content: center; gap: 20px; }
+.sdr-cum { display: flex; gap: 3px; }
+
+/* Vạch đường giữa: nó nói mặt "gần" của hai bên hướng về đâu, nên nó là
+ * thông tin giải phẫu chứ không phải trang trí. */
+.sdr-giua {
+  display: flex; align-items: center; gap: 10px;
+  color: #a4b5b1; font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
+  min-width: 620px;
+}
+.sdr-giua::before, .sdr-giua::after {
+  content: ''; flex: 1 1 auto; height: 1px; background: var(--line);
+}
+
+.sdr-rang {
+  display: grid; gap: 3px; justify-items: center;
+  padding: 4px 3px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; cursor: pointer; font-family: inherit;
+  transition: background .12s, border-color .12s;
+}
+.sdr-rang:hover { background: #eef5f3; border-color: #cadedb; }
+.sdr-rang:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.sdr-rang.is-chon { background: var(--mint); border-color: var(--teal); }
+.sdr-rang svg { width: 34px; height: 34px; display: block; }
+.sdr-so {
+  font-size: .66rem; font-weight: 700; color: #5c716d;
+  font-variant-numeric: tabular-nums;
+}
+
+.sdr-mat { fill: #fff; stroke: #c3d2ce; stroke-width: .8; }
+.sdr-khong-nhai { fill: #f2f6f5; stroke-dasharray: 2 2; }
+.sdr-vang { stroke: #b9686a; stroke-width: 2.2; stroke-linecap: round; }
+
+/* Một bảng màu duy nhất cho tình trạng, dùng ở ô răng, ô mặt và chú thích. */
+.mat-sau,  .sdr-o.sdr-sau  { fill: #f3c9c3; background: #f3c9c3; }
+.mat-tram, .sdr-o.sdr-tram { fill: #bcdcf5; background: #bcdcf5; }
+.mat-phuc, .sdr-o.sdr-phuc { fill: #cfc6ec; background: #cfc6ec; }
+.mat-noi,  .sdr-o.sdr-noi  { fill: #f6ddb0; background: #f6ddb0; }
+.mat-mat,  .sdr-o.sdr-mat  { fill: #e6ecea; background: #e6ecea; }
+.mat-lanh, .sdr-o.sdr-lanh { fill: #ffffff; background: #ffffff; }
+
+/* Viền ô răng theo tình trạng chung, để nhìn lướt cũng thấy răng nào có vấn đề. */
+.sdr-rang.sdr-sau  .sdr-mat { stroke: #c9827a; }
+.sdr-rang.sdr-tram .sdr-mat { stroke: #7ba7cc; }
+.sdr-rang.sdr-phuc .sdr-mat { stroke: #9a8ec9; }
+.sdr-rang.sdr-noi  .sdr-mat { stroke: #cba75f; }
+.sdr-rang.sdr-mat  .sdr-mat { stroke: #c3d2ce; stroke-dasharray: 3 2; fill: #f7faf9; }
+
+.sdr-chu-thich {
+  display: flex; flex-wrap: wrap; gap: 8px 18px; padding-top: 12px;
+  border-top: 1px solid var(--line); font-size: .76rem; color: #4b6560;
+}
+.sdr-ct { display: inline-flex; align-items: center; gap: 7px; }
+.sdr-o {
+  width: 14px; height: 14px; border-radius: 4px;
+  border: 1px solid #c3d2ce; flex: none;
+}
+
+/* ── Bảng bên: chi tiết một răng ── */
+
+.sbn-ben {
+  background: #f7faf9; border: 1px solid var(--line);
+  border-radius: 14px; padding: 16px;
+}
+.sdr-goi-y { margin: 0; color: #8095a0; font-size: .82rem; line-height: 1.55; }
+.sdr-ct-rang { display: grid; gap: 12px; }
+.sdr-ct-rang > header { display: flex; align-items: flex-start; gap: 10px; }
+.sdr-ct-rang header > div { display: grid; gap: 2px; margin-right: auto; }
+.sdr-ct-rang header b { font-size: 1.05rem; color: #163f3a; }
+.sdr-ct-rang header span { color: #75908b; font-size: .75rem; }
+
+.sbn-o { display: grid; gap: 5px; min-width: 0; }
+.sbn-o > span { color: #62807a; font-size: .73rem; font-weight: 700; }
+.sbn-o input, .sbn-o select, .sbn-o textarea {
+  min-height: 40px; width: 100%; min-width: 0; max-width: 100%;
+}
+.sbn-o textarea { min-height: 0; padding: 10px 12px; resize: vertical; font-family: inherit; }
+.sbn-mat-luoi {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+.sbn-nut-hang { display: flex; justify-content: flex-end; gap: 10px; }
+.sbn-nut-hang.sbn-cuoi {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line);
+}
+
+/* ── Bộ lọc ── */
+
+.sbn-loc {
+  display: grid; gap: 12px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  align-items: end;
+}
+.sbn-loc label { display: grid; gap: 5px; min-width: 0; }
+.sbn-loc label > span { color: #62807a; font-size: .73rem; font-weight: 700; }
+.sbn-loc input, .sbn-loc select {
+  min-height: 42px; width: 100%; min-width: 0; max-width: 100%;
+}
+.sbn-loc .ghost-button { min-height: 42px; }
+.sbn-tim { grid-column: span 2; }
+.sbn-tick {
+  display: flex !important; align-items: center; gap: 9px;
+  min-height: 42px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff;
+}
+.sbn-tick input { width: 18px; height: 18px; min-height: 0; flex: none; accent-color: var(--teal); }
+.sbn-tick span { color: #2b4844; font-size: .8rem; font-weight: 600; }
+
+/* ── Lượt khám ── */
+
+.sbn-form { border-color: #bfdfd9; }
+.sbn-form-luoi {
+  display: grid; gap: 13px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+}
+.sbn-form-luoi .sbn-rong { grid-column: 1 / -1; }
+
+.sbn-luot-ds { display: grid; gap: 11px; margin-top: 14px; }
+
+.sbn-luot {
+  display: grid; gap: 16px; align-items: start;
+  grid-template-columns: 108px minmax(0, 1fr) auto;
+  padding: 17px 19px; border: 1px solid var(--line);
+  border-radius: 14px; background: #fff;
+}
+.sbn-luot.da-ky { background: #fafcfb; }
+.sbn-luot-moc { display: grid; gap: 5px; justify-items: start; }
+.sbn-luot-moc b { font-size: .92rem; color: #163f3a; font-variant-numeric: tabular-nums; }
+.sbn-luot-moc small { color: #7f918d; font-size: .73rem; }
+.sbn-luot-noi { min-width: 0; display: grid; gap: 10px; }
+.sbn-ly-do { margin: 0; font-size: .95rem; font-weight: 600; color: #1d3a36; line-height: 1.4; }
+
+.sbn-muc { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 5px 14px; margin: 0; }
+.sbn-muc dt {
+  font-size: .7rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: #8ba09b; padding-top: 2px;
+}
+.sbn-muc dd { margin: 0; font-size: .85rem; color: #2b4844; line-height: 1.5; }
+.sbn-muc code {
+  font-size: .76rem; background: #eef4f2; border: 1px solid var(--line);
+  padding: 1px 6px; border-radius: 5px; color: #4b6560;
+}
+.sbn-rang-tag {
+  display: inline-block; margin-right: 5px; padding: 2px 9px;
+  border: 1px solid #cadedb; border-radius: 999px; background: #eef5f3;
+  color: var(--teal-dark); font-family: inherit; font-size: .76rem;
+  font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.sbn-rang-tag:hover { background: var(--mint); border-color: var(--teal); }
+
+.sbn-anh { display: flex; gap: 10px; flex-wrap: wrap; }
+.sbn-anh-o {
+  display: grid; gap: 6px; margin: 0; width: 132px;
+  padding: 9px; border: 1px solid var(--line); border-radius: 11px; background: #f9fbfa;
+}
+.sbn-anh-hinh {
+  height: 66px; border-radius: 8px; background: #e9f1ef;
+  display: grid; place-items: center;
+}
+.sbn-anh-hinh i { font-size: 1.5rem; color: #7fa8a2; }
+.sbn-anh-o figcaption { display: grid; gap: 1px; }
+.sbn-anh-o b { font-size: .72rem; color: #2b4844; }
+.sbn-anh-o small { font-size: .68rem; color: #8095a0; line-height: 1.35; }
+
+.sbn-chan-luot { margin: 0; color: #8095a0; font-size: .74rem; }
+.sbn-chan-luot em { font-style: normal; color: #a3822a; }
+.sbn-luot-nut { display: grid; gap: 8px; justify-items: end; }
+
+.sbn-nhat-ky { display: grid; gap: 5px; margin-top: 12px; }
+.sbn-nhat-ky p { margin: 0; font-size: .79rem; color: #4b6560; }
+.sbn-nhat-ky code {
+  font-size: .73rem; background: #eef4f2; border: 1px solid var(--line);
+  padding: 1px 6px; border-radius: 5px; margin-right: 6px; color: #5c716d;
+}
+
+.sbn-bang { margin-top: 14px; }
+.sbn-bang .sbn-cot-nut { white-space: nowrap; }
+.sbn-bang td small { display: block; margin-top: 3px; }
+
+/* ── Màn hẹp ── */
+
+@media (max-width: 1080px) {
+  .sbn-so-do-khung { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 860px) {
+  .sbn-view { gap: 16px; }
+  .sbn-luot { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .sbn-luot-moc { display: flex; align-items: center; gap: 10px; }
+  .sbn-luot-nut { justify-items: stretch; }
+  .sbn-luot-nut > * { width: 100%; justify-content: center; }
+  .sbn-muc { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .sbn-muc dt { padding-top: 8px; }
+  .sbn-header-nut { width: 100%; margin-left: 0; }
+  .sbn-header-nut > button { flex: 1 1 auto; justify-content: center; }
+  .sbn-tim { grid-column: 1 / -1; }
+
+  .sbn-bang.hh-bang-wrap { border: 0; overflow: visible; border-radius: 0; }
+  .sbn-bang table.hh-bang { min-width: 0; width: 100%; }
+  .sbn-bang thead { display: none; }
+  .sbn-bang tr {
+    display: grid; gap: 10px 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 16px 18px; margin-bottom: 10px;
+    border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  }
+  .sbn-bang td { display: grid; gap: 3px; padding: 0; border: 0; }
+  .sbn-bang td::before {
+    content: attr(data-label);
+    color: #839995; font-size: .64rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .sbn-bang td:not([data-label])::before,
+  .sbn-bang td[data-label=""]::before { content: none; }
+  .sbn-bang td[data-label="Bệnh nhân"],
+  .sbn-bang td[data-label="Răng cần xử lý"],
+  .sbn-bang td[data-label=""] { grid-column: 1 / -1; }
+  .sbn-bang .sbn-cot-nut > button { width: 100%; justify-content: center; }
+  .sbn-so { text-align: left; }
+}
+
+@media (max-width: 520px) {
+  .sbn-loc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sbn-bang tr { grid-template-columns: minmax(0, 1fr); }
+  .sbn-so-lieu { grid-template-columns: 1fr 1fr; }
+  .sbn-nguoi.lon { gap: 12px; }
+  .sbn-avatar.lon { width: 46px; height: 46px; font-size: 1.1rem; }
+}

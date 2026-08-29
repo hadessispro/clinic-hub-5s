@@ -33,9 +33,11 @@ const viewImports = {
   'luong-pg': () => import('./views/luong-pg.js'),
   'gift-inventory': () => import('./views/gift-inventory.js'),
   'le-tan': () => import('./views/le-tan.js'),
+  'so-benh-an': () => import('./views/so-benh-an.js'),
 };
 
 const viewTitles = {
+  'so-benh-an': 'Sổ bệnh án điện tử',
   'le-tan': 'Lễ tân · tiếp đón và chăm sóc',
   dashboard: 'Tổng quan vận hành',
   tasks: 'Quản lý công việc',

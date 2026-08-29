@@ -52,6 +52,7 @@ export const ROLE_PROFILES = {
   telesale_leader: { label: 'Quản lý Telesale', scope: 'Trưởng nhóm Telesale, chia chỉ tiêu cuộc gọi/lịch hẹn, quản lý đội ngũ.' },
   telesale_staff: { label: 'Nhân viên Telesale', scope: 'Giao diện Telesale chuyên dụng: Gọi điện, nhập nhật ký cuộc gọi và chốt lịch hẹn.' },
   superadmin: { label: 'Superadmin', scope: 'Role dự phòng; chưa kích hoạt chức năng hoặc tài khoản.' },
+  bac_si: { label: 'Bác sĩ', scope: 'Khám, ghi sơ đồ răng, chẩn đoán và diễn biến điều trị trong sổ bệnh án điện tử.' },
   le_tan: { label: 'Lễ tân', scope: 'Tiếp đón khách tại quầy, đặt và đổi lịch hẹn, check-in, và các hàng đợi chăm sóc khách hàng.' },
   hr: { label: 'Nhân sự', scope: 'Tuyển dụng, hồ sơ, hội nhập, đơn từ, lịch làm, công lương.' },
   leader: { label: 'Trưởng bộ phận', scope: 'Giao việc, duyệt đơn cấp 1, xác nhận lịch và hiệu suất đội nhóm.' },

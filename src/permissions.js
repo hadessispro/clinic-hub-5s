@@ -7,8 +7,8 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
@@ -16,8 +16,9 @@ const ROLE_VIEWS = {
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
   // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
-  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan'],
-  le_tan: ['dashboard', 'le-tan', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
+  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
+  bac_si: ['dashboard', 'so-benh-an', 'le-tan', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
+  le_tan: ['dashboard', 'le-tan', 'so-benh-an', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
   leader: ['dashboard', 'tasks', 'chat', 'attendance', 'schedule', 'leave'],
   finance: ['dashboard', 'tasks', 'chat', 'attendance', 'leave', 'payroll'],
@@ -34,6 +35,11 @@ const ROLE_ACTIONS = {
   telesale_leader: ['telesale.team.manage', 'telesale.leads.assign', 'telesale.analytics', 'telesale.calls.create', 'data.export', 'message.send', 'task.create'],
   telesale_staff: ['telesale.leads.view_own', 'telesale.calls.create', 'telesale.appointment.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send', 'task.create'],
   superadmin: ['*'],
+  bac_si: [
+    'benh_an.read', 'benh_an.write', 'benh_an.ky', 'benh_an.rang.write',
+    'attendance.self', 'schedule.read_self', 'leave.create', 'message.send',
+    'task.create', 'task.update_self',
+  ],
   le_tan: [
     'le_tan.appointment.crud', 'le_tan.checkin', 'le_tan.care.handle',
     'attendance.self', 'schedule.read_self', 'leave.create', 'message.send',
@@ -107,6 +113,7 @@ const NAV_ITEMS = [
   ]},
   { group: 'Phòng khám', items: [
     { view: 'le-tan', label: 'Lễ tân', icon: 'ri-service-line' },
+    { view: 'so-benh-an', label: 'Sổ bệnh án', icon: 'ri-file-user-line' },
   ]},
   { group: 'Marketing & Telesale', items: [
     { view: 'marketing-leads', label: 'Tiếp nhận Lead', icon: 'ri-megaphone-line' },
