@@ -58,6 +58,19 @@ let canh3D = null;
 let goc3D = 'truoc';
 let banQuet = null;
 let ghiCong = '';
+let dangNapMau = false;
+
+/* Mẫu răng đi kèm hệ thống.
+ *
+ * Tự nạp khi mở cảnh 3D, để bác sĩ không phải chọn tệp lại mỗi lần mở một hồ
+ * sơ. Bắt chọn tệp từng lần thì tính năng này coi như không có: giữa buổi khám
+ * không ai đi tìm file.
+ *
+ * Bản quét riêng của bệnh nhân, nếu có, vẫn nạp đè lên được — và khi đó nó
+ * thắng, vì nó là miệng thật của người đang ngồi đó.
+ */
+const MAU_KEM_THEO = '/mau-rang.glb';
+const GHI_CONG_MAU = 'b2przemo · BlendSwap · CC BY 3.0';
 let hienFormKham = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -274,9 +287,16 @@ function ve3D() {
     </p>` : ''}
     <p class="sbn-3d-ghi">
       <i class="ri-information-line"></i>
-      Hình răng dựng theo công thức: đúng loại răng, số múi và vị trí trên cung hàm.
-      Không phải bản quét thật của bệnh nhân, nên dùng để chỉ chỗ và giải thích,
-      không dùng để đo đạc.
+      ${banQuet?.kieu === 'ban_quet'
+        ? `Bản quét thật của bệnh nhân này. Đây là hình duy nhất phản ánh đúng
+           giải phẫu riêng của họ.`
+        : banQuet
+        ? `Mẫu giải phẫu chuẩn, không phải bản quét của bệnh nhân này. Đúng hình
+           dạng và vị trí răng người trưởng thành, nhưng không mang sai lệch riêng
+           của họ — dùng để chỉ chỗ và giải thích, không dùng để đo đạc.`
+        : `Hình dựng theo công thức: đúng loại răng, số múi và vị trí trên cung hàm,
+           nhưng không có rãnh và gờ men thật. Nạp mẫu 3D hoặc bản quét để có hình
+           chính xác hơn.`}
     </p>
   </div>`;
 }
@@ -999,7 +1019,11 @@ export function initView() {
     b.addEventListener('click', () => { hoSoMo = b.dataset.mo; rangChon = ''; ve(); });
   });
   g('sbnDong')?.addEventListener('click', () => {
-    hoSoMo = ''; rangChon = ''; hienFormKham = false; ve();
+    hoSoMo = ''; rangChon = ''; hienFormKham = false;
+    // Bỏ mô hình đang giữ: hồ sơ sau có sơ đồ răng khác, và bản quét của bệnh
+    // nhân này tuyệt đối không được hiện ở hồ sơ người khác.
+    banQuet = null; ghiCong = ''; hien3D = false;
+    ve();
   });
 
   const loc = (id, gan) => g(id)?.addEventListener('change', (e) => {
@@ -1051,6 +1075,26 @@ export function initView() {
   g('sbnDong3D')?.addEventListener('click', () => { hien3D = false; ve(); });
 
   const khung3D = g('sbn3DKhung');
+  if (khung3D && duLieu?.ho_so && !banQuet && !dangNapMau) {
+    // Nạp mẫu kèm theo một lần cho cả phiên. Không có mẫu thì im lặng dùng
+    // hình dựng bằng công thức — thiếu tệp không được làm hỏng cả màn.
+    dangNapMau = true;
+    (async () => {
+      try {
+        const [m, r] = await Promise.all([
+          import('../components/rang-3d.js'),
+          fetch(MAU_KEM_THEO),
+        ]);
+        if (!r.ok) throw new Error('khong co mau kem theo');
+        const b = await r.blob();
+        banQuet = await m.napMoHinh(new File([b], 'mau-rang.glb'));
+        ghiCong = GHI_CONG_MAU;
+        await ve();
+      } catch { /* dùng hình dựng bằng công thức */ }
+      finally { dangNapMau = false; }
+    })();
+  }
+
   if (khung3D && duLieu?.ho_so) {
     import('../components/rang-3d.js')
       .then((m) => {

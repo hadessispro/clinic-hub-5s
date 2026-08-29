@@ -405,11 +405,38 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
    *
    * Hiện cả hai chồng lên nhau thì hai bộ răng lệch nhau vài milimét và bác sĩ
    * không biết đang nhìn cái nào — tệ hơn là chỉ hiện một cái. */
+  /* Tự phát hiện mô hình bị lật trái–phải.
+   *
+   * Quy ước lâm sàng: hình nhìn như khi ĐỐI DIỆN bệnh nhân, nên phần hàm 1 và
+   * 4 (bên phải bệnh nhân) phải nằm BÊN TRÁI hình. Sơ đồ 2D ngay cạnh cũng vẽ
+   * như vậy.
+   *
+   * Không thể tin mô hình nào cũng đúng chiều. Xuất glTF từ Blender đổi trục
+   * Z-up sang Y-up và lật X, còn mỗi bộ mẫu mua về lại dựng theo một hướng
+   * riêng. Nên đo thay vì giả định: so toạ độ của răng 16 và 26, nếu 16 nằm
+   * bên phải thì lật cả cảnh.
+   *
+   * Lật bằng scale âm sẽ đảo chiều mặt, nên vật liệu phải vẽ cả hai mặt —
+   * không thì răng thủng lỗ chỗ khi xoay.
+   */
+  const canhLatNguoc = (() => {
+    if (banQuet?.kieu !== 'bo_mau_tach_rang') return false;
+    const a = banQuet.theo_rang['16'] || banQuet.theo_rang['46'];
+    const b = banQuet.theo_rang['26'] || banQuet.theo_rang['36'];
+    if (!a || !b) return false;
+    const x = (o) => {
+      const h = new THREE.Box3().setFromObject(o);
+      return h.getCenter(new THREE.Vector3()).x;
+    };
+    return x(a) > x(b);
+  })();
+
   if (banQuet?.kieu === 'bo_mau_tach_rang') {
     /* Bộ mẫu đã tách từng răng: tô màu và bấm chọn được y như hình dựng, chỉ
      * khác là hình đúng giải phẫu chuẩn. Đây là lý do điều kiện "mỗi răng một
      * khối" là bắt buộc chứ không phải mong muốn. */
     banQuet.canh.scale.setScalar(banQuet.ty_le_goi_y);
+    if (canhLatNguoc) banQuet.canh.scale.x *= -1;
     nhom.add(banQuet.canh);
     Object.entries(banQuet.theo_rang).forEach(([ma, o]) => {
       const r = soDoRang[ma];
@@ -420,11 +447,19 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
           : tt === 'tram' ? 'tram' : tt === 'noi_nha' ? 'noi'
           : tt === 'mat' || tt === 'chua_moc' ? 'mat' : 'phuc'],
         roughness: 0.45, metalness: 0.03,
+        side: canhLatNguoc ? THREE.DoubleSide : THREE.FrontSide,
         transparent: ['mat', 'chua_moc'].includes(tt),
         opacity: ['mat', 'chua_moc'].includes(tt) ? 0.18 : 1,
       });
       o.userData = { ma, trang_thai: tt };
       dsRang.push(o);
+    });
+    // Khối không phải răng, thường là nướu: giữ màu nướu và cũng vẽ hai mặt.
+    banQuet.khoi.filter((o) => !o.userData?.ma).forEach((o) => {
+      o.material = new THREE.MeshStandardMaterial({
+        color: 0xc4776f, roughness: 0.82, metalness: 0,
+        side: canhLatNguoc ? THREE.DoubleSide : THREE.FrontSide,
+      });
     });
   } else if (banQuet) {
     // Bản quét hoặc bộ mẫu gộp: một khối, chỉ để nhìn.

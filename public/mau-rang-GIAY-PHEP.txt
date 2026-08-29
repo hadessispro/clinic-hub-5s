@@ -1,0 +1,34 @@
+MẪU RĂNG 3D DÙNG TRONG HỆ THỐNG NÀY
+====================================
+
+Tệp:      mau-rang.glb
+Tên gốc:  Human Teeth
+Tác giả:  b2przemo
+Nguồn:    BlendSwap — http://www.blendswap.com/blends/view/77173
+Giấy phép: Creative Commons Attribution 3.0 (CC BY 3.0)
+           http://creativecommons.org/licenses/by/3.0
+
+ĐIỀU KIỆN CỦA GIẤY PHÉP
+-----------------------
+CC BY 3.0 cho phép dùng cho MỌI MỤC ĐÍCH, kể cả thương mại, với đúng một
+điều kiện: PHẢI GHI CÔNG TÁC GIẢ.
+
+Hệ thống đáp ứng điều kiện này bằng cách hiện dòng ghi công ngay dưới cảnh
+3D mỗi lần mở. Không được gỡ dòng đó đi.
+
+ĐÃ CHỈNH SỬA NHỮNG GÌ SO VỚI BẢN GỐC
+------------------------------------
+Bản gốc teeth.blend chỉ có ba khối lưới: nướu, hàm trên gộp, hàm dưới gộp.
+Đã xử lý bằng scripts/tach-rang-blender.py:
+
+  - Tách hàm trên và hàm dưới thành 32 răng riêng
+  - Đặt tên từng răng theo mã FDI (Tooth_11 … Tooth_48)
+  - Hạ mức chia nhỏ SubSurf từ 4 xuống 2 — mức 4 làm tệp phình lên 43,9 MB,
+    quá nặng để tải trong trình duyệt
+  - Bỏ modifier Displace và bỏ sáu ảnh vân bề mặt, vì hệ thống tô màu răng
+    theo tình trạng trong hồ sơ nên vân gốc bị ghi đè hết
+
+Kết quả: 2,0 MB, 56.052 đỉnh, 32 răng nhận diện được đầy đủ.
+
+CC BY cho phép chỉnh sửa và phân phối lại bản đã chỉnh, miễn là vẫn ghi công
+tác giả gốc — nên những thay đổi trên là hợp lệ.
