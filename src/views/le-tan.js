@@ -1030,14 +1030,9 @@ export async function renderView() {
     baoCao = await baoCaoThang(kyBaoCao, bcChiNhanh || undefined);
   }
 
+  // Không dựng tiêu đề ở đây: thanh trên cùng đã hiện viewTitles['le-tan'].
+  // Thêm một h1 nữa là tiêu đề hiện hai lần, cách nhau vài chục pixel.
   return `<div class="view-stack lt-view">
-    <header class="view-header">
-      <div>
-        <h1>Lễ tân</h1>
-        <p>Tiếp đón, lịch hẹn và chăm sóc khách hàng tại quầy</p>
-      </div>
-    </header>
-
     <div class="lt-canh-bao" role="status">
       <i class="ri-flask-line"></i>
       <div>

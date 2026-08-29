@@ -225,6 +225,7 @@ function veDanhSach() {
       ? `<span class="status-pill bad">${h.so_rang_can_xu_ly} răng</span>
          <small class="sbn-mo">${escapeHTML(h.rang_can_xu_ly.join(', '))}</small>`
       : '<span class="status-pill good">Không</span>'}</td>
+    <td data-label="Chi nhánh">${escapeHTML(tenChiNhanh(h.chi_nhanh))}</td>
     <td data-label="Bác sĩ">${escapeHTML(tenBacSi(h.bac_si_chinh))}</td>
     <td data-label="" class="sbn-cot-nut">
       <button type="button" class="primary-button sbn-nho" data-mo="${escapeHTML(h.id)}">
@@ -239,34 +240,36 @@ function veDanhSach() {
       <span class="pill">${dsHoSo.length} hồ sơ khớp bộ lọc</span>
     </header>
 
+    <div class="lt-tim-lon">
+      <i class="ri-search-line"></i>
+      <input type="search" id="sTim" value="${escapeHTML(fTim)}"
+             placeholder="Tìm theo tên bệnh nhân, số điện thoại hoặc mã hồ sơ">
+      ${[fChiNhanh, fBacSi, fCanhBao, fRangSau].filter(Boolean).length
+        ? `<button type="button" class="ghost-button sbn-nho" id="sXoaLoc">
+             <i class="ri-filter-off-line"></i> Bỏ lọc</button>` : ''}
+    </div>
     <div class="sbn-loc">
-      <label class="sbn-tim"><span>Tìm</span>
-        <input type="search" id="sTim" value="${escapeHTML(fTim)}"
-               placeholder="Tên, số điện thoại hoặc mã hồ sơ"></label>
       <label><span>Chi nhánh</span><select id="sChiNhanh">
-        ${opt('', 'Tất cả', fChiNhanh)}
+        ${opt('', 'Tất cả chi nhánh', fChiNhanh)}
         ${CHI_NHANH.map((c) => opt(c.ma, c.ten, fChiNhanh)).join('')}
       </select></label>
       <label><span>Bác sĩ phụ trách</span><select id="sBacSi">
-        ${opt('', 'Tất cả', fBacSi)}
+        ${opt('', 'Tất cả bác sĩ', fBacSi)}
         ${BAC_SI.map((b) => opt(b.ma, b.ten, fBacSi)).join('')}
       </select></label>
       <label class="sbn-tick"><input type="checkbox" id="sCanhBao"${fCanhBao ? ' checked' : ''}>
         <span>Chỉ hồ sơ có cảnh báo</span></label>
       <label class="sbn-tick"><input type="checkbox" id="sRangSau"${fRangSau ? ' checked' : ''}>
         <span>Còn răng cần xử lý</span></label>
-      <button type="button" class="ghost-button" id="sXoaLoc">
-        <i class="ri-filter-off-line"></i> Bỏ lọc
-      </button>
     </div>
 
     <div class="hh-bang-wrap sbn-bang">
       <table class="hh-bang">
         <thead><tr>
           <th>Mã hồ sơ</th><th>Bệnh nhân</th><th>Cảnh báo</th><th>Lần khám</th>
-          <th>Khám gần nhất</th><th>Răng cần xử lý</th><th>Bác sĩ</th><th></th>
+          <th>Khám gần nhất</th><th>Răng cần xử lý</th><th>Chi nhánh</th><th>Bác sĩ</th><th></th>
         </tr></thead>
-        <tbody>${dong || '<tr><td colspan="8" class="empty-state">Không có hồ sơ nào khớp bộ lọc.</td></tr>'}</tbody>
+        <tbody>${dong || '<tr><td colspan="9" class="empty-state">Không có hồ sơ nào khớp bộ lọc.</td></tr>'}</tbody>
       </table>
     </div>
     ${thanhPhanTrang(kq, 'sbnTrang', 'hồ sơ')}
@@ -481,14 +484,9 @@ export async function renderView() {
     });
   }
 
+  // Thanh trên cùng đã hiện viewTitles['so-benh-an']. Thêm một h1 nữa là
+  // tiêu đề hiện hai lần, cách nhau vài chục pixel.
   return `<div class="view-stack sbn-view">
-    <header class="view-header">
-      <div>
-        <h1>Sổ bệnh án điện tử</h1>
-        <p>Hồ sơ, sơ đồ răng và diễn biến điều trị của từng bệnh nhân</p>
-      </div>
-    </header>
-
     <div class="lt-canh-bao" role="status">
       <i class="ri-flask-line"></i>
       <div>
