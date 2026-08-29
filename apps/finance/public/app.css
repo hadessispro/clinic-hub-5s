@@ -243,43 +243,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .dh-khoi { display: flex; flex-direction: column; }
 .dh-khoi + .dh-khoi { margin-top: 3px; }
 
-/* Đầu nhóm là một NÚT THẬT, không phải một dòng chữ bấm được.
+/* Đầu nhóm: chữ trơn khi bình thường, thành khối khi đang mở.
  *
- * Bản đầu chỉ là chữ hoa nhỏ màu mờ — nó gập được nhưng không trông như gập
- * được, nên không ai nghĩ tới việc bấm vào. Một điều khiển mà người dùng
- * không nhận ra là điều khiển thì coi như không tồn tại.
+ * Từng thử cho mọi đầu nhóm đều là một khối nổi. Bảy khối xám xếp dọc thanh
+ * bên làm nó nặng và rối, mà bảy cái cùng nổi thì chẳng cái nào nổi cả.
  *
- * Nay là một mặt riêng nổi trên nền thanh bên, có viền và bóng đổ nhẹ —
- * cùng cách hệ vận hành làm. Bóng dày lên khi rê chuột và lún xuống khi bấm,
- * để cái nút phản hồi lại thay vì đứng im. */
+ * Nay chỉ nhóm chứa màn đang mở mới có khối. Cả thanh bên chỉ một khối duy
+ * nhất, nên nó là dấu "mình đang ở đây" chứ không phải trang trí. Khối cũng
+ * hiện khi rê chuột, để người dùng vẫn biết đầu nhóm bấm được.
+ *
+ * Viền để trong suốt chứ không bỏ hẳn: bỏ rồi thêm lại lúc rê chuột thì cả
+ * thanh bên xê dịch 1px. */
 .dh-nhom {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 9px 10px; margin: 5px 0 3px;
-  border: 1px solid var(--vien); border-radius: 9px;
-  background: var(--chim); cursor: pointer;
-  font: inherit; font-size: 10.5px; font-weight: 750;
-  letter-spacing: .07em; text-transform: uppercase;
-  color: var(--muc-nhat); text-align: left;
-  box-shadow: var(--bong-nhom);
+  padding: 8px 10px; margin: 6px 0 2px;
+  border: 1px solid transparent; border-radius: 9px;
+  background: none; cursor: pointer;
+  font: inherit; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muc-mo); text-align: left;
   transition: color .14s, background .14s, border-color .14s, box-shadow .14s, transform .1s;
   user-select: none;
 }
 .dh-nhom:hover {
-  color: var(--xanh); border-color: var(--xanh-vien);
-  background: var(--xanh-nhat);
-  box-shadow: var(--bong-nhom-cao);
+  color: var(--xanh); background: var(--chim); border-color: var(--vien);
 }
-.dh-nhom:active { transform: translateY(1px); box-shadow: var(--bong-nhom); }
+.dh-nhom:active { transform: translateY(1px); }
 .dh-nhom:focus-visible { outline: 2px solid var(--xanh); outline-offset: 2px; }
 
-/* Nhóm chứa màn đang mở không gập được. Tô xanh nhạt để nó nổi lên như nhóm
- * đang làm việc, và bỏ mọi phản hồi khi rê chuột vì bấm vào không có tác dụng. */
+/* Nhóm chứa màn đang mở. Không gập được nên bỏ mọi phản hồi khi rê chuột;
+ * cái khối ở đây nói "đang ở đây", không phải "bấm được". */
 .dh-nhom:disabled {
   cursor: default; color: var(--xanh);
   background: var(--xanh-nhat); border-color: var(--xanh-vien);
-  box-shadow: none;
+  box-shadow: var(--bong-nhom);
 }
-.dh-nhom:disabled:hover { box-shadow: none; }
 
 .dh-nhom-mui { display: inline-flex; transition: transform .2s cubic-bezier(.4, 0, .2, 1); }
 .dh-nhom-mui svg { width: 14px; height: 14px; stroke-width: 2.2; opacity: .95; }
@@ -287,11 +285,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .dh-nhom-dem {
   margin-left: auto; min-width: 20px; padding: 2px 7px;
-  border-radius: 999px; background: var(--the); color: var(--muc-mo);
+  border-radius: 999px; background: var(--chim); color: var(--muc-mo);
+  transition: background .14s, color .14s;
   font-size: 10px; letter-spacing: 0; font-weight: 700; text-align: center;
 }
-.dh-nhom:hover .dh-nhom-dem { color: var(--xanh); }
-.dh-nhom:disabled .dh-nhom-dem { color: var(--xanh); }
+.dh-nhom:hover .dh-nhom-dem { background: var(--the); color: var(--xanh); }
+.dh-nhom:disabled .dh-nhom-dem { background: var(--the); color: var(--xanh); }
 
 /* Mục con thụt vào một chút để mắt thấy chúng thuộc về nhóm phía trên. */
 .dh-nhom-muc .dh-muc { padding-left: 16px; }
