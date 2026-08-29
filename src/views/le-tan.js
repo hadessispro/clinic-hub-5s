@@ -426,6 +426,16 @@ export async function renderView() {
       </div>
     </header>
 
+    <div class="lt-canh-bao" role="status">
+      <i class="ri-flask-line"></i>
+      <div>
+        <b>Dữ liệu mẫu — màn hình đang ở giai đoạn dựng giao diện</b>
+        <span>Toàn bộ khách hàng, lịch hẹn và phản hồi trên màn này là dữ liệu
+        dựng sẵn để xem giao diện. Chưa nối cơ sở dữ liệu, và mọi thao tác
+        đặt lịch hay tiếp đón sẽ mất khi tải lại trang.</span>
+      </div>
+    </div>
+
     <nav class="lt-tabs" role="tablist">
       ${TABS.map((t) => `<button type="button" role="tab" class="lt-tab${tab === t.ma ? ' is-active' : ''}"
          aria-selected="${tab === t.ma}" data-tab="${t.ma}">

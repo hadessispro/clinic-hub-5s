@@ -7219,6 +7219,21 @@ body.dialog-open {
 .lt-view .ghost-button i,
 .lt-view .secondary-button i { font-size: 1.12em; }
 
+/* Cảnh báo dữ liệu mẫu.
+ *
+ * Màn này đang chạy dữ liệu dựng sẵn, mà admin cũng mở được nó. Không nói rõ
+ * thì có người sẽ tưởng 12 cái tên kia là bệnh nhân thật và gọi điện cho họ.
+ * Bỏ khối này đi khi đã nối API thật. */
+.lt-canh-bao {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 15px 18px; border-radius: 14px;
+  background: #fdf7e8; border: 1px solid #ecd9a4;
+}
+.lt-canh-bao > i { font-size: 1.3rem; color: #b07d0a; flex: none; margin-top: 1px; }
+.lt-canh-bao > div { display: grid; gap: 3px; min-width: 0; }
+.lt-canh-bao b { color: #6f5308; font-size: .88rem; }
+.lt-canh-bao span { color: #806316; font-size: .79rem; line-height: 1.5; }
+
 /* ── Thanh tab ──────────────────────────────────────────────────────── */
 
 .lt-tabs {
