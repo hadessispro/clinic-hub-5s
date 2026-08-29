@@ -7208,9 +7208,14 @@ body.dialog-open {
 
 .lt-view {
   display: grid;
+  /* minmax(0, 1fr) chu khong de mac dinh: cot grid mac dinh lay be rong theo
+   * NOI DUNG RONG NHAT, nen thanh nam tab (5 x 104px) keo ca man rong ra
+   * 520px va toan trang cuon ngang tren dien thoai. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   align-content: start;
 }
+.lt-view > * { min-width: 0; }
 
 /* Cỡ biểu tượng đo bằng em chứ không bằng px: nó tự lớn nhỏ theo cỡ chữ của
  * chính cái nút chứa nó, nên nút to nút nhỏ vẫn cùng một tỉ lệ. Đặt bằng px
@@ -7506,7 +7511,14 @@ body.dialog-open {
 @media (max-width: 520px) {
   /* Không giấu chữ trên tab. Ba nhãn ngắn vẫn đủ chỗ ở 375px, mà chỉ còn ba
    * biểu tượng trần thì người dùng phải đoán tab nào là tab nào. */
-  .lt-tab { font-size: .78rem; padding: 10px 8px; gap: 6px; }
+  /* Nam tab o 375px thi moi tab chi con ~70px, chu bi bop den kho doc. Cho
+   * tab DANG CHON giu chu, cac tab khac chi con bieu tuong: van biet minh
+   * dang o dau, ma khong tab nao bi bop. Giau chu tat ca thi nguoi dung phai
+   * doan tab nao la tab nao. */
+  .lt-tab { font-size: .76rem; padding: 10px 9px; gap: 6px; min-width: 0; flex: 0 0 auto; }
+  .lt-tab span { display: none; }
+  .lt-tab.is-active { flex: 1 1 auto; }
+  .lt-tab.is-active span { display: block; }
   .lt-tab i { font-size: 1.05rem; }
   .lt-loc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .lt-bang tr { grid-template-columns: minmax(0, 1fr); }
@@ -7525,7 +7537,8 @@ body.dialog-open {
  * bảng chú thích luôn khớp với thứ đang hiện trên sơ đồ.
  */
 
-.sbn-view { display: grid; gap: 20px; align-content: start; }
+.sbn-view { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-content: start; }
+.sbn-view > * { min-width: 0; }
 
 .sbn-header { flex-wrap: wrap; gap: 10px; margin-bottom: 0; }
 .sbn-header > .pill { white-space: normal; flex: 0 1 auto; min-width: 0; text-align: left; line-height: 1.35; }
@@ -8007,4 +8020,235 @@ body.dialog-open {
   .lt-tt-dau { gap: 16px; }
   .lt-tt-phu { width: 100%; justify-content: space-between; gap: 12px; }
   .lt-tt-phu b { font-size: 1.2rem; }
+}
+
+/* ══ LỄ TÂN · thẻ lịch hẹn, bộ lọc, hành trình, báo cáo ══════════════════ */
+
+/* Vạch màu trái theo trạng thái, cùng bảng màu với bảng ngày — một lịch hẹn
+ * nhìn ở hai chỗ vẫn là một màu. */
+.lt-dong { border-left: 3px solid var(--mau, transparent); }
+.lt-dong.xong { background: #fafcfb; }
+.lt-dong.xong .lt-viec, .lt-dong.xong .lt-meta { color: #7f918d; }
+
+/* Trạng thái đứng ngay cạnh tên. Đẩy nó sang tận mép phải thì giữa thẻ hở ra
+ * một khoảng trống lớn trên màn rộng, và mắt phải đi hết chiều ngang mới ghép
+ * được tên với trạng thái. */
+.lt-hang-ten {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.lt-hang-ten .lt-khach { flex: 0 1 auto; }
+
+.lt-the-nho {
+  display: inline-block; margin-left: 7px; padding: 1px 8px;
+  border-radius: 999px; background: #eef4f2; border: 1px solid var(--line);
+  color: #62807a; font-size: .68rem; font-weight: 700; vertical-align: 1px;
+}
+.lt-viec { display: block; }
+
+.lt-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.lt-meta i { font-size: .88rem; color: #a4b5b1; }
+.lt-meta .lt-den i { color: var(--teal); }
+.lt-ghi { display: flex; align-items: flex-start; gap: 8px; }
+.lt-ghi i { font-size: .9rem; color: #b8952f; margin-top: 1px; flex: none; }
+
+.lt-thao-tac { align-content: center; }
+
+/* ── Ô tìm lớn ── */
+
+.lt-tim-lon {
+  display: flex; align-items: center; gap: 11px; margin-top: 14px;
+  padding: 0 14px; min-height: 48px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fff;
+  transition: border-color .13s, box-shadow .13s;
+}
+.lt-tim-lon:focus-within {
+  border-color: var(--teal); box-shadow: 0 0 0 3px rgba(8, 127, 123, .12);
+}
+.lt-tim-lon > i { font-size: 1.15rem; color: #8ba09b; flex: none; }
+.lt-tim-lon input {
+  flex: 1 1 auto; min-width: 0; border: 0; background: none;
+  min-height: 46px; padding: 0; font-size: .92rem; color: var(--ink);
+}
+.lt-tim-lon input:focus { outline: none; }
+.lt-tim-lon .ghost-button { flex: none; }
+
+/* ── Chọn nhanh khoảng ngày ── */
+
+.lt-nhanh {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px;
+}
+.lt-nhanh-nhan {
+  color: #62807a; font-size: .73rem; font-weight: 700; margin-right: 2px;
+}
+.lt-chip {
+  min-height: 36px; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+  font-family: inherit; font-size: .79rem; font-weight: 600; color: #4b6560;
+  transition: background .13s, border-color .13s, color .13s;
+}
+.lt-chip:hover { border-color: #a9d3cd; color: var(--teal-dark); }
+.lt-chip.is-chon {
+  background: var(--teal); border-color: var(--teal); color: #fff;
+}
+.lt-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+.lt-nhanh-ngay {
+  display: flex; align-items: center; gap: 7px; margin-left: auto;
+}
+.lt-nhanh-ngay input {
+  min-height: 36px; padding: 5px 10px; font-size: .79rem;
+  border: 1px solid var(--line); border-radius: 9px; background: #fff;
+}
+.lt-nhanh-ngay i { color: #a4b5b1; }
+
+/* ── Bảng lịch hẹn ── */
+
+.lh-cot-gio { white-space: nowrap; }
+.lh-cot-gio b { display: block; font-size: .9rem; color: #163f3a; font-variant-numeric: tabular-nums; }
+.lh-cot-gio small { display: block; color: #75908b; font-size: .72rem; }
+.lh-cot-gio em {
+  display: block; margin-top: 2px; font-style: normal;
+  color: #a4b5b1; font-size: .66rem; font-variant-numeric: tabular-nums;
+}
+.lh-viec { display: block; color: #2b4844; }
+.lh-so { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.lt-bang tbody tr { border-left: 3px solid var(--mau, transparent); }
+
+.lt-ty-le {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: .76rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.lt-ty-le.tot { background: #e2f2e9; color: #1f7a53; }
+.lt-ty-le.vua { background: #fbf1dc; color: #8a6508; }
+.lt-ty-le.kem { background: #fbe6e3; color: #a3382a; }
+
+/* ── Hành trình khách ── */
+
+.lt-quay-lai { align-self: start; }
+
+.lt-nguoi-lon { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
+.lt-nguoi-lon h2 { margin: 0 0 3px; font-size: 1.3rem; color: #14312d; }
+.lt-nguoi-lon p { margin: 0; color: #4b6560; font-size: .84rem; }
+.lt-avatar.lon { width: 54px; height: 54px; border-radius: 17px; font-size: 1.3rem; }
+
+.lt-ht-dau { display: grid; gap: 16px; }
+.lt-ht-so, .lt-bc-so {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  padding-top: 15px; border-top: 1px solid var(--line);
+}
+.lt-ht-so > div, .lt-bc-so > div { display: grid; gap: 2px; }
+.lt-ht-so b, .lt-bc-so b {
+  font-size: 1.4rem; color: #163f3a; font-variant-numeric: tabular-nums; font-weight: 800;
+}
+.lt-ht-so span, .lt-bc-so span { color: #8095a0; font-size: .74rem; }
+.lt-bc-so > div.tot b { color: #1f7a53; }
+.lt-bc-so > div.kem b { color: #a3382a; }
+.lt-bc-dau { display: grid; gap: 0; }
+.lt-bc-so { border-top: 0; padding-top: 0; margin-top: 16px; }
+
+/* Dòng thời gian: vạch dọc nối các mốc nói rằng chúng nối tiếp nhau, không
+ * phải một danh sách rời. Màu chấm theo NHÓM việc, để nhìn lướt là biết đoạn
+ * nào do marketing làm, đoạn nào do quầy, đoạn nào do bác sĩ. */
+.ht-doc { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 0; }
+.ht-moc {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr);
+  gap: 14px; padding-bottom: 18px; position: relative;
+}
+.ht-moc:last-child { padding-bottom: 0; }
+.ht-moc:not(:last-child)::before {
+  content: ''; position: absolute; left: 18px; top: 38px; bottom: 0;
+  width: 2px; background: var(--line);
+}
+.ht-cham {
+  width: 38px; height: 38px; border-radius: 12px; position: relative; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #eef4f2; border: 1px solid var(--line);
+}
+.ht-cham i { font-size: 1.05rem; color: #6d857f; }
+.ht-moc.nhom-marketing .ht-cham { background: #e9f0fb; border-color: #c4d7f0; }
+.ht-moc.nhom-marketing .ht-cham i { color: #2f6bb0; }
+.ht-moc.nhom-le_tan .ht-cham { background: var(--mint); border-color: #a9d3cd; }
+.ht-moc.nhom-le_tan .ht-cham i { color: var(--teal-dark); }
+.ht-moc.nhom-chuyen_mon .ht-cham { background: #f0e9f8; border-color: #d5c7e8; }
+.ht-moc.nhom-chuyen_mon .ht-cham i { color: #6b4b96; }
+.ht-moc.sap-toi .ht-cham { border-style: dashed; }
+
+.ht-noi { min-width: 0; display: grid; gap: 3px; padding-top: 2px; }
+.ht-dau { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0; }
+.ht-dau b { font-size: .84rem; color: #1d3a36; }
+.ht-dau time { color: #a4b5b1; font-size: .73rem; font-variant-numeric: tabular-nums; }
+.ht-chu { margin: 0; color: #2b4844; font-size: .88rem; line-height: 1.45; }
+.ht-phu { margin: 0; color: #75908b; font-size: .77rem; }
+.ht-boi { margin: 2px 0 0; color: #a4b5b1; font-size: .71rem; font-variant-numeric: tabular-nums; }
+
+/* ── Báo cáo ── */
+
+.lt-chon-ky, #bcChiNhanh { min-height: 40px; }
+
+.lt-bc-luoi {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* Dải ngang thay cho bánh tròn: so bề dài dễ hơn so góc quạt, và nhãn nằm
+ * ngay cạnh giá trị nên không cần chú thích riêng. */
+.bc-dai { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 9px; }
+.bc-dai li {
+  display: grid; grid-template-columns: minmax(84px, 1fr) minmax(60px, 2fr) auto;
+  gap: 11px; align-items: center;
+}
+.bc-ten {
+  font-size: .81rem; color: #2b4844;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bc-thanh { height: 8px; border-radius: 999px; background: #eef3f1; overflow: hidden; }
+.bc-thanh i { display: block; height: 100%; background: var(--teal); border-radius: 999px; }
+.bc-so {
+  font-size: .82rem; font-weight: 800; color: #163f3a;
+  font-variant-numeric: tabular-nums; min-width: 26px; text-align: right;
+}
+
+.bc-cot {
+  display: flex; align-items: flex-end; gap: 6px; margin-top: 14px;
+  min-height: 148px; padding: 10px 0 0; overflow-x: auto;
+}
+.bc-cot-o {
+  flex: 1 1 34px; min-width: 34px; display: grid; gap: 5px;
+  justify-items: center; align-content: end; height: 138px;
+}
+.bc-cot-thanh {
+  width: 100%; max-width: 30px; min-height: 4px;
+  background: linear-gradient(180deg, var(--teal), #0a9a95);
+  border-radius: 6px 6px 3px 3px; align-self: end;
+}
+.bc-cot-so { font-size: .7rem; font-weight: 800; color: #163f3a; font-variant-numeric: tabular-nums; }
+.bc-cot-ngay { font-size: .66rem; color: #8ba09b; font-variant-numeric: tabular-nums; }
+.bc-cot-o { grid-template-rows: auto 1fr auto; }
+.bc-cot-o .bc-cot-so { grid-row: 1; }
+.bc-cot-o .bc-cot-thanh { grid-row: 2; }
+.bc-cot-o .bc-cot-ngay { grid-row: 3; }
+
+/* ── Màn hẹp ── */
+
+@media (max-width: 860px) {
+  .lt-hang-ten { gap: 8px; }
+  .lt-nhanh-ngay { margin-left: 0; width: 100%; }
+  .lt-nhanh-ngay input { flex: 1 1 auto; min-width: 0; }
+  .lt-bang td[data-label="Nội dung"],
+  .lt-bang td[data-label="Bác sĩ"] { grid-column: 1 / -1; }
+  .lh-so { text-align: left; }
+  .lt-ht-so, .lt-bc-so { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bc-dai li { grid-template-columns: minmax(0, 1fr) auto; }
+  .bc-thanh { grid-column: 1 / -1; order: 3; }
+  .lt-bc-luoi { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}
+
+@media (max-width: 520px) {
+  .lt-nhanh { gap: 6px; }
+  .lt-chip { padding: 6px 11px; font-size: .75rem; }
+  .ht-moc { grid-template-columns: 32px minmax(0, 1fr); gap: 11px; }
+  .ht-cham { width: 32px; height: 32px; border-radius: 10px; }
+  .ht-moc:not(:last-child)::before { left: 15px; top: 32px; }
 }

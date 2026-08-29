@@ -405,6 +405,217 @@ export async function demHangDoi() {
   return Object.fromEntries(ma.map((m, i) => [m, ds[i].length]));
 }
 
+/* ── Hành trình khách hàng ────────────────────────────────────────────
+ *
+ * Hành trình gộp mọi dấu vết của MỘT khách theo trục thời gian: lead vào từ
+ * đâu, telesale gọi mấy lần, chốt lịch lúc nào, tới hay không tới, làm dịch
+ * vụ gì, ai chăm sau đó.
+ *
+ * Khoá là SỐ ĐIỆN THOẠI đã chuẩn hoá, không phải mã khách. Cùng một người có
+ * thể mang mã khác nhau ở kho lead và ở hồ sơ phòng khám; số điện thoại là
+ * thứ duy nhất hai bên cùng giữ.
+ */
+
+export const LOAI_SU_KIEN = {
+  lead:      { ten: 'Lead vào hệ thống', icon: 'ri-inbox-archive-line',  nhom: 'marketing' },
+  goi:       { ten: 'Telesale gọi',      icon: 'ri-phone-line',          nhom: 'marketing' },
+  chot_lich: { ten: 'Chốt lịch hẹn',     icon: 'ri-calendar-check-line', nhom: 'marketing' },
+  den:       { ten: 'Khách đến',         icon: 'ri-user-follow-line',    nhom: 'le_tan' },
+  khong_den: { ten: 'Không đến',         icon: 'ri-user-unfollow-line',  nhom: 'le_tan' },
+  huy:       { ten: 'Hủy lịch',          icon: 'ri-close-circle-line',   nhom: 'le_tan' },
+  kham:      { ten: 'Khám và điều trị',  icon: 'ri-stethoscope-line',    nhom: 'chuyen_mon' },
+  phan_hoi:  { ten: 'Phản hồi',          icon: 'ri-feedback-line',       nhom: 'le_tan' },
+};
+
+// Dấu vết TRƯỚC khi khách tới phòng khám. Chỗ này khi nối API sẽ đọc từ
+// marketing.leads và marketing.call_logs; hình dạng dữ liệu giữ nguyên.
+const TRUOC_KHI_TOI = {
+  '0903112233': [
+    { loai: 'lead', luc: '2024-06-10T09:12:00', boi: 'PG-014',
+      chu: 'Lead từ booth EMart Gò Vấp', phu: 'Nguồn PG · quan tâm niềng răng' },
+    { loai: 'goi', luc: '2024-06-11T14:30:00', boi: 'TS-003',
+      chu: 'Gọi lần 1 · khách nghe máy', phu: 'Hẹn gọi lại cuối tuần' },
+    { loai: 'goi', luc: '2024-06-15T10:05:00', boi: 'TS-003',
+      chu: 'Gọi lần 2 · đồng ý tới khám', phu: '' },
+    { loai: 'chot_lich', luc: '2024-06-15T10:20:00', boi: 'TS-003',
+      chu: 'Chốt lịch 18/06 lúc 09:00', phu: 'BS. Trần Minh Quân' },
+  ],
+  '0912445566': [
+    { loai: 'lead', luc: '2025-08-28T16:40:00', boi: 'LT01',
+      chu: 'Khách được người quen giới thiệu', phu: 'Nguồn giới thiệu' },
+    { loai: 'goi', luc: '2025-09-02T09:15:00', boi: 'TS-001',
+      chu: 'Gọi tư vấn Implant', phu: 'Khách hỏi chi phí và thời gian điều trị' },
+    { loai: 'chot_lich', luc: '2025-09-02T09:40:00', boi: 'TS-001',
+      chu: 'Chốt lịch 04/09', phu: 'BS. Lê Thu Hà' },
+  ],
+  '0938778899': [
+    { loai: 'lead', luc: '2026-08-20T11:00:00', boi: 'PG-021',
+      chu: 'Lead từ tuyến đường Quang Trung', phu: 'Nguồn PG · quan tâm tẩy trắng' },
+    { loai: 'goi', luc: '2026-08-22T15:20:00', boi: 'TS-005',
+      chu: 'Gọi lần 1 · máy bận', phu: '' },
+    { loai: 'goi', luc: '2026-08-25T09:50:00', boi: 'TS-005',
+      chu: 'Gọi lần 2 · đồng ý tới khám', phu: '' },
+    { loai: 'chot_lich', luc: '2026-08-25T10:00:00', boi: 'TS-005',
+      chu: 'Chốt lịch hôm nay 09:00', phu: 'BS. Phạm Đức Anh' },
+  ],
+  '0933667788': [
+    { loai: 'lead', luc: '2026-07-02T08:30:00', boi: 'PG-009',
+      chu: 'Lead từ booth Galaxy', phu: 'Nguồn PG' },
+    { loai: 'goi', luc: '2026-07-04T10:10:00', boi: 'TS-002',
+      chu: 'Gọi lần 1 · đồng ý tới khám', phu: '' },
+  ],
+};
+
+/** Danh sách khách có mặt trong lịch hẹn, kèm số liệu tóm tắt hành trình. */
+export function layDanhSachKhach({ tim, chiNhanh, nguon } = {}) {
+  const theoSdt = new Map();
+  LICH_HEN.forEach((x) => {
+    const sdt = x.khach.dien_thoai;
+    if (!theoSdt.has(sdt)) {
+      theoSdt.set(sdt, { khach: x.khach, chi_nhanh: x.chi_nhanh, nguon: x.nguon, lich: [] });
+    }
+    theoSdt.get(sdt).lich.push(x);
+  });
+
+  let ds = [...theoSdt.values()].map((k) => {
+    const den = k.lich.filter((x) => x.den_luc).length;
+    const hen = k.lich.filter((x) => x.trang_thai !== 'huy').length;
+    return {
+      ...k,
+      so_lich: k.lich.length,
+      so_lan_den: den,
+      so_khong_den: k.lich.filter((x) => x.trang_thai === 'khong_den').length,
+      ty_le_den: hen ? Math.round((den / hen) * 100) : 0,
+      lich_gan_nhat: k.lich.map((x) => x.ngay).sort().pop(),
+      truoc_khi_toi: (TRUOC_KHI_TOI[k.khach.dien_thoai] || []).length,
+    };
+  });
+
+  if (chiNhanh) ds = ds.filter((k) => k.chi_nhanh === chiNhanh);
+  if (nguon) ds = ds.filter((k) => k.nguon === nguon);
+  if (tim) {
+    const q = tim.trim().toLowerCase();
+    ds = ds.filter((k) => k.khach.ten.toLowerCase().includes(q)
+      || k.khach.dien_thoai.includes(q));
+  }
+  ds.sort((a, b) => (a.lich_gan_nhat < b.lich_gan_nhat ? 1 : -1));
+  return cho(ds);
+}
+
+/** Toàn bộ hành trình của một khách, sắp mới nhất lên trước. */
+export function layHanhTrinh(dienThoai) {
+  const lich = LICH_HEN.filter((x) => x.khach.dien_thoai === dienThoai);
+  if (!lich.length) throw new Error('Không tìm thấy khách này.');
+
+  const sk = (TRUOC_KHI_TOI[dienThoai] || []).map((e) => ({ ...e }));
+
+  lich.forEach((x) => {
+    const moc = `${x.ngay}T${x.gio}:00`;
+    if (x.den_luc) {
+      sk.push({ loai: 'den', luc: x.den_luc, boi: x.nguoi_chot,
+        chu: `Tới phòng khám · hẹn lúc ${x.gio}`,
+        phu: `${tenBacSi(x.bac_si)} · ${x.phong} · ${tenChiNhanh(x.chi_nhanh)}`, lich_id: x.id });
+    }
+    if (x.trang_thai === 'khong_den') {
+      sk.push({ loai: 'khong_den', luc: moc, boi: x.nguoi_chot,
+        chu: `Không tới lịch hẹn ${x.gio}`, phu: x.ghi_chu || '', lich_id: x.id });
+    }
+    if (x.trang_thai === 'huy') {
+      sk.push({ loai: 'huy', luc: moc, boi: x.nguoi_chot,
+        chu: `Hủy lịch hẹn ${x.gio}`, phu: x.ghi_chu || '', lich_id: x.id });
+    }
+    if (x.trang_thai === 'hoan_tat') {
+      sk.push({ loai: 'kham', luc: moc, boi: x.bac_si,
+        chu: x.noi_dung || 'Khám và điều trị',
+        phu: `${tenBacSi(x.bac_si)} · ${tenChiNhanh(x.chi_nhanh)}`, lich_id: x.id });
+    }
+    if (x.trang_thai === 'cho_den' && x.ngay >= todayISO()) {
+      sk.push({ loai: 'chot_lich', luc: moc, boi: x.nguoi_chot,
+        chu: `Lịch hẹn sắp tới ${x.gio}`,
+        phu: `${tenBacSi(x.bac_si)} · ${x.phong}`, lich_id: x.id, sap_toi: true });
+    }
+  });
+
+  PHAN_HOI.filter((p) => p.khach.dien_thoai === dienThoai).forEach((p) => {
+    sk.push({ loai: 'phan_hoi', luc: p.tao_luc, boi: p.nguoi_nhan, chu: p.noi_dung,
+      phu: `Mức ${p.muc} · ${p.trang_thai === 'xong' ? 'đã xử lý' : 'chưa xử lý'}` });
+  });
+
+  sk.sort((a, b) => (a.luc < b.luc ? 1 : -1));
+  return cho({ khach: lich[0].khach, chi_nhanh: lich[0].chi_nhanh, su_kien: sk, lich });
+}
+
+/* ── Báo cáo tháng ────────────────────────────────────────────────────
+ *
+ * Mọi con số dưới đây tính từ CÙNG một tập lịch hẹn đã lọc, nên tổng của các
+ * bảng con luôn bằng tổng chung. Tính mỗi bảng bằng một phép lọc riêng là
+ * cách chắc chắn nhất để chúng lệch nhau.
+ */
+
+export function baoCaoThang(kyCode, chiNhanh) {
+  const ky = kyCode || todayISO().slice(0, 7);
+  let ds = LICH_HEN.filter((x) => x.ngay.slice(0, 7) === ky);
+  if (chiNhanh) ds = ds.filter((x) => x.chi_nhanh === chiNhanh);
+
+  const daDen = (x) => !!x.den_luc || ['da_den', 'dang_kham', 'hoan_tat'].includes(x.trang_thai);
+
+  const demTheo = (lay, danhMuc) => {
+    const d = {};
+    ds.forEach((x) => { const k = lay(x); d[k] = (d[k] || 0) + 1; });
+    return Object.entries(danhMuc).map(([ma, v]) => ({
+      ma, ten: typeof v === 'string' ? v : v.ten, so: d[ma] || 0,
+    })).filter((x) => x.so > 0).sort((a, b) => b.so - a.so);
+  };
+
+  const hen = ds.filter((x) => x.trang_thai !== 'huy').length;
+  const den = ds.filter(daDen).length;
+  const khongDen = ds.filter((x) => x.trang_thai === 'khong_den').length;
+
+  const theoNgay = {};
+  ds.forEach((x) => { theoNgay[x.ngay] = (theoNgay[x.ngay] || 0) + 1; });
+
+  return cho({
+    ky, tong: ds.length, hen, den, khong_den: khongDen,
+    ty_le_den: hen ? Math.round((den / hen) * 100) : 0,
+    ty_le_khong_den: hen ? Math.round((khongDen / hen) * 100) : 0,
+    so_khach: new Set(ds.map((x) => x.khach.dien_thoai)).size,
+    khach_moi: new Set(ds.filter((x) => x.khach.khach_moi).map((x) => x.khach.dien_thoai)).size,
+    theo_trang_thai: demTheo((x) => x.trang_thai, TRANG_THAI),
+    theo_nguon: demTheo((x) => x.nguon, NGUON),
+    theo_loai: demTheo((x) => x.loai, LOAI_LICH),
+    theo_chi_nhanh: CHI_NHANH.map((c) => {
+      const cua = ds.filter((x) => x.chi_nhanh === c.ma);
+      const h = cua.filter((x) => x.trang_thai !== 'huy').length;
+      const d = cua.filter(daDen).length;
+      return { ma: c.ma, ten: c.ten, so: cua.length, den: d,
+        khong_den: cua.filter((x) => x.trang_thai === 'khong_den').length,
+        ty_le_den: h ? Math.round((d / h) * 100) : 0,
+        so_khach: new Set(cua.map((x) => x.khach.dien_thoai)).size };
+    }).filter((c) => c.so > 0),
+    theo_bac_si: BAC_SI.map((b) => {
+      const cua = ds.filter((x) => x.bac_si === b.ma);
+      return { ma: b.ma, ten: b.ten, chuyen: b.chuyen, so: cua.length,
+        hoan_tat: cua.filter((x) => x.trang_thai === 'hoan_tat').length };
+    }).filter((b) => b.so > 0).sort((a, b) => b.so - a.so),
+    theo_ngay: Object.entries(theoNgay).map(([ngay, so]) => ({ ngay, so }))
+      .sort((a, b) => (a.ngay < b.ngay ? -1 : 1)),
+  });
+}
+
+export function xuatCsvBaoCao(bc) {
+  const d = [['Báo cáo lễ tân', bc.ky], [],
+    ['Tổng lịch hẹn', bc.tong], ['Số khách', bc.so_khach], ['Khách mới', bc.khach_moi],
+    ['Đã đến', bc.den], ['Không đến', bc.khong_den],
+    ['Tỷ lệ đến (%)', bc.ty_le_den], ['Tỷ lệ không đến (%)', bc.ty_le_khong_den], [],
+    ['Theo chi nhánh', 'Lịch hẹn', 'Số khách', 'Đã đến', 'Không đến', 'Tỷ lệ đến (%)']];
+  bc.theo_chi_nhanh.forEach((c) => d.push([c.ten, c.so, c.so_khach, c.den, c.khong_den, c.ty_le_den]));
+  d.push([], ['Theo nguồn khách', 'Lịch hẹn']);
+  bc.theo_nguon.forEach((n) => d.push([n.ten, n.so]));
+  d.push([], ['Theo bác sĩ', 'Lịch hẹn', 'Hoàn tất']);
+  bc.theo_bac_si.forEach((b) => d.push([b.ten, b.so, b.hoan_tat]));
+  return d.map((r) => r.map((o) => '"' + String(o == null ? '' : o).replace(/"/g, '""') + '"').join(',')).join('\n');
+}
+
 /* ── Tiện ích dùng chung cho màn hình ────────────────────────────────── */
 
 export const tenBacSi = (ma) => (BAC_SI.find((b) => b.ma === ma) || {}).ten || ma || '—';
