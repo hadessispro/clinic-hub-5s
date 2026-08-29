@@ -50,6 +50,7 @@ let kChuaKy = false; let kTim = '';
 let khoangKham = 'tat-ca';
 
 let rangChon = '';
+let anhLoc = '';
 let hienFormKham = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -537,6 +538,138 @@ function veLuuY(ds) {
   </section>`;
 }
 
+/* Thuốc đã dùng.
+ *
+ * Gom qua MỌI lượt khám, gồm cả thuốc kê đơn lẫn thuốc tê đã tiêm. Bác sĩ cần
+ * một chỗ để trả lời hai câu trước khi kê: khách đã dùng kháng sinh gì rồi, và
+ * lần trước tê mấy ống thì đủ.
+ *
+ * Thuốc trùng với dị ứng ghi trong hồ sơ thì nổi lên đỏ ngay, không chờ ai
+ * nhớ ra. Đây là chỗ một dòng chữ cứu được một ca sốc phản vệ.
+ */
+function veThuoc(ds) {
+  if (!ds || !ds.length) {
+    return `<section class="panel">
+      <header class="section-title sbn-header"><h3>Thuốc đã dùng</h3></header>
+      <p class="empty-state">Bệnh nhân chưa được kê thuốc hay gây tê lần nào.</p>
+    </section>`;
+  }
+  const canh = ds.filter((t) => t.canh_bao_di_ung).length;
+  return `<section class="panel${canh ? ' sbn-co-canh' : ''}">
+    <header class="section-title sbn-header">
+      <h3>Thuốc đã dùng</h3>
+      <span class="pill">${ds.length} lần kê hoặc tiêm${
+        canh ? ` · ${canh} lần trùng dị ứng đã ghi` : ''}</span>
+    </header>
+    ${canh ? `<p class="sbn-canh-bao" style="margin-top:12px">
+      <i class="ri-alert-line"></i>
+      <span>Có thuốc trùng với dị ứng ghi trong hồ sơ. Kiểm tra lại trước khi kê tiếp.</span>
+    </p>` : ''}
+    <div class="hh-bang-wrap sbn-bang">
+      <table class="hh-bang">
+        <thead><tr>
+          <th>Ngày</th><th>Thuốc</th><th>Loại</th><th>Liều dùng</th><th>Bác sĩ</th>
+        </tr></thead>
+        <tbody>${ds.map((t) => `<tr${t.canh_bao_di_ung ? ' class="sbn-dong-canh"' : ''}>
+          <td data-label="Ngày">${ngayHien(t.ngay)}</td>
+          <td data-label="Thuốc">
+            <b>${escapeHTML(t.ten)}${t.ham_luong ? ` ${escapeHTML(t.ham_luong)}` : ''}</b>
+            ${t.canh_bao_di_ung
+              ? '<small class="sbn-canh-chu"><i class="ri-alert-line"></i>Trùng dị ứng đã ghi</small>'
+              : ''}</td>
+          <td data-label="Loại"><span class="lt-the-nho">${
+            t.loai === 'gay_te' ? 'Gây tê' : 'Kê đơn'}</span></td>
+          <td data-label="Liều dùng">${escapeHTML(t.lieu)}${
+            t.so_ngay ? ` · ${t.so_ngay} ngày` : ''}</td>
+          <td data-label="Bác sĩ">${escapeHTML(tenBacSi(t.bac_si))}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </section>`;
+}
+
+/* Ảnh và phim.
+ *
+ * Gom qua mọi lượt khám ra một chỗ. Bác sĩ cần xem lại phim toàn cảnh của lần
+ * trước ngay trong lúc khám, mà đi tìm nó nằm trong lượt khám nào thì mất thời
+ * gian và thường là thôi không xem.
+ *
+ * Ô ảnh vẽ bằng SVG theo đúng loại phim, không phải một biểu tượng chung: nhìn
+ * lướt là phân biệt được phim quanh chóp với phim toàn cảnh. Khi nối API thật,
+ * chỗ này thay bằng ảnh thật, phần còn lại giữ nguyên.
+ */
+function veHinhPhim(ds) {
+  if (!ds || !ds.length) {
+    return `<section class="panel">
+      <header class="section-title sbn-header"><h3>Ảnh và phim</h3></header>
+      <p class="empty-state">Chưa có ảnh hay phim nào trong hồ sơ này.</p>
+    </section>`;
+  }
+  const loai = [...new Set(ds.map((a) => a.loai))];
+  const hien = ds.filter((a) => !anhLoc || a.loai === anhLoc);
+
+  const veKhung = (a) => {
+    if (a.loai === 'toan_canh') {
+      // Phim toàn cảnh: cung hàm trải phẳng, hai hàm răng đối nhau.
+      return `<svg viewBox="0 0 120 64" class="sbn-phim pano" aria-hidden="true">
+        <rect width="120" height="64" rx="4" class="nen"/>
+        <path d="M8 30 Q60 6 112 30" class="cung"/>
+        <path d="M8 36 Q60 60 112 36" class="cung"/>
+        ${Array.from({ length: 14 }, (_, i) => {
+          const x = 12 + i * 7.2;
+          const yt = 30 - Math.sin((i / 13) * Math.PI) * 15;
+          const yd = 36 + Math.sin((i / 13) * Math.PI) * 15;
+          return `<rect x="${x - 2.4}" y="${yt}" width="4.8" height="9" rx="1.4" class="rang"/>
+                  <rect x="${x - 2.4}" y="${yd - 9}" width="4.8" height="9" rx="1.4" class="rang"/>`;
+        }).join('')}
+      </svg>`;
+    }
+    if (a.loai === 'quanh_chop' || a.loai === 'ct') {
+      // Phim quanh chóp: hai ba răng và chân răng trong xương.
+      return `<svg viewBox="0 0 120 64" class="sbn-phim quanh" aria-hidden="true">
+        <rect width="120" height="64" rx="4" class="nen"/>
+        <line x1="10" y1="26" x2="110" y2="26" class="xuong"/>
+        ${[34, 60, 86].map((x) => `
+          <rect x="${x - 11}" y="8" width="22" height="18" rx="3" class="rang"/>
+          <path d="M${x - 7} 26 L${x - 4} 50 M${x + 7} 26 L${x + 4} 50" class="chan"/>`).join('')}
+      </svg>`;
+    }
+    // Ảnh chụp: khung hình với vùng miệng.
+    return `<svg viewBox="0 0 120 64" class="sbn-phim chup" aria-hidden="true">
+      <rect width="120" height="64" rx="4" class="nen"/>
+      <ellipse cx="60" cy="32" rx="34" ry="17" class="moi"/>
+      <path d="M30 32 Q60 20 90 32 Q60 44 30 32" class="rang-vung"/>
+      <line x1="60" y1="22" x2="60" y2="42" class="giua"/>
+    </svg>`;
+  };
+
+  return `<section class="panel">
+    <header class="section-title sbn-header">
+      <h3>Ảnh và phim</h3>
+      <span class="pill">${ds.length} tệp · gom từ mọi lượt khám</span>
+    </header>
+    <div class="lt-nhanh">
+      <span class="lt-nhanh-nhan">Loại</span>
+      <button type="button" class="lt-chip${!anhLoc ? ' is-chon' : ''}" data-anh="">Tất cả</button>
+      ${loai.map((l) => `<button type="button" class="lt-chip${
+        anhLoc === l ? ' is-chon' : ''}" data-anh="${escapeHTML(l)}">${
+        escapeHTML(LOAI_ANH[l] || l)}</button>`).join('')}
+    </div>
+    <div class="sbn-thu-vien">
+      ${hien.map((a) => `<figure class="sbn-anh-o lon">
+        <div class="sbn-anh-hinh">${veKhung(a)}</div>
+        <figcaption>
+          <b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
+          <small>${escapeHTML(ngayHien(a.ngay))}${
+            a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small>
+          <small class="sbn-anh-ghi">${escapeHTML(a.ghi_chu || '')}</small>
+          <small class="sbn-anh-bs">${escapeHTML(tenBacSi(a.bac_si))}</small>
+        </figcaption>
+      </figure>`).join('')}
+    </div>
+  </section>`;
+}
+
 /* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
  * chạy qua nhiều buổi, và đó chính là thứ cho biết khách đang ở đâu trong lộ
  * trình. */
@@ -633,6 +766,10 @@ function veSoChiTiet() {
     </section>
 
     ${veLuuY(duLieu.luu_y)}
+
+    ${veThuoc(duLieu.thuoc)}
+
+    ${veHinhPhim(duLieu.anh)}
 
     ${veKeHoach(duLieu.ke_hoach, duLieu.tong_chi_phi)}
 
@@ -799,6 +936,10 @@ export function initView() {
     });
   });
   g('sbnBoChon')?.addEventListener('click', () => { rangChon = ''; ve(); });
+
+  document.querySelectorAll('[data-anh]').forEach((b) => {
+    b.addEventListener('click', () => { anhLoc = b.dataset.anh; ve(); });
+  });
 
   g('sbnLuuRang')?.addEventListener('click', () => {
     const mat = {};

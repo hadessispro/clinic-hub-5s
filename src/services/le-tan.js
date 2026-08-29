@@ -78,6 +78,22 @@ export const HANG_DOI = {
 
 // Chi nhánh lấy từ BRANCHES của hệ thống, không tự khai lại. Khai lại là tạo
 // nguồn sự thật thứ hai về chi nhánh, rồi hai bên lệch nhau lúc nào không hay.
+/* Lý do đổi lịch.
+ *
+ * Bắt buộc ghi, và ghi bằng một danh mục chứ không chỉ chữ tự do: cuối tháng
+ * còn đếm được vì sao lịch bị dời — khách bận hay phòng khám xếp trùng là hai
+ * chuyện hoàn toàn khác nhau, mà chữ tự do thì không đếm được.
+ */
+export const LY_DO_DOI = {
+  khach_ban:    'Khách bận, xin dời',
+  khach_om:     'Khách ốm, không tới được',
+  khach_xin_som:'Khách xin dời sớm hơn',
+  bac_si_ban:   'Bác sĩ vướng lịch',
+  phong_trung:  'Trùng phòng hoặc trùng ghế',
+  phong_kham:   'Phòng khám chủ động dời',
+  khac:         'Lý do khác',
+};
+
 export const CHI_NHANH = Object.values(BRANCHES)
   .map((b) => ({ ma: b.id, ten: b.shortName }));
 
@@ -403,13 +419,43 @@ export function doiTrangThai(id, trangThai, ghiChu) {
   return cho(x);
 }
 
-export function doiLich(id, ngay, gio) {
+/* Đổi lịch.
+ *
+ * Giữ lại lịch sử: mỗi lần dời ghi một dòng vào `lan_doi`, kèm lý do. Ghi đè
+ * thẳng thì cuối tháng không ai biết một khách đã bị dời bốn lần, mà đó chính
+ * là dấu hiệu cần xem lại cách xếp lịch.
+ */
+export function doiLich(id, du) {
   const x = timLich(id);
+  const ngay = du.ngay; const gio = du.gio;
   if (!ngay || !gio) throw new Error('Phải chọn ngày và giờ mới.');
-  x.ngay = ngay; x.gio = gio;
+  if (!LY_DO_DOI[du.ly_do]) throw new Error('Phải chọn lý do đổi lịch.');
+  if (du.ly_do === 'khac' && String(du.ghi_chu || '').trim().length < 5) {
+    throw new Error('Chọn "Lý do khác" thì phải ghi rõ, ít nhất 5 ký tự.');
+  }
+  if (ngay === x.ngay && gio === x.gio && (du.bac_si || x.bac_si) === x.bac_si) {
+    throw new Error('Ngày, giờ và bác sĩ không đổi gì so với lịch cũ.');
+  }
+
+  const bacSi = du.bac_si || x.bac_si;
+  const phut = Number(du.phut) || x.phut;
+  const dung = LICH_HEN.find((l) => l.bac_si === bacSi && l.ngay === ngay && l.id !== x.id
+    && !['huy', 'khong_den'].includes(l.trang_thai)
+    && l.gio < cong(gio, phut) && cong(l.gio, l.phut) > gio);
+  if (dung) throw new Error(`${tenBacSi(bacSi)} đã có lịch ${dung.gio} với ${dung.khach.ten}.`);
+
+  (x.lan_doi ||= []).push({
+    tu_ngay: x.ngay, tu_gio: x.gio, tu_bac_si: x.bac_si,
+    den_ngay: ngay, den_gio: gio, den_bac_si: bacSi,
+    ly_do: du.ly_do, ghi_chu: String(du.ghi_chu || '').trim(),
+    boi: du.boi || 'LT01', luc: new Date().toISOString(),
+  });
+
+  x.ngay = ngay; x.gio = gio; x.phut = phut; x.bac_si = bacSi;
   x.bat_dau = luc(ngay, gio);
-  x.ket_thuc = luc(ngay, cong(gio, x.phut));
+  x.ket_thuc = luc(ngay, cong(gio, phut));
   x.trang_thai = 'cho_den';
+  x.den_luc = null;
   return cho(x);
 }
 

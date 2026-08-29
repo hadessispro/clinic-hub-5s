@@ -20,13 +20,14 @@ import {
   layLichHomNay,
   tenBacSi, tenChiNhanh, tiepDon, xuLyPhanHoi, xuatCsvLichHen,
   LOAI_SU_KIEN, baoCaoThang, layDanhSachKhach, layHanhTrinh, xuatCsvBaoCao,
-  CHAM_SOC, NHOM_KHACH, TELESALE, doiBacSiLich, doiDieuPhoi,
+  CHAM_SOC, LY_DO_DOI, NHOM_KHACH, TELESALE, doiBacSiLich, doiDieuPhoi,
   tenChamSoc, tenTelesale,
 } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
+import { store } from '../store.js';
 // Lễ tân đọc lưu ý mà bác sĩ đánh dấu. Chỉ mục dành cho quầy — hàm bên
 // sổ bệnh án đã lọc sẵn, màn này không tự quyết được cái gì nên đọc.
 import { MUC_LUU_Y, layLuuYTheoSdt } from '../services/so-benh-an.js';
@@ -36,6 +37,7 @@ import { MUC_LUU_Y, layLuuYTheoSdt } from '../services/so-benh-an.js';
 let tab = 'hom-nay';
 let hangDoiMo = 'nhac_hen';
 let hienForm = false;
+let doiLichId = '';
 
 // Bộ lọc của tab Lịch hẹn. Tab Hôm nay có bộ lọc riêng, cố ý: đổi ngày ở tab
 // Lịch hẹn mà làm tab Hôm nay không còn là hôm nay thì tên tab thành nói dối.
@@ -387,6 +389,8 @@ function veHomNay() {
       </button>
     </div>` : ''}
 
+    ${veDoiLich()}
+
     ${veBangNgay(d)}
 
     <section class="panel">
@@ -408,6 +412,73 @@ function veHomNay() {
 }
 
 /* ── Tab: Lịch hẹn ───────────────────────────────────────────────────── */
+
+/* Biểu mẫu đổi lịch.
+ *
+ * Trước đó tôi dùng hộp thoại nhập chữ chung, hỏi ngày rồi hỏi giờ ở hai lần
+ * bấm. Hộp thoại đó chỉ có MỘT ô chữ nên nó dựng ra textarea — gõ ngày vào
+ * một khung ba dòng là sai hẳn công cụ, và không có chỗ nào cho lý do.
+ *
+ * Đây là biểu mẫu thật, cùng khuôn với form Đặt lịch: ngày, giờ, thời lượng,
+ * bác sĩ và lý do trên một màn, thấy hết trước khi bấm.
+ */
+function veDoiLich() {
+  if (!doiLichId) return '';
+  const x = (dsHomNay.concat(dsLichHen)).find((l) => l.id === doiLichId);
+  if (!x) return '';
+
+  const gioGoiY = [];
+  for (let h = 7; h <= 20; h += 1) {
+    gioGoiY.push(`${String(h).padStart(2, '0')}:00`);
+    if (h < 20) gioGoiY.push(`${String(h).padStart(2, '0')}:30`);
+  }
+  const daDoi = (x.lan_doi || []).length;
+
+  return `<section class="panel lt-form lt-doi-lich">
+    <header class="section-title lt-header">
+      <h3>Đổi lịch hẹn</h3>
+      <span class="pill">${escapeHTML(x.khach.ten)} · đang hẹn ${
+        escapeHTML(ngayHien(x.ngay))} lúc ${escapeHTML(x.gio)}</span>
+      <button type="button" class="ghost-button" id="dlDong">
+        <i class="ri-close-line"></i> Đóng
+      </button>
+    </header>
+
+    ${daDoi ? `<p class="lt-dp-luu-y"><i class="ri-history-line"></i>
+      Lịch này đã được dời <b>${daDoi} lần</b> trước đó.
+      ${daDoi >= 2 ? 'Nhiều lần dời liên tiếp thường là dấu hiệu nên gọi xác nhận trước khi xếp lại.' : ''}
+    </p>` : ''}
+
+    <div class="lt-form-luoi">
+      <label><span>Ngày mới *</span>
+        <input type="date" id="dlNgay" value="${escapeHTML(x.ngay)}"></label>
+      <label><span>Giờ mới *</span>
+        <select id="dlGio">${gioGoiY.map((g) => opt(g, g, x.gio)).join('')}</select></label>
+      <label><span>Thời lượng</span>
+        <select id="dlPhut">
+          ${[15, 30, 45, 60, 90].map((p) => opt(String(p), `${p} phút`, String(x.phut))).join('')}
+        </select></label>
+      <label><span>Bác sĩ</span>
+        <select id="dlBacSi">
+          ${BAC_SI.map((b) => opt(b.ma, `${b.ten} · ${b.chuyen}`, x.bac_si)).join('')}
+        </select></label>
+      <label class="lt-rong"><span>Lý do đổi lịch *</span>
+        <select id="dlLyDo">
+          ${opt('', '— Chọn lý do —', '')}
+          ${Object.entries(LY_DO_DOI).map(([v, t]) => opt(v, t, '')).join('')}
+        </select></label>
+      <label class="lt-rong"><span>Ghi chú thêm</span>
+        <input type="text" id="dlGhiChu"
+               placeholder="Khách hẹn gọi lại xác nhận sau 17h…"></label>
+    </div>
+
+    <div class="lt-form-nut">
+      <button type="button" class="primary-button" id="dlLuu">
+        <i class="ri-calendar-check-line"></i> Đổi lịch
+      </button>
+    </div>
+  </section>`;
+}
 
 function veForm() {
   if (!hienForm) return '';
@@ -508,6 +579,7 @@ function veLichHen() {
   const soLoc = [fChiNhanh, fBacSi, fTrangThai, fLoai, fTim, fDen].filter(Boolean).length;
 
   return `
+    ${veDoiLich()}
     ${veForm()}
     <section class="panel">
       <header class="section-title lt-header">
@@ -1173,20 +1245,20 @@ export function initView() {
   });
 
   document.querySelectorAll('[data-doi]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const ngay = await requestInput('Nhập ngày hẹn mới theo dạng NĂM-THÁNG-NGÀY.', {
-        title: 'Đổi lịch hẹn', label: 'Ngày mới', placeholder: todayISO(),
-        confirmText: 'Tiếp tục',
+    b.addEventListener('click', () => { doiLichId = b.dataset.doi; ve(); });
+  });
+  g('dlDong')?.addEventListener('click', () => { doiLichId = ''; ve(); });
+
+  g('dlLuu')?.addEventListener('click', () => {
+    const v = (id) => (g(id)?.value || '').trim();
+    lamRoiVe(async () => {
+      await doiLich(doiLichId, {
+        ngay: v('dlNgay'), gio: v('dlGio'), phut: Number(v('dlPhut')),
+        bac_si: v('dlBacSi'), ly_do: v('dlLyDo'), ghi_chu: v('dlGhiChu'),
+        boi: store.state?.profile?.employee_code || 'LT01',
       });
-      if (!ngay) return;
-      const gio = await requestInput('Nhập giờ hẹn mới theo dạng GIỜ:PHÚT.', {
-        title: 'Đổi lịch hẹn', label: 'Giờ mới', placeholder: '09:30',
-        confirmText: 'Đổi lịch',
-      });
-      if (!gio) return;
-      await lamRoiVe(() => doiLich(b.dataset.doi, ngay.trim(), gio.trim()),
-        'Đã đổi lịch hẹn.');
-    });
+      doiLichId = '';
+    }, 'Đã đổi lịch hẹn và ghi lại lý do.');
   });
 
   /* Lịch hẹn */

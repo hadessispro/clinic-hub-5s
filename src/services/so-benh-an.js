@@ -349,7 +349,11 @@ let LUOT_KHAM = [
     dan_do: 'Dùng bàn chải kẽ mỗi tối. Súc miệng nước muối sinh lý 3 ngày.',
     hen_tai_kham: ngayLech(7),
     da_ky: true, ky_luc: `${ngayLech(-21)}T10:05:00`, ky_boi: 'BS01',
-    anh: [{ id: 'A3', loai: 'ngoai_mat', ghi_chu: 'Ảnh chính diện theo dõi', rang: null }],
+    anh: [
+      { id: 'A3', loai: 'ngoai_mat', ghi_chu: 'Ảnh chính diện theo dõi chỉnh nha', rang: null },
+      { id: 'A6', loai: 'toan_canh', ghi_chu: 'Phim toàn cảnh giữa đợt chỉnh nha', rang: null },
+      { id: 'A7', loai: 'trong_mieng', ghi_chu: 'Mặt trong nhóm răng cửa dưới, cao răng độ 1', rang: '31' },
+    ],
     tao_luc: `${ngayLech(-21)}T09:41:00`, tao_boi: 'BS01',
   },
   {
@@ -643,6 +647,8 @@ export function moHoSo(id, nguoiXem = { ma: '?', vai_tro: '?' }) {
   luuY.sort((a, b) => (uu[a.muc] - uu[b.muc]) || (a.luc < b.luc ? 1 : -1));
   return cho({
     luu_y: luuY,
+    thuoc: layThuocDaDung(id),
+    anh: layAnh(id),
     danh_dau: Object.fromEntries(luot.map((l) => [l.id, danhDauTheoLuot(l.id)])),
     ho_so: h,
     luot_kham: luot,
@@ -734,6 +740,77 @@ export function datTrangThaiRang(hoSoId, maRang, trangThai, mat, ghiChu, boi) {
 }
 
 /* ── Tổng hợp cho màn hình ────────────────────────────────────────────── */
+
+/* Danh sách thuốc đã dùng của một bệnh nhân.
+ *
+ * Gom qua MỌI lượt khám, gồm cả thuốc kê đơn và thuốc tê đã tiêm. Bác sĩ cần
+ * nhìn một chỗ để trả lời hai câu: khách đã dùng kháng sinh gì rồi, và lần
+ * trước tê mấy ống thì đủ.
+ *
+ * Đối chiếu chéo với dị ứng ghi trong hồ sơ: thuốc trùng tên hoạt chất mà
+ * khách có ghi dị ứng thì nổi lên đỏ, không chờ ai nhớ ra.
+ *
+ * GIỚI HẠN, phải nói rõ vì đây là chốt an toàn và tin nhầm nó thì nguy hiểm
+ * hơn là không có nó: phép đối chiếu này chỉ so TÊN, không so NHÓM THUỐC. Đã
+ * kiểm: khách ghi dị ứng Penicillin thì kê "Penicillin V" sẽ bị chặn, nhưng
+ * kê "Amoxicillin" thì KHÔNG — dù hai thuốc cùng nhóm beta-lactam và dị ứng
+ * chéo là chuyện thường gặp.
+ *
+ * Muốn bắt được nhóm thì phải có bảng phân nhóm hoạt chất, và bảng đó phải do
+ * dược sĩ duyệt chứ không phải tôi tự liệt kê. Trước khi có nó, đây là công cụ
+ * nhắc nhở, không phải hàng rào.
+ */
+export function layThuocDaDung(hoSoId) {
+  const h = HO_SO.find((x) => x.id === hoSoId);
+  const diUng = (h?.canh_bao || [])
+    .filter((c) => c.loai === 'di_ung')
+    .map((c) => c.noi_dung.toLowerCase());
+
+  const nghiDiUng = (ten) => {
+    const t = String(ten).toLowerCase();
+    return diUng.some((d) => {
+      // So theo TỪNG TỪ, không so cả câu: cảnh báo ghi "Dị ứng Penicillin —
+      // nổi mề đay", tên thuốc chỉ là "Penicillin". So cả câu thì không khớp.
+      const tu = d.split(/[^a-zà-ỹ0-9]+/i).filter((w) => w.length >= 5);
+      return tu.some((w) => t.includes(w));
+    });
+  };
+
+  const ds = [];
+  LUOT_KHAM.filter((l) => l.ho_so === hoSoId).forEach((l) => {
+    (l.don_thuoc || []).forEach((t) => ds.push({
+      loai: 'ke_don', ten: t.ten, ham_luong: t.ham_luong || '',
+      lieu: t.lieu || '', so_ngay: t.so_ngay || null,
+      ngay: l.ngay, bac_si: l.bac_si, luot_id: l.id,
+      canh_bao_di_ung: nghiDiUng(t.ten),
+    }));
+    if (l.thuoc_te) ds.push({
+      loai: 'gay_te', ten: l.thuoc_te.ten, ham_luong: '',
+      lieu: `${l.thuoc_te.so_ong} ống`, so_ngay: null,
+      ngay: l.ngay, bac_si: l.bac_si, luot_id: l.id,
+      canh_bao_di_ung: nghiDiUng(l.thuoc_te.ten),
+    });
+  });
+  ds.sort((a, b) => (a.ngay < b.ngay ? 1 : -1));
+  return ds;
+}
+
+/* Toàn bộ ảnh và phim của một hồ sơ, gom qua mọi lượt khám.
+ *
+ * Bác sĩ cần xem lại phim toàn cảnh của lần trước ngay trong lúc khám, mà đi
+ * tìm nó nằm trong lượt khám nào thì mất thời gian. Gom ra một chỗ, lọc được
+ * theo loại và theo răng.
+ */
+export function layAnh(hoSoId) {
+  const ds = [];
+  LUOT_KHAM.filter((l) => l.ho_so === hoSoId).forEach((l) => {
+    (l.anh || []).forEach((a) => ds.push({
+      ...a, ngay: l.ngay, gio: l.gio, bac_si: l.bac_si, luot_id: l.id,
+    }));
+  });
+  ds.sort((a, b) => (a.ngay < b.ngay ? 1 : -1));
+  return ds;
+}
 
 /** Số răng theo từng trạng thái. Dùng cho cả sơ đồ 2D lẫn cảnh 3D. */
 export function tomTatSoDo(soDo) {

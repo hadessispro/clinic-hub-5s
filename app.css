@@ -8761,3 +8761,45 @@ body.dialog-open {
   .lt-ly { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
   .lt-ly-icon { width: 30px; height: 30px; border-radius: 9px; }
 }
+
+/* ── Thuốc đã dùng và kho ảnh phim ────────────────────────────────────── */
+
+.sbn-co-canh { border-color: #f0c4bf; }
+.sbn-dong-canh td { background: #fdeceb; }
+.sbn-canh-chu {
+  display: inline-flex !important; align-items: center; gap: 5px;
+  margin-top: 4px; color: #a3382a; font-weight: 700; font-size: .7rem;
+}
+.sbn-canh-chu i { font-size: .85rem; }
+.sbn-canh-bao span { color: #7d2c21; font-size: .85rem; line-height: 1.5; }
+
+.sbn-thu-vien {
+  display: grid; gap: 13px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+}
+.sbn-anh-o.lon { width: auto; padding: 11px; }
+.sbn-anh-o.lon .sbn-anh-hinh { height: auto; padding: 0; background: none; }
+.sbn-anh-o.lon figcaption { gap: 2px; margin-top: 8px; }
+.sbn-anh-ghi { color: #6d857f !important; line-height: 1.4; }
+.sbn-anh-bs { color: #a4b5b1 !important; }
+
+/* Ô ảnh vẽ theo ĐÚNG loại phim, không dùng một biểu tượng chung: nhìn lướt là
+ * phân biệt được phim toàn cảnh với phim quanh chóp. Khi nối API thật thì chỗ
+ * này thay bằng ảnh thật, phần còn lại giữ nguyên. */
+.sbn-phim { width: 100%; height: auto; display: block; border-radius: 8px; }
+.sbn-phim .nen { fill: #16211f; }
+.sbn-phim .cung { fill: none; stroke: #3d5b56; stroke-width: 1.2; }
+.sbn-phim .rang { fill: #cfe0dc; }
+.sbn-phim .xuong { stroke: #3d5b56; stroke-width: 1.2; }
+.sbn-phim .chan { stroke: #9db8b2; stroke-width: 1.6; fill: none; stroke-linecap: round; }
+.sbn-phim.chup .nen { fill: #f0e6e2; }
+.sbn-phim .moi { fill: #d8a79c; }
+.sbn-phim .rang-vung { fill: #f6f1ea; }
+.sbn-phim .giua { stroke: #c9b3ab; stroke-width: 1; }
+
+/* Biểu mẫu đổi lịch dùng chung khuôn với form Đặt lịch. */
+.lt-doi-lich { border-color: #ecd9a4; }
+
+@media (max-width: 520px) {
+  .sbn-thu-vien { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
