@@ -7165,6 +7165,33 @@ body.dialog-open {
 .pt-nut button { padding: 6px 12px; font-size: .82rem; }
 .pt-nut button:disabled { opacity: .4; cursor: not-allowed; }
 
+/* ══ BIỂU TƯỢNG ═══════════════════════════════════════════════════════════
+ *
+ * Phông remixicon chỉ có ĐÚNG MỘT độ đậm. Nút trong app đặt font-weight 700
+ * hoặc 800, thẻ <i> bên trong thừa hưởng con số đó, trình duyệt không tìm ra
+ * nét đậm thật nên nó tự bôi dày nét glyph ra — gọi là làm đậm giả. Kết quả
+ * là biểu tượng trông nặng, nhoè và lệch hẳn so với chữ bên cạnh.
+ *
+ * Remixicon tự ép font-family bằng !important nhưng KHÔNG đặt font-weight,
+ * nên độ đậm cứ thế chảy từ nút xuống. Chặn ở đây, một lần, cho cả app.
+ *
+ * font-synthesis: none là chốt chặn thứ hai — nó cấm trình duyệt bịa ra nét
+ * đậm hay nét nghiêng cho bất kỳ phông nào không có sẵn, kể cả khi về sau ai
+ * đó lỡ đặt lại font-weight ở chỗ khác.
+ */
+
+[class^="ri-"], [class*=" ri-"] {
+  font-weight: 400;
+  font-style: normal;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Biểu tượng canh theo khối chữ chứ không theo đường cơ sở, nếu không nó
+   * nhô lên hoặc tụt xuống một hai pixel so với chữ đứng cạnh. */
+  line-height: 1;
+  vertical-align: middle;
+}
+
 /* ══ LỄ TÂN ═══════════════════════════════════════════════════════════════
  *
  * Quầy lễ tân dùng máy tính bảng và điện thoại nhiều hơn máy bàn, và lúc đông
@@ -7184,6 +7211,13 @@ body.dialog-open {
   gap: 20px;
   align-content: start;
 }
+
+/* Cỡ biểu tượng đo bằng em chứ không bằng px: nó tự lớn nhỏ theo cỡ chữ của
+ * chính cái nút chứa nó, nên nút to nút nhỏ vẫn cùng một tỉ lệ. Đặt bằng px
+ * thì mỗi nút một cỡ, và đó là thứ làm giao diện trông chắp vá. */
+.lt-view .primary-button i,
+.lt-view .ghost-button i,
+.lt-view .secondary-button i { font-size: 1.12em; }
 
 /* ── Thanh tab ──────────────────────────────────────────────────────── */
 
@@ -7404,6 +7438,13 @@ body.dialog-open {
 
 @media (max-width: 860px) {
   .lt-view { gap: 16px; }
+  /* Luật chung ép mọi lưới 4 cột về một cột dưới 760px. Hợp lý ở màn báo cáo,
+   * nhưng ở đây nó bắt lễ tân cuộn qua bốn thẻ mới tới danh sách khách — mà
+   * danh sách mới là thứ họ mở màn này để xem. Giữ hai cột. */
+  .lt-view .grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lt-view .metric-card { min-height: 0; padding: 14px; }
+  .lt-view .metric-value { font-size: 1.7rem; }
+  .lt-view .metric-label, .lt-view .metric-detail { font-size: .78rem; }
   .lt-dong { grid-template-columns: 60px minmax(0, 1fr); }
   .lt-dong .lt-thao-tac { grid-column: 1 / -1; justify-items: stretch; }
   .lt-viec-hang { grid-template-columns: minmax(0, 1fr); }
@@ -7441,6 +7482,10 @@ body.dialog-open {
   .lt-header-nut, .lt-loc-nhanh { width: 100%; margin-left: 0; }
   .lt-header-nut > button { flex: 1 1 auto; justify-content: center; }
   .lt-loc-nhanh select { flex: 1 1 auto; }
+}
+
+@media (max-width: 430px) {
+  .lt-view .grid.cols-4 { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 520px) {
