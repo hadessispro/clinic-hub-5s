@@ -259,8 +259,8 @@ function ve3D() {
       ${Object.entries(GOC).map(([m, t]) => `<button type="button"
         class="lt-chip${goc3D === m ? ' is-chon' : ''}" data-goc3d="${m}">${t}</button>`).join('')}
       <label class="ghost-button sbn-nho sbn-nhap-quet">
-        <input type="file" accept=".stl,.ply" id="sbnQuet" hidden>
-        <i class="ri-upload-cloud-2-line"></i> Nạp bản quét
+        <input type="file" accept=".stl,.ply,.glb,.gltf,.obj" id="sbnQuet" hidden>
+        <i class="ri-upload-cloud-2-line"></i> Nạp mẫu 3D
       </label>
       <button type="button" class="ghost-button sbn-nho" id="sbnDong3D">
         <i class="ri-close-line"></i> Đóng
@@ -1067,7 +1067,7 @@ export function initView() {
     showToast('Đang đọc bản quét…');
     try {
       const m = await import('../components/rang-3d.js');
-      banQuet = await m.napBanQuet(khung3D, t);
+      banQuet = await m.napMoHinh(t);
       showToast(banQuet.so_dinh.toLocaleString('vi-VN') + ' đỉnh · '
         + banQuet.kich_thuoc_mm.join(' × ') + ' mm — đã nạp bản quét.');
       await ve();

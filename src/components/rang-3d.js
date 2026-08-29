@@ -213,56 +213,132 @@ function viTriTrenCung(chiSo, ben) {
   return { x, z, huong };
 }
 
-/* Nạp bản quét thật của bệnh nhân.
+/* Nạp mô hình ngoài: bản quét của bệnh nhân, hoặc bộ mẫu giải phẫu đã mua.
  *
- * Đây là đường duy nhất cho ra hình ĐÚNG GIẢI PHẪU CỦA NGƯỜI NÀY. Hình dựng
- * bằng công thức phía trên chỉ đúng loại răng, số múi, số chân và vị trí trên
- * cung hàm — nó không có rãnh thật, không có gờ men, không có chỗ mòn, và
- * tuyệt đối không có sai lệch riêng của bệnh nhân đang ngồi trên ghế.
+ * Hai loại nguồn, hai mức giá trị khác hẳn nhau:
  *
- * Máy quét trong miệng (3Shape, Medit, iTero…) xuất STL hoặc PLY. Cả hai bộ
- * đọc đều có sẵn trong three.js, chỉ 10–21 KB, và nạp theo nhu cầu nên người
- * không dùng máy quét không phải tải.
+ *   BẢN QUÉT (STL, PLY) từ máy quét trong miệng — đúng giải phẫu của CHÍNH
+ *   người đang ngồi trên ghế. Đây là mức cao nhất, và cũng là thứ không mua
+ *   được: nó phải quét ra.
  *
- * Bản quét KHÔNG mang mã răng: nó chỉ là một khối lưới. Nên nó dùng để nhìn
- * và giải thích; việc gắn tình trạng vào từng răng vẫn do sơ đồ 2D làm.
+ *   BỘ MẪU GIẢI PHẪU (GLB, glTF, OBJ) — răng đúng chuẩn giải phẫu nhưng ai
+ *   cũng giống ai. Dùng để giải thích bệnh lý nói chung, không dùng để chỉ
+ *   đúng cái răng của người này.
+ *
+ * ĐIỀU KIỆN BẮT BUỘC với bộ mẫu: mỗi răng phải là MỘT KHỐI RIÊNG, không phải
+ * một khối gộp cả hàm. Khối gộp thì không tô màu được từng răng, không bấm
+ * chọn được từng răng — mất luôn lý do có màn này.
+ *
+ * Hàm dưới tự dò tên khối để gán mã răng FDI. Nhận các kiểu đặt tên thường
+ * gặp: "16", "Tooth_16", "tooth16", "T16", "UR6" (upper right 6).
  */
-export async function napBanQuet(khung, tepQuet) {
+
+/** Đoán mã răng FDI từ tên khối trong tệp mẫu. Trả null nếu không đoán được. */
+function doanMaRang(ten) {
+  const t = String(ten || '').trim();
+
+  // Dạng trực tiếp: có hai chữ số 11–48 đứng riêng.
+  const fdi = t.match(/(?:^|[^0-9])([1-4][1-8])(?:[^0-9]|$)/);
+  if (fdi) return fdi[1];
+
+  // Dạng chữ: UR6 = upper right 6 → phần hàm 1; UL = 2; LL = 3; LR = 4.
+  const chu = t.toUpperCase().match(/\b(U|L)\s*(R|L)\s*([1-8])\b/);
+  if (chu) {
+    const phan = chu[1] === 'U' ? (chu[2] === 'R' ? 1 : 2) : (chu[2] === 'L' ? 3 : 4);
+    return `${phan}${chu[3]}`;
+  }
+  return null;
+}
+
+export async function napMoHinh(tepQuet) {
   const ten = (tepQuet.name || '').toLowerCase();
-  const laPly = ten.endsWith('.ply');
-  const laStl = ten.endsWith('.stl');
-  if (!laPly && !laStl) {
-    throw new Error('Chỉ nhận tệp STL hoặc PLY từ máy quét trong miệng.');
+  const duoi = ten.slice(ten.lastIndexOf('.'));
+  const nhan = ['.stl', '.ply', '.glb', '.gltf', '.obj'];
+  if (!nhan.includes(duoi)) {
+    throw new Error(`Chỉ nhận ${nhan.join(', ')}. Tệp .3ds, .max, .blend hay .c4d `
+      + 'phải xuất sang GLB trước — Blender mở được cả bốn và xuất GLB miễn phí.');
   }
 
-  const { STLLoader } = laStl
-    ? await import('three/examples/jsm/loaders/STLLoader.js')
-    : { STLLoader: null };
-  const { PLYLoader } = laPly
-    ? await import('three/examples/jsm/loaders/PLYLoader.js')
-    : { PLYLoader: null };
-
   const buf = await tepQuet.arrayBuffer();
-  const hinh = laStl ? new STLLoader().parse(buf) : new PLYLoader().parse(buf);
-  if (!hinh.attributes.normal) hinh.computeVertexNormals();
 
-  // Đưa khối về giữa và đưa về cỡ nhìn được: máy quét xuất theo milimét thật
-  // nhưng gốc toạ độ mỗi máy một kiểu, có máy để cách gốc cả mét.
+  /* Một khối lưới trần: bản quét. Không có tên răng, nên nó chỉ để nhìn. */
+  if (duoi === '.stl' || duoi === '.ply') {
+    const bo = duoi === '.stl'
+      ? (await import('three/examples/jsm/loaders/STLLoader.js')).STLLoader
+      : (await import('three/examples/jsm/loaders/PLYLoader.js')).PLYLoader;
+    const hinh = new bo().parse(buf);
+    if (!hinh.attributes.normal) hinh.computeVertexNormals();
+    return { kieu: 'ban_quet', ...doVaCanGiua(hinh) };
+  }
+
+  /* Bộ mẫu: có thể nhiều khối, mỗi khối một răng. */
+  let canh;
+  if (duoi === '.obj') {
+    const { OBJLoader } = await import('three/examples/jsm/loaders/OBJLoader.js');
+    canh = new OBJLoader().parse(new TextDecoder().decode(buf));
+  } else {
+    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+    const kq = await new Promise((xong, hong) =>
+      new GLTFLoader().parse(buf, '', (g) => xong(g), hong));
+    canh = kq.scene;
+  }
+
+  const khoi = [];
+  canh.traverse((o) => { if (o.isMesh) khoi.push(o); });
+  if (!khoi.length) throw new Error('Tệp không chứa khối lưới nào.');
+
+  const theoRang = {};
+  let khongTen = 0;
+  khoi.forEach((o) => {
+    const ma = doanMaRang(o.name) || doanMaRang(o.parent?.name);
+    if (ma) theoRang[ma] = o;
+    else khongTen += 1;
+  });
+
+  const soRang = Object.keys(theoRang).length;
+  return {
+    kieu: soRang >= 8 ? 'bo_mau_tach_rang' : 'bo_mau_gop',
+    canh, khoi, theo_rang: theoRang,
+    so_khoi: khoi.length,
+    so_rang_nhan_ra: soRang,
+    so_khoi_khong_ten: khongTen,
+    ...doVaCanGiua(gopHinhTuKhoi(khoi)),
+  };
+}
+
+/** Đưa khối về giữa và tính tỉ lệ hiển thị. */
+function doVaCanGiua(hinh) {
   hinh.computeBoundingBox();
   const hop = hinh.boundingBox;
   const giua = hop.getCenter(new THREE.Vector3());
   hinh.translate(-giua.x, -giua.y, -giua.z);
   const co = hop.getSize(new THREE.Vector3());
   const lon = Math.max(co.x, co.y, co.z);
-
   return {
     hinh,
     so_dinh: hinh.attributes.position.count,
-    so_mat: hinh.index ? hinh.index.count / 3 : hinh.attributes.position.count / 3,
     kich_thuoc_mm: [co.x, co.y, co.z].map((v) => Math.round(v)),
     ty_le_goi_y: lon > 0 ? 62 / lon : 1,
   };
 }
+
+function gopHinhTuKhoi(khoi) {
+  const g = new THREE.BufferGeometry();
+  const v = [];
+  khoi.forEach((o) => {
+    const a = o.geometry.attributes.position;
+    for (let k = 0; k < a.count; k += 1) {
+      const p = new THREE.Vector3().fromBufferAttribute(a, k);
+      o.localToWorld(p);
+      v.push(p.x, p.y, p.z);
+    }
+  });
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  return g;
+}
+
+// Giữ tên cũ để chỗ gọi không phải sửa.
+export const napBanQuet = (khung, tep) => napMoHinh(tep);
 
 export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   const canh = new THREE.Scene();
@@ -329,10 +405,32 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
    *
    * Hiện cả hai chồng lên nhau thì hai bộ răng lệch nhau vài milimét và bác sĩ
    * không biết đang nhìn cái nào — tệ hơn là chỉ hiện một cái. */
-  if (banQuet) {
+  if (banQuet?.kieu === 'bo_mau_tach_rang') {
+    /* Bộ mẫu đã tách từng răng: tô màu và bấm chọn được y như hình dựng, chỉ
+     * khác là hình đúng giải phẫu chuẩn. Đây là lý do điều kiện "mỗi răng một
+     * khối" là bắt buộc chứ không phải mong muốn. */
+    banQuet.canh.scale.setScalar(banQuet.ty_le_goi_y);
+    nhom.add(banQuet.canh);
+    Object.entries(banQuet.theo_rang).forEach(([ma, o]) => {
+      const r = soDoRang[ma];
+      const tt = r?.trang_thai || 'binh_thuong';
+      o.material = new THREE.MeshStandardMaterial({
+        color: MAU[tt === 'binh_thuong' ? 'lanh'
+          : tt === 'sau' || tt === 'chi_dinh_nho' ? 'sau'
+          : tt === 'tram' ? 'tram' : tt === 'noi_nha' ? 'noi'
+          : tt === 'mat' || tt === 'chua_moc' ? 'mat' : 'phuc'],
+        roughness: 0.45, metalness: 0.03,
+        transparent: ['mat', 'chua_moc'].includes(tt),
+        opacity: ['mat', 'chua_moc'].includes(tt) ? 0.18 : 1,
+      });
+      o.userData = { ma, trang_thai: tt };
+      dsRang.push(o);
+    });
+  } else if (banQuet) {
+    // Bản quét hoặc bộ mẫu gộp: một khối, chỉ để nhìn.
     const m = new THREE.Mesh(banQuet.hinh, new THREE.MeshStandardMaterial({
       color: 0xefe7dc, roughness: 0.55, metalness: 0.02,
-      side: THREE.DoubleSide, flatShading: false,
+      side: THREE.DoubleSide,
     }));
     m.scale.setScalar(banQuet.ty_le_goi_y);
     nhom.add(m);
