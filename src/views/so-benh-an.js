@@ -23,6 +23,7 @@ import {
   TRANG_THAI_RANG, coMatNhai, datTrangThaiRang, ghiLuotKham, kyLuotKham,
   layDanhSachHoSo, loaiCuaRang, locLuotKham, moHoSo, phanHamCuaRang,
   tomTatSoDo, xuatCsvLuotKham,
+  CHI_SO_NHA_CHU, GIAI_DOAN, LOAI_THU_THUAT, SINH_HIEU, TRANG_THAI_KE_HOACH,
 } from '../services/so-benh-an.js';
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
@@ -42,6 +43,10 @@ let fCanhBao = false; let fRangSau = false; let trang = 1;
 
 let kTu = ''; let kDen = ''; let kBacSi = ''; let kRang = '';
 let kChuaKy = false; let kTim = '';
+// Chip chọn nhanh: ô ngày gốc hiện theo ngôn ngữ TRÌNH DUYỆT nên máy đặt
+// tiếng Anh thấy mm/dd/yyyy. Chip phủ gần hết nhu cầu thật; ô ngày chỉ
+// hiện khi chọn Tự chọn.
+let khoangKham = 'tat-ca';
 
 let rangChon = '';
 let hienFormKham = false;
@@ -314,57 +319,193 @@ function veFormKham() {
   </section>`;
 }
 
+/* Một lượt khám hiện đủ những phần mà buổi sau bác sĩ khác cần đọc để tiếp
+ * tục được. Bốn dòng Khám / Chẩn đoán / Xử trí / Răng là chưa đủ: thiếu sinh
+ * hiệu thì không biết có gây tê được không, thiếu chỉ số nha chu thì không
+ * biết có làm phục hình được không, thiếu thuốc tê đã dùng thì buổi sau không
+ * biết ngưỡng của khách. */
+function veMuc(nhan, noi, lop = '') {
+  if (!noi) return '';
+  return `<div class="sbn-muc-o ${lop}">
+    <dt>${escapeHTML(nhan)}</dt><dd>${noi}</dd></div>`;
+}
+
+function veNhaChu(nc) {
+  if (!nc) return '';
+  const o = Object.entries(CHI_SO_NHA_CHU).map(([ma, c]) => {
+    const v = nc[ma];
+    if (v === undefined || v === null || v === '') return '';
+    const xau = Number(v) > c.tot;
+    return `<span class="sbn-chi-so ${xau ? 'canh' : 'on'}">
+      <small>${escapeHTML(c.ten)}</small>
+      <b>${escapeHTML(String(v))}<i>${escapeHTML(c.don_vi)}</i></b>
+    </span>`;
+  }).join('');
+  return o ? `<div class="sbn-chi-so-hang">${o}</div>` : '';
+}
+
+function veSinhHieu(sh) {
+  if (!sh) return '';
+  const o = Object.entries(SINH_HIEU).map(([ma, c]) => {
+    if (!sh[ma]) return '';
+    return `<span class="sbn-chi-so on">
+      <small>${escapeHTML(c.ten)}</small>
+      <b>${escapeHTML(sh[ma])}<i>${escapeHTML(c.don_vi)}</i></b></span>`;
+  }).join('');
+  return o ? `<div class="sbn-chi-so-hang">${o}</div>` : '';
+}
+
 function veLuotKham(ds) {
   if (!ds.length) {
     return '<p class="empty-state">Không có lượt khám nào khớp bộ lọc.</p>';
   }
-  return ds.map((l) => `<article class="sbn-luot${l.da_ky ? ' da-ky' : ''}">
-    <div class="sbn-luot-moc">
-      <b>${escapeHTML(ngayHien(l.ngay))}</b>
-      <small>${escapeHTML(l.gio)}</small>
-      ${l.da_ky
-        ? '<span class="status-pill good">Đã ký</span>'
-        : '<span class="status-pill warn">Chưa ký</span>'}
-    </div>
-    <div class="sbn-luot-noi">
-      <p class="sbn-ly-do">${escapeHTML(l.ly_do)}</p>
+  return ds.map((l) => {
+    const rang = (l.rang_lien_quan || []).map((r) =>
+      `<button type="button" class="sbn-rang-tag" data-rang="${escapeHTML(r)}">${
+        escapeHTML(r)}</button>`).join('');
+
+    const thuThuat = (l.thu_thuat || []).map((t) => `<li>
+      <b>${escapeHTML(t.ten)}</b>
+      <span class="lt-the-nho">${escapeHTML(LOAI_THU_THUAT[t.loai] || t.loai)}</span>
+      ${t.rang ? `<em>răng ${escapeHTML(t.rang)}${
+        t.mat ? ` · mặt ${escapeHTML(t.mat)}` : ''}</em>` : ''}
+    </li>`).join('');
+
+    const clsang = (l.can_lam_sang || []).map((c) => `<li>
+      <b>${escapeHTML(LOAI_ANH[c.loai] || c.loai)}</b>
+      <span>${escapeHTML(c.ket_qua)}</span></li>`).join('');
+
+    const thuoc = (l.don_thuoc || []).map((t) => `<li>
+      <b>${escapeHTML(t.ten)} ${escapeHTML(t.ham_luong || '')}</b>
+      <span>${escapeHTML(t.lieu)}${t.so_ngay ? ` · ${t.so_ngay} ngày` : ''}</span></li>`).join('');
+
+    const vatTu = (l.vat_tu || []).map((v) =>
+      `<span class="lt-the-nho">${escapeHTML(v.ten)} · ${escapeHTML(v.so_luong)}</span>`).join('');
+
+    return `<article class="sbn-luot${l.da_ky ? ' da-ky' : ''}">
+      <header class="sbn-luot-dau">
+        <div class="sbn-luot-moc">
+          <b>${escapeHTML(ngayHien(l.ngay))}</b>
+          <small>${escapeHTML(l.gio)}</small>
+          ${l.da_ky ? '<span class="status-pill good">Đã ký</span>'
+                    : '<span class="status-pill warn">Chưa ký</span>'}
+        </div>
+        <p class="sbn-ly-do">${escapeHTML(l.ly_do)}</p>
+        <div class="sbn-luot-nut">
+          ${!l.da_ky
+            ? `<button type="button" class="secondary-button sbn-nho" data-ky="${escapeHTML(l.id)}">
+                 <i class="ri-quill-pen-line"></i> Ký lượt khám</button>`
+            : `<button type="button" class="ghost-button sbn-nho" data-dinh-chinh="${escapeHTML(l.id)}">
+                 <i class="ri-edit-2-line"></i> Đính chính</button>`}
+        </div>
+      </header>
+
+      ${veSinhHieu(l.sinh_hieu)}
+
       <dl class="sbn-muc">
-        <dt>Khám</dt><dd>${escapeHTML(l.kham)}</dd>
-        <dt>Chẩn đoán</dt><dd>${escapeHTML(l.chan_doan)}${
-          l.ma_benh ? ` <code>${escapeHTML(l.ma_benh)}</code>` : ''}</dd>
-        ${l.xu_tri ? `<dt>Xử trí</dt><dd>${escapeHTML(l.xu_tri)}</dd>` : ''}
-        ${(l.rang_lien_quan || []).length
-          ? `<dt>Răng</dt><dd>${l.rang_lien_quan.map((r) =>
-              `<button type="button" class="sbn-rang-tag" data-rang="${escapeHTML(r)}">${
-                escapeHTML(r)}</button>`).join('')}</dd>`
-          : ''}
+        ${veMuc('Khám ngoài mặt', escapeHTML(l.kham_ngoai_mat || ''))}
+        ${veMuc('Khám trong miệng', escapeHTML(l.kham_trong_mieng || l.kham || ''))}
       </dl>
-      ${l.anh.length ? `<div class="sbn-anh">
+
+      ${l.nha_chu ? `<div class="sbn-khoi">
+        <h4>Chỉ số nha chu</h4>${veNhaChu(l.nha_chu)}</div>` : ''}
+
+      ${clsang ? `<div class="sbn-khoi">
+        <h4>Cận lâm sàng</h4><ul class="sbn-ds">${clsang}</ul></div>` : ''}
+
+      <div class="sbn-khoi sbn-chan-doan">
+        <h4>Chẩn đoán</h4>
+        <p class="sbn-cd-chinh">${escapeHTML(l.chan_doan)}
+          ${l.ma_benh ? `<code>${escapeHTML(l.ma_benh)}</code>` : ''}</p>
+        ${l.chan_doan_them ? `<p class="sbn-cd-them">${escapeHTML(l.chan_doan_them)}</p>` : ''}
+        ${rang ? `<p class="sbn-cd-rang"><span>Răng liên quan</span>${rang}</p>` : ''}
+      </div>
+
+      ${thuThuat ? `<div class="sbn-khoi">
+        <h4>Thủ thuật đã thực hiện</h4><ul class="sbn-ds sbn-tt">${thuThuat}</ul>
+        ${l.thuoc_te ? `<p class="sbn-te"><i class="ri-syringe-line"></i>
+          <b>Gây tê:</b> ${escapeHTML(l.thuoc_te.ten)} · ${l.thuoc_te.so_ong} ống</p>` : ''}
+        ${vatTu ? `<p class="sbn-vat-tu"><span>Vật tư</span>${vatTu}</p>` : ''}
+      </div>` : ''}
+
+      <dl class="sbn-muc">
+        ${veMuc('Diễn biến', escapeHTML(l.dien_bien || ''))}
+        ${veMuc('Xử trí và hướng tiếp', escapeHTML(l.xu_tri || ''))}
+      </dl>
+
+      ${thuoc ? `<div class="sbn-khoi">
+        <h4>Đơn thuốc</h4><ul class="sbn-ds">${thuoc}</ul></div>` : ''}
+
+      ${l.dan_do ? `<p class="sbn-dan-do"><i class="ri-chat-quote-line"></i>
+        <b>Dặn dò:</b> ${escapeHTML(l.dan_do)}</p>` : ''}
+
+      ${l.anh && l.anh.length ? `<div class="sbn-anh">
         ${l.anh.map((a) => `<figure class="sbn-anh-o">
           <div class="sbn-anh-hinh"><i class="${
             ['quanh_chop', 'toan_canh', 'ct'].includes(a.loai) ? 'ri-scan-line' : 'ri-camera-lens-line'
           }"></i></div>
-          <figcaption>
-            <b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
-            <small>${escapeHTML(a.ghi_chu || '')}${a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small>
-          </figcaption>
+          <figcaption><b>${escapeHTML(LOAI_ANH[a.loai] || a.loai)}</b>
+            <small>${escapeHTML(a.ghi_chu || '')}${
+              a.rang ? ` · răng ${escapeHTML(a.rang)}` : ''}</small></figcaption>
         </figure>`).join('')}
       </div>` : ''}
-      <p class="sbn-chan-luot">
+
+      <footer class="sbn-chan-luot">
         ${escapeHTML(tenBacSi(l.bac_si))}
+        ${l.phu_ta ? ` · phụ tá ${escapeHTML(l.phu_ta)}` : ''}
         ${l.phong ? ` · ${escapeHTML(l.phong)}` : ''}
         · ${escapeHTML(tenChiNhanh(l.chi_nhanh))}
+        ${l.hen_tai_kham ? ` · hẹn lại ${escapeHTML(ngayHien(l.hen_tai_kham))}` : ''}
         ${l.sua_cho ? ` · <em>đính chính cho ${escapeHTML(l.sua_cho)}</em>` : ''}
-      </p>
-    </div>
-    <div class="sbn-luot-nut">
-      ${!l.da_ky
-        ? `<button type="button" class="ghost-button sbn-nho" data-ky="${escapeHTML(l.id)}">
-             <i class="ri-quill-pen-line"></i> Ký</button>`
-        : `<button type="button" class="ghost-button sbn-nho" data-dinh-chinh="${escapeHTML(l.id)}">
-             <i class="ri-edit-2-line"></i> Đính chính</button>`}
-    </div>
-  </article>`).join('');
+      </footer>
+    </article>`;
+  }).join('');
+}
+
+/* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
+ * chạy qua nhiều buổi, và đó chính là thứ cho biết khách đang ở đâu trong lộ
+ * trình. */
+function veKeHoach(ds, tongChiPhi) {
+  if (!ds || !ds.length) {
+    return `<section class="panel">
+      <header class="section-title sbn-header"><h3>Kế hoạch điều trị</h3></header>
+      <p class="empty-state">Chưa lập kế hoạch điều trị cho bệnh nhân này.</p>
+    </section>`;
+  }
+  const theoGd = {};
+  ds.forEach((k) => { (theoGd[k.giai_doan] ||= []).push(k); });
+
+  const khoi = Object.entries(GIAI_DOAN)
+    .filter(([g]) => theoGd[g])
+    .map(([g, ten]) => `<div class="sbn-gd">
+      <h4>${escapeHTML(ten)}</h4>
+      ${theoGd[g].map((k) => {
+        const tt = TRANG_THAI_KE_HOACH[k.trang_thai] || { ten: k.trang_thai, lop: 'neutral' };
+        const pt = k.so_buoi ? Math.min(100, Math.round((k.da_lam / k.so_buoi) * 100)) : 0;
+        return `<article class="sbn-kh">
+          <div class="sbn-kh-tren">
+            <b>${escapeHTML(k.noi_dung)}</b>
+            <span class="status-pill ${tt.lop}">${escapeHTML(tt.ten)}</span>
+          </div>
+          <p class="sbn-kh-meta">
+            <span>Răng ${escapeHTML((k.rang || []).join(', ') || '—')}</span>
+            <span>${k.da_lam}/${k.so_buoi} buổi</span>
+            <span class="sbn-tien">${(k.chi_phi || 0).toLocaleString('vi-VN')}đ</span>
+          </p>
+          <div class="sbn-tien-do"><i style="width:${pt}%"></i></div>
+          ${k.ghi_chu ? `<p class="sbn-kh-ghi">${escapeHTML(k.ghi_chu)}</p>` : ''}
+        </article>`;
+      }).join('')}
+    </div>`).join('');
+
+  return `<section class="panel">
+    <header class="section-title sbn-header">
+      <h3>Kế hoạch điều trị</h3>
+      <span class="pill">${ds.length} hạng mục · tổng ${
+        (tongChiPhi || 0).toLocaleString('vi-VN')}đ</span>
+    </header>
+    <div class="sbn-gd-luoi">${khoi}</div>
+  </section>`;
 }
 
 function veSoChiTiet() {
@@ -416,6 +557,8 @@ function veSoChiTiet() {
       </div>
     </section>
 
+    ${veKeHoach(duLieu.ke_hoach, duLieu.tong_chi_phi)}
+
     ${veFormKham()}
 
     <section class="panel">
@@ -432,23 +575,38 @@ function veSoChiTiet() {
         </div>
       </header>
 
+      <div class="lt-tim-lon">
+        <i class="ri-search-line"></i>
+        <input type="search" id="kfTim" value="${escapeHTML(kTim)}"
+               placeholder="Tìm trong chẩn đoán, xử trí, mã bệnh…">
+        ${[kTu, kDen, kBacSi, kRang, kChuaKy].filter(Boolean).length
+          ? `<button type="button" class="ghost-button sbn-nho" id="kfXoa">
+               <i class="ri-filter-off-line"></i> Bỏ lọc</button>` : ''}
+      </div>
+
+      <div class="lt-nhanh">
+        <span class="lt-nhanh-nhan">Khoảng ngày</span>
+        ${[['tat-ca', 'Tất cả'], ['3-thang', '3 tháng gần đây'],
+           ['1-nam', 'Trong 1 năm'], ['tu-chon', 'Tự chọn']]
+          .map(([ma, ten]) => `<button type="button" class="lt-chip${
+            khoangKham === ma ? ' is-chon' : ''}" data-khoangk="${ma}">${ten}</button>`).join('')}
+        ${khoangKham === 'tu-chon' ? `<span class="lt-nhanh-ngay">
+          <input type="date" id="kfTu" value="${escapeHTML(kTu)}" aria-label="Từ ngày">
+          <i class="ri-arrow-right-line"></i>
+          <input type="date" id="kfDen" value="${escapeHTML(kDen)}" aria-label="Đến ngày">
+        </span>` : ''}
+      </div>
+
       <div class="sbn-loc">
-        <label><span>Từ ngày</span><input type="date" id="kfTu" value="${escapeHTML(kTu)}"></label>
-        <label><span>Đến ngày</span><input type="date" id="kfDen" value="${escapeHTML(kDen)}"></label>
         <label><span>Bác sĩ</span><select id="kfBacSi">
-          ${opt('', 'Tất cả', kBacSi)}
+          ${opt('', 'Tất cả bác sĩ', kBacSi)}
           ${BAC_SI.map((b) => opt(b.ma, b.ten, kBacSi)).join('')}
         </select></label>
-        <label><span>Răng</span>
-          <input type="text" id="kfRang" value="${escapeHTML(kRang)}" placeholder="26"></label>
-        <label class="sbn-tim"><span>Tìm trong nội dung</span>
-          <input type="search" id="kfTim" value="${escapeHTML(kTim)}"
-                 placeholder="Chẩn đoán, xử trí, mã bệnh…"></label>
+        <label><span>Lọc theo răng</span>
+          <input type="text" id="kfRang" value="${escapeHTML(kRang)}"
+                 placeholder="Nhập mã răng, ví dụ 26"></label>
         <label class="sbn-tick"><input type="checkbox" id="kfChuaKy"${kChuaKy ? ' checked' : ''}>
           <span>Chỉ lượt chưa ký</span></label>
-        <button type="button" class="ghost-button" id="kfXoa">
-          <i class="ri-filter-off-line"></i> Bỏ lọc
-        </button>
       </div>
 
       <div class="sbn-luot-ds">${veLuotKham(luot)}</div>
@@ -578,13 +736,28 @@ export function initView() {
   const locK = (id, gan) => g(id)?.addEventListener('change', (e) => {
     gan(e.target.type === 'checkbox' ? e.target.checked : e.target.value); ve();
   });
-  locK('kfTu', (v) => { kTu = v; });
-  locK('kfDen', (v) => { kDen = v; });
+  locK('kfTu', (v) => { kTu = v; khoangKham = 'tu-chon'; });
+  locK('kfDen', (v) => { kDen = v; khoangKham = 'tu-chon'; });
   locK('kfBacSi', (v) => { kBacSi = v; });
   locK('kfRang', (v) => { kRang = v; });
   locK('kfChuaKy', (v) => { kChuaKy = v; });
   g('kfXoa')?.addEventListener('click', () => {
-    kTu = ''; kDen = ''; kBacSi = ''; kRang = ''; kChuaKy = false; kTim = ''; ve();
+    kTu = ''; kDen = ''; kBacSi = ''; kRang = ''; kChuaKy = false; kTim = '';
+    khoangKham = 'tat-ca'; ve();
+  });
+
+  document.querySelectorAll('[data-khoangk]').forEach((b) => {
+    b.addEventListener('click', () => {
+      khoangKham = b.dataset.khoangk;
+      const lui = (n) => {
+        const d = new Date(); d.setMonth(d.getMonth() - n);
+        return d.toISOString().slice(0, 10);
+      };
+      if (khoangKham === 'tat-ca') { kTu = ''; kDen = ''; }
+      else if (khoangKham === '3-thang') { kTu = lui(3); kDen = ''; }
+      else if (khoangKham === '1-nam') { kTu = lui(12); kDen = ''; }
+      ve();
+    });
   });
 
   document.querySelectorAll('.sbn-rang-tag').forEach((b) => {

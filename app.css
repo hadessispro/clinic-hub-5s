@@ -8441,3 +8441,169 @@ body.dialog-open {
 @media (prefers-reduced-motion: reduce) {
   .nav-item .nav-icon, .nav-group-dem { transition: none; }
 }
+
+/* ══ SỔ BỆNH ÁN · nội dung lâm sàng ══════════════════════════════════════
+ *
+ * Một lượt khám nay có nhiều phần: sinh hiệu, khám, nha chu, cận lâm sàng,
+ * chẩn đoán, thủ thuật, đơn thuốc, dặn dò. Chúng phải tách nhau rõ nhưng
+ * không được thành tám cái hộp viền — đọc một bệnh án là đọc liền mạch từ
+ * trên xuống, không phải nhặt tám mảnh rời.
+ *
+ * Nên: các khối chỉ ngăn bằng khoảng trắng và một tiêu đề nhỏ in hoa; chỉ
+ * chẩn đoán được tô nền, vì đó là dòng người ta tìm trước tiên.
+ */
+
+.sbn-luot {
+  display: block;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #fff;
+}
+.sbn-luot.da-ky { background: #fbfdfc; }
+
+.sbn-luot-dau {
+  display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.sbn-luot-moc { display: flex; align-items: center; gap: 10px; flex: none; }
+.sbn-luot-moc b { font-size: .95rem; color: #163f3a; font-variant-numeric: tabular-nums; }
+.sbn-luot-moc small { color: #7f918d; font-size: .76rem; }
+.sbn-luot-dau .sbn-ly-do {
+  flex: 1 1 260px; min-width: 0; margin: 0;
+  font-size: .95rem; font-weight: 600; color: #1d3a36; line-height: 1.45;
+}
+.sbn-luot-nut { display: flex; gap: 8px; flex: none; }
+
+/* Tiêu đề khối nhỏ, in hoa, không viền — đủ để tách mà không cắt vụn trang. */
+.sbn-khoi { margin: 16px 0 0; }
+.sbn-khoi h4 {
+  margin: 0 0 8px;
+  font-size: .68rem; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #8ba09b;
+}
+
+/* Ghi ĐỦ grid-template-columns, không chỉ display và gap: luật .sbn-muc cũ
+ * phía trên đặt 88px cho cột nhãn, và khai thiếu ở đây thì cột đó còn nguyên,
+ * nhãn bị ép vào 88px và chữ rơi dọc từng ký tự. */
+.sbn-muc {
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: 12px; margin: 0;
+}
+.sbn-muc-o { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; }
+.sbn-muc-o dt {
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: #8ba09b; padding-top: 2px;
+}
+.sbn-muc-o dd { margin: 0; font-size: .87rem; color: #2b4844; line-height: 1.6; }
+
+/* Chỉ số: sinh hiệu và nha chu cùng một khuôn. Chỉ số vượt ngưỡng tốt thì
+ * đổi sắc — bác sĩ liếc là thấy, không phải tự so với số chuẩn trong đầu. */
+.sbn-chi-so-hang { display: flex; gap: 9px; flex-wrap: wrap; margin: 0; }
+.sbn-chi-so {
+  display: grid; gap: 1px; padding: 8px 13px;
+  border: 1px solid var(--line); border-radius: 10px; background: #f8fbfa;
+  min-width: 104px;
+}
+.sbn-chi-so small { font-size: .66rem; color: #8ba09b; font-weight: 700; }
+.sbn-chi-so b {
+  font-size: 1.02rem; color: #1d3a36; font-variant-numeric: tabular-nums;
+}
+.sbn-chi-so b i { font-style: normal; font-size: .68rem; color: #8ba09b; margin-left: 3px; }
+.sbn-chi-so.canh { background: #fdeceb; border-color: #f0c4bf; }
+.sbn-chi-so.canh b { color: #a3382a; }
+.sbn-chi-so.canh small { color: #b06a5f; }
+
+.sbn-ds { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sbn-ds li {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px;
+  padding: 9px 12px; border-radius: 9px; background: #f6faf9;
+  border: 1px solid #e6efec;
+}
+.sbn-ds b { font-size: .85rem; color: #1d3a36; }
+.sbn-ds span { font-size: .83rem; color: #4b6560; flex: 1 1 200px; min-width: 0; }
+.sbn-ds em { font-style: normal; font-size: .76rem; color: #75908b; }
+
+/* Chẩn đoán là dòng người ta tìm trước tiên, nên đây là khối duy nhất được
+ * tô nền. Tô thêm khối nào nữa là mất chỗ neo. */
+.sbn-chan-doan {
+  padding: 14px 16px; border-radius: 12px;
+  background: var(--mint); border: 1px solid #b6ddd7;
+}
+.sbn-chan-doan h4 { color: var(--teal-dark); }
+.sbn-cd-chinh {
+  margin: 0; font-size: .95rem; font-weight: 650; color: #10312d; line-height: 1.45;
+}
+.sbn-cd-chinh code {
+  font-size: .76rem; background: #fff; border: 1px solid #b6ddd7;
+  padding: 2px 8px; border-radius: 6px; color: var(--teal-dark);
+  margin-left: 7px; font-weight: 700;
+}
+.sbn-cd-them { margin: 5px 0 0; font-size: .84rem; color: #3d5f59; }
+.sbn-cd-rang { margin: 9px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sbn-cd-rang > span {
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: #5f8078;
+}
+
+.sbn-tt li { background: #fff; }
+.sbn-te {
+  margin: 10px 0 0; display: flex; align-items: center; gap: 8px;
+  font-size: .84rem; color: #7a5f13;
+  padding: 8px 12px; border-radius: 9px;
+  background: #fdf7e8; border: 1px solid #f0e4c4;
+}
+.sbn-te i { font-size: 1rem; }
+.sbn-vat-tu { margin: 9px 0 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.sbn-vat-tu > span:first-child {
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: #8ba09b;
+}
+
+.sbn-dan-do {
+  margin: 16px 0 0; display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 14px; border-radius: 10px;
+  background: #eef4fb; border: 1px solid #cbdcef;
+  font-size: .85rem; color: #35597e; line-height: 1.55;
+}
+.sbn-dan-do i { font-size: 1rem; color: #4a7fb5; flex: none; margin-top: 2px; }
+.sbn-dan-do b { color: #234563; }
+
+.sbn-chan-luot {
+  margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+  color: #8095a0; font-size: .76rem;
+}
+.sbn-chan-luot em { font-style: normal; color: #a3822a; }
+
+/* ── Kế hoạch điều trị ── */
+
+.sbn-gd-luoi { display: grid; gap: 18px; margin-top: 14px; }
+.sbn-gd h4 {
+  margin: 0 0 9px;
+  font-size: .7rem; font-weight: 800; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--teal-dark);
+}
+.sbn-kh {
+  display: grid; gap: 7px; padding: 14px 16px; margin-bottom: 9px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fff;
+}
+.sbn-kh:last-child { margin-bottom: 0; }
+.sbn-kh-tren { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sbn-kh-tren b { font-size: .9rem; color: #1d3a36; margin-right: auto; }
+.sbn-kh-meta {
+  margin: 0; display: flex; gap: 6px 16px; flex-wrap: wrap;
+  color: #75908b; font-size: .78rem;
+}
+.sbn-tien { color: #163f3a; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sbn-tien-do { height: 6px; border-radius: 999px; background: #eef3f1; overflow: hidden; }
+.sbn-tien-do i { display: block; height: 100%; background: var(--teal); border-radius: 999px; }
+.sbn-kh-ghi { margin: 0; font-size: .78rem; color: #8095a0; }
+
+@media (max-width: 860px) {
+  .sbn-luot { padding: 16px; }
+  .sbn-luot-dau { gap: 10px; }
+  .sbn-luot-nut { width: 100%; }
+  .sbn-luot-nut > button { flex: 1 1 auto; justify-content: center; }
+  .sbn-muc-o { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .sbn-chi-so { flex: 1 1 calc(50% - 5px); min-width: 0; }
+}
