@@ -8665,11 +8665,13 @@ body.dialog-open {
 
 /* ── Thanh công cụ khi bôi đen ── */
 
+/* Không đổ bóng: khối tối trên nền trắng tự tách khỏi trang rồi, thêm bóng
+ * toả rộng chỉ tạo quầng đen quanh thanh. Viền mảnh là đủ. */
 .sbn-thanh-hl {
   position: absolute; z-index: 60;
   display: flex; align-items: center; gap: 7px;
   padding: 7px 9px; border-radius: 11px;
-  background: #14312d; box-shadow: 0 8px 26px rgba(10, 30, 27, .3);
+  background: #14312d; border: 1px solid #0b1f1c;
 }
 .sbn-thanh-hl[hidden] { display: none; }
 .sbn-thanh-chu {
