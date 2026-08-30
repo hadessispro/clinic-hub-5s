@@ -20,15 +20,19 @@
  */
 
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 /* Màu theo tình trạng, cùng ý nghĩa với sơ đồ 2D nhưng đậm hơn: trên nền tối
  * và có đổ bóng, màu nhạt của sơ đồ 2D sẽ chìm hết. */
+/* Tông đậm hơn hệ màu 2D một bậc NỮA từ khi có tone mapping ACES: phép nén
+ * phim kéo màu bão hoà về giữa, răng sâu 0xc75b48 lên hình thành hồng cam —
+ * tín hiệu cảnh báo yếu đi đúng chỗ cần mạnh nhất. */
 const MAU = {
   lanh: 0xf2ede4,
-  sau:  0xc75b48,
-  tram: 0x5b9bd0,
-  phuc: 0xa88fd8,
-  noi:  0xd7a34a,
+  sau:  0xb03a26,
+  tram: 0x3f7fc0,
+  phuc: 0x8f6fd0,
+  noi:  0xc98e2a,
   mat:  0x2a3a37,
 };
 
@@ -358,20 +362,27 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   const ve = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   ve.setPixelRatio(Math.min(devicePixelRatio, 2));
   ve.shadowMap.enabled = true;
+  /* Tone mapping phim: không có nó thì vùng sáng cháy phẳng và mọi chất
+   * liệu trông như nhựa đồ chơi — đây là một nửa cảm giác "CG rẻ tiền". */
+  ve.toneMapping = THREE.ACESFilmicToneMapping;
+  ve.toneMappingExposure = 1.05;
   khung.appendChild(ve.domElement);
 
-  /* Đèn kiểu chụp sản phẩm: nguồn chính chếch trên, đèn phụ ấm chiếu thẳng
-   * từ phía người xem để mặt trong má và nướu không tối om khi xoay. */
-  canh.add(new THREE.HemisphereLight(0xffffff, 0xb9c4c0, 1.1));
-  const den = new THREE.DirectionalLight(0xffffff, 1.1);
+  /* Môi trường phản chiếu là nửa còn lại: răng thật ướt và BÓNG — cái làm
+   * nó trông thật là ánh phản chiếu của căn phòng trên men răng, thứ đèn
+   * hướng đơn thuần không tạo ra được. RoomEnvironment dựng một "phòng chụp"
+   * ảo ngay trong máy, không phải tải ảnh HDR nào về. */
+  const pmrem = new THREE.PMREMGenerator(ve);
+  canh.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+
+  /* Đèn hướng chỉ còn nhấn khối — môi trường đã lo phần sáng nền. */
+  const den = new THREE.DirectionalLight(0xffffff, 0.75);
   den.position.set(40, 90, 60);
   canh.add(den);
-  const den2 = new THREE.DirectionalLight(0xfff1e0, 0.55);
+  const den2 = new THREE.DirectionalLight(0xfff1e0, 0.4);
   den2.position.set(0, -8, 90);
   canh.add(den2);
-  const den3 = new THREE.DirectionalLight(0xcfe8e2, 0.35);
-  den3.position.set(-50, 20, -60);
-  canh.add(den3);
 
   const nhom = new THREE.Group();
   canh.add(nhom);
@@ -461,12 +472,16 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
     Object.entries(banQuet.theo_rang).forEach(([ma, o]) => {
       const r = soDoRang[ma];
       const tt = r?.trang_thai || 'binh_thuong';
-      o.material = new THREE.MeshStandardMaterial({
+      /* MeshPhysicalMaterial với clearcoat: men răng thật có LỚP NƯỚC BỌT
+       * bóng phủ ngoài bề mặt hơi nhám — clearcoat mô phỏng đúng hai tầng
+       * đó, còn một tầng roughness đơn thì chỉ chọn được bóng HOẶC nhám. */
+      o.material = new THREE.MeshPhysicalMaterial({
         color: MAU[tt === 'binh_thuong' ? 'lanh'
           : tt === 'sau' || tt === 'chi_dinh_nho' ? 'sau'
           : tt === 'tram' ? 'tram' : tt === 'noi_nha' ? 'noi'
           : tt === 'mat' || tt === 'chua_moc' ? 'mat' : 'phuc'],
-        roughness: 0.34, metalness: 0.02,
+        roughness: 0.42, metalness: 0,
+        clearcoat: 0.55, clearcoatRoughness: 0.28,
         // Luôn vẽ hai mặt với mô hình nạp ngoài: nướu và má trong mẫu thường
         // là vỏ mỏng, xoay xuống nhìn từ dưới lên là thấy mặt trong — vẽ một
         // mặt thì chỗ đó thủng đen như cái hiên rỗng.
@@ -477,10 +492,11 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
       o.userData = { ma, trang_thai: tt };
       dsRang.push(o);
     });
-    // Khối không phải răng, thường là nướu.
+    // Khối không phải răng, thường là nướu: niêm mạc cũng ướt, bóng nhẹ.
     banQuet.khoi.filter((o) => !o.userData?.ma).forEach((o) => {
-      o.material = new THREE.MeshStandardMaterial({
-        color: 0xd08379, roughness: 0.68, metalness: 0,
+      o.material = new THREE.MeshPhysicalMaterial({
+        color: 0xc97168, roughness: 0.55, metalness: 0,
+        clearcoat: 0.35, clearcoatRoughness: 0.4,
         side: THREE.DoubleSide,
       });
     });
