@@ -410,7 +410,8 @@ let LUOT_KHAM = [
     dan_do: 'Giữ vệ sinh vùng implant bằng bàn chải kẽ. Kiểm soát đường huyết.',
     hen_tai_kham: ngayLech(14),
     da_ky: false,
-    anh: [{ id: 'A5', loai: 'toan_canh', ghi_chu: 'Phim toàn cảnh kiểm tra tích hợp', rang: null }],
+    anh: [{ id: 'A5', loai: 'toan_canh',
+      ghi_chu: 'Phim toàn cảnh kiểm tra tích hợp xương quanh implant 46', rang: null }],
     tao_luc: `${ngayLech(0)}T08:44:00`, tao_boi: 'BS02',
   },
   {

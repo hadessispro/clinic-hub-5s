@@ -342,7 +342,11 @@ export const napBanQuet = (khung, tep) => napMoHinh(tep);
 
 export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   const canh = new THREE.Scene();
-  canh.background = new THREE.Color(0x101d1b);
+  /* Nền SÁNG, không phải nền đen. Bản đầu dùng nền tối theo thói quen phần
+   * mềm xem phim X-quang, nhưng đây là mô hình bề mặt cho bệnh nhân xem —
+   * các phần mềm CBCT/scan trong miệng đều trình bày trên nền sáng, và trên
+   * nền đen thì nướu hoá màu bầm còn răng xỉn như đá. */
+  canh.background = new THREE.Color(0xdfe9e7);
 
   const may = new THREE.PerspectiveCamera(38, 1, 1, 900);
   may.position.set(0, 26, 82);
@@ -356,13 +360,18 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
   ve.shadowMap.enabled = true;
   khung.appendChild(ve.domElement);
 
-  canh.add(new THREE.HemisphereLight(0xdfeeeb, 0x1a2b28, 1.15));
-  const den = new THREE.DirectionalLight(0xffffff, 1.5);
+  /* Đèn kiểu chụp sản phẩm: nguồn chính chếch trên, đèn phụ ấm chiếu thẳng
+   * từ phía người xem để mặt trong má và nướu không tối om khi xoay. */
+  canh.add(new THREE.HemisphereLight(0xffffff, 0xb9c4c0, 1.1));
+  const den = new THREE.DirectionalLight(0xffffff, 1.1);
   den.position.set(40, 90, 60);
   canh.add(den);
-  const den2 = new THREE.DirectionalLight(0x9fd6cf, 0.5);
-  den2.position.set(-50, 30, -40);
+  const den2 = new THREE.DirectionalLight(0xfff1e0, 0.55);
+  den2.position.set(0, -8, 90);
   canh.add(den2);
+  const den3 = new THREE.DirectionalLight(0xcfe8e2, 0.35);
+  den3.position.set(-50, 20, -60);
+  canh.add(den3);
 
   const nhom = new THREE.Group();
   canh.add(nhom);
@@ -442,6 +451,12 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
      * khối" là bắt buộc chứ không phải mong muốn. */
     banQuet.canh.scale.setScalar(banQuet.ty_le_goi_y);
     if (canhLatNguoc) banQuet.canh.scale.x *= -1;
+    /* Căn mẫu về giữa cảnh. doVaCanGiua chỉ dịch BẢN GỘP dùng cho số liệu,
+     * còn các khối trong cảnh vẫn đứng ở toạ độ gốc của tệp — mẫu nào tác
+     * giả dựng lệch tâm là hình bị cắt mất đầu trong khung. */
+    banQuet.canh.updateMatrixWorld(true);
+    const hop = new THREE.Box3().setFromObject(banQuet.canh);
+    banQuet.canh.position.sub(hop.getCenter(new THREE.Vector3()));
     nhom.add(banQuet.canh);
     Object.entries(banQuet.theo_rang).forEach(([ma, o]) => {
       const r = soDoRang[ma];
@@ -451,19 +466,22 @@ export function taoCanh(khung, soDoRang, khiChonRang, banQuet) {
           : tt === 'sau' || tt === 'chi_dinh_nho' ? 'sau'
           : tt === 'tram' ? 'tram' : tt === 'noi_nha' ? 'noi'
           : tt === 'mat' || tt === 'chua_moc' ? 'mat' : 'phuc'],
-        roughness: 0.45, metalness: 0.03,
-        side: canhLatNguoc ? THREE.DoubleSide : THREE.FrontSide,
+        roughness: 0.34, metalness: 0.02,
+        // Luôn vẽ hai mặt với mô hình nạp ngoài: nướu và má trong mẫu thường
+        // là vỏ mỏng, xoay xuống nhìn từ dưới lên là thấy mặt trong — vẽ một
+        // mặt thì chỗ đó thủng đen như cái hiên rỗng.
+        side: THREE.DoubleSide,
         transparent: ['mat', 'chua_moc'].includes(tt),
         opacity: ['mat', 'chua_moc'].includes(tt) ? 0.18 : 1,
       });
       o.userData = { ma, trang_thai: tt };
       dsRang.push(o);
     });
-    // Khối không phải răng, thường là nướu: giữ màu nướu và cũng vẽ hai mặt.
+    // Khối không phải răng, thường là nướu.
     banQuet.khoi.filter((o) => !o.userData?.ma).forEach((o) => {
       o.material = new THREE.MeshStandardMaterial({
-        color: 0xc4776f, roughness: 0.82, metalness: 0,
-        side: canhLatNguoc ? THREE.DoubleSide : THREE.FrontSide,
+        color: 0xd08379, roughness: 0.68, metalness: 0,
+        side: THREE.DoubleSide,
       });
     });
   } else if (banQuet) {

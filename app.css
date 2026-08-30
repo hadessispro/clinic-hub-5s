@@ -3236,7 +3236,7 @@ tr:last-child td {
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   color: var(--muted);
-  background: var(--surface-soft);
+  background: none;
   text-align: center;
 }
 
@@ -7105,6 +7105,13 @@ body.dialog-open {
   color: #233c38; font-size: .82rem; vertical-align: middle;
 }
 .hh-bang td strong, .hh-bang td small { display: block; }
+/* Ô trống TRONG BẢNG: chỉ một dòng chữ giữa bảng. Kiểu .empty-state chung
+ * đặt display:grid — trong <td> nó phá bố cục bảng, colspan mất tác dụng và
+ * chữ bị nhốt vào một cái hộp xám lệch trái. */
+.hh-bang td.empty-state {
+  display: table-cell; min-height: 0; border: 0; border-top: 1px solid #e1e9e7;
+  border-radius: 0; background: none; padding: 42px 16px; text-align: center;
+}
 .hh-bang td small { margin-top: 2px; color: #758782; font-size: .7rem; }
 .hh-so { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -8968,11 +8975,12 @@ body.dialog-open {
 .sbn-3d { margin-top: 14px; display: grid; gap: 10px; }
 .sbn-3d-thanh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sbn-3d-thanh .ghost-button { margin-left: auto; }
-/* Nền tối: men răng sáng màu chỉ nổi được trên nền tối, và đó cũng là nền mà
- * phần mềm xem phim nha khoa nào cũng dùng. */
+/* Nền sáng đồng bộ với cảnh: mô hình bề mặt cho bệnh nhân xem trình bày
+ * trên nền sáng như phần mềm CBCT/scan trong miệng — nền đen chỉ hợp với
+ * phim X-quang, còn ở đây nó làm nướu hoá bầm và răng xỉn màu. */
 .sbn-3d-khung {
   height: 420px; border-radius: 14px; overflow: hidden;
-  background: #101d1b; border: 1px solid #24403b;
+  background: #dfe9e7; border: 1px solid var(--line);
   cursor: grab; touch-action: none;
 }
 .sbn-3d-khung:active { cursor: grabbing; }
