@@ -400,6 +400,36 @@ textarea {
   font-family: var(--font);
 }
 
+/* Nền chung cho MỌI ô nhập liệu.
+ *
+ * Trước đây nhiều màn chỉ đặt kích thước cho ô rồi để viền, bo góc, focus rơi
+ * về kiểu mặc định của trình duyệt — thành ô đen vuông lạc lõng giữa giao
+ * diện. Quy tắc này ở mức phần tử (độ ưu tiên thấp nhất) nên màn nào đã có
+ * kiểu riêng theo class thì kiểu riêng vẫn thắng; nó chỉ đỡ cho những ô chưa
+ * ai đỡ. */
+input[type="text"], input[type="search"], input[type="number"],
+input[type="tel"], input[type="email"], input[type="password"],
+input[type="url"], input[type="date"], input[type="time"], input[type="month"],
+select, textarea {
+  border: 1px solid #bfd3cc; border-radius: 10px; background: #fff;
+  color: var(--ink); padding: 8px 12px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover,
+input[type="tel"]:hover, input[type="email"]:hover, input[type="password"]:hover,
+input[type="url"]:hover, input[type="date"]:hover, input[type="time"]:hover,
+input[type="month"]:hover, select:hover, textarea:hover {
+  border-color: #95bfb5;
+}
+input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus,
+input[type="tel"]:focus, input[type="email"]:focus, input[type="password"]:focus,
+input[type="url"]:focus, input[type="date"]:focus, input[type="time"]:focus,
+input[type="month"]:focus, select:focus, textarea:focus {
+  outline: 0; border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(8, 127, 123, .12);
+}
+input::placeholder, textarea::placeholder { color: #8a9a94; opacity: 1; }
+
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -7713,6 +7743,68 @@ body.dialog-open {
 }
 .sbn-tick input { width: 18px; height: 18px; min-height: 0; flex: none; accent-color: var(--teal); }
 .sbn-tick span { color: #2b4844; font-size: .8rem; font-weight: 600; }
+
+/* ── Phân hạng chăm sóc L1–L5 ── */
+
+.sbn-hang-chips {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin-top: 12px;
+}
+/* Năm hạng, năm sắc độ đi từ trung tính lên đậm dần: mắt đọc được "khách
+ * càng lớn màu càng ấm" mà không cần nhớ chú giải. */
+.sbn-hang-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; padding: 3px 8px; border-radius: 999px;
+  font-size: .72rem; font-weight: 800; letter-spacing: .02em;
+  border: 1px solid transparent; cursor: default;
+}
+.sbn-hang-1 { background: #eef2f1; border-color: #d8e2df; color: #5d7570; }
+.sbn-hang-2 { background: #e3f0fa; border-color: #c4ddf0; color: #2d5e86; }
+.sbn-hang-3 { background: #fbeecd; border-color: #ecd9a4; color: #8a6508; }
+.sbn-hang-4 { background: #efe6fa; border-color: #d9c6f0; color: #5d3a8e; }
+.sbn-hang-5 { background: #d9f0e6; border-color: #aeddc8; color: #0b6b45; }
+
+.sbn-bh { border-color: #bfdfd9; }
+.sbn-bh-luoi {
+  display: grid; gap: 11px; margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.sbn-bh-the {
+  display: grid; gap: 5px; justify-items: start;
+  padding: 13px 15px; border-radius: 12px;
+  border: 1px solid var(--line); background: #fff;
+  font-family: inherit; text-align: left; cursor: pointer;
+  transition: border-color .13s ease, background .13s ease;
+}
+.sbn-bh-the:hover { border-color: #95bfb5; background: #f6faf9; }
+.sbn-bh-the.is-chon { border-color: var(--teal); background: #eef7f5; }
+.sbn-bh-the > b { font-size: 1.45rem; color: #14332f; line-height: 1; }
+.sbn-bh-ten { color: #2b4844; font-size: .78rem; font-weight: 700; }
+.sbn-bh-the > small { color: #75908b; font-size: .72rem; }
+.sbn-bh-pheu {
+  display: grid; gap: 11px; margin-top: 13px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.sbn-bh-pheu > div {
+  display: grid; gap: 3px; padding: 11px 14px; border-radius: 11px;
+  background: var(--mint, #eaf5f3); border: 1px solid var(--line);
+}
+.sbn-bh-pheu b { font-size: 1.2rem; color: #0b5a52; }
+.sbn-bh-pheu span { color: #4c6a64; font-size: .74rem; line-height: 1.4; }
+.sbn-bh-ghi {
+  display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0;
+  color: #75908b; font-size: .76rem; line-height: 1.5;
+}
+.sbn-bh-ghi i { margin-top: 1px; }
+
+/* ── Kế hoạch điều trị: form thêm + nút vòng đời ── */
+
+.sbn-kh-form {
+  padding: 14px; border-radius: 12px; margin-top: 14px;
+  background: #f6faf9; border: 1px dashed #a9cec6;
+}
+.sbn-kh-nut { display: flex; gap: 8px; margin-top: 9px; }
+.sbn-kh-nut:empty { display: none; }
 
 /* ── Lượt khám ── */
 

@@ -25,6 +25,7 @@ import {
   tomTatSoDo, xuatCsvLuotKham,
   CHI_SO_NHA_CHU, GIAI_DOAN, LOAI_THU_THUAT, SINH_HIEU, TRANG_THAI_KE_HOACH,
   MUC_LUU_Y, TRUONG_DANH_DAU, boDanhDau, themAnh, themDanhDau,
+  PHAN_HANG, baoCaoPhanHang, xuatCsvPhanHang, themKeHoach, capNhatKeHoach,
 } from '../services/so-benh-an.js';
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
@@ -41,6 +42,9 @@ let dsHoSo = [];
 
 let fTim = ''; let fChiNhanh = ''; let fBacSi = '';
 let fCanhBao = false; let fRangSau = false; let trang = 1;
+// Phân hạng chăm sóc: lọc theo hạng + bảng điều khiển hiệu suất.
+let fHang = ''; let hienBangHang = false; let bcHang = null;
+let hienFormKH = false;
 
 let kTu = ''; let kDen = ''; let kBacSi = ''; let kRang = '';
 let kChuaKy = false; let kTim = '';
@@ -381,6 +385,54 @@ function veChiTietRang(soDo) {
 
 /* ── Danh sách hồ sơ ──────────────────────────────────────────────────── */
 
+const nhanHang = (ph) => `<span class="sbn-hang-pill ${PHAN_HANG[ph.hang].lop}"
+  title="${escapeHTML(ph.ly_do)}">${escapeHTML(ph.hang)}</span>`;
+
+/* Bảng điều khiển chăm sóc theo hạng.
+ *
+ * Ba tỉ lệ đọc theo PHỄU, mỗi số trả lời một câu của người quản lý:
+ * bao nhiêu khách đã đủ hồ sơ nền để tư vấn được? bao nhiêu trong số đó có
+ * nhu cầu lớn? và nhu cầu lớn thì chốt được bao nhiêu? Đếm đầu khách từng
+ * hạng mà không có ba tỉ lệ này thì không biết đang tắc ở khâu nào.
+ */
+function veBangHang() {
+  if (!hienBangHang || !bcHang) return '';
+  const hs = bcHang.hieu_suat;
+  const the = Object.entries(PHAN_HANG).map(([ma, ph]) => {
+    const o = bcHang.theo_hang[ma];
+    return `<button type="button" class="sbn-bh-the${fHang === ma ? ' is-chon' : ''}"
+      data-hang-loc="${ma}" title="${escapeHTML(ph.mo_ta)}">
+      <span class="sbn-hang-pill ${ph.lop}">${ma}</span>
+      <b>${o.khach.length}</b>
+      <span class="sbn-bh-ten">${escapeHTML(ph.ten.slice(5))}</span>
+      <small>${o.gia_tri ? `${Math.round(o.gia_tri / 1e6)}tr đã chốt` : '—'}</small>
+    </button>`;
+  }).join('');
+
+  return `<section class="panel sbn-bh">
+    <header class="section-title sbn-header">
+      <h3>Chăm sóc theo hạng</h3>
+      <span class="pill">${bcHang.tong} khách · ${
+        Math.round(hs.gia_tri_da_chot / 1e6)}tr đã chốt</span>
+      <div class="sbn-header-nut">
+        <button type="button" class="ghost-button" id="sbnXuatHang">
+          <i class="ri-download-2-line"></i> Xuất báo cáo
+        </button>
+      </div>
+    </header>
+    <div class="sbn-bh-luoi">${the}</div>
+    <div class="sbn-bh-pheu">
+      <div><b>${hs.ty_le_du_ho_so}%</b><span>đủ hồ sơ nền (pano + ≥2 lần khám)</span></div>
+      <div><b>${hs.ty_le_quan_tam}%</b><span>có nhu cầu chuyên sâu trở lên (L3+)</span></div>
+      <div><b>${hs.ty_le_chot_lon}%</b><span>nhu cầu chuyên sâu đã chốt ≥ 50tr</span></div>
+    </div>
+    <p class="sbn-bh-ghi"><i class="ri-information-line"></i>
+      Hạng tính trực tiếp từ bệnh án và kế hoạch điều trị, không nhập tay —
+      khách khám thêm hay chốt thêm là hạng tự đổi. Bấm vào một hạng để lọc
+      danh sách bên dưới. Bảng này chỉ bác sĩ thấy, lễ tân không có.</p>
+  </section>`;
+}
+
 function veDanhSach() {
   const kq = phanTrang(dsHoSo, trang, 20);
   const dong = kq.ds.map((h) => `<tr>
@@ -395,6 +447,7 @@ function veDanhSach() {
         </span>
       </div>
     </td>
+    <td data-label="Hạng">${nhanHang(h.phan_hang)}</td>
     <td data-label="Cảnh báo">${h.canh_bao.length
       ? h.canh_bao.map((c) => `<span class="status-pill ${
           MUC_CANH_BAO[c.loai]?.muc === 'cao' ? 'bad' : 'warn'}">${
@@ -415,17 +468,29 @@ function veDanhSach() {
     </td>
   </tr>`).join('');
 
-  return `<section class="panel">
+  return `${veBangHang()}<section class="panel">
     <header class="section-title sbn-header">
       <h3>Hồ sơ bệnh nhân</h3>
       <span class="pill">${dsHoSo.length} hồ sơ khớp bộ lọc</span>
+      <div class="sbn-header-nut">
+        <button type="button" class="${hienBangHang ? 'secondary-button' : 'ghost-button'}" id="sbnBangHang">
+          <i class="ri-line-chart-line"></i> ${hienBangHang ? 'Ẩn' : 'Chăm sóc theo hạng'}
+        </button>
+      </div>
     </header>
+    <div class="sbn-hang-chips">
+      <span class="lt-nhanh-nhan">Hạng chăm sóc</span>
+      <button type="button" class="lt-chip${!fHang ? ' is-chon' : ''}" data-hang="">Tất cả</button>
+      ${Object.entries(PHAN_HANG).map(([ma, ph]) => `<button type="button"
+        class="lt-chip${fHang === ma ? ' is-chon' : ''}" data-hang="${ma}"
+        title="${escapeHTML(ph.mo_ta)}">${escapeHTML(ph.ten)}</button>`).join('')}
+    </div>
 
     <div class="lt-tim-lon">
       <i class="ri-search-line"></i>
       <input type="search" id="sTim" value="${escapeHTML(fTim)}"
              placeholder="Tìm theo tên bệnh nhân, số điện thoại hoặc mã hồ sơ">
-      ${[fChiNhanh, fBacSi, fCanhBao, fRangSau].filter(Boolean).length
+      ${[fChiNhanh, fBacSi, fCanhBao, fRangSau, fHang].filter(Boolean).length
         ? `<button type="button" class="ghost-button sbn-nho" id="sXoaLoc">
              <i class="ri-filter-off-line"></i> Bỏ lọc</button>` : ''}
     </div>
@@ -447,10 +512,10 @@ function veDanhSach() {
     <div class="hh-bang-wrap sbn-bang">
       <table class="hh-bang">
         <thead><tr>
-          <th>Mã hồ sơ</th><th>Bệnh nhân</th><th>Cảnh báo</th><th>Lần khám</th>
+          <th>Mã hồ sơ</th><th>Bệnh nhân</th><th>Hạng</th><th>Cảnh báo</th><th>Lần khám</th>
           <th>Khám gần nhất</th><th>Răng cần xử lý</th><th>Chi nhánh</th><th>Bác sĩ</th><th></th>
         </tr></thead>
-        <tbody>${dong || '<tr><td colspan="9" class="empty-state">Không có hồ sơ nào khớp bộ lọc.</td></tr>'}</tbody>
+        <tbody>${dong || '<tr><td colspan="10" class="empty-state">Không có hồ sơ nào khớp bộ lọc.</td></tr>'}</tbody>
       </table>
     </div>
     ${thanhPhanTrang(kq, 'sbnTrang', 'hồ sơ')}
@@ -479,6 +544,9 @@ function veFormKham() {
         <input type="text" id="kChanDoan" placeholder="Sâu ngà sâu răng 26"></label>
       <label class="sbn-o"><span>Mã bệnh</span>
         <input type="text" id="kMaBenh" placeholder="K02.1"></label>
+      <label class="sbn-o sbn-rong"><span>Chẩn đoán kèm theo</span>
+        <input type="text" id="kChanDoanThem"
+          placeholder="Sâu men răng 11 · Viêm nướu do mảng bám — cách nhau dấu chấm giữa"></label>
       <label class="sbn-o"><span>Răng liên quan</span>
         <input type="text" id="kRangLQ" placeholder="26 11 — cách nhau bằng dấu cách"></label>
       <label class="sbn-o"><span>Phòng</span>
@@ -820,13 +888,64 @@ function veAnhCuaLuot(l) {
   </div>`;
 }
 
-/* Kế hoạch điều trị gắn với HỒ SƠ/* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
+/* Kế hoạch điều trị gắn với HỒ SƠ chứ không với một lượt khám: một kế hoạch
  * chạy qua nhiều buổi, và đó chính là thứ cho biết khách đang ở đâu trong lộ
  * trình. */
+
+/* Nút thao tác theo VÒNG ĐỜI của hạng mục — chỉ hiện đúng bước kế tiếp.
+ * Hiện đủ năm nút cho mọi trạng thái là bắt bác sĩ tự nhớ luật chuyển. */
+function nutKeHoach(k) {
+  const nut = (viec, ten, lop = 'ghost-button') => `<button type="button"
+    class="${lop} sbn-nho" data-kh="${escapeHTML(k.id)}:${viec}">${ten}</button>`;
+  if (k.trang_thai === 'cho_duyet') {
+    return nut('dong_y', 'Khách đồng ý', 'secondary-button') + nut('tu_choi', 'Khách từ chối');
+  }
+  if (k.trang_thai === 'dong_y') return nut('bat_dau', 'Bắt đầu làm', 'secondary-button');
+  if (k.trang_thai === 'dang_lam') {
+    return nut('tang_buoi', '+1 buổi', 'secondary-button') + nut('hoan_tat', 'Hoàn tất sớm');
+  }
+  return '';
+}
+
+function veFormKeHoach() {
+  if (!hienFormKH) return '';
+  return `<div class="sbn-form-luoi sbn-kh-form">
+    <label class="sbn-o sbn-rong"><span>Nội dung hạng mục *</span>
+      <input type="text" id="khNoiDung" placeholder="Bọc mão sứ răng 26 sau nội nha"></label>
+    <label class="sbn-o"><span>Giai đoạn *</span>
+      <select id="khGiaiDoan">${Object.entries(GIAI_DOAN)
+        .map(([m, t]) => opt(m, t, 'on_dinh')).join('')}</select></label>
+    <label class="sbn-o"><span>Răng</span>
+      <input type="text" id="khRang" placeholder="26 27 — cách nhau dấu cách"></label>
+    <label class="sbn-o"><span>Số buổi *</span>
+      <input type="number" id="khSoBuoi" min="1" value="1"></label>
+    <label class="sbn-o"><span>Chi phí (đ) *</span>
+      <input type="number" id="khChiPhi" min="0" step="100000" placeholder="3500000"></label>
+    <label class="sbn-o sbn-rong"><span>Ghi chú cho khách</span>
+      <input type="text" id="khGhiChu" placeholder="Chỉ làm sau khi trám ổn định"></label>
+    <div class="sbn-nut-hang sbn-rong">
+      <button type="button" class="ghost-button" id="khHuy">Huỷ</button>
+      <button type="button" class="primary-button" id="khLuu">
+        <i class="ri-add-circle-line"></i> Thêm vào kế hoạch
+      </button>
+    </div>
+  </div>`;
+}
+
 function veKeHoach(ds, tongChiPhi) {
+  const dau = `<header class="section-title sbn-header">
+      <h3>Kế hoạch điều trị</h3>
+      <span class="pill">${ds.length} hạng mục · tổng ${
+        (tongChiPhi || 0).toLocaleString('vi-VN')}đ</span>
+      <div class="sbn-header-nut">
+        <button type="button" class="secondary-button sbn-nho" id="khMoForm">
+          <i class="ri-add-line"></i> Thêm hạng mục
+        </button>
+      </div>
+    </header>`;
+
   if (!ds || !ds.length) {
-    return `<section class="panel">
-      <header class="section-title sbn-header"><h3>Kế hoạch điều trị</h3></header>
+    return `<section class="panel">${dau}${veFormKeHoach()}
       <p class="empty-state">Chưa lập kế hoạch điều trị cho bệnh nhân này.</p>
     </section>`;
   }
@@ -852,16 +971,12 @@ function veKeHoach(ds, tongChiPhi) {
           </p>
           <div class="sbn-tien-do"><i style="width:${pt}%"></i></div>
           ${k.ghi_chu ? `<p class="sbn-kh-ghi">${escapeHTML(k.ghi_chu)}</p>` : ''}
+          <div class="sbn-kh-nut">${nutKeHoach(k)}</div>
         </article>`;
       }).join('')}
     </div>`).join('');
 
-  return `<section class="panel">
-    <header class="section-title sbn-header">
-      <h3>Kế hoạch điều trị</h3>
-      <span class="pill">${ds.length} hạng mục · tổng ${
-        (tongChiPhi || 0).toLocaleString('vi-VN')}đ</span>
-    </header>
+  return `<section class="panel">${dau}${veFormKeHoach()}
     <div class="sbn-gd-luoi">${khoi}</div>
   </section>`;
 }
@@ -1005,7 +1120,9 @@ export async function renderView() {
     dsHoSo = await layDanhSachHoSo({
       tim: fTim || undefined, chiNhanh: fChiNhanh || undefined,
       bacSi: fBacSi || undefined, coCanhBao: fCanhBao, coRangSau: fRangSau,
+      hang: fHang || undefined,
     });
+    bcHang = hienBangHang ? await baoCaoPhanHang() : null;
   }
 
   // Thanh trên cùng đã hiện viewTitles['so-benh-an']. Thêm một h1 nữa là
@@ -1047,7 +1164,7 @@ export function initView() {
     b.addEventListener('click', () => { hoSoMo = b.dataset.mo; rangChon = ''; ve(); });
   });
   g('sbnDong')?.addEventListener('click', () => {
-    hoSoMo = ''; rangChon = ''; hienFormKham = false;
+    hoSoMo = ''; rangChon = ''; hienFormKham = false; hienFormKH = false;
     // Bỏ mô hình đang giữ: hồ sơ sau có sơ đồ răng khác, và bản quét của bệnh
     // nhân này tuyệt đối không được hiện ở hồ sơ người khác.
     banQuet = null; ghiCong = ''; hien3D = false;
@@ -1064,6 +1181,44 @@ export function initView() {
   loc('sCanhBao', (v) => { fCanhBao = v; });
   loc('sRangSau', (v) => { fRangSau = v; });
 
+  /* Phân hạng chăm sóc: chip lọc + bảng điều khiển + xuất báo cáo. */
+  document.querySelectorAll('[data-hang]').forEach((b) => {
+    b.addEventListener('click', () => { fHang = b.dataset.hang; trang = 1; ve(); });
+  });
+  document.querySelectorAll('[data-hang-loc]').forEach((b) => {
+    b.addEventListener('click', () => {
+      fHang = fHang === b.dataset.hangLoc ? '' : b.dataset.hangLoc;
+      trang = 1; ve();
+    });
+  });
+  g('sbnBangHang')?.addEventListener('click', () => { hienBangHang = !hienBangHang; ve(); });
+  g('sbnXuatHang')?.addEventListener('click', () => {
+    downloadText(`cham-soc-theo-hang-${todayISO()}.csv`,
+      '﻿' + xuatCsvPhanHang(bcHang), 'text/csv');
+    showToast('Đã xuất báo cáo phân hạng chăm sóc.');
+  });
+
+  /* Kế hoạch điều trị: thêm hạng mục + chuyển trạng thái theo vòng đời. */
+  g('khMoForm')?.addEventListener('click', () => { hienFormKH = !hienFormKH; ve(); });
+  g('khHuy')?.addEventListener('click', () => { hienFormKH = false; ve(); });
+  g('khLuu')?.addEventListener('click', () => {
+    const v = (id) => (g(id)?.value || '').trim();
+    chay(async () => {
+      await themKeHoach(hoSoMo, {
+        noi_dung: v('khNoiDung'), giai_doan: v('khGiaiDoan'), rang: v('khRang'),
+        so_buoi: v('khSoBuoi'), chi_phi: v('khChiPhi'), ghi_chu: v('khGhiChu'),
+      }, maToi);
+      hienFormKH = false;
+    }, 'Đã thêm hạng mục vào kế hoạch — đang chờ khách đồng ý.');
+  });
+  document.querySelectorAll('[data-kh]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const [id, viec] = b.dataset.kh.split(':');
+      chay(async () => { await capNhatKeHoach(id, viec, maToi); },
+        viec === 'tu_choi' ? 'Đã ghi nhận khách từ chối.' : 'Đã cập nhật kế hoạch.');
+    });
+  });
+
   const goTim = (id, gan) => {
     const o = g(id);
     if (!o) return;
@@ -1079,6 +1234,7 @@ export function initView() {
 
   g('sXoaLoc')?.addEventListener('click', () => {
     fTim = ''; fChiNhanh = ''; fBacSi = ''; fCanhBao = false; fRangSau = false;
+    fHang = '';
     trang = 1; ve();
   });
 
@@ -1378,7 +1534,8 @@ export function initView() {
     chay(async () => {
       await ghiLuotKham(hoSoMo, {
         ly_do: v('kLyDo'), kham: v('kKham'), chan_doan: v('kChanDoan'),
-        ma_benh: v('kMaBenh'), xu_tri: v('kXuTri'), phong: v('kPhong'),
+        ma_benh: v('kMaBenh'), chan_doan_them: v('kChanDoanThem'),
+        xu_tri: v('kXuTri'), phong: v('kPhong'),
         rang_lien_quan: v('kRangLQ').split(/\s+/).filter(Boolean),
       }, maToi);
       hienFormKham = false;

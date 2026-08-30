@@ -459,8 +459,8 @@ let KE_HOACH = [
     noi_dung: 'Trám thẩm mỹ răng 11', rang: ['11'], so_buoi: 1, da_lam: 1,
     chi_phi: 700000, trang_thai: 'xong', ghi_chu: 'Đã làm trong buổi hôm nay' },
   { id: 'KH-04', ho_so: 'BN-00001', giai_doan: 'duy_tri',
-    noi_dung: 'Chỉnh nha mắc cài kim loại · còn 8 tháng', rang: ['toàn hàm'],
-    so_buoi: 8, da_lam: 14, chi_phi: 45000000, trang_thai: 'dang_lam', ghi_chu: 'Tháng thứ 14/22' },
+    noi_dung: 'Chỉnh nha mắc cài kim loại kèm minivis · còn 8 tháng', rang: ['toàn hàm'],
+    so_buoi: 8, da_lam: 14, chi_phi: 52000000, trang_thai: 'dang_lam', ghi_chu: 'Tháng thứ 14/22' },
   { id: 'KH-05', ho_so: 'BN-00002', giai_doan: 'phuc_hoi',
     noi_dung: 'Mão sứ zirconia trên implant 46', rang: ['46'], so_buoi: 2, da_lam: 1,
     chi_phi: 8000000, trang_thai: 'dang_lam', ghi_chu: 'Đã lấy dấu, chờ gắn' },
@@ -601,7 +601,7 @@ let NHAT_KY_DOC = [];
 const sao = (x) => JSON.parse(JSON.stringify(x));
 const cho = (v) => Promise.resolve(sao(v));
 
-export function layDanhSachHoSo({ tim, chiNhanh, bacSi, coCanhBao, coRangSau } = {}) {
+export function layDanhSachHoSo({ tim, chiNhanh, bacSi, coCanhBao, coRangSau, hang } = {}) {
   let ds = HO_SO.map((h) => {
     const luot = LUOT_KHAM.filter((l) => l.ho_so === h.id);
     const rangCanXuLy = Object.values(h.so_do_rang)
@@ -614,9 +614,11 @@ export function layDanhSachHoSo({ tim, chiNhanh, bacSi, coCanhBao, coRangSau } =
       so_rang_can_xu_ly: rangCanXuLy.length,
       rang_can_xu_ly: rangCanXuLy.map((r) => r.ma),
       chua_ky: luot.filter((l) => !l.da_ky).length,
+      phan_hang: phanHangHoSo(h.id),
     };
   });
 
+  if (hang) ds = ds.filter((h) => h.phan_hang.hang === hang);
   if (chiNhanh) ds = ds.filter((h) => h.chi_nhanh === chiNhanh);
   if (bacSi) ds = ds.filter((h) => h.bac_si_chinh === bacSi);
   if (coCanhBao) ds = ds.filter((h) => h.canh_bao.length > 0);
@@ -693,6 +695,7 @@ export function ghiLuotKham(hoSoId, du, boi) {
     bac_si: boi, phong: du.phong || '',
     ly_do: du.ly_do.trim(), kham: du.kham.trim(),
     chan_doan: du.chan_doan.trim(), ma_benh: (du.ma_benh || '').trim(),
+    chan_doan_them: (du.chan_doan_them || '').trim(),
     rang_lien_quan: du.rang_lien_quan || [],
     xu_tri: (du.xu_tri || '').trim(),
     da_ky: false, anh: [],
@@ -886,6 +889,169 @@ export function tomTatSoDo(soDo) {
     dem[r.trang_thai] = (dem[r.trang_thai] || 0) + 1;
   });
   return dem;
+}
+
+/* ── Phân hạng chăm sóc L1–L5 ─────────────────────────────────────────────
+ *
+ * Hạng KHÔNG lưu vào hồ sơ mà TÍNH từ dữ liệu đang có — lưu thì phải nhớ cập
+ * nhật mỗi khi khách khám thêm, đóng thêm tiền, và quên một chỗ là hạng sai.
+ * Tính mỗi lần đọc thì hạng luôn đúng với hồ sơ tại thời điểm nhìn.
+ *
+ * Thang do phòng khám tự định nghĩa (đã chốt với chủ phòng khám):
+ *   L1  khách mới, chưa đủ dữ liệu
+ *   L2  hồ sơ nền đầy đủ: có phim toàn cảnh/CT và từ 2 lần khám
+ *   L3  có trao đổi dịch vụ chuyên sâu (niềng răng, implant…) — tạm dò theo
+ *       từ khoá trong bệnh án và kế hoạch, sau này gắn cờ tay nếu cần
+ *   L4  giá trị điều trị đã chốt từ 50 triệu
+ *   L5  giá trị điều trị đã chốt từ 150 triệu
+ *
+ * Lấy hạng CAO NHẤT thoả điều kiện. "Đã chốt" = khách đồng ý / đang làm / đã
+ * xong — kế hoạch chờ duyệt hay bị từ chối không phải doanh thu, đếm vào là
+ * tự khen mình.
+ */
+export const NGUONG_HANG = { L4: 50000000, L5: 150000000 };
+
+export const PHAN_HANG = {
+  L1: { ten: 'L1 · Khách mới',          lop: 'sbn-hang-1',
+        mo_ta: 'Mới tới, chưa đủ dữ liệu hồ sơ nền' },
+  L2: { ten: 'L2 · Hồ sơ nền đầy đủ',   lop: 'sbn-hang-2',
+        mo_ta: 'Có phim toàn cảnh/CT và từ 2 lần khám trở lên' },
+  L3: { ten: 'L3 · Quan tâm chuyên sâu', lop: 'sbn-hang-3',
+        mo_ta: 'Có trao đổi niềng răng, implant, phục hình lớn' },
+  L4: { ten: 'L4 · Đã chốt ≥ 50tr',     lop: 'sbn-hang-4',
+        mo_ta: 'Giá trị điều trị đã chốt từ 50 triệu' },
+  L5: { ten: 'L5 · Đã chốt ≥ 150tr',    lop: 'sbn-hang-5',
+        mo_ta: 'Giá trị điều trị đã chốt từ 150 triệu — chăm riêng' },
+};
+
+const TU_KHOA_CHUYEN_SAU = ['niềng', 'chỉnh nha', 'mắc cài', 'invisalign',
+  'implant', 'cấy ghép', 'phục hình toàn hàm'];
+
+export function phanHangHoSo(hoSoId) {
+  const luot = LUOT_KHAM.filter((l) => l.ho_so === hoSoId);
+  const kh = KE_HOACH.filter((k) => k.ho_so === hoSoId);
+
+  const coPano = luot.some((l) => (l.anh || [])
+    .some((a) => ['toan_canh', 'ct'].includes(a.loai)));
+  const vanBan = [
+    ...kh.map((k) => k.noi_dung),
+    ...luot.map((l) => `${l.chan_doan} ${l.chan_doan_them || ''} ${l.xu_tri}`),
+  ].join(' · ').toLowerCase();
+  const coChuyenSau = TU_KHOA_CHUYEN_SAU.some((t) => vanBan.includes(t));
+  const daChot = kh.filter((k) => ['dong_y', 'dang_lam', 'xong'].includes(k.trang_thai))
+    .reduce((s, k) => s + (k.chi_phi || 0), 0);
+
+  let hang = 'L1';
+  const lyDo = [];
+  if (coPano && luot.length >= 2) {
+    hang = 'L2';
+    lyDo.push(`có phim toàn cảnh, ${luot.length} lần khám`);
+  }
+  if (coChuyenSau) {
+    hang = 'L3';
+    lyDo.push('có trao đổi dịch vụ chuyên sâu');
+  }
+  if (daChot >= NGUONG_HANG.L4) {
+    hang = 'L4';
+    lyDo.push(`đã chốt ${Math.round(daChot / 1e6)} triệu`);
+  }
+  if (daChot >= NGUONG_HANG.L5) hang = 'L5';
+  if (hang === 'L1') lyDo.push(luot.length ? 'hồ sơ nền chưa đủ' : 'chưa có lượt khám');
+
+  return { hang, ly_do: lyDo.join(' · '), da_chot: daChot,
+    co_pano: coPano, so_lan: luot.length };
+}
+
+/** Báo cáo triển khai chăm sóc theo hạng — nguồn cho dashboard và bản xuất. */
+export function baoCaoPhanHang() {
+  const ds = HO_SO.map((h) => ({ ho_so: h, ...phanHangHoSo(h.id) }));
+  const theoHang = {};
+  Object.keys(PHAN_HANG).forEach((k) => { theoHang[k] = { khach: [], gia_tri: 0 }; });
+  ds.forEach((x) => {
+    theoHang[x.hang].khach.push(x);
+    theoHang[x.hang].gia_tri += x.da_chot;
+  });
+  const tong = ds.length || 1;
+  const duHoSoNen = ds.filter((x) => x.co_pano && x.so_lan >= 2).length;
+  const quanTam = ds.filter((x) => ['L3', 'L4', 'L5'].includes(x.hang));
+  const daChotLon = ds.filter((x) => ['L4', 'L5'].includes(x.hang));
+  return cho({
+    danh_sach: ds,
+    theo_hang: theoHang,
+    tong: ds.length,
+    hieu_suat: {
+      // Ba tỉ lệ đọc theo phễu: đủ hồ sơ nền → có nhu cầu lớn → chốt được.
+      ty_le_du_ho_so: Math.round((duHoSoNen / tong) * 100),
+      ty_le_quan_tam: Math.round((quanTam.length / tong) * 100),
+      ty_le_chot_lon: quanTam.length
+        ? Math.round((daChotLon.length / quanTam.length) * 100) : 0,
+      gia_tri_da_chot: ds.reduce((s, x) => s + x.da_chot, 0),
+    },
+  });
+}
+
+export function xuatCsvPhanHang(bc) {
+  const dong = [['Hạng', 'Mã hồ sơ', 'Bệnh nhân', 'Điện thoại', 'Chi nhánh',
+    'Bác sĩ phụ trách', 'Số lần khám', 'Có phim pano', 'Giá trị đã chốt', 'Căn cứ xếp hạng']];
+  bc.danh_sach.forEach((x) => dong.push([
+    x.hang, x.ho_so.ma, x.ho_so.ten, x.ho_so.dien_thoai, x.ho_so.chi_nhanh,
+    x.ho_so.bac_si_chinh, x.so_lan, x.co_pano ? 'Có' : 'Chưa', x.da_chot, x.ly_do,
+  ]));
+  return dong.map((r) => r.map((o) => `"${String(o ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+
+/* ── Kế hoạch điều trị: thêm và cập nhật ─────────────────────────────────── */
+
+export function themKeHoach(hoSoId, du, boi) {
+  if (!HO_SO.find((x) => x.id === hoSoId)) throw new Error('Không tìm thấy hồ sơ này.');
+  if (String(du.noi_dung || '').trim().length < 3) throw new Error('Hãy ghi nội dung hạng mục.');
+  if (!GIAI_DOAN[du.giai_doan]) throw new Error('Hãy chọn giai đoạn điều trị.');
+  const soBuoi = Number(du.so_buoi);
+  if (!Number.isInteger(soBuoi) || soBuoi < 1) throw new Error('Số buổi phải là số nguyên từ 1.');
+  const chiPhi = Number(du.chi_phi);
+  if (!Number.isFinite(chiPhi) || chiPhi < 0) throw new Error('Chi phí không hợp lệ.');
+  const moi = {
+    id: `KH-${String(KE_HOACH.length + 1).padStart(2, '0')}`,
+    ho_so: hoSoId, giai_doan: du.giai_doan,
+    noi_dung: du.noi_dung.trim(),
+    rang: String(du.rang || '').split(/[\s,]+/).filter(Boolean),
+    so_buoi: soBuoi, da_lam: 0, chi_phi: chiPhi,
+    // Hạng mục mới luôn bắt đầu ở "chờ khách đồng ý": kế hoạch là ĐỀ XUẤT
+    // cho tới khi khách gật đầu, không ai được ghi thẳng thành việc phải làm.
+    trang_thai: 'cho_duyet',
+    ghi_chu: (du.ghi_chu || '').trim(), tao_boi: boi,
+  };
+  KE_HOACH.push(moi);
+  return cho(moi);
+}
+
+/* Chuyển trạng thái theo đúng vòng đời, không nhảy cóc: chờ duyệt → khách
+ * đồng ý / từ chối → đang làm → xong. Buổi chỉ tăng khi đang làm — tăng buổi
+ * cho hạng mục khách chưa đồng ý là làm chui. */
+const CHUYEN_KH = {
+  dong_y:    { tu: ['cho_duyet'], den: 'dong_y' },
+  tu_choi:   { tu: ['cho_duyet'], den: 'tu_choi' },
+  bat_dau:   { tu: ['dong_y'], den: 'dang_lam' },
+  hoan_tat:  { tu: ['dang_lam'], den: 'xong' },
+};
+
+export function capNhatKeHoach(id, viec, boi) {
+  const k = KE_HOACH.find((x) => x.id === id);
+  if (!k) throw new Error('Không tìm thấy hạng mục này.');
+  if (viec === 'tang_buoi') {
+    if (k.trang_thai !== 'dang_lam') throw new Error('Chỉ ghi buổi cho hạng mục đang thực hiện.');
+    k.da_lam += 1;
+    if (k.da_lam >= k.so_buoi) k.trang_thai = 'xong';
+    return cho(k);
+  }
+  const c = CHUYEN_KH[viec];
+  if (!c) throw new Error('Thao tác không hợp lệ.');
+  if (!c.tu.includes(k.trang_thai)) {
+    throw new Error(`Hạng mục đang ở "${TRANG_THAI_KE_HOACH[k.trang_thai]?.ten}", không chuyển được.`);
+  }
+  k.trang_thai = c.den;
+  k.cap_nhat_boi = boi;
+  return cho(k);
 }
 
 export function xuatCsvLuotKham(ho, ds) {
