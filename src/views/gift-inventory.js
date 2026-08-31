@@ -3,7 +3,7 @@ import { showToast } from '../components/toast.js';
 import { getGiftOverview, getGiftMovements, createGiftItem, createGiftCategory, createGiftMovement } from '../services/gifts.js';
 import { getPgAccounts } from '../services/marketing.js';
 import { navigateTo } from '../router.js';
-import { uploadFile } from '../services/storage.js';
+import { prepareImageForUpload, uploadFile } from '../services/storage.js';
 
 let state = { page: 1, pageSize: 20, period: 'month', recipient: '', quantityMin: '', quantityMax: '', itemId: '', movementType: '', pgCode: '', dateFrom: '', dateTo: '' };
 let overview = { items: [], summary: {} };
@@ -103,13 +103,7 @@ function modal(title, body, submitLabel, mode) {
 function movementFields(type, fixedItem = '') {
   const manager = currentRole !== 'pg_staff';
   const recipient = type === 'issue';
-  return `<input type="hidden" name="movementType" value="${type}"><label><span>Quà tặng</span><select name="itemId" required><option value="">Chọn quà tặng</option>${options((overview.items || []).filter(x => x.active), 'id', x => `${x.name} · còn ${x.stock} ${x.unit}`, fixedItem)}</select></label><label><span>Số lượng</span><input name="quantity" type="number" min="1" value="1" required></label>${recipient ? `<label><span>Người nhận *</span><input name="recipientName" required placeholder="Họ tên khách hàng"></label><label><span>Số điện thoại</span><input name="recipientPhone" inputmode="tel" placeholder="Số điện thoại khách"></label>` : ''}${manager && recipient ? `<label><span>PG thực hiện</span><select name="pgCode"><option value="">Support trực tiếp</option>${options(pgAccounts, 'employee_code', x => x.full_name || x.employee_code)}</select></label>` : ''}${recipient ? `<div class="gift-evidence full"><label class="gift-upload"><span><i class="ri-user-smile-line"></i> Ảnh khách nhận/lấy quà *</span><input name="customerImage" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required><small>Chụp rõ khách và sản phẩm được nhận.</small></label><label class="gift-upload"><span><i class="ri-receipt-line"></i> Ảnh bill / hóa đơn *</span><input name="receiptImage" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required><small>Chụp đủ nội dung bill hoặc biên lai đối soát.</small></label></div>` : ''}<label class="full"><span>Ghi chú</span><textarea name="note" rows="3" placeholder="Chương trình, lý do hoặc thông tin đối soát"></textarea></label>`;
-}
-
-function validateEvidenceFile(file, label) {
-  if (!file || !file.size) throw new Error(`Vui lòng chọn ${label}.`);
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error(`${label} phải là ảnh JPG, PNG hoặc WEBP.`);
-  if (file.size > 6 * 1024 * 1024) throw new Error(`${label} không được vượt quá 6 MB.`);
+  return `<input type="hidden" name="movementType" value="${type}"><label><span>Quà tặng</span><select name="itemId" required><option value="">Chọn quà tặng</option>${options((overview.items || []).filter(x => x.active), 'id', x => `${x.name} · còn ${x.stock} ${x.unit}`, fixedItem)}</select></label><label><span>Số lượng</span><input name="quantity" type="number" min="1" value="1" required></label>${recipient ? `<label><span>Người nhận *</span><input name="recipientName" required placeholder="Họ tên khách hàng"></label><label><span>Số điện thoại</span><input name="recipientPhone" inputmode="tel" placeholder="Số điện thoại khách"></label>` : ''}${manager && recipient ? `<label><span>PG thực hiện</span><select name="pgCode"><option value="">Support trực tiếp</option>${options(pgAccounts, 'employee_code', x => x.full_name || x.employee_code)}</select></label>` : ''}${recipient ? `<div class="gift-evidence full"><label class="gift-upload"><span><i class="ri-user-smile-line"></i> Ảnh khách nhận/lấy quà *</span><input name="customerImage" type="file" accept="image/*" capture="environment" required><small>Chụp rõ khách và sản phẩm được nhận.</small></label><label class="gift-upload"><span><i class="ri-receipt-line"></i> Ảnh bill / hóa đơn *</span><input name="receiptImage" type="file" accept="image/*" capture="environment" required><small>Chụp đủ nội dung bill hoặc biên lai đối soát.</small></label></div>` : ''}<label class="full"><span>Ghi chú</span><textarea name="note" rows="3" placeholder="Chương trình, lý do hoặc thông tin đối soát"></textarea></label>`;
 }
 export function initView() {
   document.getElementById('giftFilters')?.addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.currentTarget); Object.keys(state).forEach(key => { if (form.has(key)) state[key] = String(form.get(key) || ''); }); state.page = 1; await navigateTo('gift-inventory'); });
@@ -130,13 +124,14 @@ export function initView() {
         if (data.movementType === 'issue') {
           const customerImage = formData.get('customerImage');
           const receiptImage = formData.get('receiptImage');
-          validateEvidenceFile(customerImage, 'ảnh khách nhận quà');
-          validateEvidenceFile(receiptImage, 'ảnh bill/biên lai');
-          button.textContent = 'Đang tải ảnh…';
-          const [customerUpload, receiptUpload] = await Promise.all([
-            uploadFile(customerImage, 'gift-evidence/customer'),
-            uploadFile(receiptImage, 'gift-evidence/receipt'),
-          ]);
+          button.textContent = 'Đang xử lý ảnh…';
+          const preparedCustomerImage = await prepareImageForUpload(customerImage, 'ảnh khách nhận quà');
+          button.textContent = 'Đang tải ảnh 1/2…';
+          const customerUpload = await uploadFile(preparedCustomerImage, 'gift-evidence/customer');
+          button.textContent = 'Đang xử lý ảnh 2/2…';
+          const preparedReceiptImage = await prepareImageForUpload(receiptImage, 'ảnh bill/biên lai');
+          button.textContent = 'Đang tải ảnh 2/2…';
+          const receiptUpload = await uploadFile(preparedReceiptImage, 'gift-evidence/receipt');
           data.customerImageUrl = customerUpload.url;
           data.customerImageName = customerUpload.name;
           data.receiptUrl = receiptUpload.url;
