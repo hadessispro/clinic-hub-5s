@@ -9,7 +9,8 @@ import { getNotifications, subscribeToNotifications } from './services/notificat
 import { syncOfflineAttendance } from './services/attendance.js';
 import { syncPendingProofs } from './services/attendance-proofs.js';
 import { showToast } from './components/toast.js';
-import { canAccessView, getDefaultView, isOpsRole, khongPhaiChamCong } from './permissions.js';
+import { canAccessView, getDefaultView, isOpsRole, khongPhaiChamCong, napGhiDePhanQuyen } from './permissions.js';
+import { layGhiDe } from './services/phan-quyen.js';
 import { loadClinicLocation } from './services/clinic.js';
 import { BRANCH, branchSettings, getEffectiveBranchId, setActiveBranch } from './branch.js';
 import { subscribeToLeaveRequests } from './services/leave.js';
@@ -125,6 +126,23 @@ async function bootstrap() {
     
     if (authInfo.user && authInfo.profile) {
       const role = authInfo.profile.role || 'staff';
+
+      /* Nạp ghi đè phân quyền TRƯỚC khi tính màn đích và dựng menu.
+       *
+       * Nạp sau thì menu vẽ theo mặc định của mã nguồn rồi mới đổi, người
+       * dùng thấy mục hiện ra rồi biến mất — và tệ hơn, canAccessView bên
+       * dưới có thể đẩy họ sang màn khác vì lúc đó chưa biết quyền thật.
+       *
+       * Hỏng thì chạy tiếp với mặc định: mất mạng lúc đăng nhập không được
+       * biến thành mất quyền. */
+      try {
+        const gd = await layGhiDe();
+        napGhiDePhanQuyen({
+          vaiTro: gd.vaiTro,
+          cuaToi: gd.nhanSu[String(authInfo.profile.employee_code || '').toLowerCase()] || null,
+        });
+      } catch { napGhiDePhanQuyen({}); }
+
       const currentView = store.getState().currentView;
       const requestedView = hasEnteredApp ? currentView : getDefaultView(role);
       const safeView = canAccessView(role, requestedView)

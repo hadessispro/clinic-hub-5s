@@ -9,10 +9,23 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { ROLE_PROFILES } from '../constants.js';
+import {
+  MOI_NHAN, NHOM_VIEW, VIEW_BAT_BUOC, viewsHieuLuc, viewsMacDinh,
+} from '../permissions.js';
+import {
+  VAI_TRO_KHOA, layGhiDe, luuGhiDeNhanSu, luuGhiDeVaiTro, xoaGhiDe,
+} from '../services/phan-quyen.js';
 
 // Thẻ đang mở. Giữ ngoài hàm dựng vì router dựng lại cả view mỗi lần điều
 // hướng, và nhảy về thẻ đầu sau mỗi thao tác thì không ai làm việc được.
 let theDangMo = 'tai-khoan';
+
+/* Trạng thái thẻ Phân quyền. Giữ ngoài hàm dựng như mọi thẻ khác: router dựng
+ * lại cả view sau mỗi thao tác, nhảy về vai trò đầu danh sách sau mỗi lần lưu
+ * thì không ai chỉnh xong được một vai trò. */
+let pqVaiTro = '';
+let pqNhanSu = '';
+let pqGhiDe = { vaiTro: {}, nhanSu: {} };
 
 // Bộ lọc bảng tài khoản. Giữ ngoài hàm dựng vì store.notify() dựng lại cả
 // view sau mỗi thao tác, và mất bộ lọc sau mỗi lần cập nhật quyền thì phải
@@ -20,6 +33,7 @@ let theDangMo = 'tai-khoan';
 let tkTim = ''; let tkVaiTro = ''; let tkTrangThai = ''; let tkBoPhan = ''; let tkChiNhanh = '';
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
+  'phan-quyen': 'Phân quyền màn hình',
   bug: 'Bug và thông báo',
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
@@ -152,12 +166,29 @@ function profileRows(profiles, currentUserId, trangThaiMap) {
 }
 
 export async function renderView(state) {
+  /* Mỗi nguồn tự chịu lỗi của mình.
+   *
+   * Trước đây bảy lời gọi nằm chung một Promise.all, nên MỘT bảng thiếu quyền
+   * đọc là cả trung tâm quản trị ra màn trắng — kể cả những phần không liên
+   * quan như danh sách tài khoản hay phân quyền. Mà đây chính là màn người ta
+   * vào để sửa những trục trặc kiểu đó, nên nó là màn ít được phép chết nhất.
+   *
+   * Nay hỏng phần nào mất phần đó, phần còn lại vẫn dựng. */
   const [health, bugs, announcements, profiles, audits, outbox, errorLogs] = await Promise.all([
-    getSystemHealth(), getBugLogs(), getSystemAnnouncements(), getSystemProfiles(), getTechnicalAudit(), getIntegrationFailures(), getSystemErrorLogs(),
+    getSystemHealth().catch(() => ({})),
+    getBugLogs().catch(() => []),
+    getSystemAnnouncements().catch(() => []),
+    getSystemProfiles().catch(() => []),
+    getTechnicalAudit().catch(() => []),
+    getIntegrationFailures().catch(() => []),
+    getSystemErrorLogs().catch(() => []),
   ]);
   // Trạng thái đăng nhập là nguồn dữ liệu KHÁC với hồ sơ. Lấy riêng rồi ghép
   // theo mã nhân sự; hỏng thì bảng vẫn dựng được, chỉ thiếu cột khoá.
   const accountStates = await getAccountStates().catch(() => []);
+  // Ghi đè phân quyền: chỉ đọc khi đang mở thẻ đó, đỡ một lời gọi mạng cho
+  // mọi lần mở màn quản trị vì việc khác.
+  if (theDangMo === 'phan-quyen') pqGhiDe = await layGhiDe();
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   const failed = outbox.filter((item) => item.status === 'failed');
   const the = theDangMo;
@@ -200,6 +231,7 @@ export async function renderView(state) {
       ${!daLoc.length ? '<p class="hh-ghi">Không có tài khoản nào khớp bộ lọc.</p>'
         : `<div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Hồ sơ</th><th>Đăng nhập</th><th></th></tr></thead><tbody>${profileRows(daLoc, state.user.id, tkTrangThaiMap)}</tbody></table></div>`}
     </section>`,
+    'phan-quyen': veThePhanQuyen(profiles),
     'bug': `<div class="grid cols-2 system-admin-grid">
       <section class="panel"><div class="section-title"><div><p class="eyebrow">THÔNG BÁO PHÁT HÀNH</p><h3>Gửi cập nhật đến người dùng</h3></div></div>
         <form id="announcementForm" class="system-form"><label class="span-2">Tiêu đề<input name="title" required maxlength="160" placeholder="VD: Đã cập nhật chức năng chấm công"></label><label>Loại<select name="category"><option value="feature">Tính năng mới</option><option value="maintenance">Bảo trì</option><option value="security">Bảo mật</option><option value="general">Thông báo chung</option></select></label><label>Người nhận<select name="audience"><option value="all">Tất cả người dùng</option><option value="staff">Nhân viên</option><option value="leader">Trưởng bộ phận</option><option value="hr">Nhân sự</option><option value="finance">Kế toán</option><option value="admin">Admin</option></select></label><label class="span-2">Nội dung<textarea name="body" required maxlength="2000" placeholder="Mô tả thay đổi, thời gian áp dụng và hướng dẫn..."></textarea></label><button class="primary-button span-2" type="submit">🔔 Phát hành thông báo realtime</button></form>
@@ -280,6 +312,102 @@ export function initView() {
     store.notify();
   }));
 
+  /* ── Thẻ Phân quyền ── */
+  const maToi = store.getState()?.profile?.employee_code || '';
+  const tickDangChon = (thuocTinh) => [...document.querySelectorAll(`[${thuocTinh}]`)]
+    .filter((o) => o.checked).map((o) => o.getAttribute(thuocTinh));
+
+  document.getElementById('pqVaiTro')?.addEventListener('change', (e) => {
+    pqVaiTro = e.target.value; store.notify();
+  });
+  document.getElementById('pqChonNguoi')?.addEventListener('change', (e) => {
+    pqNhanSu = e.target.value; store.notify();
+  });
+
+  /* Phản hồi ngay khi tick, không đợi bấm Lưu.
+   *
+   * Nhãn "đã bật thêm" / "đã tắt" được dựng từ dữ liệu đã lưu, nên nếu chỉ có
+   * nó thì người dùng tick xong nhìn không thấy gì đổi và không biết mình vừa
+   * làm lệch khỏi mặc định ở đâu. Ghi mốc mặc định vào chính ô tick lúc dựng,
+   * rồi so tại chỗ mỗi lần đổi. */
+  const noiDauKhac = (o, mocMacDinh) => {
+    const nhan = o.closest('.pq-o');
+    if (!nhan) return;
+    const them = o.checked && !mocMacDinh;
+    const bot = !o.checked && mocMacDinh;
+    nhan.classList.toggle('pq-them', them);
+    nhan.classList.toggle('pq-bot', bot);
+    nhan.querySelectorAll('.pq-nhan-them, .pq-nhan-bot').forEach((x) => x.remove());
+    if (them || bot) {
+      const b = document.createElement('b');
+      b.className = `pq-nhan pq-nhan-${them ? 'them' : 'bot'}`;
+      b.textContent = them ? 'đã bật thêm' : 'đã tắt';
+      nhan.appendChild(b);
+    }
+  };
+  document.querySelectorAll('[data-pq-view]').forEach((o) => {
+    const moc = viewsMacDinh(document.getElementById('pqVaiTro')?.value)
+      .includes(o.getAttribute('data-pq-view'));
+    o.addEventListener('change', () => noiDauKhac(o, moc));
+  });
+
+  document.getElementById('pqLuuVaiTro')?.addEventListener('click', async (e) => {
+    const vt = document.getElementById('pqVaiTro')?.value;
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const kq = await luuGhiDeVaiTro(vt, tickDangChon('data-pq-view'), maToi);
+      showToast(kq.khong_con_chenh
+        ? `Vai trò ${ROLE_PROFILES[vt].label} đã trùng mặc định, không còn chỉnh tay nào.`
+        : `Đã lưu: bật thêm ${kq.bat.length}, tắt ${kq.tat.length} màn.`);
+      pqGhiDe = await layGhiDe();
+      store.notify();
+    } catch (err) { showToast(err.message, true); b.disabled = false; }
+  });
+
+  document.getElementById('pqTraVe')?.addEventListener('click', async () => {
+    const vt = document.getElementById('pqVaiTro')?.value;
+    const ok = await confirmAction(
+      `Bỏ mọi chỉnh tay của vai trò ${ROLE_PROFILES[vt].label} và quay về đúng mặc định?`,
+      { title: 'Trả về mặc định', confirmText: 'Trả về' });
+    if (!ok) return;
+    try {
+      await xoaGhiDe('vai_tro', vt);
+      showToast('Đã trả vai trò về mặc định của hệ thống.');
+      pqGhiDe = await layGhiDe();
+      store.notify();
+    } catch (err) { showToast(err.message, true); }
+  });
+
+  document.getElementById('pqLuuNguoi')?.addEventListener('click', async (e) => {
+    const p = (await getSystemProfiles()).find((x) => x.employee_code === pqNhanSu);
+    if (!p) { showToast('Không tìm thấy hồ sơ này.', true); return; }
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const kq = await luuGhiDeNhanSu(pqNhanSu, p.role, tickDangChon('data-pq-nview'), maToi, maToi);
+      showToast(kq.khong_con_chenh
+        ? 'Tài khoản này giờ đúng bằng quyền vai trò, ngoại lệ đã được gỡ.'
+        : `Đã lưu ngoại lệ: bật thêm ${kq.bat.length}, tắt ${kq.tat.length} màn.`);
+      pqGhiDe = await layGhiDe();
+      store.notify();
+    } catch (err) { showToast(err.message, true); b.disabled = false; }
+  });
+
+  document.querySelectorAll('[data-pq-sua]').forEach((b) => b.addEventListener('click', () => {
+    pqNhanSu = b.dataset.pqSua; store.notify();
+  }));
+  document.querySelectorAll('[data-pq-bo]').forEach((b) => b.addEventListener('click', async () => {
+    const ma = b.dataset.pqBo;
+    const ok = await confirmAction(`Gỡ ngoại lệ của ${ma}? Tài khoản này sẽ quay về đúng `
+      + 'quyền của vai trò họ đang mang.', { title: 'Gỡ ngoại lệ', confirmText: 'Gỡ' });
+    if (!ok) return;
+    try {
+      await xoaGhiDe('nhan_su', ma);
+      showToast('Đã gỡ ngoại lệ.');
+      pqGhiDe = await layGhiDe();
+      store.notify();
+    } catch (err) { showToast(err.message, true); }
+  }));
+
   document.getElementById('tkLoc')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -326,4 +454,161 @@ export function initView() {
 
   document.querySelectorAll('[data-save-access]').forEach((button) => button.addEventListener('click', async () => { const id = button.dataset.saveAccess; const role = document.querySelector(`[data-user-role="${id}"]`).value; const active = document.querySelector(`[data-user-active="${id}"]`).checked; if (!await confirmAction(`Xác nhận cập nhật quyền ${roleLabel[role]} và trạng thái tài khoản?`, { title: 'Cập nhật phân quyền', confirmText: 'Lưu phân quyền' })) return; try { await updateUserAccess(id, role, active); showToast('Đã cập nhật quyền tài khoản và lưu audit.'); store.notify(); } catch (error) { showToast(error.message || 'Không thể cập nhật tài khoản.', true); } }));
   logSub?.unsubscribe(); logSub = subscribeToSystemErrors(() => { if (store.getState().currentView === 'system-admin') store.notify(); });
+}
+
+/* ── Thẻ Phân quyền ─────────────────────────────────────────────────────
+ *
+ * Chỗ đổi "vai trò nào thấy màn nào" mà không phải sửa mã nguồn rồi triển
+ * khai lại. Mã nguồn giữ mặc định, màn này giữ phần chênh.
+ *
+ * Hai mức, cố ý tách rời:
+ *   VAI TRÒ   đổi một lần, áp cho mọi người mang vai trò đó
+ *   TÀI KHOẢN bật tắt riêng cho một người, không đụng người cùng vai trò
+ *
+ * Ô tick hiện KẾT QUẢ CUỐI CÙNG chứ không hiện phần chênh, vì câu hỏi thật
+ * của người dùng là "người này rốt cuộc thấy những gì". Phần chênh so với mặc
+ * định được đánh dấu bằng nhãn nhỏ để vẫn biết chỗ nào đã bị chỉnh tay.
+ */
+function veThePhanQuyen(profiles) {
+  const dsVaiTro = Object.keys(ROLE_PROFILES).filter((r) => !VAI_TRO_KHOA.includes(r));
+  const vt = pqVaiTro || dsVaiTro[0];
+  const macDinh = viewsMacDinh(vt);
+  const hieuLuc = viewsHieuLuc(vt, pqGhiDe.vaiTro[vt], null);
+  const daChinh = pqGhiDe.vaiTro[vt];
+  const soChinh = daChinh ? (daChinh.bat.length + daChinh.tat.length) : 0;
+
+  const oTick = (view, dangCo, laMacDinh, ten) => {
+    const them = dangCo && !laMacDinh;
+    const bot = !dangCo && laMacDinh;
+    return `<label class="pq-o${them ? ' pq-them' : ''}${bot ? ' pq-bot' : ''}">
+      <input type="checkbox" data-pq-view="${escapeHTML(view)}"${dangCo ? ' checked' : ''}
+        ${VIEW_BAT_BUOC.includes(view) ? ' disabled' : ''}>
+      <span>${escapeHTML(ten)}</span>
+      ${them ? '<b class="pq-nhan pq-nhan-them">đã bật thêm</b>' : ''}
+      ${bot ? '<b class="pq-nhan pq-nhan-bot">đã tắt</b>' : ''}
+      ${VIEW_BAT_BUOC.includes(view) ? '<b class="pq-nhan">bắt buộc</b>' : ''}
+    </label>`;
+  };
+
+  const luoi = NHOM_VIEW.map((g) => `<div class="pq-nhom">
+    <h5>${escapeHTML(g.group)}</h5>
+    ${g.items.map((i) => oTick(i.view, hieuLuc.includes(i.view),
+      macDinh.includes(i.view), i.label)).join('')}
+  </div>`).join('');
+
+  /* Danh sách tài khoản đã có ghi đè riêng. Chỉ hiện người ĐÃ chỉnh, không
+   * liệt kê cả trăm tài khoản: muốn chỉnh một người mới thì chọn từ ô bên
+   * dưới, còn danh sách này trả lời câu "ai đang có quyền khác thường". */
+  const dsRieng = Object.entries(pqGhiDe.nhanSu).map(([ma, gd]) => {
+    const p = profiles.find((x) => String(x.employee_code || '').toLowerCase() === ma);
+    return { ma, gd, p };
+  }).filter((x) => x.gd.bat.length || x.gd.tat.length);
+
+  const tenView = (v) => MOI_NHAN[v] || v;
+
+  return `<div class="grid cols-2 system-admin-grid pq-luoi-chinh">
+    <section class="panel">
+      <div class="section-title">
+        <div><p class="eyebrow">QUYỀN THEO VAI TRÒ</p><h3>Vai trò thấy những màn nào</h3></div>
+        <span class="subtle">${hieuLuc.length} màn đang bật${soChinh ? ` · ${soChinh} khác mặc định` : ''}</span>
+      </div>
+
+      <label class="pq-chon">
+        <span>Chọn vai trò</span>
+        <select id="pqVaiTro">
+          ${dsVaiTro.map((r) => `<option value="${escapeHTML(r)}"${r === vt ? ' selected' : ''}>
+            ${escapeHTML(ROLE_PROFILES[r].label)}${pqGhiDe.vaiTro[r] ? ' · đã chỉnh' : ''}</option>`).join('')}
+        </select>
+      </label>
+      <p class="pq-mota">${escapeHTML(ROLE_PROFILES[vt].scope)}</p>
+
+      <div class="pq-luoi">${luoi}</div>
+
+      <div class="pq-nut">
+        ${soChinh ? `<button class="secondary-button" type="button" id="pqTraVe">
+          ↺ Trả về mặc định</button>` : ''}
+        <button class="primary-button" type="button" id="pqLuuVaiTro">Lưu quyền vai trò</button>
+      </div>
+      <p class="pq-ghi">Đổi ở đây áp cho <b>mọi tài khoản</b> mang vai trò này. Người đang
+        đăng nhập sẽ thấy thay đổi ở lần đăng nhập kế tiếp.</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <div><p class="eyebrow">BẬT TẮT RIÊNG TỪNG NGƯỜI</p><h3>Ngoại lệ theo tài khoản</h3></div>
+        <span class="subtle">${dsRieng.length} tài khoản đang có quyền khác vai trò</span>
+      </div>
+
+      ${dsRieng.length ? `<ul class="pq-ds">
+        ${dsRieng.map((x) => `<li>
+          <div>
+            <strong>${escapeHTML(x.p?.full_name || x.ma)}</strong>
+            <small>${escapeHTML(x.ma)}${x.p ? ` · ${escapeHTML(ROLE_PROFILES[x.p.role]?.label || x.p.role)}` : ' · không còn hồ sơ'}</small>
+            <div class="pq-chenh">
+              ${x.gd.bat.map((v) => `<span class="pq-nhan pq-nhan-them">+ ${escapeHTML(tenView(v))}</span>`).join('')}
+              ${x.gd.tat.map((v) => `<span class="pq-nhan pq-nhan-bot">− ${escapeHTML(tenView(v))}</span>`).join('')}
+            </div>
+          </div>
+          <div class="pq-ds-nut">
+            <button class="secondary-button compact-button" type="button"
+              data-pq-sua="${escapeHTML(x.ma)}">Sửa</button>
+            <button class="secondary-button compact-button" type="button"
+              data-pq-bo="${escapeHTML(x.ma)}">Bỏ ngoại lệ</button>
+          </div>
+        </li>`).join('')}
+      </ul>` : '<p class="subtle">Chưa tài khoản nào có quyền khác vai trò của họ. Đây là trạng thái nên có — ngoại lệ càng ít càng dễ hiểu ai thấy được gì.</p>'}
+
+      <div class="pq-them-nguoi">
+        <label class="pq-chon">
+          <span>Thêm ngoại lệ cho một tài khoản</span>
+          <select id="pqChonNguoi">
+            <option value="">— chọn nhân sự —</option>
+            ${profiles.filter((p) => p.employee_code && !VAI_TRO_KHOA.includes(p.role))
+              .map((p) => `<option value="${escapeHTML(p.employee_code)}"${
+                pqNhanSu === p.employee_code ? ' selected' : ''}>${escapeHTML(p.full_name)} · ${
+                escapeHTML(p.employee_code)}</option>`).join('')}
+          </select>
+        </label>
+        ${veNganNguoi(profiles)}
+      </div>
+    </section>
+  </div>`;
+}
+
+/* Lưới tick cho MỘT tài khoản, chỉ hiện khi đã chọn người. Dựng lại cùng một
+ * hàm ô tick với phần vai trò để hai chỗ không bao giờ lệch cách hiển thị. */
+function veNganNguoi(profiles) {
+  if (!pqNhanSu) return '';
+  const p = profiles.find((x) => x.employee_code === pqNhanSu);
+  if (!p) return '<p class="subtle">Không tìm thấy hồ sơ này.</p>';
+
+  const gdVaiTro = pqGhiDe.vaiTro[p.role];
+  const nenCo = viewsHieuLuc(p.role, gdVaiTro, null);   // mức của vai trò
+  const dangCo = viewsHieuLuc(p.role, gdVaiTro, pqGhiDe.nhanSu[pqNhanSu.toLowerCase()]);
+
+  const luoi = NHOM_VIEW.map((g) => `<div class="pq-nhom">
+    <h5>${escapeHTML(g.group)}</h5>
+    ${g.items.map((i) => {
+      const co = dangCo.includes(i.view);
+      const theoVaiTro = nenCo.includes(i.view);
+      const them = co && !theoVaiTro;
+      const bot = !co && theoVaiTro;
+      return `<label class="pq-o${them ? ' pq-them' : ''}${bot ? ' pq-bot' : ''}">
+        <input type="checkbox" data-pq-nview="${escapeHTML(i.view)}"${co ? ' checked' : ''}
+          ${VIEW_BAT_BUOC.includes(i.view) ? ' disabled' : ''}>
+        <span>${escapeHTML(i.label)}</span>
+        ${them ? '<b class="pq-nhan pq-nhan-them">bật thêm</b>' : ''}
+        ${bot ? '<b class="pq-nhan pq-nhan-bot">tắt riêng</b>' : ''}
+      </label>`;
+    }).join('')}
+  </div>`).join('');
+
+  return `<div class="pq-nguoi">
+    <p class="pq-mota">So với vai trò <b>${escapeHTML(ROLE_PROFILES[p.role]?.label || p.role)}</b>.
+      Ô nào khác vai trò sẽ được đánh dấu.</p>
+    <div class="pq-luoi">${luoi}</div>
+    <div class="pq-nut">
+      <button class="primary-button" type="button" id="pqLuuNguoi">Lưu ngoại lệ</button>
+    </div>
+  </div>`;
 }

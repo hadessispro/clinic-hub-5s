@@ -23,6 +23,11 @@ const tables = new Set([
   'performance_metrics', 'audit_logs', 'clinic_state_snapshots', 'clinic_locations',
   'integration_outbox', 'system_bug_logs', 'system_announcements', 'system_error_logs',
   'work_shifts', 'employee_allowed_shifts', 'leader_scopes', 'push_subscriptions',
+  // Ghi đè phân quyền màn hình. MỌI người đăng nhập phải ĐỌC được: ứng dụng
+  // nạp bảng này ngay sau khi xác thực để biết người đó thấy những màn nào.
+  // Quyền GHI đã bị chặn sẵn ở canWrite — chỉ admin/admin_it/superadmin, vì
+  // 'phan_quyen' không nằm trong hrWriteTables lẫn staffWriteTables.
+  'phan_quyen',
 ]);
 
 const adminRoles = new Set(['admin', 'admin_it', 'superadmin']);

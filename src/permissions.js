@@ -158,12 +158,77 @@ const NAV_ITEMS = [
   ]},
 ];
 
+/* ── Ghi đè phân quyền từ cơ sở dữ liệu ──────────────────────────────────
+ *
+ * ROLE_VIEWS ở trên là MẶC ĐỊNH của mã nguồn. Admin IT chỉnh được phần chênh
+ * trên giao diện (màn Quản trị hệ thống → Phân quyền), phần chênh đó nằm
+ * trong cơ sở dữ liệu và được nạp vào đây ngay sau khi đăng nhập.
+ *
+ * Nạp một lần vào bộ nhớ chứ không hỏi lại mỗi lần kiểm tra: canAccessView bị
+ * gọi ở mọi lần chuyển màn và mọi lần dựng menu, để nó thành lời gọi mạng là
+ * biến việc bấm menu thành việc chờ.
+ *
+ * MẶC ĐỊNH LÀ RỖNG. Chưa nạp được ghi đè thì hệ thống chạy đúng như mã nguồn,
+ * không phải chạy sai — mất mạng lúc đăng nhập không được biến thành mất
+ * quyền hay thừa quyền.
+ */
+let GHI_DE_VAI_TRO = {};
+let GHI_DE_CUA_TOI = null;
+
+export const BANG_VAI_TRO = ROLE_VIEWS;
+export const MOI_VIEW = [...new Set(NAV_ITEMS.flatMap((g) => g.items.map((i) => i.view)))];
+/* Cấu trúc menu và nhãn tiếng Việt, mở ra cho màn phân quyền dùng lại.
+ *
+ * Màn đó phải dựng lưới tick theo ĐÚNG nhóm và ĐÚNG tên mà người dùng nhìn
+ * thấy trên menu. Chép một danh sách thứ hai sang bên đó là bảo đảm hai bên
+ * lệch nhau ngay lần thêm màn tiếp theo — và khi đó Admin IT cấp quyền cho
+ * một cái tên không còn tồn tại. */
+export const NHOM_VIEW = NAV_ITEMS;
+export const MOI_NHAN = Object.fromEntries(
+  NAV_ITEMS.flatMap((g) => g.items.map((i) => [i.view, i.label])),
+);
+
+/* Màn KHÔNG được bỏ: nơi hệ thống đưa người dùng tới ngay sau khi đăng nhập.
+ * Bỏ mất nó là đăng nhập xong rơi vào màn trắng, và người đó không tự sửa
+ * được vì cũng không vào được màn nào khác. */
+export const VIEW_BAT_BUOC = ['dashboard'];
+
+/** Danh sách view mặc định của mã nguồn, chưa tính ghi đè. */
+export function viewsMacDinh(role) {
+  return ROLE_VIEWS[role] ? [...ROLE_VIEWS[role]] : [];
+}
+
+/** Áp phần chênh lên một danh sách. Dùng chung cho cả lúc chạy lẫn lúc Admin
+ * IT xem trước kết quả của người khác, nên chỉ có MỘT cách hợp nhất. */
+export function gopGhiDe(goc, ghiDe) {
+  if (!ghiDe) return [...goc];
+  const ra = new Set(goc);
+  (ghiDe.tat || []).forEach((v) => ra.delete(v));
+  (ghiDe.bat || []).forEach((v) => ra.add(v));
+  return [...ra];
+}
+
+/** Kết quả cuối cùng cho một người: mặc định → ghi đè vai trò → ghi đè cá nhân. */
+export function viewsHieuLuc(role, ghiDeVaiTro, ghiDeNhanSu) {
+  return gopGhiDe(gopGhiDe(viewsMacDinh(role), ghiDeVaiTro), ghiDeNhanSu);
+}
+
+export function napGhiDePhanQuyen({ vaiTro = {}, cuaToi = null } = {}) {
+  GHI_DE_VAI_TRO = vaiTro || {};
+  GHI_DE_CUA_TOI = cuaToi || null;
+}
+
+/** View của người ĐANG ĐĂNG NHẬP, đã tính mọi ghi đè. */
+function viewsHienHanh(role) {
+  return viewsHieuLuc(role, GHI_DE_VAI_TRO[role], GHI_DE_CUA_TOI);
+}
+
 /* ── Public API ── */
 
 /** Check if a role can access a specific view */
 export function canAccessView(role, view) {
   if (!role || !ROLE_VIEWS[role]) return false;
-  return ROLE_VIEWS[role].includes(view);
+  return viewsHienHanh(role).includes(view);
 }
 /** Check if a role can perform a specific action */
 export function canPerform(role, action) {
@@ -202,7 +267,7 @@ export function isOpsRole(role) {
 /** Get nav items filtered by role */
 export function getNavForRole(role) {
   if (!role) return [];
-  const allowed = ROLE_VIEWS[role] || [];
+  const allowed = viewsHienHanh(role);
   return NAV_ITEMS
     .map((group) => ({
       ...group,
@@ -226,7 +291,7 @@ export function getDefaultView(role) {
 
 /** Get all views a role can access */
 export function getAccessibleViews(role) {
-  return ROLE_VIEWS[role] || [];
+  return viewsHienHanh(role);
 }
 
 /** Check if a role is allowed to export/download customer data */
