@@ -10768,6 +10768,11 @@ body.dialog-open {
 }
 .kh-ngan.is-open .kh-ngan-nen { opacity: 1; }
 .kh-ngan.is-open .kh-ngan-to { transform: translateX(0); }
+/* Ô lưới mặc định là min-width:auto, nghĩa là nó NỞ ra theo nội dung rộng
+ * nhất thay vì ép nội dung co lại. Thiếu dòng này thì bảng giá kéo cả mục
+ * phình quá bề ngang ngăn kéo và cột cuối bị cắt cụt — đã đo: cột "Thành
+ * tiền" thò ra ngoài 66px mà không có thanh cuộn nào báo. */
+.kh-ngan-to > *, .kh-ngan-muc { min-width: 0; }
 
 .kh-ngan-dau {
   display: flex; align-items: flex-start; gap: 14px;
@@ -10818,7 +10823,10 @@ body.dialog-open {
 .kh-ngan-muc-dau { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .kh-ngan-canh { display: grid; gap: 9px; padding: 16px 0 0; }
-.kh-ngan-bang { width: 100%; border-collapse: collapse; }
+/* Đè min-width 760px của quy tắc `table` toàn cục: nó đúng cho bảng danh sách
+ * chạy hết bề ngang trang, nhưng trong cột 668px của ngăn kéo thì nó ép bảng
+ * thò ra ngoài 66px và cột cuối bị cắt. */
+.kh-ngan-bang { width: 100%; min-width: 0; border-collapse: collapse; }
 .kh-ngan-bang td { padding: 9px 0; border-top: 1px solid var(--line); font-size: .84rem; color: #2b4844; }
 .kh-ngan-bang tr:first-child td { border-top: 0; }
 .kh-ngan-bang small { display: block; margin-top: 2px; color: #8a9a94; font-size: .72rem; }
@@ -10826,8 +10834,31 @@ body.dialog-open {
 .kh-ngan-trong { margin: 0; color: #8a9a94; font-size: .82rem; }
 /* Bảng rộng trong cột hẹp: cho cuộn ngang trong khung riêng, không đẩy cả
  * ngăn kéo trượt ngang. */
-.kh-ngan-cuon { overflow-x: auto; margin: 0 -2px; }
-.kh-ngan-cuon .hh-bang { min-width: 620px; }
+/* Bảng trong ngăn kéo phải VỪA KHÍT, không cuộn ngang.
+ *
+ * .hh-bang toàn cục đặt min-width 940px cho bảng danh sách cả trang; trong cột
+ * rộng 668px thì con số đó ép bảng tràn ra ngoài. Giấu thanh cuộn ngang xong
+ * mà vẫn để tràn là tệ hơn cả để lộ thanh cuộn: cột cuối cụt mất và không có
+ * dấu hiệu gì cho biết còn nội dung bên phải.
+ *
+ * Nên bỏ min-width, cho tên nhà cung cấp xuống dòng, và ép cột số co lại vừa
+ * nội dung. Sáu cột số ngắn nằm gọn trong 668px. */
+.kh-ngan-cuon { overflow-x: auto; }
+.kh-ngan-cuon .hh-bang { min-width: 0; width: 100%; table-layout: auto; }
+.kh-ngan-cuon .hh-bang th,
+.kh-ngan-cuon .hh-bang td { padding: 9px 7px; }
+.kh-ngan-cuon .hh-bang th { font-size: .66rem; }
+.kh-ngan-cuon .hh-bang td { font-size: .79rem; }
+.kh-ngan-cuon .hh-bang th:first-child,
+.kh-ngan-cuon .hh-bang td:first-child { padding-left: 0; }
+.kh-ngan-cuon .hh-bang th:last-child,
+.kh-ngan-cuon .hh-bang td:last-child { padding-right: 0; }
+/* Cột số bó sát nội dung để dành hết chỗ thừa cho cột tên. */
+.kh-ngan-cuon .hh-bang .kh-so { width: 1%; }
+.kh-ngan-cuon .kh-ten > b { font-size: .82rem; }
+.kh-ngan-cuon .kh-ten > small { font-size: .68rem; }
+.kh-ngan-cuon .kh-cheo { font-size: .63rem; padding: 1px 6px; }
+.kh-ngan-cuon .kh-o-nhan { width: 64px; min-height: 32px; }
 .kh-ngan-ghi {
   display: flex; gap: 9px; align-items: flex-start; margin: 12px 0 0;
   padding: 11px 13px; border-radius: 10px;
@@ -10847,4 +10878,36 @@ body.dialog-open {
   .kh-ngan-to { width: 100vw; padding: 18px 16px 28px; }
   .kh-ngan-so > div { padding: 0 12px; }
   .kh-ngan-so > div:nth-child(3n+1) { padding-left: 0; border-left: 0; }
+}
+
+/* Khoá cuộn trang khi ngăn kéo mở, và GIẤU thanh cuộn của chính ngăn kéo.
+ *
+ * Hai việc khác nhau, đều cần:
+ *
+ * 1. body{overflow:hidden} KHÔNG chặn được cuộn ở đây — đã đo: lớp có gắn,
+ *    overflow tính ra 'hidden', mà trang vẫn cuộn. Quy tắc lan overflow từ
+ *    body lên khung nhìn không áp dụng khi html đã có kiểu riêng. Đặt thẳng
+ *    trên html mới chắc.
+ *
+ *    Dùng :has() thay vì gắn thêm lớp bằng JS: ngăn kéo có mặt trong DOM CHÍNH
+ *    LÀ trạng thái "đang mở", nên không cần biến thứ hai để đồng bộ — và cũng
+ *    không có cảnh trang bị khoá cứng vì ai đó quên gỡ lớp.
+ *
+ * 2. Giấu thanh cuộn của ngăn kéo. Nội dung vẫn cuộn được bằng lăn chuột và
+ *    vuốt, chỉ là không vẽ ra thanh xám chạy dọc mép. Hai thanh cuộn cạnh
+ *    nhau là thứ khiến màn hình trông chắp vá.
+ */
+html:has(.kh-ngan) { overflow: hidden; }
+.kh-ngan-to { scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: contain; }
+.kh-ngan-to::-webkit-scrollbar { width: 0; height: 0; }
+.kh-ngan-cuon { scrollbar-width: none; -ms-overflow-style: none; }
+.kh-ngan-cuon::-webkit-scrollbar { height: 0; }
+
+/* Vệt mờ ở đáy ngăn kéo: giấu thanh cuộn thì phải còn dấu hiệu nào đó cho
+ * biết bên dưới vẫn còn nội dung, không thì người đọc tưởng đã hết trang. */
+.kh-ngan-to::after {
+  content: ''; position: sticky; bottom: -34px; display: block;
+  height: 34px; margin: 0 -26px -34px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 78%);
+  pointer-events: none;
 }
