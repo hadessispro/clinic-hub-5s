@@ -30,6 +30,7 @@ import {
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { nenWebp } from '../components/nen-anh.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
@@ -98,78 +99,6 @@ const chuDau = (ten) => {
   const p = String(ten || '?').trim().split(/\s+/);
   return (p[p.length - 1][0] || '?').toUpperCase();
 };
-
-/* Nén ảnh sang WebP ngay trên máy trạm, TRƯỚC khi gửi lên.
- *
- * Không cần thêm thư viện: trình duyệt đã mã hoá WebP sẵn qua canvas.toBlob.
- * Thêm một thư viện nén chỉ để làm việc trình duyệt làm được là tăng dung
- * lượng tải cho mọi người dùng, kể cả người không bao giờ tải ảnh lên.
- *
- * Nén ở máy trạm chứ không ở máy chủ vì ảnh nha khoa từ máy chụp thường 3–8 MB
- * mỗi tấm. Gửi nguyên bản qua mạng 4G ở quầy là chờ rất lâu, và đó là lúc
- * người ta bỏ không tải ảnh nữa.
- *
- * Cạnh dài giới hạn 2000px: đủ để phóng to xem chi tiết mà không giữ những
- * pixel không ai nhìn tới.
- */
-const CANH_TOI_DA = 2000;
-const CHAT_LUONG = 0.82;
-
-/* Mã băm sha256 của nội dung ảnh, tính ngay trên máy trạm.
- *
- * crypto.subtle chỉ có trong ngữ cảnh an toàn — https hoặc localhost. Production
- * chạy https nên vẫn có; nếu ai đó mở qua http thuần thì báo rõ thay vì lặng lẽ
- * lưu ảnh không có mã băm. */
-async function bamNoiDung(buf) {
-  if (!globalThis.crypto?.subtle) {
-    throw new Error('Trình duyệt không cho tính mã băm ở kết nối này. Hãy mở bằng HTTPS.');
-  }
-  const h = await crypto.subtle.digest('SHA-256', buf);
-  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function doKb(n) {
-  return n >= 1024 * 1024
-    ? `${(n / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.round(n / 1024)} KB`;
-}
-
-function nenWebp(tep) {
-  return new Promise((xong, hong) => {
-    const doc = new FileReader();
-    doc.onerror = () => hong(new Error(`Không đọc được tệp ${tep.name}.`));
-    doc.onload = () => {
-      const anh = new Image();
-      anh.onerror = () => hong(new Error(`${tep.name} không phải ảnh đọc được.`));
-      anh.onload = () => {
-        let { width: w, height: h } = anh;
-        if (Math.max(w, h) > CANH_TOI_DA) {
-          const ty = CANH_TOI_DA / Math.max(w, h);
-          w = Math.round(w * ty); h = Math.round(h * ty);
-        }
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        c.getContext('2d').drawImage(anh, 0, 0, w, h);
-        c.toBlob(async (b) => {
-          if (!b) { hong(new Error('Trình duyệt này không mã hoá được WebP.')); return; }
-          // Băm nội dung ĐÃ NÉN, không băm tệp gốc: hai người xuất cùng một
-          // tấm phim từ hai máy khác nhau sẽ ra hai tệp gốc khác nhau nhưng
-          // cùng một ảnh sau khi nén, và đó mới là thứ đáng gộp.
-          const bam = await bamNoiDung(await b.arrayBuffer());
-          const d = new FileReader();
-          d.onload = () => xong({
-            tep: d.result, ten_goc: tep.name, ma_bam: bam, byte: b.size,
-            kb: `${doKb(tep.size)} → ${doKb(b.size)}`,
-            giam: Math.round((1 - b.size / tep.size) * 100),
-          });
-          d.readAsDataURL(b);
-        }, 'image/webp', CHAT_LUONG);
-      };
-      anh.src = doc.result;
-    };
-    doc.readAsDataURL(tep);
-  });
-}
 
 /* ── Sơ đồ răng ───────────────────────────────────────────────────────── */
 

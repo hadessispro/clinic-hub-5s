@@ -7,7 +7,13 @@
 
 /* ── Views accessible per role ── */
 const ROLE_VIEWS = {
-  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
+  admin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an', 'kho-hang'],
+  // Hai vai trò cho bộ phận phụ tá, vì trưởng bộ phận KHÔNG chỉ là phụ tá có
+  // thêm quyền kho: chị ấy vẫn duyệt đơn, xem chấm công và lịch của cả bộ
+  // phận. Gộp làm một vai trò thì hoặc trưởng bộ phận mất quyền duyệt, hoặc
+  // mọi phụ tá đều duyệt được đơn nghỉ của nhau.
+  phu_ta: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
+  phu_ta_truong: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
@@ -16,7 +22,7 @@ const ROLE_VIEWS = {
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
   // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
-  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
+  superadmin: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll', 'proposals', 'supplies', 'assets', 'reports', 'integrations', 'system-admin', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an', 'kho-hang'],
   bac_si: ['dashboard', 'so-benh-an', 'le-tan', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   le_tan: ['dashboard', 'le-tan', 'so-benh-an', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   hr: ['dashboard', 'tasks', 'chat', 'recruitment', 'people', 'onboarding', 'uniforms', 'incidents', 'attendance', 'schedule', 'leave', 'payroll'],
@@ -65,6 +71,24 @@ const ROLE_ACTIONS = {
     'incident.crud',
     'schedule.read_department', 'schedule.approve_department',
   ],
+  // Quyền kho dùng chung cho cả hai vai trò phụ tá; khác nhau ở phần quản lý
+  // bộ phận bên dưới.
+  phu_ta: [
+    'kho.read', 'kho.don.create', 'kho.don.receive', 'kho.xuat.create',
+    'kho.hoadon.manage',
+    'attendance.self', 'task.read_self', 'task.update_self',
+    'leave.create', 'leave.read_self', 'schedule.read_self', 'schedule.register',
+    'employee.read_self', 'message.send',
+  ],
+  phu_ta_truong: [
+    'kho.read', 'kho.don.create', 'kho.don.approve', 'kho.don.receive',
+    'kho.xuat.create', 'kho.xuat.approve', 'kho.hoadon.manage',
+    'employee.read_department', 'attendance.read_department',
+    'task.create', 'task.read_department', 'task.update_any',
+    'leave.read_department', 'leave.approve_l1',
+    'schedule.read_department', 'schedule.approve_department',
+    'attendance.self', 'leave.create', 'message.send',
+  ],
   finance: [
     'attendance.read_all',
     'task.create', 'task.update_self',
@@ -108,6 +132,7 @@ const NAV_ITEMS = [
     { view: 'proposals', label: 'Phiếu đề xuất', icon: 'ri-file-paper-line' },
     { view: 'supplies', label: 'Cung ứng vật tư', icon: 'ri-box-3-line' },
     { view: 'assets', label: 'Tài sản', icon: 'ri-safe-2-line' },
+    { view: 'kho-hang', label: 'Kho vật tư', icon: 'ri-archive-2-line' },
     { view: 'reports', label: 'Báo cáo quản lý', icon: 'ri-bar-chart-2-line' },
     { view: 'integrations', label: 'Tích hợp', icon: 'ri-settings-4-line' },
   ]},
