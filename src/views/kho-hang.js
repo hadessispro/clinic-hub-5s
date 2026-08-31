@@ -52,10 +52,12 @@ let dTim = ''; let dNcc = ''; let dTrangThai = ''; let dChiTre = false; let dChi
 let pTim = ''; let pNoiNhan = ''; let pTrangThai = '';
 let nTim = '';
 
-// Bảng so giá đang mở cho vật tư nào, và cần bao nhiêu đơn vị.
-let soSanh = null;
-// Đơn đang mở để nhận hàng / xem hoá đơn.
-let donMo = ''; let hoaDonCuaDon = []; let anhCho = [];
+/* MỘT biến cho ngăn kéo, không phải mỗi loại chi tiết một biến.
+ *
+ * Hai biến riêng thì có lúc cả hai cùng khác rỗng và hai lớp phủ chồng lên
+ * nhau. Một biến thì mở cái sau tự đóng cái trước, không cần nhớ dọn. */
+let nganMo = null;   // { loai: 'vat_tu' | 'don', id, so_sanh?, can? }
+let hoaDonCuaDon = [];
 let hienFormPhieu = false; let dongPhieuMoi = [];
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
@@ -120,25 +122,40 @@ function veTongQuan() {
         <h3>Vật tư cần lưu ý đặc biệt</h3>
         <span class="pill">${t.dac_biet} mặt hàng có điều kiện riêng</span>
       </header>
-      <div class="kh-dac-biet">
-        ${Object.entries(CO_DAC_BIET).map(([ma, c]) => {
-          const ds = dsVatTu.filter((v) => v.co.includes(ma));
-          if (!ds.length) return '';
-          return `<article class="kh-db">
-            <div class="kh-db-dau">
-              <span class="kh-co kh-co-${c.lop}"><i class="${c.icon}"></i>${escapeHTML(c.ten)}</span>
-              <b>${ds.length}</b>
-            </div>
-            <p class="kh-db-canh">${escapeHTML(c.canh)}</p>
-            <ul class="kh-db-ds">
-              ${ds.map((v) => `<li><button type="button" class="kh-lien-ket"
-                data-so-sanh="${escapeHTML(v.id)}">${escapeHTML(v.ten)}</button>
-                <span>${v.so_luong} ${escapeHTML(v.don_vi)}</span></li>`).join('')}
-            </ul>
-          </article>`;
-        }).join('')}
-      </div>
+      ${veDsDacBiet()}
     </section>`;
+}
+
+/* Danh sách vật tư đặc biệt: MỘT DÒNG mỗi mặt hàng.
+ *
+ * Bản trước dựng năm khối thẻ, mỗi khối lặp lại câu cảnh báo dài của loại cờ
+ * đó — sáu mặt hàng chiếm gần hai màn hình mà đọc xong vẫn chỉ biết đúng tên
+ * và số tồn. Câu cảnh báo giống nhau cho mọi mặt hàng cùng cờ, nên lặp nó ở
+ * từng khối là tốn chỗ mà không thêm thông tin.
+ *
+ * Nay: một dòng một mặt hàng, cờ hiện thành nhãn nhỏ, bấm vào mở ngăn kéo bên
+ * phải có đầy đủ cảnh báo, tồn từng kho, bảng so giá và đơn đang về.
+ */
+function veDsDacBiet() {
+  const ds = dsVatTu.filter((v) => v.co.length);
+  if (!ds.length) return '<p class="empty-state">Không có vật tư nào cần điều kiện bảo quản riêng.</p>';
+  return `<div class="hh-bang-wrap kh-bang">
+    <table class="hh-bang kh-bang-gon">
+      <thead><tr>
+        <th>Vật tư</th><th>Điều kiện riêng</th><th>Tồn</th><th>Mức tồn</th><th></th>
+      </tr></thead>
+      <tbody>${ds.map((v) => `<tr class="kh-hang-bam" data-ngan-vt="${escapeHTML(v.id)}">
+        <td data-label="Vật tư">
+          <div class="kh-ten"><b>${escapeHTML(v.ten)}</b><small>${escapeHTML(v.ma)}</small></div>
+        </td>
+        <td data-label="Điều kiện riêng"><div class="kh-co-hang">${coDacBiet(v.co)}</div></td>
+        <td data-label="Tồn" class="kh-so"><b>${v.so_luong.toLocaleString('vi-VN')}</b>
+          <small>${escapeHTML(v.don_vi)}</small></td>
+        <td data-label="Mức tồn">${nhanMuc(v.muc_ton)}</td>
+        <td class="kh-cot-nut"><i class="ri-arrow-right-s-line kh-mui"></i></td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div>`;
 }
 
 function veViecCanLam() {
@@ -257,85 +274,172 @@ function veVatTu() {
   </section>`;
 }
 
-/* Bảng so giá — phần lõi của module.
+/* Ngăn kéo bên phải — chỗ xem chi tiết của cả màn kho.
  *
- * Cột quyết định là ĐƠN GIÁ QUY ĐỔI, không phải giá niêm yết. Nhà bán thùng
- * 1000 đôi giá 1.050.000đ trông đắt gấp chín lần nhà bán hộp 100 đôi giá
- * 118.000đ, trong khi thật ra rẻ hơn 12%. So bằng mắt trên giá niêm yết là
- * sai mỗi khi các nhà bán quy cách khác nhau — mà họ luôn bán khác nhau.
+ * MỘT kiểu mở chi tiết cho mọi thứ: vật tư, đơn hàng, phiếu xuất. Trước đó
+ * chi tiết nằm rải ở ba kiểu khác nhau — khối thẻ xếp dọc trang, hộp thoại
+ * giữa màn, và bảng mở rộng tại chỗ — nên mỗi lần muốn xem sâu hơn người dùng
+ * lại phải đoán xem lần này nó hiện ra kiểu gì.
+ *
+ * Ngăn kéo thay vì hộp thoại giữa màn vì hai lý do thật: danh sách phía sau
+ * vẫn nhìn thấy được nên không mất chỗ đang đứng, và chi tiết kho là nội dung
+ * DÀI — bảng giá, tồn từng kho, đơn đang về — thứ cuộn dọc trong một cột hẹp
+ * dễ đọc hơn là trải ngang giữa màn.
  */
-function veSoSanh() {
-  if (!soSanh) return '';
-  const { vat_tu: v, bang, tiet_kiem, canh_bao_moq: moq } = soSanh;
-
-  return `<div class="kh-lop" id="khLop">
-    <div class="kh-hop" role="dialog" aria-label="So sánh giá">
-      <header class="kh-hop-dau">
-        <div>
-          <span class="kh-hop-nhan">So sánh giá giữa nhà cung cấp</span>
-          <h3>${escapeHTML(v.ten)}</h3>
-          <p>${escapeHTML(v.ma)} · tính theo đơn vị <b>${escapeHTML(v.don_vi)}</b>
-             · cần <b>${soSanh.can} ${escapeHTML(v.don_vi)}</b></p>
-        </div>
-        <button type="button" class="ghost-button kh-nho" id="khDongLop">
-          <i class="ri-close-line"></i>
-        </button>
-      </header>
-
-      ${moq ? `<div class="kh-canh kh-canh-warn">
-        <i class="ri-error-warning-line"></i>
-        <div>
-          <b>Rẻ theo đơn giá không phải rẻ theo tiền thật</b>
-          <span>${escapeHTML(moq.re_don_gia)} có đơn giá thấp nhất nhưng bắt lấy tối thiểu
-          nhiều hơn nhu cầu — trả <b>${tien(moq.tien_neu_mua)}</b> và dư ${moq.du_ra}
-          ${escapeHTML(v.don_vi)}. Lấy của ${escapeHTML(moq.re_tien_that)} chỉ
-          <b>${tien(moq.tien_that)}</b>, rẻ hơn <b>${tien(moq.chenh)}</b> cho lần đặt này.</span>
-        </div>
-      </div>` : ''}
-
-      ${tiet_kiem ? `<div class="kh-canh kh-canh-good">
-        <i class="ri-money-dollar-circle-line"></i>
-        <div><b>Chênh ${tiet_kiem.chenh_pt}% giữa nhà rẻ nhất và đắt nhất</b>
-        <span>Chọn đúng nhà cho lần đặt này tiết kiệm
-        <b>${tien(tiet_kiem.chenh_tien)}</b>.</span></div>
-      </div>` : ''}
-
-      <div class="hh-bang-wrap">
-        <table class="hh-bang kh-bang-gia">
-          <thead><tr>
-            <th>Nhà cung cấp</th><th>Quy cách</th><th>Giá niêm yết</th>
-            <th>Đơn giá quy đổi</th><th>Phải mua</th><th>Thành tiền</th><th>Giao</th>
-          </tr></thead>
-          <tbody>${bang.map((g) => `<tr class="${g.la_re_tien ? 'kh-hang-re' : ''}">
-            <td data-label="Nhà cung cấp">
-              <div class="kh-ten">
-                <b>${escapeHTML(g.ten_ncc)}</b>
-                <small>${escapeHTML(g.thanh_toan)} · ${g.danh_gia}★</small>
-                ${g.la_re_tien ? '<span class="kh-cheo kh-cheo-good">Rẻ nhất cho lần này</span>' : ''}
-                ${g.la_re_nhat && !g.la_re_tien ? '<span class="kh-cheo">Đơn giá thấp nhất</span>' : ''}
-              </div>
-            </td>
-            <td data-label="Quy cách">${g.quy_cach.toLocaleString('vi-VN')}
-              ${escapeHTML(v.don_vi)}/${escapeHTML(g.don_vi_mua)}
-              ${g.toi_thieu > 1 ? `<small class="kh-mo">tối thiểu ${g.toi_thieu}</small>` : ''}</td>
-            <td data-label="Giá niêm yết" class="kh-so">${tien(g.gia)}<small>/${escapeHTML(g.don_vi_mua)}</small></td>
-            <td data-label="Đơn giá quy đổi" class="kh-so kh-nhan-manh">
-              <b>${tien(g.don_gia_quy_doi)}</b>
-              ${g.dat_hon_pt > 0 ? `<small class="kh-dat">+${g.dat_hon_pt}%</small>`
-                : '<small class="kh-re">thấp nhất</small>'}</td>
-            <td data-label="Phải mua" class="kh-so">${g.can_mua} ${escapeHTML(g.don_vi_mua)}
-              ${g.du_ra > 0 ? `<small class="kh-mo">dư ${g.du_ra}</small>` : ''}</td>
-            <td data-label="Thành tiền" class="kh-so"><b>${tien(g.thanh_tien)}</b></td>
-            <td data-label="Giao">${g.ngay_giao} ngày</td>
-          </tr>`).join('')}</tbody>
-        </table>
-      </div>
-      <p class="kh-hop-ghi"><i class="ri-information-line"></i>
-        <span>Đơn giá quy đổi là giá của <b>một ${escapeHTML(v.don_vi)}</b> sau khi chia theo
-        quy cách đóng gói. Đây là con số duy nhất so sánh được khi các nhà bán hộp,
-        thùng, vỉ khác nhau.</span></p>
-    </div>
+function veNgan() {
+  if (!nganMo) return '';
+  const noi = nganMo.loai === 'vat_tu' ? veNganVatTu()
+    : nganMo.loai === 'don' ? veNganDon() : '';
+  if (!noi) return '';
+  return `<div class="kh-ngan is-open" id="khNgan">
+    <button type="button" class="kh-ngan-nen" id="khNganNen" aria-label="Đóng"></button>
+    <aside class="kh-ngan-to" role="dialog" aria-label="Chi tiết">${noi}</aside>
   </div>`;
+}
+
+const nganDau = (nhan, tieuDe, phu) => `<header class="kh-ngan-dau">
+  <div>
+    <span class="kh-ngan-nhan">${escapeHTML(nhan)}</span>
+    <h3>${tieuDe}</h3>
+    <p>${phu}</p>
+  </div>
+  <button type="button" class="kh-ngan-dong" id="khDongNgan" aria-label="Đóng">
+    <i class="ri-close-line"></i>
+  </button>
+</header>`;
+
+/* Dải số ngang ở đầu ngăn kéo: mỗi con số là một câu trả lời, đọc hết dải là
+ * nắm được tình trạng mặt hàng mà chưa cần cuộn. */
+const nganSo = (cac) => `<div class="kh-ngan-so">
+  ${cac.map((x) => `<div${x.lop ? ` class="${x.lop}"` : ''}>
+    <b>${x.so}</b><span>${escapeHTML(x.ten)}</span></div>`).join('')}
+</div>`;
+
+const nganMuc = (tieuDe, noi, phu = '') => `<section class="kh-ngan-muc">
+  <h4>${escapeHTML(tieuDe)}${phu ? `<span>${escapeHTML(phu)}</span>` : ''}</h4>
+  ${noi}
+</section>`;
+
+/* Chi tiết vật tư: gộp cảnh báo bảo quản, tồn từng kho, đơn đang về và bảng
+ * so giá vào một chỗ.
+ *
+ * Bảng so giá là phần lõi của cả module. Cột quyết định là ĐƠN GIÁ QUY ĐỔI,
+ * không phải giá niêm yết: nhà bán thùng 1000 đôi giá 1.050.000đ trông đắt
+ * gấp chín lần nhà bán hộp 100 đôi giá 118.000đ, trong khi thật ra rẻ hơn
+ * 12%. So bằng mắt trên giá niêm yết là sai mỗi khi các nhà bán quy cách khác
+ * nhau — mà họ luôn bán khác nhau.
+ */
+function veNganVatTu() {
+  const v = dsVatTu.find((x) => x.id === nganMo.id);
+  if (!v) return '';
+  const ss = nganMo.so_sanh;
+  const can = nganMo.can ?? 0;
+
+  const canhBao = v.co.length ? `<div class="kh-ngan-canh">
+    ${v.co.map((c) => `<div class="kh-canh kh-canh-${CO_DAC_BIET[c].lop}">
+      <i class="${CO_DAC_BIET[c].icon}"></i>
+      <div><b>${escapeHTML(CO_DAC_BIET[c].ten)}</b>
+      <span>${escapeHTML(CO_DAC_BIET[c].canh)}</span></div>
+    </div>`).join('')}
+  </div>` : '';
+
+  const tonKho = nganMuc('Tồn theo kho', v.ton_kho.length
+    ? `<table class="kh-ngan-bang">
+        <tbody>${v.ton_kho.map((t) => `<tr>
+          <td>${escapeHTML(tenChiNhanhKho(t.chi_nhanh))}
+            <small>${escapeHTML(t.vi_tri)} · kiểm kê ${ngayHien(t.kiem_ke)}</small></td>
+          <td class="kh-so"><b>${t.so_luong.toLocaleString('vi-VN')}</b>
+            <small>${escapeHTML(v.don_vi)}</small></td>
+        </tr>`).join('')}</tbody>
+      </table>`
+    : '<p class="kh-ngan-trong">Chưa kho nào giữ tồn mặt hàng này.</p>');
+
+  const bangGia = !ss || !ss.bang.length
+    ? nganMuc('So sánh giá', '<p class="kh-ngan-trong">Chưa có nhà cung cấp nào báo giá mặt hàng này.</p>')
+    : nganMuc('So sánh giá', `
+        ${ss.canh_bao_moq ? `<div class="kh-canh kh-canh-warn">
+          <i class="ri-error-warning-line"></i>
+          <div><b>Rẻ theo đơn giá không phải rẻ theo tiền thật</b>
+          <span>${escapeHTML(ss.canh_bao_moq.re_don_gia)} có đơn giá thấp nhất nhưng bắt lấy
+          tối thiểu nhiều hơn nhu cầu — trả <b>${tien(ss.canh_bao_moq.tien_neu_mua)}</b> và dư
+          ${ss.canh_bao_moq.du_ra} ${escapeHTML(v.don_vi)}. Lấy của
+          ${escapeHTML(ss.canh_bao_moq.re_tien_that)} chỉ <b>${tien(ss.canh_bao_moq.tien_that)}</b>,
+          rẻ hơn <b>${tien(ss.canh_bao_moq.chenh)}</b> cho lần đặt này.</span></div>
+        </div>` : ''}
+        ${ss.tiet_kiem ? `<div class="kh-canh kh-canh-good">
+          <i class="ri-money-dollar-circle-line"></i>
+          <div><b>Chênh ${ss.tiet_kiem.chenh_pt}% giữa nhà rẻ nhất và đắt nhất</b>
+          <span>Chọn đúng nhà cho lần đặt này tiết kiệm
+          <b>${tien(ss.tiet_kiem.chenh_tien)}</b>.</span></div>
+        </div>` : ''}
+        <div class="kh-ngan-cuon">
+          <table class="hh-bang kh-bang-gia">
+            <thead><tr>
+              <th>Nhà cung cấp</th><th>Quy cách</th><th>Niêm yết</th>
+              <th>Quy đổi</th><th>Phải mua</th><th>Thành tiền</th>
+            </tr></thead>
+            <tbody>${ss.bang.map((g) => `<tr class="${g.la_re_tien ? 'kh-hang-re' : ''}">
+              <td data-label="Nhà cung cấp">
+                <div class="kh-ten">
+                  <b>${escapeHTML(g.ten_ncc)}</b>
+                  <small>${escapeHTML(g.thanh_toan)} · giao ${g.ngay_giao} ngày · ${g.danh_gia}★</small>
+                  ${g.la_re_tien ? '<span class="kh-cheo kh-cheo-good">Rẻ nhất cho lần này</span>' : ''}
+                  ${g.la_re_nhat && !g.la_re_tien ? '<span class="kh-cheo">Đơn giá thấp nhất</span>' : ''}
+                </div>
+              </td>
+              <td data-label="Quy cách">${g.quy_cach.toLocaleString('vi-VN')}
+                ${escapeHTML(v.don_vi)}/${escapeHTML(g.don_vi_mua)}
+                ${g.toi_thieu > 1 ? `<small class="kh-mo">tối thiểu ${g.toi_thieu}</small>` : ''}</td>
+              <td data-label="Niêm yết" class="kh-so">${tien(g.gia)}
+                <small>/${escapeHTML(g.don_vi_mua)}</small></td>
+              <td data-label="Quy đổi" class="kh-so kh-nhan-manh">
+                <b>${tien(g.don_gia_quy_doi)}</b>
+                ${g.dat_hon_pt > 0 ? `<small class="kh-dat">+${g.dat_hon_pt}%</small>`
+                  : '<small class="kh-re">thấp nhất</small>'}</td>
+              <td data-label="Phải mua" class="kh-so">${g.can_mua} ${escapeHTML(g.don_vi_mua)}
+                ${g.du_ra > 0 ? `<small class="kh-mo">dư ${g.du_ra}</small>` : ''}</td>
+              <td data-label="Thành tiền" class="kh-so"><b>${tien(g.thanh_tien)}</b></td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+        <p class="kh-ngan-ghi"><i class="ri-information-line"></i>
+          <span>Đơn giá quy đổi là giá của <b>một ${escapeHTML(v.don_vi)}</b> sau khi chia theo
+          quy cách đóng gói. Đây là con số duy nhất so sánh được khi các nhà bán hộp,
+          thùng, vỉ khác nhau.</span></p>`);
+
+  const donVe = dsDon.filter((d) => !['da_giao', 'huy'].includes(d.trang_thai)
+    && d.dong.some((x) => x.vat_tu === v.id && !x.da_du));
+  const khoiDonVe = donVe.length ? nganMuc('Đơn đang về', `
+    <table class="kh-ngan-bang">
+      <tbody>${donVe.map((d) => {
+        const x = d.dong.find((y) => y.vat_tu === v.id);
+        return `<tr>
+          <td><button type="button" class="kh-lien-ket" data-ngan-don="${escapeHTML(d.id)}">
+            ${escapeHTML(d.id)}</button>
+            <small>${escapeHTML(d.ten_ncc)} · hẹn ${ngayHien(d.hen_giao)}${
+              d.tre_hen ? ` · <span class="kh-tre">trễ ${d.so_ngay_tre} ngày</span>` : ''}</small></td>
+          <td class="kh-so"><b>${(x.con_thieu * x.quy_cach).toLocaleString('vi-VN')}</b>
+            <small>${escapeHTML(v.don_vi)} chưa về</small></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`) : '';
+
+  return `${nganDau('Chi tiết vật tư', escapeHTML(v.ten),
+    `${escapeHTML(v.ma)} · ${escapeHTML(NHOM_VAT_TU[v.nhom])} · đơn vị <b>${escapeHTML(v.don_vi)}</b>`)}
+    ${nganSo([
+      { so: v.so_luong.toLocaleString('vi-VN'), ten: `tồn (${v.don_vi})` },
+      { so: v.dinh_muc_hien.toLocaleString('vi-VN'), ten: 'định mức' },
+      { so: v.dang_cho_ve ? `+${v.dang_cho_ve.toLocaleString('vi-VN')}` : '—', ten: 'đang về' },
+      { so: can ? can.toLocaleString('vi-VN') : '—', ten: 'cần bù',
+        lop: can ? 'kh-ngan-can' : '' },
+      { so: v.so_nha_cung_cap, ten: 'nhà báo giá' },
+    ])}
+    <div class="kh-ngan-muc kh-ngan-muc-dau">${nhanMuc(v.muc_ton)}
+      ${v.co.length ? `<div class="kh-co-hang">${coDacBiet(v.co)}</div>` : ''}</div>
+    ${canhBao}
+    ${tonKho}
+    ${khoiDonVe}
+    ${bangGia}`;
 }
 
 /* ── Tab: Đơn hàng ────────────────────────────────────────────────────── */
@@ -398,31 +502,25 @@ function veDonHang() {
         <tbody>${dong || '<tr><td colspan="8" class="empty-state">Không có đơn nào khớp bộ lọc.</td></tr>'}</tbody>
       </table>
     </div>
-  </section>
-  ${veChiTietDon()}`;
+  </section>`;
 }
 
-function veChiTietDon() {
-  if (!donMo) return '';
-  const d = dsDon.find((x) => x.id === donMo);
+function veNganDon() {
+  const d = dsDon.find((x) => x.id === nganMo.id);
   if (!d) return '';
   const tt = TRANG_THAI_DON[d.trang_thai];
   const choNhan = !['da_giao', 'huy'].includes(d.trang_thai);
 
-  return `<div class="kh-lop" id="khLop">
-    <div class="kh-hop kh-hop-rong" role="dialog" aria-label="Chi tiết đơn hàng">
-      <header class="kh-hop-dau">
-        <div>
-          <span class="kh-hop-nhan">Đơn đặt hàng</span>
-          <h3>${escapeHTML(d.id)} · ${escapeHTML(d.ten_ncc)}</h3>
-          <p>${escapeHTML(tenChiNhanhKho(d.chi_nhanh))} · đặt ${ngayHien(d.ngay_dat)}
-             · hẹn giao ${ngayHien(d.hen_giao)}
-             <span class="status-pill ${tt.lop}">${tt.ten}</span></p>
-        </div>
-        <button type="button" class="ghost-button kh-nho" id="khDongLop">
-          <i class="ri-close-line"></i>
-        </button>
-      </header>
+  return `${nganDau('Đơn đặt hàng', `${escapeHTML(d.id)} · ${escapeHTML(d.ten_ncc)}`,
+      `${escapeHTML(tenChiNhanhKho(d.chi_nhanh))} · đặt ${ngayHien(d.ngay_dat)}
+       · hẹn giao ${ngayHien(d.hen_giao)}`)}
+    ${nganSo([
+      { so: `<span class="status-pill ${tt.lop}">${tt.ten}</span>`, ten: 'trạng thái' },
+      { so: d.dong.length, ten: 'dòng hàng' },
+      { so: d.so_dong_thieu || '—', ten: 'chưa đủ',
+        lop: d.so_dong_thieu ? 'kh-ngan-can' : '' },
+      { so: trieu(d.tong_tien), ten: 'giá trị đơn' },
+    ])}
 
       ${d.tre_hen ? `<div class="kh-canh kh-canh-bad">
         <i class="ri-time-line"></i>
@@ -432,7 +530,8 @@ function veChiTietDon() {
 
       ${d.ghi_chu ? `<p class="kh-ghi-chu">${escapeHTML(d.ghi_chu)}</p>` : ''}
 
-      <div class="hh-bang-wrap">
+      ${nganMuc('Các dòng hàng', `
+      <div class="kh-ngan-cuon">
         <table class="hh-bang">
           <thead><tr>
             <th>Vật tư</th><th>Đặt</th><th>Đã nhận</th><th>Còn thiếu</th>
@@ -463,7 +562,7 @@ function veChiTietDon() {
             ${choNhan ? '<td></td>' : ''}
           </tr></tfoot>
         </table>
-      </div>
+      </div>`)}
 
       ${choNhan ? `<div class="kh-nut-hang">
         <button type="button" class="ghost-button" data-doi-don="${escapeHTML(d.id)}:huy">
@@ -476,9 +575,7 @@ function veChiTietDon() {
         </button>
       </div>` : ''}
 
-      ${veHoaDon(d)}
-    </div>
-  </div>`;
+      ${veHoaDon(d)}`;
 }
 
 /* Hoá đơn kèm ảnh chụp.
@@ -654,7 +751,7 @@ function veFormPhieu() {
         <i class="ri-save-line"></i> Lưu phiếu nháp
       </button>
     </div>
-    <p class="kh-hop-ghi"><i class="ri-information-line"></i>
+    <p class="kh-ngan-ghi"><i class="ri-information-line"></i>
       <span>Phiếu lưu ở trạng thái <b>nháp</b>, chưa trừ kho. Vật tư chỉ rời kho khi
       bấm <b>Xuất kho</b> — để người lập và người duyệt xuất có thể là hai người.</span></p>
   </div>`;
@@ -807,7 +904,7 @@ export async function renderView() {
   dsPhieu = await layPhieuXuat({ tim: pTim || undefined, chiNhanh: chiNhanh || undefined,
     noiNhan: pNoiNhan || undefined, trangThai: pTrangThai || undefined });
   deXuat = tab === 'de-xuat' ? await deXuatMuaHang(loc) : deXuat;
-  hoaDonCuaDon = donMo ? await layHoaDon(donMo) : [];
+  hoaDonCuaDon = nganMo?.loai === 'don' ? await layHoaDon(nganMo.id) : [];
 
   return `<div class="view-stack kh-view">
     <div class="lt-canh-bao" role="status">
@@ -842,7 +939,7 @@ export async function renderView() {
     ${tab === 'phieu-xuat' ? vePhieuXuat() : ''}
     ${tab === 'de-xuat' ? veDeXuat() : ''}
     ${tab === 'ncc' ? veNcc() : ''}
-    ${veSoSanh()}
+    ${veNgan()}
   </div>`;
 }
 
@@ -864,7 +961,7 @@ export function initView() {
   const maToi = toi.employee_code || 'PVC-10199';
 
   document.querySelectorAll('[data-tab]').forEach((b) => {
-    b.addEventListener('click', () => { tab = b.dataset.tab; soSanh = null; donMo = ''; ve(); });
+    b.addEventListener('click', () => { tab = b.dataset.tab; nganMo = null; ve(); });
   });
   document.querySelectorAll('[data-tab-di]').forEach((b) => {
     b.addEventListener('click', () => { tab = b.dataset.tabDi; ve(); });
@@ -926,26 +1023,44 @@ export function initView() {
   /* So sánh giá. Truyền LƯỢNG CẦN BÙ vào, không phải 0: chỉ khi biết cần bao
    * nhiêu mới tính được nhà nào rẻ theo tiền thật, vì mức tối thiểu và quy
    * cách chỉ có nghĩa khi đặt cạnh một con số nhu cầu. */
+  /* Mở ngăn kéo chi tiết vật tư. Truyền LƯỢNG CẦN BÙ vào bảng so giá, không
+   * phải 0: chỉ khi biết cần bao nhiêu mới tính được nhà nào rẻ theo tiền
+   * thật, vì mức tối thiểu và quy cách chỉ có nghĩa khi đặt cạnh nhu cầu. */
+  const moNganVatTu = async (id) => {
+    const v = dsVatTu.find((x) => x.id === id);
+    const can = v ? Math.max(0, v.dinh_muc_hien - v.so_luong - v.dang_cho_ve) : 0;
+    try {
+      const ss = await soSanhGia(id, can);
+      nganMo = { loai: 'vat_tu', id, so_sanh: ss, can };
+      await ve();
+    } catch (err) { showToast(err.message, true); }
+  };
   document.querySelectorAll('[data-so-sanh]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const v = dsVatTu.find((x) => x.id === b.dataset.soSanh);
-      const can = v ? Math.max(0, v.dinh_muc_hien - v.so_luong - v.dang_cho_ve) : 0;
-      try {
-        soSanh = await soSanhGia(b.dataset.soSanh, can);
-        soSanh.can = can;
-        await ve();
-      } catch (err) { showToast(err.message, true); }
-    });
+    b.addEventListener('click', () => moNganVatTu(b.dataset.soSanh));
+  });
+  document.querySelectorAll('[data-ngan-vt]').forEach((b) => {
+    b.addEventListener('click', () => moNganVatTu(b.dataset.nganVt));
+  });
+  document.querySelectorAll('[data-ngan-don]').forEach((b) => {
+    b.addEventListener('click', () => { nganMo = { loai: 'don', id: b.dataset.nganDon }; ve(); });
   });
 
-  g('khDongLop')?.addEventListener('click', () => { soSanh = null; donMo = ''; ve(); });
-  g('khLop')?.addEventListener('click', (e) => {
-    if (e.target.id === 'khLop') { soSanh = null; donMo = ''; ve(); }
-  });
+  const dongNgan = () => { nganMo = null; ve(); };
+  g('khDongNgan')?.addEventListener('click', dongNgan);
+  g('khNganNen')?.addEventListener('click', dongNgan);
+  // Phím Esc: ngăn kéo che nội dung nên phải thoát được mà không cần tìm nút.
+  if (nganMo) {
+    const thoat = (e) => {
+      if (e.key !== 'Escape') return;
+      document.removeEventListener('keydown', thoat);
+      dongNgan();
+    };
+    document.addEventListener('keydown', thoat);
+  }
 
   /* Đơn hàng */
   document.querySelectorAll('[data-mo-don]').forEach((b) => {
-    b.addEventListener('click', () => { donMo = b.dataset.moDon; tab = 'don-hang'; ve(); });
+    b.addEventListener('click', () => { nganMo = { loai: 'don', id: b.dataset.moDon }; tab = 'don-hang'; ve(); });
   });
   document.querySelectorAll('[data-doi-don]').forEach((b) => {
     b.addEventListener('click', async () => {
@@ -966,13 +1081,13 @@ export function initView() {
       const so = Number(o.value);
       if (so > 0) nhan[o.dataset.nhan] = so;
     });
-    chay(async () => { await nhanHang(donMo, nhan, maToi); }, 'Đã ghi nhận hàng về và cộng vào tồn kho.');
+    chay(async () => { await nhanHang(nganMo.id, nhan, maToi); }, 'Đã ghi nhận hàng về và cộng vào tồn kho.');
   });
 
   /* Hoá đơn và ảnh */
   g('khThemHd')?.addEventListener('click', () => {
     chay(async () => {
-      await themHoaDon(donMo, {
+      await themHoaDon(nganMo.id, {
         so: g('hdSo')?.value, ngay: g('hdNgay')?.value,
         tien: g('hdTien')?.value, ghi_chu: g('hdGhiChu')?.value,
       }, maToi);
