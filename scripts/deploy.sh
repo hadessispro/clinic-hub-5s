@@ -107,8 +107,38 @@ vang()  { printf '\033[33m%s\033[0m\n' "$*"; }
 do_()   { printf '\033[31m%s\033[0m\n' "$*"; }
 luc()   { printf '\033[32m%s\033[0m\n' "$*"; }
 
-ssh_() { ssh -i "$VPS_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$VPS_HOST" "$@"; }
-scp_() { scp -i "$VPS_KEY" -o BatchMode=yes -q "$@"; }
+# Thử lại khi KẾT NỐI hỏng, không thử lại khi LỆNH hỏng.
+#
+# Máy chủ chặn tốc độ mở kết nối SSH mới: nhiều lệnh liên tiếp thì một số bị
+# trả "Connection reset by peer" ngay lúc bắt tay. Đo ngày 31/08/2026: 3 trong
+# 6 lần mở kết nối bị chặn, nhưng máy chủ hoàn toàn rảnh (load 0.05) và web
+# vẫn phục vụ bình thường — nên đây là thứ chờ vài giây là qua.
+#
+# Đã thử ControlMaster để gom về một kết nối; OpenSSH trên Windows/MSYS không
+# truyền được file descriptor nên nó hỏng theo kiểu khác ("mm_send_fd:
+# sendmsg(2)"). Thử lại từng lệnh chắc chắn hơn và không phụ thuộc nền tảng.
+#
+# CHỈ thử lại khi ssh trả mã 255 KÈM thông báo lỗi kết nối. Mã 255 cũng là mã
+# lệnh từ xa có thể trả về, nên phải soi cả thông báo: chạy lại một lệnh đã
+# thực thi dở là nguy hiểm hơn nhiều so với việc để nó hỏng.
+thu_lai_() {
+  local i ma out
+  for i in 1 2 3 4 5; do
+    out=$("$@" 2>&1); ma=$?
+    if [ "$ma" = 0 ]; then printf '%s' "$out"; return 0; fi
+    case "$ma:$out" in
+      255:*"Connection reset"*|255:*"Connection timed out"*|255:*"Connection closed"*|      255:*"Broken pipe"*|255:*"kex_exchange_identification"*)
+        [ "$i" = 5 ] && break
+        sleep $(( i * 3 ))
+        ;;
+      *) printf '%s' "$out"; return "$ma" ;;
+    esac
+  done
+  printf '%s' "$out"; return "$ma"
+}
+
+ssh_() { thu_lai_ ssh -i "$VPS_KEY" -o BatchMode=yes -o ConnectTimeout=20 "$VPS_HOST" "$@"; }
+scp_() { thu_lai_ scp -i "$VPS_KEY" -o BatchMode=yes -o ConnectTimeout=20 -q "$@"; }
 
 # Mã băm bỏ qua khác biệt CRLF. Working tree trên Windows dùng CRLF còn VPS
 # dùng LF, nên so mã băm thô sẽ báo mọi file đều khác nhau và cảnh báo trở
@@ -142,6 +172,9 @@ dich_vu_cua() {
 
 so_sanh() {
   local ds_file="$1"
+  # Mở kết nối chung trước việc đầu tiên cần tới máy chủ. Không mở được sau
+  # tám lần thử thì dừng hẳn với lời báo rõ ràng, chứ không để từng lệnh phía
+  # sau tự hỏng lẻ tẻ và in ra một mớ lỗi không nói lên điều gì.
   xanh "So mã băm từng file với bản đang chạy trên VPS…"
 
   # Lấy mã băm của mọi file trên VPS trong một lần gọi, không phải mỗi file
