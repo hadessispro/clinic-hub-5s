@@ -94,6 +94,24 @@ export async function updateUserProfile(profileId, updates) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+/** Danh mục bảng/cột mà tài khoản truy vấn chỉ đọc được phép nhìn thấy. */
+export async function getDatabaseCatalog() {
+  const { data, error } = await supabase.rpc('system_database_catalog', {});
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Chạy một câu SELECT/WITH qua backend. Backend luôn mở transaction READ ONLY,
+ * đổi sang PostgreSQL role giới hạn và tự cắt kết quả nên trình duyệt không
+ * bao giờ nhận thông tin kết nối database.
+ */
+export async function runDatabaseQuery(sql) {
+  const { data, error } = await supabase.rpc('system_database_query', { p_sql: sql });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
 /* Trạng thái tài khoản ĐĂNG NHẬP, khác với trạng thái hồ sơ.
  *
  * "Hoạt động" trên hồ sơ nói về việc người đó còn làm việc hay không.

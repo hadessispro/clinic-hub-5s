@@ -3,6 +3,7 @@ import {
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
   updateUserAccess, updateUserProfile, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
+  getDatabaseCatalog, runDatabaseQuery,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -33,13 +34,51 @@ let pqGhiDe = { vaiTro: {}, nhanSu: {} };
 let tkTim = ''; let tkVaiTro = ''; let tkTrangThai = ''; let tkBoPhan = ''; let tkChiNhanh = '';
 let tkProfiles = [];
 let tkAccountStates = new Map();
+let dbCatalog = [];
+let dbQueryResult = null;
+let dbSql = 'SELECT *\nFROM marketing.leads\nORDER BY created_at DESC\nLIMIT 100';
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
+  database: 'Truy vấn cơ sở dữ liệu',
   bug: 'Bug và thông báo',
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
 };
+
+function databaseCell(value) {
+  if (value === null || value === undefined) return '<span class="db-null">NULL</span>';
+  if (typeof value === 'object') return escapeHTML(JSON.stringify(value));
+  return escapeHTML(String(value));
+}
+
+function databaseResults(result) {
+  if (!result) return '<div class="db-empty"><i class="ri-table-2"></i><strong>Chưa có kết quả truy vấn</strong><span>Chọn một bảng hoặc nhập câu SELECT rồi bấm Chạy truy vấn.</span></div>';
+  const columns = result.columns || [];
+  const rows = result.rows || [];
+  return `<div class="db-result-head"><div><strong>${rows.length.toLocaleString('vi-VN')} dòng</strong><span>${Number(result.duration_ms || 0).toLocaleString('vi-VN')} ms${result.truncated ? ' · đã giới hạn 500 dòng' : ''}</span></div>${rows.length ? '<button class="secondary-button compact-button" type="button" id="dbExportCsv"><i class="ri-file-excel-2-line"></i> Xuất CSV</button>' : ''}</div>
+    ${columns.length ? `<div class="table-wrap db-result-wrap"><table class="db-result-table"><thead><tr>${columns.map((column) => `<th>${escapeHTML(column.name || column)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td>${databaseCell(row[column.name || column])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="subtle">Câu truy vấn không trả về cột dữ liệu.</p>'}`;
+}
+
+function databasePanel(catalog) {
+  const bySchema = new Map();
+  catalog.forEach((column) => {
+    const schema = String(column.schema_name || 'public');
+    const table = String(column.table_name || '');
+    if (!bySchema.has(schema)) bySchema.set(schema, new Map());
+    if (!bySchema.get(schema).has(table)) bySchema.get(schema).set(table, []);
+    bySchema.get(schema).get(table).push(column);
+  });
+  const tree = [...bySchema].map(([schema, tables]) => `<details class="db-schema" open><summary><i class="ri-database-2-line"></i>${escapeHTML(schema)}<small>${tables.size} bảng</small></summary>${[...tables].map(([table, columns]) => `<details class="db-table"><summary><button type="button" data-db-table="${escapeHTML(`${schema}.${table}`)}" title="Tạo câu truy vấn bảng này">${escapeHTML(table)}</button><small>${columns.length} cột</small></summary><ul>${columns.map((column) => `<li><span>${escapeHTML(column.column_name)}</span><small>${escapeHTML(column.data_type)}</small></li>`).join('')}</ul></details>`).join('')}</details>`).join('');
+  return `<div class="db-console-layout">
+    <aside class="panel db-catalog"><div class="section-title"><div><p class="eyebrow">DANH MỤC CHỈ ĐỌC</p><h3>Schema và bảng</h3></div><span class="status-pill good">READ ONLY</span></div>${tree || '<p class="subtle">Không tải được danh mục bảng.</p>'}</aside>
+    <section class="panel db-console"><div class="section-title"><div><p class="eyebrow">POSTGRESQL QUERY CONSOLE</p><h3>Kiểm tra dữ liệu hệ thống</h3></div></div>
+      <div class="db-safety"><i class="ri-shield-check-line"></i><span>Chỉ chấp nhận một câu <b>SELECT</b> hoặc <b>WITH</b>. Không thể thêm, sửa hay xóa dữ liệu. Kết quả tối đa 500 dòng, thời gian chạy tối đa 8 giây.</span></div>
+      <form id="dbQueryForm"><label class="db-editor-label" for="dbSql">Câu truy vấn SQL</label><textarea id="dbSql" name="sql" spellcheck="false" required>${escapeHTML(dbSql)}</textarea><div class="db-actions"><button type="button" class="secondary-button" id="dbClear"><i class="ri-eraser-line"></i> Xóa câu lệnh</button><button type="submit" class="primary-button" id="dbRun"><i class="ri-play-fill"></i> Chạy truy vấn</button></div></form>
+      <div id="dbQueryResult" class="db-results" aria-live="polite">${databaseResults(dbQueryResult)}</div>
+    </section>
+  </div>`;
+}
 
 const severityLabel = { low: 'Thấp', medium: 'Trung bình', high: 'Cao', critical: 'Nghiêm trọng' };
 const statusLabel = { open: 'Mới', investigating: 'Đang kiểm tra', resolved: 'Đã sửa', closed: 'Đã đóng' };
@@ -257,6 +296,9 @@ export async function renderView(state) {
   // Ghi đè phân quyền: chỉ đọc khi đang mở thẻ đó, đỡ một lời gọi mạng cho
   // mọi lần mở màn quản trị vì việc khác.
   if (theDangMo === 'phan-quyen') pqGhiDe = await layGhiDe();
+  if (theDangMo === 'database' && !dbCatalog.length) {
+    dbCatalog = await getDatabaseCatalog().catch(() => []);
+  }
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   tkProfiles = profiles;
   tkAccountStates = tkTrangThaiMap;
@@ -302,6 +344,7 @@ export async function renderView(state) {
         : `<div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Hồ sơ</th><th>Đăng nhập</th><th></th></tr></thead><tbody>${profileRows(daLoc, state.user.id, tkTrangThaiMap)}</tbody></table></div>`}
     </section>`,
     'phan-quyen': veThePhanQuyen(profiles),
+    'database': databasePanel(dbCatalog),
     'bug': `<div class="grid cols-2 system-admin-grid">
       <section class="panel"><div class="section-title"><div><p class="eyebrow">THÔNG BÁO PHÁT HÀNH</p><h3>Gửi cập nhật đến người dùng</h3></div></div>
         <form id="announcementForm" class="system-form"><label class="span-2">Tiêu đề<input name="title" required maxlength="160" placeholder="VD: Đã cập nhật chức năng chấm công"></label><label>Loại<select name="category"><option value="feature">Tính năng mới</option><option value="maintenance">Bảo trì</option><option value="security">Bảo mật</option><option value="general">Thông báo chung</option></select></label><label>Người nhận<select name="audience"><option value="all">Tất cả người dùng</option><option value="staff">Nhân viên</option><option value="leader">Trưởng bộ phận</option><option value="hr">Nhân sự</option><option value="finance">Kế toán</option><option value="admin">Admin</option></select></label><label class="span-2">Nội dung<textarea name="body" required maxlength="2000" placeholder="Mô tả thay đổi, thời gian áp dụng và hướng dẫn..."></textarea></label><button class="primary-button span-2" type="submit">🔔 Phát hành thông báo realtime</button></form>
@@ -511,6 +554,48 @@ export function initView() {
     }
   }));
 
+  /* ── SQL Console chỉ đọc ── */
+  document.querySelectorAll('[data-db-table]').forEach((button) => button.addEventListener('click', () => {
+    const [schema, table] = String(button.dataset.dbTable || '').split('.');
+    if (!schema || !table) return;
+    const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
+    dbSql = `SELECT *\nFROM ${quote(schema)}.${quote(table)}\nLIMIT 100`;
+    const editor = document.getElementById('dbSql');
+    if (editor) { editor.value = dbSql; editor.focus(); }
+  }));
+  document.getElementById('dbClear')?.addEventListener('click', () => {
+    dbSql = '';
+    dbQueryResult = null;
+    const editor = document.getElementById('dbSql');
+    if (editor) { editor.value = ''; editor.focus(); }
+    const result = document.getElementById('dbQueryResult');
+    if (result) result.innerHTML = databaseResults(null);
+  });
+  document.getElementById('dbQueryForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const editor = document.getElementById('dbSql');
+    const button = document.getElementById('dbRun');
+    dbSql = String(editor?.value || '').trim();
+    if (!dbSql) return showToast('Nhập câu SELECT cần truy vấn.', true);
+    button.disabled = true;
+    button.innerHTML = '<i class="ri-loader-4-line"></i> Đang truy vấn…';
+    const resultBox = document.getElementById('dbQueryResult');
+    resultBox.innerHTML = '<div class="db-empty"><i class="ri-loader-4-line"></i><strong>Đang chạy truy vấn</strong><span>Máy chủ sẽ tự dừng nếu quá 8 giây.</span></div>';
+    try {
+      dbQueryResult = await runDatabaseQuery(dbSql);
+      resultBox.innerHTML = databaseResults(dbQueryResult);
+      bindDatabaseExport();
+    } catch (error) {
+      dbQueryResult = null;
+      resultBox.innerHTML = `<div class="db-query-error"><strong>Không chạy được truy vấn</strong><span>${escapeHTML(error.message || 'Câu SQL không hợp lệ.')}</span></div>`;
+      showToast(error.message || 'Không chạy được truy vấn.', true);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = '<i class="ri-play-fill"></i> Chạy truy vấn';
+    }
+  });
+  bindDatabaseExport();
+
   document.querySelectorAll('[data-reset-pw]').forEach((button) => button.addEventListener('click', async () => {
     const ma = button.dataset.resetPw;
     const ten = button.dataset.ten;
@@ -544,6 +629,24 @@ export function initView() {
 
   document.querySelectorAll('[data-save-access]').forEach((button) => button.addEventListener('click', async () => { const id = button.dataset.saveAccess; const role = document.querySelector(`[data-user-role="${id}"]`).value; const active = document.querySelector(`[data-user-active="${id}"]`).checked; if (!await confirmAction(`Xác nhận cập nhật quyền ${roleLabel[role]} và trạng thái tài khoản?`, { title: 'Cập nhật phân quyền', confirmText: 'Lưu phân quyền' })) return; try { await updateUserAccess(id, role, active); showToast('Đã cập nhật quyền tài khoản và lưu audit.'); store.notify(); } catch (error) { showToast(error.message || 'Không thể cập nhật tài khoản.', true); } }));
   logSub?.unsubscribe(); logSub = subscribeToSystemErrors(() => { if (store.getState().currentView === 'system-admin') store.notify(); });
+}
+
+function bindDatabaseExport() {
+  document.getElementById('dbExportCsv')?.addEventListener('click', () => {
+    if (!dbQueryResult?.rows?.length) return;
+    const columns = (dbQueryResult.columns || []).map((column) => column.name || column);
+    const csvCell = (value) => {
+      const text = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      return `"${text.replaceAll('"', '""')}"`;
+    };
+    const csv = `\uFEFF${columns.map(csvCell).join(',')}\r\n${dbQueryResult.rows.map((row) => columns.map((column) => csvCell(row[column])).join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `postgres-query-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, { once: true });
 }
 
 /* ── Thẻ Phân quyền ─────────────────────────────────────────────────────

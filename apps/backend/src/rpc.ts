@@ -186,6 +186,73 @@ export class RpcService {
         source: 'vps-postgresql',
       };
     }
+    if (name === 'system_database_catalog') {
+      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được xem cấu trúc cơ sở dữ liệu.');
+      const client = await this.infrastructure.postgres.connect();
+      try {
+        await client.query('begin read only');
+        await client.query('set local role clinic_query_reader');
+        await client.query(`set local statement_timeout='5000ms'`);
+        const result = await client.query(
+          `select c.table_schema schema_name,c.table_name,c.column_name,c.data_type,c.ordinal_position
+             from information_schema.columns c
+            where c.table_schema in ('app','marketing','public')
+              and has_table_privilege(current_user,
+                quote_ident(c.table_schema)||'.'||quote_ident(c.table_name),'SELECT')
+            order by c.table_schema,c.table_name,c.ordinal_position`,
+        );
+        await client.query('commit');
+        return result.rows;
+      } catch (error) {
+        await client.query('rollback');
+        throw error;
+      } finally { client.release(); }
+    }
+    if (name === 'system_database_query') {
+      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được truy vấn cơ sở dữ liệu.');
+      const rawSql = String(args.p_sql || '').trim();
+      if (!rawSql || rawSql.length > 8000) throw new BadRequestException('Câu SQL trống hoặc dài quá 8.000 ký tự.');
+      if (/--|\/\*|\*\//.test(rawSql)) throw new BadRequestException('SQL Console không chấp nhận chú thích trong câu lệnh.');
+      const sql = rawSql.replace(/;\s*$/, '').trim();
+      if (sql.includes(';')) throw new BadRequestException('Mỗi lần chỉ được chạy một câu SQL.');
+      if (!/^(select|with)\b/i.test(sql)) {
+        throw new BadRequestException('Chỉ được chạy câu SELECT hoặc WITH. Không hỗ trợ thêm, sửa hay xóa dữ liệu.');
+      }
+
+      const startedAt = Date.now();
+      const client = await this.infrastructure.postgres.connect();
+      try {
+        await client.query('begin read only');
+        await client.query('set local role clinic_query_reader');
+        await client.query(`set local statement_timeout='8000ms'`);
+        await client.query(`set local lock_timeout='1000ms'`);
+        const result = await client.query(`select * from (${sql}) as clinic_query_result limit 501`);
+        await client.query('commit');
+        const truncated = result.rows.length > 500;
+        const rows = truncated ? result.rows.slice(0, 500) : result.rows;
+        const durationMs = Date.now() - startedAt;
+        await this.infrastructure.postgres.query(
+          `insert into app.auth_audit
+             (hanh_dong,actor_code,actor_role,muc_tieu_ma,chi_tiet)
+           values ('truy_van_du_lieu',$1,$2,'postgresql',$3::jsonb)`,
+          [user.employeeCode || null, user.role, JSON.stringify({ sql, row_count: rows.length,
+            truncated, duration_ms: durationMs, success: true })],
+        );
+        return { columns: result.fields.map((field) => ({ name: field.name, data_type_id: field.dataTypeID })),
+          rows, row_count: rows.length, truncated, duration_ms: durationMs };
+      } catch (error) {
+        await client.query('rollback');
+        const detail = error instanceof Error ? error.message : 'Câu SQL không hợp lệ.';
+        await this.infrastructure.postgres.query(
+          `insert into app.auth_audit
+             (hanh_dong,actor_code,actor_role,muc_tieu_ma,chi_tiet)
+           values ('truy_van_du_lieu',$1,$2,'postgresql',$3::jsonb)`,
+          [user.employeeCode || null, user.role, JSON.stringify({ sql, duration_ms: Date.now() - startedAt,
+            success: false, error: detail.slice(0, 500) })],
+        ).catch(() => undefined);
+        throw new BadRequestException(detail);
+      } finally { client.release(); }
+    }
     if (name === 'publish_system_announcement') {
       if (!admins.has(user.role)) throw new ForbiddenException();
       return this.put('system_announcements', { id: randomUUID(), title: args.p_title, body: args.p_body,
