@@ -1,14 +1,14 @@
 import {
   getSystemHealth, getBugLogs, createBugLog, updateBugLog,
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
-  updateUserAccess, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
+  updateUserAccess, updateUserProfile, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
-import { ROLE_PROFILES } from '../constants.js';
+import { DEPARTMENTS, ROLE_PROFILES } from '../constants.js';
 import {
   MOI_NHAN, NHOM_VIEW, VIEW_BAT_BUOC, viewsHieuLuc, viewsMacDinh,
 } from '../permissions.js';
@@ -31,6 +31,8 @@ let pqGhiDe = { vaiTro: {}, nhanSu: {} };
 // view sau mỗi thao tác, và mất bộ lọc sau mỗi lần cập nhật quyền thì phải
 // lọc lại từ đầu mỗi người.
 let tkTim = ''; let tkVaiTro = ''; let tkTrangThai = ''; let tkBoPhan = ''; let tkChiNhanh = '';
+let tkProfiles = [];
+let tkAccountStates = new Map();
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
@@ -155,6 +157,8 @@ function profileRows(profiles, currentUserId, trangThaiMap) {
         ${tk?.last_login_at ? `<small class="subtle">Vào lần cuối ${formatDateTime(tk.last_login_at)}</small>` : ''}</td>
       <td class="sa-thaotac">${protectedRole ? '<span class="subtle">Được bảo vệ</span>'
         : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}
+        ${profile.id === currentUserId || !VAI_TRO_BAO_VE.includes(profile.role) ? `<button class="secondary-button compact-button" type="button"
+          data-edit-profile="${profile.id}" title="Sửa hồ sơ và thông tin đăng nhập"><i class="ri-edit-line"></i> Sửa thông tin</button>` : ''}
         ${profile.employee_code ? `<button class="secondary-button compact-button" type="button"
           data-unlock="${escapeHTML(profile.employee_code)}"
           title="Xoá bộ đếm nhập sai mật khẩu. KHÔNG đổi mật khẩu.">Mở khoá</button>
@@ -163,6 +167,70 @@ function profileRows(profiles, currentUserId, trangThaiMap) {
           data-ten="${escapeHTML(profile.full_name || profile.employee_code)}"
           title="Đặt mật khẩu mới. Dùng khi người dùng quên hẳn mật khẩu.">Đặt lại mật khẩu</button>` : ''}</td></tr>`;
   }).join('');
+}
+
+function editProfileDialog(profile, account) {
+  return new Promise((resolve) => {
+    const branch = String(profile.branch_id || account?.branch_id || '');
+    const departmentSuggestions = [...new Set([
+      profile.department,
+      ...DEPARTMENTS.flatMap((item) => [item.id, item.name]),
+      'marketing', 'Bác sĩ', 'Phụ tá', 'Dịch vụ khách hàng', 'Hành chính Tổng hợp',
+    ].filter(Boolean))];
+    const branches = [
+      ['', 'Chưa xác định'], ['all', 'Cả hai chi nhánh'],
+      ['le-van-tho', '5S Lê Văn Thọ'], ['pham-van-chieu', '5S Phạm Văn Chiêu'],
+    ];
+    if (branch && !branches.some(([value]) => value === branch)) branches.push([branch, branch]);
+    const root = document.createElement('div');
+    root.className = 'system-dialog-layer sa-profile-layer';
+    root.innerHTML = `
+      <button class="system-dialog-backdrop" type="button" aria-label="Đóng"></button>
+      <section class="system-dialog-panel sa-profile-panel" role="dialog" aria-modal="true" aria-labelledby="saProfileTitle">
+        <header class="system-dialog-header">
+          <span class="system-dialog-icon"><i class="ri-user-settings-line"></i></span>
+          <div><p class="eyebrow">TÀI KHOẢN HỆ THỐNG</p><h3 id="saProfileTitle">Cập nhật thông tin người dùng</h3></div>
+          <button class="icon-button system-dialog-close" type="button" aria-label="Đóng">×</button>
+        </header>
+        <p class="system-dialog-message">Thông tin được đồng bộ sang hồ sơ nhân sự và tài khoản đăng nhập. Mã nhân viên không đổi để bảo toàn lịch sử.</p>
+        <form class="sa-profile-form" id="saProfileForm">
+          <label><span>Họ và tên *</span><input name="fullName" required maxlength="160" value="${escapeHTML(profile.full_name || '')}"></label>
+          <label><span>Mã nhân viên</span><input value="${escapeHTML(profile.employee_code || '')}" readonly aria-readonly="true"><small>Khóa liên kết dữ liệu, không sửa tại đây.</small></label>
+          <label><span>Email đăng nhập</span><input name="email" type="email" maxlength="254" value="${escapeHTML(account?.email || profile.email || '')}" placeholder="ten@nhakhoa5s.vn"></label>
+          <label><span>Số điện thoại</span><input name="phone" inputmode="tel" maxlength="30" value="${escapeHTML(profile.phone || '')}" placeholder="0901 234 567"></label>
+          <label><span>Bộ phận *</span><input name="department" list="saDepartmentList" required maxlength="100" value="${escapeHTML(profile.department || '')}"><datalist id="saDepartmentList">${departmentSuggestions.map((value) => `<option value="${escapeHTML(value)}"></option>`).join('')}</datalist></label>
+          <label><span>Chức danh</span><input name="title" maxlength="120" value="${escapeHTML(profile.title || '')}" placeholder="VD: Bác sĩ, Phụ tá, Trưởng bộ phận"></label>
+          <label class="span-2"><span>Chi nhánh *</span><select name="branchId" required>${branches.map(([value, label]) => `<option value="${escapeHTML(value)}"${branch === value ? ' selected' : ''}>${escapeHTML(label)}</option>`).join('')}</select></label>
+          <footer class="system-dialog-actions span-2"><button class="secondary-button" type="button" data-profile-cancel>Hủy</button><button class="primary-button" type="submit"><i class="ri-save-line"></i> Lưu thông tin</button></footer>
+        </form>
+      </section>`;
+    document.body.appendChild(root);
+    document.body.classList.add('app-modal-open');
+    const close = (value = null) => {
+      root.classList.add('is-closing');
+      document.body.classList.remove('app-modal-open');
+      window.setTimeout(() => root.remove(), 150);
+      resolve(value);
+    };
+    root.querySelector('.system-dialog-backdrop').addEventListener('click', () => close());
+    root.querySelector('.system-dialog-close').addEventListener('click', () => close());
+    root.querySelector('[data-profile-cancel]').addEventListener('click', () => close());
+    root.addEventListener('keydown', (event) => { if (event.key === 'Escape') close(); });
+    root.querySelector('#saProfileForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      close({
+        fullName: String(form.get('fullName') || '').trim(),
+        email: String(form.get('email') || '').trim(),
+        phone: String(form.get('phone') || '').trim(),
+        department: String(form.get('department') || '').trim(),
+        title: String(form.get('title') || '').trim(),
+        branchId: String(form.get('branchId') || '').trim(),
+      });
+    });
+    requestAnimationFrame(() => root.classList.add('is-open'));
+    root.querySelector('[name="fullName"]').focus();
+  });
 }
 
 export async function renderView(state) {
@@ -190,6 +258,8 @@ export async function renderView(state) {
   // mọi lần mở màn quản trị vì việc khác.
   if (theDangMo === 'phan-quyen') pqGhiDe = await layGhiDe();
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
+  tkProfiles = profiles;
+  tkAccountStates = tkTrangThaiMap;
   const failed = outbox.filter((item) => item.status === 'failed');
   const the = theDangMo;
   const chon = (v, t, dang) => `<option value="${escapeHTML(v)}"${dang === v ? ' selected' : ''}>${escapeHTML(t)}</option>`;
@@ -420,6 +490,26 @@ export function initView() {
     tkTim = ''; tkVaiTro = ''; tkTrangThai = ''; tkBoPhan = ''; tkChiNhanh = '';
     store.notify();
   });
+
+  document.querySelectorAll('[data-edit-profile]').forEach((button) => button.addEventListener('click', async () => {
+    const profile = tkProfiles.find((item) => String(item.id) === String(button.dataset.editProfile));
+    if (!profile) return showToast('Không tìm thấy hồ sơ người dùng.', true);
+    const account = tkAccountStates.get(String(profile.employee_code || '').toLowerCase());
+    const updates = await editProfileDialog(profile, account);
+    if (!updates) return;
+    if (!updates.fullName || !updates.department || !updates.branchId) {
+      return showToast('Họ tên, bộ phận và chi nhánh là thông tin bắt buộc.', true);
+    }
+    button.disabled = true;
+    try {
+      await updateUserProfile(profile.id, updates);
+      showToast(`Đã cập nhật và đồng bộ thông tin của ${profile.employee_code || profile.full_name}.`);
+      store.notify();
+    } catch (error) {
+      showToast(error.message || 'Không thể cập nhật thông tin người dùng.', true);
+      button.disabled = false;
+    }
+  }));
 
   document.querySelectorAll('[data-reset-pw]').forEach((button) => button.addEventListener('click', async () => {
     const ma = button.dataset.resetPw;

@@ -59,9 +59,39 @@ export async function getSystemAnnouncements() {
 }
 
 export async function getSystemProfiles() {
-  const { data, error } = await supabase.from('profiles').select('id,full_name,employee_code,department,role,active,branch_id,updated_at').order('full_name');
+  const [{ data, error }, employeeResult] = await Promise.all([
+    supabase.from('profiles').select('*').order('full_name'),
+    supabase.from('employees').select('code,full_name,department,title,phone,email,branch_id'),
+  ]);
   if (error) throw error;
-  return data || [];
+  const employees = new Map((employeeResult.data || []).map((item) => [String(item.code || '').toLowerCase(), item]));
+  return (data || []).map((profile) => {
+    const employee = employees.get(String(profile.employee_code || '').toLowerCase()) || {};
+    return {
+      ...employee,
+      ...profile,
+      full_name: profile.full_name || employee.full_name || '',
+      department: profile.department || employee.department || '',
+      branch_id: profile.branch_id || employee.branch_id || '',
+      title: profile.title || employee.title || '',
+      phone: profile.phone || employee.phone || '',
+      email: profile.email || employee.email || '',
+    };
+  });
+}
+
+export async function updateUserProfile(profileId, updates) {
+  const { data, error } = await supabase.rpc('system_update_user_profile', {
+    p_user_id: profileId,
+    p_full_name: updates.fullName,
+    p_email: updates.email,
+    p_phone: updates.phone,
+    p_department: updates.department,
+    p_title: updates.title,
+    p_branch_id: updates.branchId,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
 }
 
 /* Trạng thái tài khoản ĐĂNG NHẬP, khác với trạng thái hồ sơ.

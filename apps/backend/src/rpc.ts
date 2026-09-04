@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, ForbiddenException, Injectable, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Injectable, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 
@@ -208,6 +208,87 @@ export class RpcService {
                           hoat_dong: Boolean(args.p_active) })],
       );
       return next;
+    }
+    if (name === 'system_update_user_profile') {
+      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được sửa thông tin tài khoản.');
+      const current = await this.byId('profiles', String(args.p_user_id || ''));
+      if (!current) throw new BadRequestException('Không tìm thấy hồ sơ người dùng.');
+      const currentProfile = current.payload;
+      const rank = (role: unknown) => ({ superadmin: 3, admin: 2, admin_it: 2 } as Record<string, number>)[String(role || '')] ?? 1;
+      if (rank(currentProfile.role) >= rank(user.role) && String(currentProfile.id || '') !== user.id) {
+        throw new ForbiddenException('Không được sửa hồ sơ của tài khoản có quyền bằng hoặc cao hơn bạn.');
+      }
+      const fullName = String(args.p_full_name || '').trim();
+      const email = String(args.p_email || '').trim().toLowerCase();
+      const phone = String(args.p_phone || '').trim();
+      const department = String(args.p_department || '').trim();
+      const title = String(args.p_title || '').trim();
+      const branchId = String(args.p_branch_id || '').trim();
+      const employeeCode = String(currentProfile.employee_code || '').trim();
+      if (!fullName || !department || !branchId) throw new BadRequestException('Họ tên, bộ phận và chi nhánh là bắt buộc.');
+      if (fullName.length > 160 || department.length > 100 || title.length > 120 || phone.length > 30) {
+        throw new BadRequestException('Thông tin người dùng vượt quá độ dài cho phép.');
+      }
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequestException('Email không hợp lệ.');
+      if (!['all', 'le-van-tho', 'pham-van-chieu'].includes(branchId)) throw new BadRequestException('Chi nhánh không hợp lệ.');
+
+      const duplicate = email ? await this.infrastructure.postgres.query(
+        `select 1 from app.local_accounts where lower(email)=lower($1) and profile_key<>$2 limit 1`,
+        [email, current.record_key],
+      ) : null;
+      if (duplicate?.rowCount) throw new BadRequestException('Email này đang được dùng bởi tài khoản khác.');
+
+      const nextProfile = { ...currentProfile, full_name: fullName, email: email || null,
+        phone: phone || null, department, title: title || null, branch_id: branchId,
+        updated_at: new Date().toISOString() };
+      const employeeResult = employeeCode ? await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key,payload from app.records where entity_type='employees' and deleted_at is null
+          and lower(payload->>'code')=lower($1) limit 1`, [employeeCode],
+      ) : { rows: [] };
+      const employee = employeeResult.rows[0];
+      const nextEmployee = employee ? { ...employee.payload, full_name: fullName, email: email || null,
+        phone: phone || null, department, title: title || null, branch_id: branchId,
+        updated_at: new Date().toISOString() } : null;
+
+      const client = await this.infrastructure.postgres.connect();
+      try {
+        await client.query('begin');
+        await client.query(
+          `update app.records set payload=$2::jsonb,origin='vps',version=version+1,updated_at=now()
+            where entity_type='profiles' and record_key=$1`,
+          [current.record_key, JSON.stringify(nextProfile)],
+        );
+        if (employee && nextEmployee) {
+          await client.query(
+            `update app.records set payload=$2::jsonb,origin='vps',version=version+1,updated_at=now()
+              where entity_type='employees' and record_key=$1`,
+            [employee.record_key, JSON.stringify(nextEmployee)],
+          );
+        }
+        await client.query(
+          `update app.local_accounts set email=$2,branch_id=$3,updated_at=now() where profile_key=$1`,
+          [current.record_key, email || null, branchId],
+        );
+        await client.query(
+          `insert into app.auth_audit
+             (hanh_dong,actor_code,actor_role,muc_tieu_ma,muc_tieu_vai_tro,chi_tiet)
+           values ('cap_nhat_ho_so',$1,$2,$3,$4,$5::jsonb)`,
+          [user.employeeCode || null, user.role, employeeCode || String(currentProfile.id || ''),
+           String(currentProfile.role || ''), JSON.stringify({
+             truoc: { full_name: currentProfile.full_name, email: currentProfile.email,
+               phone: currentProfile.phone, department: currentProfile.department,
+               title: currentProfile.title, branch_id: currentProfile.branch_id },
+             sau: { full_name: fullName, email: email || null, phone: phone || null,
+               department, title: title || null, branch_id: branchId },
+           })],
+        );
+        await client.query('commit');
+      } catch (error) {
+        await client.query('rollback');
+        throw error;
+      } finally { client.release(); }
+      await this.infrastructure.markDataChanged(['profiles', 'employees'], user.id, user.role);
+      return nextProfile;
     }
     // Mở khoá tài khoản bị chặn vì nhập sai mật khẩu nhiều lần.
     //
