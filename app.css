@@ -5024,6 +5024,75 @@ body.dialog-open {
   gap: 9px;
 }
 
+.attendance-pagination-complete {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #d9e8e4;
+  background: linear-gradient(90deg, #f3faf8, #f8fafc);
+}
+
+.attendance-pagination-summary {
+  flex-wrap: wrap;
+}
+
+.attendance-pagination-summary strong {
+  color: var(--ink);
+}
+
+.attendance-pagination-summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.attendance-pagination-summary select {
+  min-height: 34px;
+  padding: 5px 28px 5px 9px;
+  border: 1px solid #cbded8;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-weight: 800;
+}
+
+.attendance-page-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attendance-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.attendance-page-numbers button {
+  min-width: 34px;
+  padding-inline: 8px;
+}
+
+.attendance-pagination button.is-active {
+  border-color: var(--teal);
+  color: #fff;
+  background: var(--teal);
+  box-shadow: 0 5px 12px rgba(0, 128, 120, 0.18);
+}
+
+.attendance-pagination button:not(:disabled):hover {
+  border-color: var(--teal);
+  background: #e9f8f4;
+}
+
+.attendance-pagination button.is-active:hover {
+  color: #fff;
+  background: var(--teal-dark);
+}
+
 .attendance-pagination button {
   min-height: 34px;
   padding: 6px 11px;
@@ -5257,6 +5326,12 @@ body.dialog-open {
   .attendance-pagination {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .attendance-page-controls {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 3px;
   }
 
   .dashboard-work-chain {

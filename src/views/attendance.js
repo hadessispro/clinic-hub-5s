@@ -43,6 +43,8 @@ let attendanceHistoryMonth = '';
 let attendanceHistoryType = 'all';
 let attendanceHistoryBranch = 'all';
 let attendanceHistoryPage = 1;
+let attendanceAdminPage = 1;
+let attendanceAdminPageSize = 10;
 const ATTENDANCE_PAGE_SIZE = 10;
 const REQUIRE_CHECKIN_PHOTO = false;
 
@@ -113,6 +115,32 @@ function minuteLabel(value) {
   const rest = minutes % 60;
   if (!hours) return `${rest} phút`;
   return rest ? `${hours} giờ ${rest} phút` : `${hours} giờ`;
+}
+
+function paginationPages(currentPage, pageCount) {
+  if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1);
+  const start = Math.min(Math.max(1, currentPage - 2), pageCount - 4);
+  return Array.from({ length: 5 }, (_, index) => start + index);
+}
+
+function renderAttendancePagination({ page, pageCount, total, pageSize, prefix, unit = 'lượt', showPageSize = false }) {
+  const offset = (page - 1) * pageSize;
+  const first = total ? offset + 1 : 0;
+  const last = Math.min(offset + pageSize, total);
+  const pages = paginationPages(page, pageCount);
+  return `<div class="attendance-pagination attendance-pagination-complete">
+    <div class="attendance-pagination-summary">
+      <strong>Hiển thị ${first}–${last}</strong><span>trong ${total} ${unit}</span>
+      ${showPageSize ? `<label>Số dòng<select id="attendanceAdminPageSize">${[10, 20, 50].map((size) => `<option value="${size}" ${pageSize === size ? 'selected' : ''}>${size}</option>`).join('')}</select></label>` : ''}
+    </div>
+    <nav class="attendance-page-controls" aria-label="Phân trang chấm công">
+      <button type="button" data-action="${prefix}-first" aria-label="Trang đầu" ${page <= 1 ? 'disabled' : ''}>«</button>
+      <button type="button" data-action="${prefix}-prev" ${page <= 1 ? 'disabled' : ''}>‹ Trước</button>
+      <span class="attendance-page-numbers">${pages.map((number) => `<button type="button" data-action="${prefix}-page" data-page="${number}" class="${number === page ? 'is-active' : ''}" aria-current="${number === page ? 'page' : 'false'}">${number}</button>`).join('')}</span>
+      <button type="button" data-action="${prefix}-next" ${page >= pageCount ? 'disabled' : ''}>Sau ›</button>
+      <button type="button" data-action="${prefix}-last" data-page="${pageCount}" aria-label="Trang cuối" ${page >= pageCount ? 'disabled' : ''}>»</button>
+    </nav>
+  </div>`;
 }
 
 function workDayStatus(day) {
@@ -268,11 +296,15 @@ function renderHistory(records, employees, ops) {
     <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} lượt</span><div><button type="button" data-action="history-prev" ${attendanceHistoryPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceHistoryPage}/${pageCount}</b><button type="button" data-action="history-next" ${attendanceHistoryPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>`;
   }
 
+  const pageCount = Math.max(1, Math.ceil(records.length / attendanceAdminPageSize));
+  attendanceAdminPage = Math.min(Math.max(1, attendanceAdminPage), pageCount);
+  const offset = (attendanceAdminPage - 1) * attendanceAdminPageSize;
+  const rows = records.slice(offset, offset + attendanceAdminPageSize);
   return `
     <div class="table-wrap attendance-admin-table">
       <table>
         <thead><tr><th>Nhân sự</th><th>Loại</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead>
-        <tbody>${records.map((record) => {
+        <tbody>${rows.map((record) => {
           const employee = employees.find((item) => item.id === record.employee);
           const employeeMeta = employee
             ? `${departmentName(employee.department)} · ${employee.role || 'Nhân viên'}`
@@ -288,6 +320,7 @@ function renderHistory(records, employees, ops) {
         }).join('')}</tbody>
       </table>
     </div>
+    ${renderAttendancePagination({ page: attendanceAdminPage, pageCount, total: records.length, pageSize: attendanceAdminPageSize, prefix: 'admin-history', unit: 'bản ghi', showPageSize: true })}
   `;
 }
 
@@ -577,7 +610,7 @@ export async function renderView(state) {
           <label>Chi nhánh<select id="attendanceBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${attendanceBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${attendanceBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
           <label>Phòng ban<select id="attendanceDepartmentFilter"><option value="all">Tất cả phòng ban được xem</option>${[...new Set(scopedEmployees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${attendanceDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
           <label>Loại<select id="attendanceTypeFilter"><option value="all">Vào và ra</option><option value="checkin" ${attendanceTypeFilter === 'checkin' ? 'selected' : ''}>Check-in</option><option value="checkout" ${attendanceTypeFilter === 'checkout' ? 'selected' : ''}>Check-out</option></select></label>
-          <label>Loại<select id="attendanceStatusFilter"><option value="all">Vào ca và ra ca</option><option value="checkin" ${attendanceStatusFilter === 'checkin' ? 'selected' : ''}>Chỉ vào ca</option><option value="checkout" ${attendanceStatusFilter === 'checkout' ? 'selected' : ''}>Chỉ ra ca</option></select></label>
+          <label>Trạng thái lượt<select id="attendanceStatusFilter"><option value="all">Vào ca và ra ca</option><option value="checkin" ${attendanceStatusFilter === 'checkin' ? 'selected' : ''}>Chỉ vào ca</option><option value="checkout" ${attendanceStatusFilter === 'checkout' ? 'selected' : ''}>Chỉ ra ca</option></select></label>
           <label>Ngày<input type="date" id="attendanceDateFilter" value="${escapeHTML(attendanceDateFilter)}"></label>
           <button class="secondary-button" type="button" id="clearAttendanceFilters">Xóa bộ lọc</button>
         </div>` : ''}
@@ -1116,15 +1149,21 @@ export function initView() {
   });
   document.getElementById('attendanceSearchFilter')?.addEventListener('input', (event) => {
     attendanceSearch = event.target.value;
+    attendanceAdminPage = 1;
     window.clearTimeout(event.target._attendanceFilterTimer);
     event.target._attendanceFilterTimer = window.setTimeout(refreshAttendanceFilters, 180);
   });
-  document.getElementById('attendanceDepartmentFilter')?.addEventListener('change', (event) => { attendanceDepartmentFilter = event.target.value; refreshAttendanceFilters(); });
-  document.getElementById('attendanceSearchMode')?.addEventListener('change', (event) => { attendanceSearchMode = event.target.value; refreshAttendanceFilters(); });
-  document.getElementById('attendanceBranchFilter')?.addEventListener('change', (event) => { attendanceBranchFilter = event.target.value; refreshAttendanceFilters(); });
-  document.getElementById('attendanceTypeFilter')?.addEventListener('change', (event) => { attendanceTypeFilter = event.target.value; refreshAttendanceFilters(); });
-  document.getElementById('attendanceStatusFilter')?.addEventListener('change', (event) => { attendanceStatusFilter = event.target.value; refreshAttendanceFilters(); });
-  document.getElementById('attendanceDateFilter')?.addEventListener('change', (event) => { attendanceDateFilter = event.target.value; refreshAttendanceFilters(); });
+  document.getElementById('attendanceDepartmentFilter')?.addEventListener('change', (event) => { attendanceDepartmentFilter = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceSearchMode')?.addEventListener('change', (event) => { attendanceSearchMode = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceBranchFilter')?.addEventListener('change', (event) => { attendanceBranchFilter = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceTypeFilter')?.addEventListener('change', (event) => { attendanceTypeFilter = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceStatusFilter')?.addEventListener('change', (event) => { attendanceStatusFilter = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceDateFilter')?.addEventListener('change', (event) => { attendanceDateFilter = event.target.value; attendanceAdminPage = 1; refreshAttendanceFilters(); });
+  document.getElementById('attendanceAdminPageSize')?.addEventListener('change', (event) => {
+    attendanceAdminPageSize = Number(event.target.value || 10);
+    attendanceAdminPage = 1;
+    refreshAttendanceFilters();
+  });
   document.getElementById('clearAttendanceFilters')?.addEventListener('click', () => {
     attendanceSearch = '';
     attendanceSearchMode = 'near';
@@ -1133,6 +1172,7 @@ export function initView() {
     attendanceTypeFilter = 'all';
     attendanceStatusFilter = 'all';
     attendanceDateFilter = '';
+    attendanceAdminPage = 1;
     refreshAttendanceFilters();
   });
 
@@ -1162,6 +1202,11 @@ export function initView() {
     if (action === 'work-next') { attendanceWorkPage += 1; refreshAttendanceFilters(); }
     if (action === 'history-prev' && attendanceHistoryPage > 1) { attendanceHistoryPage -= 1; refreshAttendanceFilters(); }
     if (action === 'history-next') { attendanceHistoryPage += 1; refreshAttendanceFilters(); }
+    if (action === 'admin-history-first') { attendanceAdminPage = 1; refreshAttendanceFilters(); }
+    if (action === 'admin-history-prev' && attendanceAdminPage > 1) { attendanceAdminPage -= 1; refreshAttendanceFilters(); }
+    if (action === 'admin-history-page') { attendanceAdminPage = Number(event.target.closest('[data-page]')?.dataset.page || 1); refreshAttendanceFilters(); }
+    if (action === 'admin-history-next') { attendanceAdminPage += 1; refreshAttendanceFilters(); }
+    if (action === 'admin-history-last') { attendanceAdminPage = Number(event.target.closest('[data-page]')?.dataset.page || attendanceAdminPage); refreshAttendanceFilters(); }
     if (action === 'sync-attendance') {
       const button = event.target.closest('button');
       button.disabled = true;
