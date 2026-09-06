@@ -4482,8 +4482,8 @@ body.dialog-open {
 
 .attendance-page {
   display: grid;
-  gap: 16px;
-  max-width: 1120px;
+  gap: 22px;
+  max-width: 1280px;
   margin: 0 auto;
 }
 
@@ -4681,11 +4681,11 @@ body.dialog-open {
 .attendance-rule-card,
 .attendance-history-panel {
   gap: 14px;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 10px 28px rgba(42, 61, 52, 0.07);
+  padding: 20px 22px;
+  border: 1px solid #d4e1dd;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(28, 65, 58, 0.07);
 }
 
 .attendance-office-card > div:nth-child(2),
@@ -4738,16 +4738,18 @@ body.dialog-open {
 
 .attendance-history-panel {
   display: block;
+  border-top: 4px solid #3b82f6;
 }
 
 .attendance-work-panel {
   display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 28px rgba(42, 61, 52, 0.07);
+  gap: 18px;
+  padding: 20px 22px;
+  border: 1px solid #d4e1dd;
+  border-top: 4px solid var(--teal);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(28, 65, 58, 0.07);
 }
 
 .attendance-work-heading {
@@ -4773,25 +4775,64 @@ body.dialog-open {
 }
 
 .attendance-work-summary-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-  padding: 10px 0;
-  border-block: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.82rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attendance-work-summary-line > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #dbe6e2;
+  border-left: 4px solid var(--metric-accent, var(--teal));
+  border-radius: 11px;
+  background: var(--metric-soft, #f4f8f7);
+}
+
+.attendance-work-summary-line small {
+  color: #66736d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: .025em;
+  text-transform: uppercase;
 }
 
 .attendance-work-summary-line b {
-  color: var(--teal-dark);
-  font-size: 0.95rem;
+  overflow: hidden;
+  color: var(--metric-text, var(--teal-dark));
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-work-summary-line .is-workday { --metric-accent: #2563eb; --metric-soft: #eff6ff; --metric-text: #1d4ed8; }
+.attendance-work-summary-line .is-regular { --metric-accent: #0f766e; --metric-soft: #ecfdf5; --metric-text: #0f766e; }
+.attendance-work-summary-line .is-overtime { --metric-accent: #d97706; --metric-soft: #fffbeb; --metric-text: #a16207; }
+.attendance-work-summary-line .is-payable { --metric-accent: #7c3aed; --metric-soft: #f5f3ff; --metric-text: #6d28d9; }
+.attendance-work-summary-line .is-review { --metric-accent: #dc2626; --metric-soft: #fef2f2; --metric-text: #b91c1c; }
+
+.attendance-work-panel > .section-title,
+.attendance-history-panel > .section-title {
+  min-height: 44px;
+  margin-bottom: 0;
+}
+
+.attendance-work-panel > .section-title h3,
+.attendance-history-panel > .section-title h3 {
+  font-size: 1.2rem;
 }
 
 .attendance-table-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 220px));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(170px, 240px));
+  gap: 12px;
   align-items: end;
+  padding: 13px 14px;
+  border: 1px solid #dbe6e2;
+  border-radius: 12px;
+  background: #f4f8f7;
 }
 
 .attendance-table-filters label,
@@ -4809,11 +4850,20 @@ body.dialog-open {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid #cbdad5;
   border-radius: 10px;
   color: var(--ink);
   background: #fff;
   font: inherit;
+  font-weight: 700;
+}
+
+.attendance-table-filters input:focus,
+.attendance-table-filters select:focus,
+.attendance-branch-choice select:focus {
+  border-color: var(--teal);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(8, 127, 123, .11);
 }
 
 .attendance-branch-choice small {
@@ -4823,16 +4873,137 @@ body.dialog-open {
 
 .attendance-work-table table,
 .attendance-history-table table {
-  min-width: 1040px;
+  min-width: 0;
+  table-layout: fixed;
 }
 
 .attendance-work-table th,
 .attendance-work-table td,
 .attendance-history-table th,
 .attendance-history-table td {
-  padding: 9px 10px;
+  padding: 10px 9px;
   vertical-align: middle;
-  white-space: nowrap;
+  font-size: .79rem;
+}
+
+.attendance-work-table th,
+.attendance-history-table th {
+  border-bottom: 1px solid #cbdad5;
+  color: #3f5e58;
+  background: #eaf2f0;
+  font-size: .68rem;
+  letter-spacing: .035em;
+}
+
+.attendance-work-table tbody tr:nth-child(even),
+.attendance-history-table tbody tr:nth-child(even) {
+  background: #fafcfb;
+}
+
+.attendance-work-table tbody tr:hover,
+.attendance-history-table tbody tr:hover {
+  background: #eef8f5;
+}
+
+.attendance-work-table .col-date { width: 16%; }
+.attendance-work-table .col-shift { width: 13%; }
+.attendance-work-table .col-time { width: 12%; }
+.attendance-work-table .col-work { width: 11%; }
+.attendance-work-table .col-overtime { width: 11%; }
+.attendance-work-table .col-deduction { width: 14%; }
+.attendance-work-table .col-credit { width: 9%; }
+.attendance-work-table .col-status { width: 14%; }
+
+.attendance-history-table .col-date { width: 15%; }
+.attendance-history-table .col-type { width: 13%; }
+.attendance-history-table .col-branch { width: 23%; }
+.attendance-history-table .col-distance { width: 13%; }
+.attendance-history-table .col-gps { width: 16%; }
+.attendance-history-table .col-status { width: 20%; }
+
+.attendance-data-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--row-accent, #94a3b8);
+}
+
+.attendance-data-row.is-complete { --row-accent: #22a06b; }
+.attendance-data-row.is-in_progress { --row-accent: #3b82f6; }
+.attendance-data-row.is-missing_checkin,
+.attendance-data-row.is-missing_checkout,
+.attendance-data-row.is-attendance_anomaly { --row-accent: #ef4444; }
+
+.attendance-branch-badge,
+.attendance-type-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 3px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.attendance-branch-badge.is-pham-van-chieu {
+  border-color: #c4b5fd;
+  color: #6d28d9;
+  background: #f5f3ff;
+}
+
+.attendance-type-badge {
+  margin-top: 0;
+  border-color: #a7f3d0;
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.attendance-type-badge.is-checkout {
+  border-color: #fed7aa;
+  color: #c2410c;
+  background: #fff7ed;
+}
+
+.attendance-cell-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.attendance-time-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.attendance-time-pair i {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.attendance-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.attendance-number.is-primary { color: #0f766e; }
+.attendance-number.is-overtime { color: #a16207; }
+.attendance-number.is-credit { color: #1d4ed8; font-size: .9rem; }
+
+.attendance-deduction {
+  display: grid;
+  gap: 2px;
+}
+
+.attendance-deduction em {
+  color: #9a3412;
+  font-size: .72rem;
+  font-style: normal;
 }
 
 .attendance-pagination {
@@ -4842,6 +5013,9 @@ body.dialog-open {
   gap: 12px;
   color: var(--muted);
   font-size: 0.8rem;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8faf9;
 }
 
 .attendance-pagination > div {
@@ -4869,9 +5043,11 @@ body.dialog-open {
 .attendance-formula-note {
   margin: 0;
   padding: 10px 12px;
-  border-left: 3px solid var(--teal);
-  color: var(--muted);
-  background: var(--surface-soft);
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+  border-radius: 10px;
+  color: #70551d;
+  background: #fffbeb;
   font-size: 0.78rem;
   line-height: 1.5;
 }
@@ -4921,6 +5097,35 @@ body.dialog-open {
   gap: 3px;
   min-width: 0;
 }
+
+.dashboard-metric-grid .metric-card {
+  position: relative;
+  overflow: hidden;
+  border-color: #d9e5e1;
+  background: linear-gradient(145deg, #fff 55%, var(--dashboard-soft, #eef8f5));
+}
+
+.dashboard-metric-grid .metric-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--dashboard-accent, var(--teal));
+  content: "";
+}
+
+.dashboard-metric-grid .metric-card:nth-child(1) { --dashboard-accent: #2563eb; --dashboard-soft: #eff6ff; }
+.dashboard-metric-grid .metric-card:nth-child(2) { --dashboard-accent: #059669; --dashboard-soft: #ecfdf5; }
+.dashboard-metric-grid .metric-card:nth-child(3) { --dashboard-accent: #7c3aed; --dashboard-soft: #f5f3ff; }
+.dashboard-metric-grid .metric-card:nth-child(4) { --dashboard-accent: #d97706; --dashboard-soft: #fffbeb; }
+
+.dashboard-section {
+  border-top: 4px solid var(--dashboard-section-accent, var(--teal));
+  box-shadow: 0 10px 28px rgba(30, 61, 56, .07);
+}
+
+.dashboard-section.is-attendance { --dashboard-section-accent: #2563eb; }
+.dashboard-section.is-tasks { --dashboard-section-accent: #7c3aed; }
+.dashboard-section.is-requests { --dashboard-section-accent: #d97706; }
 
 .attendance-work-stats {
   display: grid;
@@ -4995,6 +5200,14 @@ body.dialog-open {
 }
 
 @media (max-width: 1100px) {
+  .attendance-work-summary-line {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .attendance-work-table table {
+    min-width: 920px;
+  }
+
   .attendance-work-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5027,6 +5240,18 @@ body.dialog-open {
 
   .attendance-table-filters {
     grid-template-columns: 1fr;
+  }
+
+  .attendance-work-summary-line {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .attendance-work-summary-line .is-review {
+    grid-column: 1 / -1;
+  }
+
+  .attendance-history-table table {
+    min-width: 760px;
   }
 
   .attendance-pagination {
@@ -8860,6 +9085,57 @@ body.dialog-open {
   font-weight: 700;
 }
 .nav-item.active .nav-icon { color: var(--teal); }
+
+/* Phân tầng thanh điều hướng bằng màu chức năng có kiểm soát. Màu chỉ xuất
+ * hiện ở đầu nhóm, biểu tượng và mục đang mở nên vẫn giữ được độ sạch. */
+.sidebar .nav-list { gap: 8px; }
+.sidebar .nav-group {
+  --nav-accent: #087f7b;
+  --nav-soft: #e8f6f3;
+  padding-bottom: 10px;
+}
+.sidebar .nav-group:nth-child(2) { --nav-accent: #2563eb; --nav-soft: #eff6ff; }
+.sidebar .nav-group:nth-child(3) { --nav-accent: #7c3aed; --nav-soft: #f5f3ff; }
+.sidebar .nav-group:nth-child(4) { --nav-accent: #d97706; --nav-soft: #fffbeb; }
+.sidebar .nav-group:nth-child(5) { --nav-accent: #db2777; --nav-soft: #fdf2f8; }
+.sidebar .nav-group:nth-child(6) { --nav-accent: #0891b2; --nav-soft: #ecfeff; }
+
+.sidebar .nav-group.co-man-dang-mo > .nav-group-title {
+  border-color: color-mix(in srgb, var(--nav-accent) 28%, white);
+  border-left: 4px solid var(--nav-accent);
+  color: var(--nav-accent);
+  background: var(--nav-soft);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--nav-accent) 10%, transparent);
+}
+
+.sidebar .nav-group.co-man-dang-mo .nav-group-dem {
+  color: var(--nav-accent);
+}
+
+.sidebar .nav-item {
+  min-height: 40px;
+  padding-block: 7px;
+}
+
+.sidebar .nav-item .nav-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--nav-accent);
+  background: var(--nav-soft);
+}
+
+.sidebar .nav-item.active {
+  border-color: color-mix(in srgb, var(--nav-accent) 28%, white);
+  color: var(--nav-accent);
+  background: linear-gradient(90deg, var(--nav-soft), #fff 92%);
+  box-shadow: inset 4px 0 0 var(--nav-accent), 0 5px 14px color-mix(in srgb, var(--nav-accent) 10%, transparent);
+}
+
+.sidebar .nav-item.active .nav-icon {
+  color: #fff;
+  background: var(--nav-accent);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .nav-item .nav-icon, .nav-group-dem { transition: none; }

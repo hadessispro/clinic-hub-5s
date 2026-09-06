@@ -73,14 +73,14 @@ function renderWorkDashboard({ state, profile, today, attendance, employees, tas
     <div class="pill-row">${pill(departmentName(profile.department))}${pill(new Date(`${today}T12:00:00+07:00`).toLocaleDateString('vi-VN'))}</div>
   </div>
 
-  <div class="grid cols-4">
+  <div class="grid cols-4 dashboard-metric-grid">
     ${isManager
       ? `${metric('Nhân sự đang hoạt động', activeEmployees.length, teamLabel)}${metric('Đã vào ca hôm nay', checkedInCodes.size, `${Math.max(activeEmployees.length - checkedInCodes.size, 0)} người chưa ghi nhận`)}${metric('Công việc đang mở', openTasks.length, `${openTasks.filter((row) => row.status === 'in_progress').length} việc đang thực hiện`)}${metric('Đơn đang chờ duyệt', pendingRequests.length, `${pendingRequests.filter((row) => row.type === 'Đơn tăng ca').length} đơn tăng ca`)}`
       : `${metric('Chấm công hôm nay', attendanceState, ownCheckin ? `Vào ${formatTime(ownCheckin.time)}${ownCheckout ? ` · Ra ${formatTime(ownCheckout.time)}` : ''}` : 'Chưa có lượt vào ca')}${metric('Ngày công tháng này', Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '') || '0', `${minuteLabel(totals.regularMinutes)} công thường`)}${metric('Tăng ca đã duyệt', minuteLabel(totals.overtimeMinutes), `${minuteLabel(totals.payableMinutes)} tổng tính công`)}${metric('Công việc đang mở', visibleTasks.length, `${pendingRequests.length} đơn đang chờ duyệt`)}`}
   </div>
 
   <div class="grid cols-2" style="margin-top:14px">
-    <section class="panel">
+    <section class="panel dashboard-section is-attendance">
       <div class="section-title"><div><p class="eyebrow">Chuỗi làm việc</p><h3>${isManager ? 'Chấm công trong ngày' : 'Ca làm việc của tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="attendance">Xem bảng công</button></div>
       ${isManager ? `<div class="table-wrap"><table><thead><tr><th>Nhân sự</th><th>Phòng ban</th><th>Vào</th><th>Ra</th><th>Chi nhánh</th></tr></thead><tbody>${activeEmployees.slice(0, 12).map((employee) => {
         const rows = attendance.filter((row) => row.employee === employee.id);
@@ -97,13 +97,13 @@ function renderWorkDashboard({ state, profile, today, attendance, employees, tas
       </div>`}
     </section>
 
-    <section class="panel">
+    <section class="panel dashboard-section is-tasks">
       <div class="section-title"><div><p class="eyebrow">Công việc</p><h3>${isManager ? 'Việc của bộ phận' : 'Việc được giao cho tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="tasks">Mở công việc</button></div>
       <div class="dashboard-compact-list">${visibleTasks.slice(0, 7).map((task) => `<article><div><strong>${escapeHTML(task.title || 'Công việc')}</strong><span>${escapeHTML(task.due ? `Hạn ${task.due}` : 'Chưa đặt hạn')} · Tiến độ ${Number(task.progress || 0)}%</span></div>${statusPill(task.status === 'done' ? 'Hoàn thành' : task.status === 'in_progress' ? 'Đang làm' : 'Cần thực hiện', task.status === 'done' ? 'good' : 'warn')}</article>`).join('') || '<div class="attendance-empty"><strong>Chưa có công việc đang mở</strong><span>Công việc mới được giao sẽ xuất hiện tại đây.</span></div>'}</div>
     </section>
   </div>
 
-  <section class="panel" style="margin-top:14px">
+  <section class="panel dashboard-section is-requests" style="margin-top:14px">
     <div class="section-title"><div><p class="eyebrow">Đơn từ và tăng ca</p><h3>${isManager ? 'Đơn trong phạm vi quản lý' : 'Đơn của tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="leave">Xem tất cả đơn</button></div>
     <div class="table-wrap"><table><thead><tr><th>Nhân sự</th><th>Loại đơn</th><th>Ngày</th><th>Thời lượng tăng ca</th><th>Trạng thái</th></tr></thead><tbody>${visibleRequests.slice(0, 10).map((request) => {
       const employee = employees.find((row) => row.id === request.employee);

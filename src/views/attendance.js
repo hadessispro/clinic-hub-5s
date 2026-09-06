@@ -155,11 +155,11 @@ function renderWorkSummary(summary, month) {
       <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
     </div>
     <div class="attendance-work-summary-line">
-      <span><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b> ngày công</span>
-      <span><b>${minuteLabel(totals.regularMinutes)}</b> công thường</span>
-      <span><b>${minuteLabel(totals.overtimeMinutes)}</b> tăng ca đã duyệt</span>
-      <span><b>${minuteLabel(totals.payableMinutes)}</b> tổng tính công</span>
-      <span><b>${Number(totals.incompleteDays || 0)}</b> ngày cần đối chiếu</span>
+      <span class="is-workday"><small>Ngày công</small><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b></span>
+      <span class="is-regular"><small>Công thường</small><b>${minuteLabel(totals.regularMinutes)}</b></span>
+      <span class="is-overtime"><small>Tăng ca đã duyệt</small><b>${minuteLabel(totals.overtimeMinutes)}</b></span>
+      <span class="is-payable"><small>Tổng tính công</small><b>${minuteLabel(totals.payableMinutes)}</b></span>
+      <span class="is-review"><small>Cần đối chiếu</small><b>${Number(totals.incompleteDays || 0)} ngày</b></span>
     </div>
     <div class="attendance-table-filters">
       <label>Tháng<input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(month)}"></label>
@@ -167,11 +167,12 @@ function renderWorkSummary(summary, month) {
       <label>Đối chiếu<select id="attendanceWorkStatus"><option value="all">Tất cả trạng thái</option><option value="complete" ${attendanceWorkStatusFilter === 'complete' ? 'selected' : ''}>Đủ vào/ra</option><option value="in_progress" ${attendanceWorkStatusFilter === 'in_progress' ? 'selected' : ''}>Đang trong ca</option><option value="missing_checkout" ${attendanceWorkStatusFilter === 'missing_checkout' ? 'selected' : ''}>Thiếu check-out</option><option value="missing_checkin" ${attendanceWorkStatusFilter === 'missing_checkin' ? 'selected' : ''}>Thiếu check-in</option><option value="attendance_anomaly" ${attendanceWorkStatusFilter === 'attendance_anomaly' ? 'selected' : ''}>Dữ liệu bất thường</option></select></label>
     </div>
     <div class="table-wrap attendance-work-table"><table>
-      <thead><tr><th>Ngày</th><th>Chi nhánh</th><th>Ca làm việc</th><th>Vào</th><th>Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn</th><th>Về sớm</th><th>Ngày công</th><th>Đối chiếu</th></tr></thead>
+      <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status"></colgroup>
+      <thead><tr><th>Ngày & chi nhánh</th><th>Ca làm việc</th><th>Vào / Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn / Về sớm</th><th>Ngày công</th><th>Đối chiếu</th></tr></thead>
       <tbody>${days.length ? days.map((day) => {
         const [label, tone] = workDayStatus(day);
-        return `<tr><td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong></td><td>${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</td><td>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</td><td>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</td><td>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</td><td>${minuteLabel(day.regular_minutes)}</td><td>${minuteLabel(day.overtime_minutes)}</td><td>${minuteLabel(day.late_minutes)}</td><td>${minuteLabel(day.early_leave_minutes)}</td><td>${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td><td>${statusPill(label, tone)}</td></tr>`;
-      }).join('') : '<tr><td colspan="11" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
+        return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}"><td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span></td><td><strong>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</strong></td><td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td><td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td><td class="attendance-number is-overtime">${minuteLabel(day.overtime_minutes)}</td><td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td><td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td><td>${statusPill(label, tone)}</td></tr>`;
+      }).join('') : '<tr><td colspan="8" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
     </table></div>
     <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} ngày</span><div><button type="button" data-action="work-prev" ${attendanceWorkPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceWorkPage}/${pageCount}</b><button type="button" data-action="work-next" ${attendanceWorkPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>
     <p class="attendance-formula-note"><b>Công thức:</b> Giờ công thường = thời lượng ca − đi muộn − về sớm. Tổng giờ tính công = giờ công thường + tăng ca có đơn được duyệt cuối cùng. Ngày thiếu giờ vào/ra hoặc có dữ liệu bất thường không tự cộng công.</p>
@@ -253,16 +254,16 @@ function renderHistory(records, employees, ops) {
       <label>Loại lượt chấm<select id="attendanceHistoryType"><option value="all">Vào và ra ca</option><option value="checkin" ${attendanceHistoryType === 'checkin' ? 'selected' : ''}>Vào ca</option><option value="checkout" ${attendanceHistoryType === 'checkout' ? 'selected' : ''}>Ra ca</option></select></label>
     </div>
     <div class="table-wrap attendance-history-table"><table>
-      <thead><tr><th>Ngày</th><th>Giờ</th><th>Loại</th><th>Chi nhánh</th><th>Khoảng cách</th><th>Độ chính xác GPS</th><th>Trạng thái</th></tr></thead>
+      <colgroup><col class="col-date"><col class="col-type"><col class="col-branch"><col class="col-distance"><col class="col-gps"><col class="col-status"></colgroup>
+      <thead><tr><th>Thời gian</th><th>Loại</th><th>Chi nhánh</th><th>Khoảng cách</th><th>Độ chính xác GPS</th><th>Trạng thái</th></tr></thead>
       <tbody>${rows.length ? rows.map((record) => `<tr>
-        <td><strong>${new Date(record.time).toLocaleDateString('vi-VN', { timeZone: BRANCH.timeZone })}</strong></td>
-        <td>${formatTime(record.time)}</td>
-        <td><strong>${recordTypeLabel(record)}</strong></td>
-        <td>${escapeHTML(BRANCHES[record.branchId]?.shortName || 'Chưa xác định')}</td>
+        <td><strong>${new Date(record.time).toLocaleDateString('vi-VN', { timeZone: BRANCH.timeZone })}</strong><span class="attendance-cell-subtitle">${formatTime(record.time)}</span></td>
+        <td><span class="attendance-type-badge is-${escapeHTML(record.type)}">${recordTypeLabel(record)}</span></td>
+        <td><span class="attendance-branch-badge is-${escapeHTML(record.branchId || 'unknown')}">${escapeHTML(BRANCHES[record.branchId]?.shortName || 'Chưa xác định')}</span></td>
         <td>${Number(record.distance || 0)} m</td>
         <td>±${Number(record.accuracy || 0)} m${record.capturedOffline ? '<br><span class="subtle">Ghi ngoại tuyến</span>' : ''}</td>
         <td>${statusPill(attendanceLabel(record), attendanceTone(record))}</td>
-      </tr>`).join('') : '<tr><td colspan="7" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
+      </tr>`).join('') : '<tr><td colspan="6" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
     </table></div>
     <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} lượt</span><div><button type="button" data-action="history-prev" ${attendanceHistoryPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceHistoryPage}/${pageCount}</b><button type="button" data-action="history-next" ${attendanceHistoryPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>`;
   }
