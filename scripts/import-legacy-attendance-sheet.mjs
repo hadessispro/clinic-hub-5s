@@ -137,9 +137,10 @@ if (!apply) {
 if (!process.env.DATABASE_URL) throw new Error('Thiếu DATABASE_URL.');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 const client = await pool.connect();
-const now = new Date().toISOString();
 let schedulesInserted = 0;
+let schedulesRefreshed = 0;
 let attendanceInserted = 0;
+let attendanceRefreshed = 0;
 let existingSkipped = 0;
 
 try {
@@ -153,55 +154,67 @@ try {
 
   for (const row of selected) {
     const scheduleCollision = await client.query(
-      `select record_key from app.records where entity_type='schedule_assignments' and deleted_at is null
+      `select record_key,origin from app.records where entity_type='schedule_assignments' and deleted_at is null
        and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 limit 1`,
       [row.employeeCode, row.workDate],
     );
+    const scheduleId = scheduleCollision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:schedule:${row.workDate}:${row.employeeCode}`);
+    const schedulePayload = {
+      id: scheduleId, employee_code: row.employeeCode, work_date: row.workDate, shift_code: row.shiftCode,
+      status: 'planned', owner_code: row.employeeCode, swap_with_code: null,
+      overtime_minutes: 0, early_leave_minutes: 0, early_arrival_minutes: 0, proof_url: null,
+      note: `[LEGACY_GOOGLE_SHEET] ChamCong dòng ${row.sourceRow}`,
+    };
     if (!scheduleCollision.rows.length) {
-      const id = uuidFromKey(`legacy-sheet:schedule:${row.workDate}:${row.employeeCode}`);
-      const payload = {
-        id, employee_code: row.employeeCode, work_date: row.workDate, shift_code: row.shiftCode,
-        status: 'planned', owner_code: row.employeeCode, swap_with_code: null,
-        overtime_minutes: 0, early_leave_minutes: 0, early_arrival_minutes: 0, proof_url: null,
-        note: `[LEGACY_GOOGLE_SHEET] ChamCong dòng ${row.sourceRow}`,
-        import_source: 'google-sheet-old-app', source_row: row.sourceRow, imported_at: now,
-      };
       await client.query(
         `insert into app.records(entity_type,record_key,payload,origin) values ('schedule_assignments',$1,$2::jsonb,'google-sheet-legacy')`,
-        [id, JSON.stringify(payload)],
+        [scheduleId, JSON.stringify(schedulePayload)],
       );
       schedulesInserted += 1;
+    } else if (scheduleCollision.rows[0].origin === 'google-sheet-legacy') {
+      const refreshed = await client.query(
+        `update app.records set payload=$2::jsonb,version=version+1,updated_at=now()
+         where entity_type='schedule_assignments' and record_key=$1 and payload is distinct from $2::jsonb returning record_key`,
+        [scheduleId, JSON.stringify(schedulePayload)],
+      );
+      schedulesRefreshed += refreshed.rowCount || 0;
     }
 
     for (const [recordType, clock] of [['checkin', row.checkin], ['checkout', row.checkout]]) {
       if (!clock) continue;
       const collision = await client.query(
-        `select record_key from app.records where entity_type='attendance_records' and deleted_at is null
+        `select record_key,origin from app.records where entity_type='attendance_records' and deleted_at is null
          and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'record_type'=$3 limit 1`,
         [row.employeeCode, row.workDate, recordType],
       );
-      if (collision.rows.length) {
+      if (collision.rows.length && collision.rows[0].origin !== 'google-sheet-legacy') {
         existingSkipped += 1;
         continue;
       }
-      const id = uuidFromKey(`legacy-sheet:attendance:${row.workDate}:${row.employeeCode}:${recordType}`);
+      const id = collision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:attendance:${row.workDate}:${row.employeeCode}:${recordType}`);
       const recordedAt = instant(row.workDate, clock);
       const payload = {
         id, client_event_id: id, employee_code: row.employeeCode, shift_code: row.shiftCode,
         record_type: recordType, work_date: row.workDate, recorded_at: recordedAt,
         lat: null, lng: null, distance_m: null, accuracy_m: null, status: 'valid',
         created_by: null, device_id: 'legacy-google-sheet', captured_offline: row.capturedOffline,
-        synced_at: now, proof_url: null, created_at: now, updated_at: now,
-        note: `[LEGACY_GOOGLE_SHEET] ChamCong dòng ${row.sourceRow}; không có GPS trong nguồn cũ`,
-        import_source: 'google-sheet-old-app', source_row: row.sourceRow,
-        source_employee_name: row.employeeName, source_shift_label: row.shiftLabel,
-        pair_complete: Boolean(row.checkin && row.checkout), imported_at: now,
+        synced_at: recordedAt, proof_url: null,
+        note: `[LEGACY_GOOGLE_SHEET] ChamCong dòng ${row.sourceRow}; không có GPS trong nguồn cũ; ${row.employeeName}; ${row.shiftLabel}`,
       };
-      await client.query(
-        `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'google-sheet-legacy')`,
-        [id, JSON.stringify(payload)],
-      );
-      attendanceInserted += 1;
+      if (!collision.rows.length) {
+        await client.query(
+          `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'google-sheet-legacy')`,
+          [id, JSON.stringify(payload)],
+        );
+        attendanceInserted += 1;
+      } else {
+        const refreshed = await client.query(
+          `update app.records set payload=$2::jsonb,version=version+1,updated_at=now()
+           where entity_type='attendance_records' and record_key=$1 and payload is distinct from $2::jsonb returning record_key`,
+          [id, JSON.stringify(payload)],
+        );
+        attendanceRefreshed += refreshed.rowCount || 0;
+      }
     }
   }
   await client.query('commit');
@@ -213,4 +226,6 @@ try {
   await pool.end();
 }
 
-console.log(JSON.stringify({ ...summary, schedulesInserted, attendanceInserted, existingSkipped }, null, 2));
+console.log(JSON.stringify({
+  ...summary, schedulesInserted, schedulesRefreshed, attendanceInserted, attendanceRefreshed, existingSkipped,
+}, null, 2));
