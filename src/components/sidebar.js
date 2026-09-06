@@ -57,7 +57,7 @@ export function renderSidebar(role) {
 
       const itemsHtml = group.items
         .map((item) => `
-          <button class="nav-item ${item.view === currentView ? 'active' : ''}" type="button" data-view="${escapeHTML(item.view)}">
+          <button class="nav-item ${item.view === currentView ? 'active' : ''}" type="button" data-view="${escapeHTML(item.view)}" aria-label="${escapeHTML(item.label)}" title="${escapeHTML(item.label)}">
             <span class="nav-icon"><i class="${escapeHTML(item.icon)}"></i></span>
             <span>${escapeHTML(item.label)}</span>
           </button>
