@@ -4772,6 +4772,110 @@ body.dialog-open {
   font: inherit;
 }
 
+.attendance-work-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 10px 0;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.attendance-work-summary-line b {
+  color: var(--teal-dark);
+  font-size: 0.95rem;
+}
+
+.attendance-table-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 220px));
+  gap: 10px;
+  align-items: end;
+}
+
+.attendance-table-filters label,
+.attendance-branch-choice {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.attendance-table-filters input,
+.attendance-table-filters select,
+.attendance-branch-choice select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.attendance-branch-choice small {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.attendance-work-table table,
+.attendance-history-table table {
+  min-width: 1040px;
+}
+
+.attendance-work-table th,
+.attendance-work-table td,
+.attendance-history-table th,
+.attendance-history-table td {
+  padding: 9px 10px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.attendance-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.attendance-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.attendance-pagination button {
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--teal-dark);
+  background: #fff;
+  font: inherit;
+  font-weight: 800;
+}
+
+.attendance-pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.attendance-formula-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--teal);
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
 .attendance-work-stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -4873,6 +4977,15 @@ body.dialog-open {
   .attendance-work-heading label,
   .attendance-work-heading input {
     width: 100%;
+  }
+
+  .attendance-table-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .attendance-work-stats {

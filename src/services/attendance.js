@@ -4,6 +4,7 @@ const QUEUE_PREFIX = '5s_attendance_queue_v2';
 
 export function mapAttendanceToUI(db) {
   if (!db) return null;
+  const noteBranch = String(db.note || '').match(/\[BRANCH:([^\]]+)\]/i)?.[1] || '';
   return {
     id: db.id,
     clientEventId: db.client_event_id,
@@ -21,6 +22,7 @@ export function mapAttendanceToUI(db) {
     capturedOffline: !!db.captured_offline,
     syncedAt: db.synced_at || null,
     proofUrl: db.proof_url || '',
+    branchId: db.branch_id || noteBranch,
   };
 }
 
@@ -142,7 +144,7 @@ async function submitCheckOut(record) {
 
 export async function getAttendanceWorkSummary(month) {
   if (!supabase.isLocal) {
-    throw new Error('Bảng công chỉ sử dụng cơ sở dữ liệu PostgreSQL của hệ thống mới.');
+    throw new Error('Bảng công chỉ sử dụng dữ liệu của hệ thống mới.');
   }
   const value = String(month || '').trim();
   const query = value ? `?month=${encodeURIComponent(value)}` : '';

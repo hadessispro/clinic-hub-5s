@@ -1,6 +1,6 @@
 import { clockIn, clockOut, discardRejectedAttendance, getAttendance, getAttendanceWorkSummary, getOfflineQueue, getRejectedQueue, syncOfflineAttendance } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
-import { getEmployeeAllowedShifts } from '../services/schedule.js';
+import { getEmployeeAllowedShifts, getScheduleAssignments } from '../services/schedule.js';
 import {
   acquireCurrentPosition,
   acquirePrecisePosition,
@@ -10,7 +10,7 @@ import {
 } from '../services/geolocation.js';
 import { captureWorkplacePhoto, startWorkplaceCamera, stopWorkplaceCamera } from '../services/camera.js';
 import { listPendingProofs, movePendingProof, removePendingProof, savePendingProof, syncPendingProofs, uploadAttendanceProof } from '../services/attendance-proofs.js';
-import { BRANCH, branchSettings, clinicDateISO, clinicTimeLabel } from '../branch.js';
+import { BRANCH, BRANCHES, clinicDateISO, clinicTimeLabel } from '../branch.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 import { isOpsRole, khongPhaiChamCong } from '../permissions.js';
 import { navigateTo } from '../router.js';
@@ -36,6 +36,14 @@ let attendanceTypeFilter = 'all';
 let attendanceStatusFilter = 'all';
 let attendanceDateFilter = '';
 let attendanceWorkMonth = '';
+let attendanceWorkStatusFilter = 'all';
+let attendanceWorkBranchFilter = 'all';
+let attendanceWorkPage = 1;
+let attendanceHistoryMonth = '';
+let attendanceHistoryType = 'all';
+let attendanceHistoryBranch = 'all';
+let attendanceHistoryPage = 1;
+const ATTENDANCE_PAGE_SIZE = 10;
 const REQUIRE_CHECKIN_PHOTO = false;
 
 function makeEventId() {
@@ -62,6 +70,18 @@ function currentEmployeeFallback(state) {
   };
 }
 
+function settingsForBranch(branchId, stateSettings = null) {
+  const branch = BRANCHES[branchId] || BRANCH;
+  const base = {
+    branchId: branch.id, clinicName: branch.name, clinicAddress: branch.address,
+    latitude: branch.latitude, longitude: branch.longitude,
+    allowedRadius: branch.allowedRadius, maxGpsAccuracy: branch.maxGpsAccuracy,
+    checkinTime: branch.checkinTime, checkinGraceMinutes: branch.checkinGraceMinutes,
+    timeZone: branch.timeZone,
+  };
+  return stateSettings?.branchId === branch.id ? { ...base, ...stateSettings } : base;
+}
+
 /*
  * Chấm công chỉ còn hai trạng thái: đã xác nhận vào ca, và đã xác nhận ra ca.
  *
@@ -70,8 +90,8 @@ function currentEmployeeFallback(state) {
  * lúc nào cũng là ca người dùng nhìn thấy trên màn hình. Một nhãn "Đi muộn"
  * sai làm người bị gắn mất lòng tin vào cả hệ thống.
  *
- * Việc đối chiếu trễ muộn chuyển sang bước đồng bộ Google Sheet, nơi có đủ
- * lịch làm việc thật. Giờ chấm và ca làm vẫn được ghi đủ ở đây.
+ * Việc đối chiếu trễ muộn được thực hiện trong bảng công việc, dựa trên ca
+ * đã phân và hai mốc vào/ra lưu tại máy chủ.
  */
 function attendanceTone(record) {
   if (record?.isOfflinePending) return 'warn';
@@ -80,7 +100,7 @@ function attendanceTone(record) {
 
 function attendanceLabel(record) {
   if (record?.isOfflinePending) return 'Chờ đồng bộ';
-  return record?.record_type === 'checkout' ? 'Đã xác nhận ra ca' : 'Đã xác nhận vào ca';
+  return (record?.type === 'checkout' || record?.record_type === 'checkout') ? 'Đã xác nhận ra ca' : 'Đã xác nhận vào ca';
 }
 
 function recordTypeLabel(record) {
@@ -111,39 +131,50 @@ function workDayStatus(day) {
 function renderWorkSummary(summary, month) {
   if (!summary) {
     return `<section class="attendance-work-panel">
-      <div class="section-title"><div><p class="eyebrow">Bảng công PostgreSQL</p><h3>Công làm việc của tôi</h3></div></div>
+      <div class="section-title"><div><p class="eyebrow">Bảng công việc</p><h3>Công làm việc của tôi</h3></div></div>
       <div class="attendance-empty"><strong>Chưa tải được bảng công</strong><span>Dữ liệu chấm công vẫn được lưu an toàn trên máy chủ. Hãy thử tải lại màn hình.</span></div>
     </section>`;
   }
   const totals = summary.totals || {};
-  const days = [...(summary.days || [])].reverse();
+  const filtered = [...(summary.days || [])].filter((day) => {
+    if (attendanceWorkStatusFilter !== 'all' && day.status !== attendanceWorkStatusFilter) return false;
+    if (attendanceWorkBranchFilter !== 'all' && day.branch_id !== attendanceWorkBranchFilter) return false;
+    return true;
+  }).reverse();
+  const pageCount = Math.max(1, Math.ceil(filtered.length / ATTENDANCE_PAGE_SIZE));
+  attendanceWorkPage = Math.min(Math.max(1, attendanceWorkPage), pageCount);
+  const offset = (attendanceWorkPage - 1) * ATTENDANCE_PAGE_SIZE;
+  const days = filtered.slice(offset, offset + ATTENDANCE_PAGE_SIZE);
+  if (context) {
+    context.workSummary = summary;
+    context.workRows = filtered;
+  }
   return `<section class="attendance-work-panel">
     <div class="section-title attendance-work-heading">
-      <div><p class="eyebrow">Bảng công PostgreSQL</p><h3>Công làm việc của tôi</h3><span class="subtle">Không đồng bộ Google Sheet · công thức ${escapeHTML(summary.formulaVersion || '2026-09-v1')}</span></div>
-      <label>Tháng xem công<input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(month)}"></label>
+      <div><p class="eyebrow">Bảng công việc</p><h3>Công làm việc của tôi</h3><span class="subtle">Tính từ ca làm và chấm công đã xác nhận</span></div>
+      <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
     </div>
-    <div class="attendance-work-stats">
-      <article><span>Ngày công</span><strong>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</strong><small>Không gồm tăng ca</small></article>
-      <article><span>Giờ công thường</span><strong>${minuteLabel(totals.regularMinutes)}</strong><small>Đã trừ đi muộn/về sớm</small></article>
-      <article><span>Tăng ca đã duyệt</span><strong>${minuteLabel(totals.overtimeMinutes)}</strong><small>Chỉ lấy từ phân ca đã duyệt</small></article>
-      <article><span>Tổng giờ tính công</span><strong>${minuteLabel(totals.payableMinutes)}</strong><small>Công thường + tăng ca</small></article>
-      <article><span>Đi muộn / về sớm</span><strong>${minuteLabel(totals.lateMinutes)} / ${minuteLabel(totals.earlyLeaveMinutes)}</strong><small>Đã trừ khỏi giờ công thường</small></article>
-      <article class="${Number(totals.incompleteDays || 0) ? 'has-warning' : ''}"><span>Cần đối chiếu</span><strong>${Number(totals.incompleteDays || 0)} ngày</strong><small>Thiếu giờ vào, ra hoặc ca</small></article>
+    <div class="attendance-work-summary-line">
+      <span><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b> ngày công</span>
+      <span><b>${minuteLabel(totals.regularMinutes)}</b> công thường</span>
+      <span><b>${minuteLabel(totals.overtimeMinutes)}</b> tăng ca đã duyệt</span>
+      <span><b>${minuteLabel(totals.payableMinutes)}</b> tổng tính công</span>
+      <span><b>${Number(totals.incompleteDays || 0)}</b> ngày cần đối chiếu</span>
     </div>
-    <div class="attendance-work-days">
-      ${days.length ? days.map((day) => {
+    <div class="attendance-table-filters">
+      <label>Tháng<input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(month)}"></label>
+      <label>Chi nhánh<select id="attendanceWorkBranch"><option value="all">Tất cả</option>${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}" ${attendanceWorkBranchFilter === branch.id ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}</select></label>
+      <label>Đối chiếu<select id="attendanceWorkStatus"><option value="all">Tất cả trạng thái</option><option value="complete" ${attendanceWorkStatusFilter === 'complete' ? 'selected' : ''}>Đủ vào/ra</option><option value="in_progress" ${attendanceWorkStatusFilter === 'in_progress' ? 'selected' : ''}>Đang trong ca</option><option value="missing_checkout" ${attendanceWorkStatusFilter === 'missing_checkout' ? 'selected' : ''}>Thiếu check-out</option><option value="missing_checkin" ${attendanceWorkStatusFilter === 'missing_checkin' ? 'selected' : ''}>Thiếu check-in</option><option value="attendance_anomaly" ${attendanceWorkStatusFilter === 'attendance_anomaly' ? 'selected' : ''}>Dữ liệu bất thường</option></select></label>
+    </div>
+    <div class="table-wrap attendance-work-table"><table>
+      <thead><tr><th>Ngày</th><th>Chi nhánh</th><th>Ca làm việc</th><th>Vào</th><th>Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn</th><th>Về sớm</th><th>Ngày công</th><th>Đối chiếu</th></tr></thead>
+      <tbody>${days.length ? days.map((day) => {
         const [label, tone] = workDayStatus(day);
-        return `<article class="attendance-work-day">
-          <div class="attendance-work-date"><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</strong><span>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</span></div>
-          <div><span>Vào</span><strong>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</strong></div>
-          <div><span>Ra</span><strong>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</strong></div>
-          <div><span>Công thường</span><strong>${minuteLabel(day.regular_minutes)}</strong></div>
-          <div><span>Tăng ca</span><strong>${minuteLabel(day.overtime_minutes)}</strong></div>
-          <div><span>Ngày công</span><strong>${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</strong></div>
-          ${statusPill(label, tone)}
-        </article>`;
-      }).join('') : '<div class="attendance-empty"><strong>Chưa có dữ liệu trong tháng</strong><span>Các ngày công sẽ xuất hiện sau khi có phân ca hoặc chấm công.</span></div>'}
-    </div>
+        return `<tr><td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong></td><td>${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</td><td>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</td><td>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</td><td>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</td><td>${minuteLabel(day.regular_minutes)}</td><td>${minuteLabel(day.overtime_minutes)}</td><td>${minuteLabel(day.late_minutes)}</td><td>${minuteLabel(day.early_leave_minutes)}</td><td>${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td><td>${statusPill(label, tone)}</td></tr>`;
+      }).join('') : '<tr><td colspan="11" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
+    </table></div>
+    <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} ngày</span><div><button type="button" data-action="work-prev" ${attendanceWorkPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceWorkPage}/${pageCount}</b><button type="button" data-action="work-next" ${attendanceWorkPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>
+    <p class="attendance-formula-note"><b>Công thức:</b> Giờ công thường = thời lượng ca − đi muộn − về sớm. Tổng giờ tính công = giờ công thường + tăng ca có đơn được duyệt cuối cùng. Ngày thiếu giờ vào/ra hoặc có dữ liệu bất thường không tự cộng công.</p>
   </section>`;
 }
 
@@ -205,19 +236,35 @@ function renderHistory(records, employees, ops) {
   }
 
   if (!ops) {
-    return `<div class="attendance-history-list">${records.slice(0, 14).map((record) => `
-      <article class="attendance-history-item">
-        <div class="attendance-history-date">
-          <strong>${new Date(record.time).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', timeZone: BRANCH.timeZone })}</strong>
-          <span>${formatTime(record.time)}</span>
-        </div>
-        <div>
-          <strong>${recordTypeLabel(record)}</strong>
-          <p>${record.distance} m tới phòng khám · GPS ±${record.accuracy} m</p>
-        </div>
-        ${statusPill(attendanceLabel(record), attendanceTone(record))}
-      </article>
-    `).join('')}</div>`;
+    const filtered = records.filter((record) => {
+      const recordMonth = String(record.date || clinicDateISO(record.time)).slice(0, 7);
+      if (attendanceHistoryMonth && recordMonth !== attendanceHistoryMonth) return false;
+      if (attendanceHistoryType !== 'all' && record.type !== attendanceHistoryType) return false;
+      if (attendanceHistoryBranch !== 'all' && record.branchId !== attendanceHistoryBranch) return false;
+      return true;
+    });
+    const pageCount = Math.max(1, Math.ceil(filtered.length / ATTENDANCE_PAGE_SIZE));
+    attendanceHistoryPage = Math.min(Math.max(1, attendanceHistoryPage), pageCount);
+    const offset = (attendanceHistoryPage - 1) * ATTENDANCE_PAGE_SIZE;
+    const rows = filtered.slice(offset, offset + ATTENDANCE_PAGE_SIZE);
+    return `<div class="attendance-table-filters attendance-history-filters">
+      <label>Tháng<input id="attendanceHistoryMonth" type="month" min="2026-09" value="${escapeHTML(attendanceHistoryMonth)}"></label>
+      <label>Chi nhánh<select id="attendanceHistoryBranch"><option value="all">Tất cả</option>${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}" ${attendanceHistoryBranch === branch.id ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}</select></label>
+      <label>Loại lượt chấm<select id="attendanceHistoryType"><option value="all">Vào và ra ca</option><option value="checkin" ${attendanceHistoryType === 'checkin' ? 'selected' : ''}>Vào ca</option><option value="checkout" ${attendanceHistoryType === 'checkout' ? 'selected' : ''}>Ra ca</option></select></label>
+    </div>
+    <div class="table-wrap attendance-history-table"><table>
+      <thead><tr><th>Ngày</th><th>Giờ</th><th>Loại</th><th>Chi nhánh</th><th>Khoảng cách</th><th>Độ chính xác GPS</th><th>Trạng thái</th></tr></thead>
+      <tbody>${rows.length ? rows.map((record) => `<tr>
+        <td><strong>${new Date(record.time).toLocaleDateString('vi-VN', { timeZone: BRANCH.timeZone })}</strong></td>
+        <td>${formatTime(record.time)}</td>
+        <td><strong>${recordTypeLabel(record)}</strong></td>
+        <td>${escapeHTML(BRANCHES[record.branchId]?.shortName || 'Chưa xác định')}</td>
+        <td>${Number(record.distance || 0)} m</td>
+        <td>±${Number(record.accuracy || 0)} m${record.capturedOffline ? '<br><span class="subtle">Ghi ngoại tuyến</span>' : ''}</td>
+        <td>${statusPill(attendanceLabel(record), attendanceTone(record))}</td>
+      </tr>`).join('') : '<tr><td colspan="7" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
+    </table></div>
+    <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} lượt</span><div><button type="button" data-action="history-prev" ${attendanceHistoryPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceHistoryPage}/${pageCount}</b><button type="button" data-action="history-next" ${attendanceHistoryPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>`;
   }
 
   return `
@@ -262,7 +309,13 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
         <div class="checkin-summary-grid">
           <div><span>Nhân viên</span><strong>${escapeHTML(employee.name)}</strong></div>
           <div><span>Ca làm</span><strong id="selectedShiftSummary">${requiresChoice ? 'Chọn ca bên dưới' : `${escapeHTML(shiftChoices[0]?.start || '08:00')}–${escapeHTML(shiftChoices[0]?.end || '17:00')}`}</strong></div>
-          <div class="full"><span>Địa điểm</span><strong>${escapeHTML(settings.clinicAddress)}</strong></div>
+          <label class="full attendance-branch-choice">
+            <span>Chi nhánh làm việc hôm nay</span>
+            <select id="attendanceBranchChoice">
+              ${Object.values(BRANCHES).map((branch) => `<option value="${escapeHTML(branch.id)}" ${branch.id === settings.branchId ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}
+            </select>
+            <small id="attendanceBranchAddress">${escapeHTML(settings.clinicAddress)}</small>
+          </label>
         </div>
 
         <fieldset class="attendance-shift-picker">
@@ -325,8 +378,8 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
         </section>
 
         <div class="checkin-policy-note">
-          <span>✓ Sai số GPS tối đa ${Number(settings.maxGpsAccuracy)} m</span>
-          <span>✓ Trong bán kính ${Number(settings.allowedRadius)} m</span>
+          <span id="attendanceAccuracyRule">✓ Sai số GPS tối đa ${Number(settings.maxGpsAccuracy)} m</span>
+          <span id="attendanceRadiusRule">✓ Trong bán kính ${Number(settings.allowedRadius)} m</span>
           <span>✓ Không hỗ trợ nhập tọa độ thủ công</span>
           <span>✓ Xác minh bằng ảnh đang tạm tắt</span>
         </div>
@@ -361,35 +414,35 @@ export async function renderView(state) {
   }
   if (clockTimer) clearTimeout(clockTimer);
   stopWorkplaceCamera();
-  const localBranchSettings = branchSettings();
-  const settings = state.settings?.branchId === BRANCH.id
-    ? { ...localBranchSettings, ...state.settings }
-    : localBranchSettings;
+  let settings = settingsForBranch(BRANCH.id, state.settings);
   const workDate = clinicDateISO(new Date(), settings.timeZone);
   const selfAttendance = !khongPhaiChamCong(state.profile?.role || state.role);
   if (!attendanceWorkMonth) attendanceWorkMonth = workDate.slice(0, 7);
+  if (!attendanceHistoryMonth) attendanceHistoryMonth = workDate.slice(0, 7);
   const offlineQueue = getOfflineQueue(state.user?.id);
   const rejectedQueue = getRejectedQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
-  const [employees, remoteRecords, pendingProofs, allowedShiftRows, workSummary] = await Promise.all([
+  const [employees, remoteRecords, pendingProofs, allowedShiftRows, todayAssignments, workSummary] = await Promise.all([
     navigator.onLine ? getEmployees().catch(() => (state.employeeCode ? [employeeFallback] : [])) : Promise.resolve(state.employeeCode ? [employeeFallback] : []),
     state.employeeCode && navigator.onLine
-      ? getAttendance({ employee: isOpsRole(state.role) ? undefined : state.employeeCode, limit: isOpsRole(state.role) ? 200 : 31 }).catch(() => [])
+      ? getAttendance({ employee: isOpsRole(state.role) ? undefined : state.employeeCode, limit: isOpsRole(state.role) ? 500 : 500 }).catch(() => [])
       : Promise.resolve([]),
     state.user?.id ? listPendingProofs(state.user.id).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getEmployeeAllowedShifts(state.employeeCode).catch(() => []) : Promise.resolve([]),
+    navigator.onLine && state.employeeCode ? getScheduleAssignments(workDate).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode && selfAttendance
       ? getAttendanceWorkSummary(attendanceWorkMonth).catch((error) => {
-        console.error('[Attendance] Không tải được bảng công PostgreSQL:', error);
+        console.error('[Attendance] Không tải được bảng công:', error);
         return null;
       })
       : Promise.resolve(null),
   ]);
 
   const employee = employees.find((item) => item.id === state.employeeCode) || employeeFallback;
+  const todayAssignment = todayAssignments.find((item) => item.employee === state.employeeCode);
   const shiftId = effectiveShiftId({
-    assignedShift: null,
+    assignedShift: todayAssignment?.shift,
     defaultShift: employee.shift,
     department: employee.department,
     workDate,
@@ -399,7 +452,9 @@ export async function renderView(state) {
   const configuredAllowedShifts = allowedShiftRows
     .map((row) => SHIFTS.find((item) => item.id === row.code))
     .filter(Boolean);
-  const allowedShifts = configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean);
+  const allowedShifts = todayAssignment
+    ? [shift].filter(Boolean)
+    : (configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean));
   const records = mergeRecords(offlineQueue, remoteRecords);
   const todayRecords = mergeRecords(
     offlineQueue.filter((item) => item.employee === state.employeeCode && item.date === workDate),
@@ -407,6 +462,7 @@ export async function renderView(state) {
   );
   const todayCheckin = todayRecords.find((record) => record.type === 'checkin');
   const todayCheckout = todayRecords.find((record) => record.type === 'checkout');
+  if (todayCheckin?.branchId) settings = settingsForBranch(todayCheckin.branchId, state.settings);
   const ops = isOpsRole(state.role);
   const scopedEmployees = state.role === 'leader'
     ? employees.filter((item) => item.department === state.department)
@@ -418,7 +474,7 @@ export async function renderView(state) {
   const filteredRecords = ops ? scopedRecords.filter((record) => {
     const recordEmployee = scopedEmployees.find((item) => item.id === record.employee);
     if (attendanceDepartmentFilter !== 'all' && recordEmployee?.department !== attendanceDepartmentFilter) return false;
-    if (attendanceBranchFilter !== 'all' && recordEmployee?.branchId !== attendanceBranchFilter) return false;
+    if (attendanceBranchFilter !== 'all' && record.branchId !== attendanceBranchFilter) return false;
     if (attendanceTypeFilter !== 'all' && record.type !== attendanceTypeFilter) return false;
     if (attendanceStatusFilter !== 'all' && record.record_type !== attendanceStatusFilter) return false;
     if (attendanceDateFilter && String(record.date || record.time || '').slice(0, 10) !== attendanceDateFilter) return false;
@@ -438,6 +494,7 @@ export async function renderView(state) {
   context = {
     state, settings, employee, employees: scopedEmployees, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops,
     selectedShift: allowedShifts.length === 1 ? allowedShifts[0] : null,
+    selectedBranchId: settings.branchId,
   };
   lastLocation = null;
   capturedPhoto = null;
@@ -458,7 +515,7 @@ export async function renderView(state) {
     <div class="attendance-page">
       ${tuChamCong ? `<header class="attendance-page-header">
         <div>
-          <p class="eyebrow">GPS Attendance · ${escapeHTML(BRANCH.shortName)}</p>
+          <p class="eyebrow">Chấm công GPS · ${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</p>
           <h3>Chấm công vào ca</h3>
           <p>${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: settings.timeZone })}</p>
         </div>
@@ -494,7 +551,7 @@ export async function renderView(state) {
           <div class="attendance-card-icon" aria-hidden="true">⌖</div>
           <div>
             <p class="eyebrow">Điểm chấm công</p>
-            <h3>${escapeHTML(BRANCH.shortName)}</h3>
+            <h3>${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</h3>
             <p>${escapeHTML(settings.clinicAddress)}</p>
             <a href="${mapUrl}" target="_blank" rel="noreferrer">Mở vị trí phòng khám</a>
           </div>
@@ -961,6 +1018,55 @@ function exportAttendance() {
   downloadText(`cham-cong-le-van-tho-${clinicDateISO()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
 }
 
+async function exportWorkExcel() {
+  const rows = context?.workRows || [];
+  if (!rows.length) {
+    showToast('Không có dữ liệu bảng công phù hợp để xuất.', true);
+    return;
+  }
+  try {
+    const XLSX = await import('xlsx');
+    const data = rows.map((day) => {
+      const [status] = workDayStatus(day);
+      return {
+        'Ngày': new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN'),
+        'Chi nhánh': BRANCHES[day.branch_id]?.shortName || 'Chưa xác định',
+        'Ca làm việc': day.shift_name || day.shift_code || 'Chưa có ca',
+        'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
+        'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
+        'Giờ công thường (phút)': Number(day.regular_minutes || 0),
+        'Tăng ca đã duyệt (phút)': Number(day.overtime_minutes || 0),
+        'Tổng giờ tính công (phút)': Number(day.payable_minutes || 0),
+        'Đi muộn (phút)': Number(day.late_minutes || 0),
+        'Về sớm (phút)': Number(day.early_leave_minutes || 0),
+        'Ngày công': Number(day.workday_credit || 0),
+        'Trạng thái đối chiếu': status,
+      };
+    });
+    const rules = [
+      { 'Nội dung': 'Nguồn dữ liệu', 'Quy tắc / công thức': 'Ca làm việc và lượt vào/ra được lưu trên hệ thống từ tháng 09/2026.' },
+      { 'Nội dung': 'Chi nhánh trong ngày', 'Quy tắc / công thức': 'Chi nhánh nhân viên chọn khi vào ca và được GPS xác nhận; không lấy chi nhánh cố định trong hồ sơ.' },
+      { 'Nội dung': 'Giờ công thường', 'Quy tắc / công thức': 'Thời lượng ca trừ thời gian nghỉ, đi muộn và về sớm; không vượt quá thời gian hiện diện thực tế.' },
+      { 'Nội dung': 'Tăng ca', 'Quy tắc / công thức': 'Chỉ cộng số phút từ đơn tăng ca đã được duyệt cuối cùng.' },
+      { 'Nội dung': 'Tổng giờ tính công', 'Quy tắc / công thức': 'Giờ công thường + tăng ca đã duyệt.' },
+      { 'Nội dung': 'Ngày công', 'Quy tắc / công thức': 'Giờ công thường / số phút chuẩn của ca, tối đa 1 ngày; tăng ca được cộng riêng vào tổng giờ.' },
+      { 'Nội dung': 'Cần đối chiếu', 'Quy tắc / công thức': 'Thiếu giờ vào/ra, thiếu ca hoặc dữ liệu bất thường không tự cộng công.' },
+    ];
+    const workbook = XLSX.utils.book_new();
+    const workSheet = XLSX.utils.json_to_sheet(data);
+    workSheet['!cols'] = [12, 24, 24, 11, 11, 22, 22, 24, 16, 15, 12, 24].map((wch) => ({ wch }));
+    const rulesSheet = XLSX.utils.json_to_sheet(rules);
+    rulesSheet['!cols'] = [{ wch: 24 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(workbook, workSheet, 'Bảng công');
+    XLSX.utils.book_append_sheet(workbook, rulesSheet, 'Quy tắc tính công');
+    XLSX.writeFile(workbook, `bang-cong-${context.employee?.id || 'nhan-vien'}-${attendanceWorkMonth}.xlsx`);
+    showToast('Đã xuất file Excel bảng công tiếng Việt.');
+  } catch (error) {
+    console.error('[Attendance] Export work Excel failed:', error);
+    showToast('Không thể xuất file Excel. Vui lòng thử lại.', true);
+  }
+}
+
 export function initView() {
   const state = store.getState();
   if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
@@ -979,7 +1085,33 @@ export function initView() {
       return;
     }
     attendanceWorkMonth = month;
+    attendanceWorkPage = 1;
     navigateTo('attendance');
+  });
+  document.getElementById('attendanceWorkBranch')?.addEventListener('change', (event) => {
+    attendanceWorkBranchFilter = event.target.value;
+    attendanceWorkPage = 1;
+    refreshAttendanceFilters();
+  });
+  document.getElementById('attendanceWorkStatus')?.addEventListener('change', (event) => {
+    attendanceWorkStatusFilter = event.target.value;
+    attendanceWorkPage = 1;
+    refreshAttendanceFilters();
+  });
+  document.getElementById('attendanceHistoryMonth')?.addEventListener('change', (event) => {
+    attendanceHistoryMonth = event.target.value;
+    attendanceHistoryPage = 1;
+    refreshAttendanceFilters();
+  });
+  document.getElementById('attendanceHistoryBranch')?.addEventListener('change', (event) => {
+    attendanceHistoryBranch = event.target.value;
+    attendanceHistoryPage = 1;
+    refreshAttendanceFilters();
+  });
+  document.getElementById('attendanceHistoryType')?.addEventListener('change', (event) => {
+    attendanceHistoryType = event.target.value;
+    attendanceHistoryPage = 1;
+    refreshAttendanceFilters();
   });
   document.getElementById('attendanceSearchFilter')?.addEventListener('input', (event) => {
     attendanceSearch = event.target.value;
@@ -1024,6 +1156,11 @@ export function initView() {
     if (action === 'open-checkin') openDialog();
     if (action === 'checkout') confirmCheckout(event.target.closest('button'));
     if (action === 'export-attendance') exportAttendance();
+    if (action === 'export-work-excel') exportWorkExcel();
+    if (action === 'work-prev' && attendanceWorkPage > 1) { attendanceWorkPage -= 1; refreshAttendanceFilters(); }
+    if (action === 'work-next') { attendanceWorkPage += 1; refreshAttendanceFilters(); }
+    if (action === 'history-prev' && attendanceHistoryPage > 1) { attendanceHistoryPage -= 1; refreshAttendanceFilters(); }
+    if (action === 'history-next') { attendanceHistoryPage += 1; refreshAttendanceFilters(); }
     if (action === 'sync-attendance') {
       const button = event.target.closest('button');
       button.disabled = true;
@@ -1054,6 +1191,18 @@ export function initView() {
     if (action === 'confirm-checkin') confirmCheckin(event.target.closest('button'));
   });
   dialog?.addEventListener('change', (event) => {
+    if (event.target.id === 'attendanceBranchChoice') {
+      context.selectedBranchId = event.target.value;
+      context.settings = settingsForBranch(event.target.value, context.state.settings);
+      const address = document.getElementById('attendanceBranchAddress');
+      const accuracyRule = document.getElementById('attendanceAccuracyRule');
+      const radiusRule = document.getElementById('attendanceRadiusRule');
+      if (address) address.textContent = context.settings.clinicAddress;
+      if (accuracyRule) accuracyRule.textContent = `✓ Sai số GPS tối đa ${Number(context.settings.maxGpsAccuracy)} m`;
+      if (radiusRule) radiusRule.textContent = `✓ Trong bán kính ${Number(context.settings.allowedRadius)} m`;
+      captureLocation();
+      return;
+    }
     if (event.target.name !== 'attendanceShift') return;
     context.selectedShift = context.allowedShifts.find((item) => item.id === event.target.value) || null;
     const summary = document.getElementById('selectedShiftSummary');

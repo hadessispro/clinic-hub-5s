@@ -36,7 +36,7 @@ function minuteOfClinicDay(value: unknown) {
 function monthBounds(value: unknown) {
   const month = String(value || clinicParts(new Date()).date.slice(0, 7));
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('Tháng tính công không hợp lệ.');
-  if (month < '2026-09') throw new BadRequestException('Bảng công PostgreSQL bắt đầu từ tháng 09/2026.');
+  if (month < '2026-09') throw new BadRequestException('Bảng công việc bắt đầu từ tháng 09/2026.');
   const [year, number] = month.split('-').map(Number);
   const from = `${month}-01`;
   const end = new Date(Date.UTC(year, number, 0)).getUTCDate();
@@ -51,9 +51,12 @@ type WorkDay = {
   work_date: string;
   shift_code: string | null;
   shift_name: string | null;
+  branch_id: string | null;
   scheduled_minutes: number;
   regular_minutes: number;
   overtime_minutes: number;
+  approved_overtime_minutes: number;
+  overtime_request_ids: string[];
   late_minutes: number;
   early_leave_minutes: number;
   payable_minutes: number;
@@ -65,7 +68,7 @@ type WorkDay = {
   source: 'postgresql-vps';
 };
 
-function calculateWorkDay(employeeCode: string, workDate: string, assignment: JsonMap | undefined, events: JsonMap[], shifts: Map<string, JsonMap>): WorkDay {
+function calculateWorkDay(employeeCode: string, workDate: string, assignment: JsonMap | undefined, events: JsonMap[], shifts: Map<string, JsonMap>, approvedOvertime: { minutes: number; ids: string[] }) {
   const checkins = events.filter((row) => row.record_type === 'checkin').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
   const checkouts = events.filter((row) => row.record_type === 'checkout').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
   const checkin = checkins[0];
@@ -107,7 +110,9 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     const regularByRules = Math.max(0, scheduledMinutes - lateMinutes - earlyLeaveMinutes);
     const regularByPresence = Math.max(0, checkoutMinute - checkinMinute - breakMinutes);
     regularMinutes = Math.min(scheduledMinutes, regularByRules, regularByPresence);
-    overtimeMinutes = positiveMinutes(assignment?.overtime_minutes) + positiveMinutes(assignment?.early_arrival_minutes);
+    // Chỉ đơn tăng ca đã được duyệt cuối cùng mới sinh phút tính công. Số phút
+    // nhập tay trên phân ca không còn là bằng chứng đủ để cộng lương.
+    overtimeMinutes = positiveMinutes(approvedOvertime.minutes);
   }
 
   const payableMinutes = regularMinutes + overtimeMinutes;
@@ -117,9 +122,12 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     work_date: workDate,
     shift_code: shiftCode,
     shift_name: shift ? String(shift.name || shiftCode) : null,
+    branch_id: attendanceBranch(checkin || checkout) || null,
     scheduled_minutes: scheduledMinutes,
     regular_minutes: regularMinutes,
     overtime_minutes: overtimeMinutes,
+    approved_overtime_minutes: approvedOvertime.minutes,
+    overtime_request_ids: approvedOvertime.ids,
     late_minutes: lateMinutes,
     early_leave_minutes: earlyLeaveMinutes,
     payable_minutes: payableMinutes,
@@ -149,8 +157,8 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
  * còn tính công thì vẫn phải làm tay. Nên bỏ nhãn, giữ nguyên dữ liệu thô.
  *
  * Giờ chấm, ca làm, khoảng cách, sai số GPS đều được ghi đầy đủ như cũ. Việc
- * đối chiếu trễ muộn chuyển sang bước đồng bộ Google Sheet, nơi có đủ lịch
- * làm việc thật để so.
+ * đối chiếu trễ muộn được thực hiện trong bảng công việc dựa trên ca đã phân
+ * và dữ liệu vào/ra lưu trên máy chủ.
  */
 const DA_GHI_NHAN = 'valid';
 
@@ -165,6 +173,12 @@ function locationResult(distance: number, accuracy: number, radius: number, maxA
   const accurate = Number.isFinite(accuracy) && accuracy > 0 && accuracy <= maxAccuracy;
   const effectiveRadius = accuracy <= 50 ? radius : Math.max(20, radius - (accuracy - 50));
   return { inside: accurate && distance <= effectiveRadius, effectiveRadius: Math.round(effectiveRadius) };
+}
+
+function attendanceBranch(row: JsonMap | null | undefined) {
+  const direct = String(row?.branch_id || '');
+  if (direct) return direct;
+  return String(row?.note || '').match(/\[BRANCH:([^\]]+)\]/i)?.[1] || '';
 }
 
 @Controller('/api/v2/attendance-record')
@@ -189,6 +203,7 @@ export class AttendanceController {
     const requestedTime = new Date(String(body.time || ''));
     const now = new Date();
     const effectiveAt = body.capturedOffline ? requestedTime : now;
+    const local = clinicParts(effectiveAt);
     const lat = Number(body.lat); const lng = Number(body.lng); const accuracy = Math.round(Number(body.accuracy));
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId)) throw new BadRequestException('Mã lượt chấm công không hợp lệ.');
     if (!Number.isFinite(requestedTime.getTime()) || requestedTime > new Date(Date.now() + 300000) || requestedTime < new Date(Date.now() - 7 * 86400000)) throw new BadRequestException('Thời gian chấm công không hợp lệ.');
@@ -197,9 +212,21 @@ export class AttendanceController {
     const employee = await this.one('employees', 'code', user.employeeCode);
     if (!employee || employee.status !== 'active') throw new BadRequestException('Hồ sơ nhân viên chưa hoạt động.');
     const requestedBranch = String(body.branchId || '');
-    const branchId = managerRoles.has(user.role) ? requestedBranch : String(user.branchId || employee.branch_id || '');
-    if (!fallbackBranches[branchId]) throw new BadRequestException('Chi nhánh chấm công không hợp lệ.');
-    if (!managerRoles.has(user.role) && requestedBranch && requestedBranch !== branchId) throw new BadRequestException('Tài khoản không được chấm công tại chi nhánh đã chọn.');
+    let dayCheckin: JsonMap | null = null;
+    if (type === 'checkout') {
+      const result = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'record_type'='checkin'
+         order by payload->>'recorded_at' limit 1`, [user.employeeCode, local.date],
+      );
+      dayCheckin = result.rows[0]?.payload || null;
+      if (!dayCheckin) throw new BadRequestException('Bạn cần check-in trước khi kết ca.');
+    }
+    const branchId = type === 'checkout' ? (attendanceBranch(dayCheckin) || requestedBranch) : requestedBranch;
+    if (!fallbackBranches[branchId]) throw new BadRequestException('Vui lòng chọn chi nhánh đang làm việc trước khi chấm công.');
+    if (type === 'checkout' && requestedBranch && requestedBranch !== branchId) {
+      throw new BadRequestException('Bạn cần check-out tại đúng chi nhánh đã xác nhận lúc vào ca.');
+    }
     const branch = await this.one('clinic_locations', 'id', branchId) || fallbackBranches[branchId];
     const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 100)));
     const radius = Math.max(20, Math.min(300, Number(branch.allowed_radius_m || 100)));
@@ -208,7 +235,6 @@ export class AttendanceController {
     const policy = locationResult(distance, accuracy, radius, maxAccuracy);
     if (!policy.inside) throw new BadRequestException(`Vị trí cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${policy.effectiveRadius} m.`);
 
-    const local = clinicParts(effectiveAt);
     const duplicate = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
       `select payload from app.records where entity_type='attendance_records' and deleted_at is null and
        (payload->>'client_event_id'=$1 or (lower(payload->>'employee_code')=lower($2) and payload->>'work_date'=$3 and payload->>'record_type'=$4))
@@ -218,14 +244,8 @@ export class AttendanceController {
 
     let shiftCode = String(body.shift || '');
     if (type === 'checkout') {
-      const checkin = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
-        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
-         and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'record_type'='checkin'
-         order by payload->>'recorded_at' limit 1`, [user.employeeCode, local.date],
-      );
-      if (!checkin.rows[0]) throw new BadRequestException('Bạn cần check-in trước khi kết ca.');
-      shiftCode = String(checkin.rows[0].payload.shift_code || '');
-      if (effectiveAt < new Date(String(checkin.rows[0].payload.recorded_at))) throw new BadRequestException('Giờ kết ca không thể trước giờ check-in.');
+      shiftCode = String(dayCheckin?.shift_code || '');
+      if (effectiveAt < new Date(String(dayCheckin?.recorded_at))) throw new BadRequestException('Giờ kết ca không thể trước giờ check-in.');
     } else {
       const assignment = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
@@ -234,15 +254,22 @@ export class AttendanceController {
       const allowed = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='employee_allowed_shifts' and deleted_at is null and lower(payload->>'employee_code')=lower($1)`, [user.employeeCode],
       );
-      const valid = shiftCode && [employee.shift_code, assignment.rows[0]?.payload.shift_code, ...allowed.rows.map((row) => row.payload.shift_code)].some((code) => String(code || '') === shiftCode);
-      if (!shiftCode) shiftCode = String(assignment.rows[0]?.payload.shift_code || employee.shift_code || 'clinic-0800');
-      else if (!valid) throw new BadRequestException('Ca làm đã chọn không được cấp cho tài khoản này.');
+      const assignedShift = String(assignment.rows[0]?.payload.shift_code || '');
+      if (assignedShift) {
+        if (shiftCode && shiftCode !== assignedShift) throw new BadRequestException('Ca làm hôm nay phải theo lịch đã được phân công.');
+        shiftCode = assignedShift;
+      } else {
+        const valid = shiftCode && [employee.shift_code, ...allowed.rows.map((row) => row.payload.shift_code)].some((code) => String(code || '') === shiftCode);
+        if (!shiftCode) shiftCode = String(employee.shift_code || 'clinic-0800');
+        else if (!valid) throw new BadRequestException('Ca làm đã chọn không phù hợp với vị trí công việc của tài khoản này.');
+      }
     }
     const shift = await this.one('work_shifts', 'code', shiftCode);
     if (!shift || shift.active === false) throw new BadRequestException('Ca làm chưa được cấu hình trong hệ thống.');
     const payload: JsonMap = {
       id: randomUUID(), client_event_id: eventId, employee_code: user.employeeCode, shift_code: shiftCode,
       record_type: type, work_date: local.date, recorded_at: effectiveAt.toISOString(), lat, lng,
+      branch_id: branchId,
       distance_m: distance, accuracy_m: accuracy, status: DA_GHI_NHAN, created_by: user.id,
       device_id: String(body.deviceId || '').slice(0, 120) || null, captured_offline: Boolean(body.capturedOffline),
       synced_at: now.toISOString(), note: `[BRANCH:${branchId}]`, created_at: now.toISOString(), updated_at: now.toISOString(),
@@ -274,7 +301,7 @@ export class AttendanceWorkController {
       throw new ForbiddenException('Bạn chỉ được xem bảng công của chính mình.');
     }
     const bounds = monthBounds(requestedMonth);
-    const [assignmentResult, attendanceResult, shiftResult] = await Promise.all([
+    const [assignmentResult, attendanceResult, shiftResult, overtimeResult] = await Promise.all([
       this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
          and lower(payload->>'employee_code')=lower($1) and payload->>'work_date' between $2 and $3`,
@@ -289,6 +316,14 @@ export class AttendanceWorkController {
       this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='work_shifts' and deleted_at is null`,
       ),
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='leave_requests' and deleted_at is null
+         and lower(payload->>'employee_code')=lower($1)
+         and payload->>'from_date' between $2 and $3
+         and (lower(payload->>'request_type') like '%tăng ca%' or lower(payload->>'request_type') like '%overtime%')
+         and payload->>'status'='approved' and payload->>'operations_status'='approved'`,
+        [employeeCode, bounds.from, bounds.effectiveUntil],
+      ),
     ]);
 
     const assignments = new Map(assignmentResult.rows.map((row) => [String(row.payload.work_date), row.payload]));
@@ -298,8 +333,19 @@ export class AttendanceWorkController {
       events.set(date, [...(events.get(date) || []), row.payload]);
     }
     const shifts = new Map(shiftResult.rows.map((row) => [String(row.payload.code), row.payload]));
-    const dates = [...new Set([...assignments.keys(), ...events.keys()])].sort();
-    const days = dates.map((date) => calculateWorkDay(employeeCode, date, assignments.get(date), events.get(date) || [], shifts));
+    const approvedOvertime = new Map<string, { minutes: number; ids: string[] }>();
+    for (const row of overtimeResult.rows) {
+      const date = String(row.payload.from_date || '');
+      const current = approvedOvertime.get(date) || { minutes: 0, ids: [] };
+      current.minutes += positiveMinutes(row.payload.overtime_minutes);
+      current.ids.push(String(row.payload.id || ''));
+      approvedOvertime.set(date, current);
+    }
+    const dates = [...new Set([...assignments.keys(), ...events.keys(), ...approvedOvertime.keys()])].sort();
+    const days = dates.map((date) => calculateWorkDay(
+      employeeCode, date, assignments.get(date), events.get(date) || [], shifts,
+      approvedOvertime.get(date) || { minutes: 0, ids: [] },
+    ));
 
     const client = await this.infrastructure.postgres.connect();
     try {
