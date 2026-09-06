@@ -98,6 +98,7 @@ function minuteLabel(value) {
 function workDayStatus(day) {
   const labels = {
     complete: ['Đủ vào/ra', 'good'],
+    in_progress: ['Đang trong ca', 'good'],
     missing_checkin: ['Thiếu check-in', 'bad'],
     missing_checkout: ['Thiếu check-out', 'bad'],
     no_attendance: ['Chưa chấm công', 'warn'],
@@ -125,7 +126,7 @@ function renderWorkSummary(summary, month) {
       <article><span>Giờ công thường</span><strong>${minuteLabel(totals.regularMinutes)}</strong><small>Đã trừ đi muộn/về sớm</small></article>
       <article><span>Tăng ca đã duyệt</span><strong>${minuteLabel(totals.overtimeMinutes)}</strong><small>Chỉ lấy từ phân ca đã duyệt</small></article>
       <article><span>Tổng giờ tính công</span><strong>${minuteLabel(totals.payableMinutes)}</strong><small>Công thường + tăng ca</small></article>
-      <article><span>Đi muộn</span><strong>${minuteLabel(totals.lateMinutes)}</strong><small>So với giờ bắt đầu ca</small></article>
+      <article><span>Đi muộn / về sớm</span><strong>${minuteLabel(totals.lateMinutes)} / ${minuteLabel(totals.earlyLeaveMinutes)}</strong><small>Đã trừ khỏi giờ công thường</small></article>
       <article class="${Number(totals.incompleteDays || 0) ? 'has-warning' : ''}"><span>Cần đối chiếu</span><strong>${Number(totals.incompleteDays || 0)} ngày</strong><small>Thiếu giờ vào, ra hoặc ca</small></article>
     </div>
     <div class="attendance-work-days">

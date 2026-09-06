@@ -60,7 +60,7 @@ type WorkDay = {
   workday_credit: number;
   checkin_at: string | null;
   checkout_at: string | null;
-  status: 'complete' | 'missing_checkin' | 'missing_checkout' | 'no_attendance' | 'missing_shift';
+  status: 'complete' | 'in_progress' | 'missing_checkin' | 'missing_checkout' | 'no_attendance' | 'missing_shift';
   calculated_at: string;
   source: 'postgresql-vps';
 };
@@ -85,7 +85,7 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   if (!shift) status = 'missing_shift';
   else if (!checkin && !checkout) status = 'no_attendance';
   else if (!checkin) status = 'missing_checkin';
-  else if (!checkout) status = 'missing_checkout';
+  else if (!checkout) status = workDate === clinicParts(new Date()).date ? 'in_progress' : 'missing_checkout';
 
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
@@ -325,7 +325,7 @@ export class AttendanceWorkController {
       lateMinutes: sum.lateMinutes + day.late_minutes,
       earlyLeaveMinutes: sum.earlyLeaveMinutes + day.early_leave_minutes,
       payableMinutes: sum.payableMinutes + day.payable_minutes,
-      incompleteDays: sum.incompleteDays + (day.status === 'complete' ? 0 : 1),
+      incompleteDays: sum.incompleteDays + (['complete', 'in_progress'].includes(day.status) ? 0 : 1),
     }), { workdays: 0, regularMinutes: 0, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0, payableMinutes: 0, incompleteDays: 0 });
 
     return { month: bounds.month, employeeCode, source: 'postgresql-vps', formulaVersion: '2026-09-v1', totals: { ...totals, workdays: Number(totals.workdays.toFixed(3)) }, days };
