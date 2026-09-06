@@ -11898,3 +11898,361 @@ html:has(.kh-ngan) { overflow: hidden; }
   .app-shell,
   .sidebar-collapse-toggle { transition: none; }
 }
+
+/* ══ DESIGN SYSTEM 2026 · toàn ứng dụng ════════════════════════════════
+   Card trắng, viền mảnh và màu chỉ dùng cho tín hiệu. Khối dữ liệu không
+   còn dùng nền màu lớn hoặc vạch trái dày. */
+:root {
+  --ink: #18211f;
+  --muted: #6e7a76;
+  --line: #e5ebe8;
+  --surface-soft: #f6f8f7;
+  --field: #fafcfb;
+  --shadow: 0 8px 28px rgba(24, 48, 42, .055);
+  --radius: 12px;
+}
+
+body {
+  background: #f5f7f6;
+}
+
+.main-area {
+  padding: 24px 26px 34px;
+}
+
+.view-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.view-stack > .grid,
+.view-stack > .panel,
+.view-stack > section {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.view-header {
+  margin-bottom: 0;
+  padding: 3px 2px;
+}
+
+.view-header h3 {
+  color: #172421;
+  font-size: 1.22rem;
+  letter-spacing: -.018em;
+}
+
+.manager-strip {
+  padding: 13px 16px;
+  border-color: #e0e9e6;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(31, 66, 57, .045);
+}
+
+.panel,
+.metric-card,
+.task-card,
+.person-card,
+.message-card,
+.request-card,
+.inventory-card,
+.schedule-card,
+.mini-card {
+  border: 1px solid #e6ebe9;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 6px 22px rgba(28, 54, 48, .045);
+}
+
+.panel {
+  padding: 19px 20px;
+}
+
+.grid {
+  gap: 16px;
+}
+
+.panel > .section-title {
+  margin-bottom: 15px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf1ef;
+}
+
+.section-title h3 {
+  color: #1b2926;
+  font-size: 1rem;
+  letter-spacing: -.01em;
+}
+
+.eyebrow {
+  color: #69807a;
+  font-size: .69rem;
+  letter-spacing: .065em;
+}
+
+.metric-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  min-height: 138px;
+  padding: 16px !important;
+  overflow: hidden;
+  border: 1px solid #e8ecea !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 5px 18px rgba(32, 57, 51, .04) !important;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.metric-card::before,
+.dashboard-metric-grid .metric-card::before {
+  display: none;
+}
+
+.metric-card:not(:has(.metric-card-head))::before {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  margin-bottom: 13px;
+  border-radius: 10px;
+  color: #087f7b;
+  background: #eef8f5;
+  font-size: .88rem;
+  font-weight: 900;
+  content: '↗';
+  place-items: center;
+}
+
+.metric-card:hover {
+  border-color: #cedbd7 !important;
+  box-shadow: 0 10px 26px rgba(28, 58, 50, .075) !important;
+  transform: translateY(-1px);
+}
+
+.metric-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-icon {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  border-radius: 10px;
+  color: var(--metric-accent, #087f7b);
+  background: color-mix(in srgb, var(--metric-accent, #087f7b) 9%, white);
+  font-size: 1rem;
+  place-items: center;
+}
+
+.metric-chip {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #278068;
+  background: #ecf8f3;
+  font-size: .57rem;
+  font-weight: 850;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.metric-label {
+  margin: 0 0 5px;
+  color: #34433f;
+  font-size: .79rem;
+  font-weight: 800;
+}
+
+.metric-value {
+  margin: 0 0 7px;
+  color: #172622;
+  font-size: 1.55rem;
+  letter-spacing: -.035em;
+}
+
+.metric-detail {
+  margin: auto 0 0;
+  color: #7a8783;
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+.dashboard-metric-grid .metric-card {
+  background: #fff !important;
+}
+
+.dashboard-section,
+.attendance-work-panel,
+.attendance-history-panel {
+  border-top: 1px solid #e6ebe9;
+}
+
+.dashboard-section {
+  box-shadow: 0 6px 22px rgba(28, 54, 48, .045);
+}
+
+.attendance-work-summary-line {
+  gap: 12px;
+}
+
+.attendance-work-summary-line > span {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 11px;
+  min-height: 104px;
+  padding: 15px;
+  border: 1px solid #e6ebe9;
+  border-left: 1px solid #e6ebe9;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(32, 57, 51, .035);
+}
+
+.attendance-work-summary-line > span::before {
+  display: grid;
+  grid-row: 1 / 3;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--metric-accent);
+  background: color-mix(in srgb, var(--metric-accent) 9%, white);
+  font-size: .9rem;
+  font-weight: 900;
+  content: '●';
+  place-items: center;
+}
+
+.attendance-work-summary-line > span.is-workday::before { content: '✓'; }
+.attendance-work-summary-line > span.is-regular::before { content: '◷'; }
+.attendance-work-summary-line > span.is-overtime::before { content: '+'; }
+.attendance-work-summary-line > span.is-payable::before { content: '∑'; }
+.attendance-work-summary-line > span.is-review::before { content: '!'; }
+
+.attendance-work-summary-line small {
+  align-self: end;
+  color: #65736f;
+  font-size: .64rem;
+  letter-spacing: .055em;
+}
+
+.attendance-work-summary-line b {
+  align-self: start;
+  color: #1b2926;
+  font-size: 1.2rem;
+}
+
+.operation-filterbar,
+.attendance-table-filters,
+.gift-filters,
+.pg-shift-filter,
+.tsm-filters {
+  border: 1px solid #e6ebe9;
+  border-radius: 15px;
+  background: #f8faf9;
+  box-shadow: none;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea,
+.operation-filterbar input,
+.operation-filterbar select,
+.attendance-table-filters input,
+.attendance-table-filters select {
+  border-color: #dfe6e3;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: none;
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.danger-button,
+.icon-button {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.secondary-button {
+  border-color: #d8e4e0;
+  background: #fff;
+}
+
+.ghost-button,
+.icon-button {
+  border-color: #e3e9e7;
+  background: #fff;
+}
+
+.pill,
+.status-pill,
+.priority-pill {
+  min-height: 23px;
+  padding: 3px 8px;
+  border-width: 1px;
+  font-size: .69rem;
+}
+
+.table-wrap {
+  border: 1px solid #e6ebe9;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: none;
+}
+
+table thead,
+.attendance-work-table th,
+.attendance-history-table th {
+  background: #f7f9f8;
+}
+
+table th {
+  color: #677570;
+  font-size: .69rem;
+  letter-spacing: .045em;
+}
+
+table td {
+  border-color: #edf1ef;
+}
+
+.task-card,
+.request-card,
+.inventory-card,
+.schedule-card,
+.person-card {
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.task-card:hover,
+.request-card:hover,
+.inventory-card:hover,
+.schedule-card:hover,
+.person-card:hover {
+  border-color: #cfdbd7;
+  box-shadow: 0 9px 24px rgba(28, 58, 50, .065);
+  transform: translateY(-1px);
+}
+
+.empty-state,
+.attendance-empty {
+  border-radius: 14px;
+  background: #fafbfb;
+}
+
+@media (max-width: 760px) {
+  .main-area { padding: 12px 11px 28px; }
+  .view-stack { gap: 12px; }
+  .panel { padding: 14px; border-radius: 15px; }
+  .metric-card { min-height: 124px; padding: 14px !important; }
+  .metric-card-head { margin-bottom: 10px; }
+  .attendance-work-summary-line > span { min-height: 94px; padding: 12px; }
+}

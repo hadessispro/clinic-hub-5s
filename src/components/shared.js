@@ -39,8 +39,21 @@ export function statusTone(status) {
 }
 
 export function metric(label, value, detail) {
+  const normalized = String(label || '').toLocaleLowerCase('vi-VN');
+  const icon = normalized.includes('nhân sự') ? 'ri-team-line'
+    : normalized.includes('chấm công') || normalized.includes('vào ca') ? 'ri-time-line'
+      : normalized.includes('công việc') ? 'ri-checkbox-circle-line'
+        : normalized.includes('đơn') ? 'ri-file-list-3-line'
+          : normalized.includes('hẹn') ? 'ri-calendar-check-line'
+            : normalized.includes('liên hệ') ? 'ri-phone-line'
+              : normalized.includes('hồ sơ') || normalized.includes('khách') ? 'ri-contacts-line'
+                : normalized.includes('thành công') ? 'ri-checkbox-circle-line'
+                  : normalized.includes('tăng ca') ? 'ri-timer-line'
+                    : normalized.includes('ngày công') ? 'ri-calendar-2-line'
+                      : 'ri-bar-chart-box-line';
   return `
     <article class="metric-card">
+      <div class="metric-card-head"><span class="metric-icon"><i class="${icon}"></i></span><span class="metric-chip">Hiện tại</span></div>
       <p class="metric-label">${escapeHTML(label)}</p>
       <p class="metric-value">${escapeHTML(String(value))}</p>
       <p class="metric-detail">${escapeHTML(detail)}</p>
