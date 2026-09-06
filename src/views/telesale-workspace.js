@@ -67,7 +67,7 @@ export async function renderView(state) {
           ? `PG nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`
           : `Nguồn nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`;
         return `
-          <article class="task-card telesale-lead-card" data-workspace-lead="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}" style="border-left: 4px solid var(--teal); background:#ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.04); border-radius:12px; padding:16px;">
+          <article class="task-card telesale-lead-card" data-workspace-lead="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}">
             <div class="telesale-card-summary">
               <div class="telesale-card-identity">
                 <h4>${escapeHTML(lead.full_name)}</h4>

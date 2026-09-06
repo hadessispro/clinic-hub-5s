@@ -98,11 +98,16 @@ function veTongQuan() {
     { so: t.don_thieu_hoa_don, ten: 'Đơn thiếu hoá đơn', phu: 'đã giao, chưa có chứng từ',
       lop: 'warn', icon: 'ri-bill-line', loc: () => { tab = 'don-hang'; dTrangThai = 'da_giao'; } },
   ];
+  const mucDo = {
+    bad: 'Khẩn',
+    warn: 'Cần chú ý',
+    info: 'Theo dõi',
+  };
 
   return `
     <div class="kh-the-luoi">
       ${the.map((x, i) => `<button type="button" class="kh-the kh-the-${x.lop}" data-nhay="${i}">
-        <i class="${x.icon}"></i>
+        <span class="kh-the-dau"><i class="${x.icon}"></i><em>${mucDo[x.lop]}</em></span>
         <b>${x.so}</b>
         <span>${escapeHTML(x.ten)}</span>
         <small>${escapeHTML(x.phu)}</small>

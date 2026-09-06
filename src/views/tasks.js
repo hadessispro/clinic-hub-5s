@@ -116,7 +116,7 @@ export async function renderView(state) {
       </div>
       <div class="featured-events-row" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
         ${featuredCards.map(c => `
-          <article class="featured-event-card" style="border-left:4px solid ${c.badgeColor || '#0f172a'};">
+          <article class="featured-event-card" style="--event-accent:${c.badgeColor || '#0f172a'};">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
               <h4 style="margin:0; font-size:0.92rem; font-weight:700; color:#0f172a;">${escapeHTML(c.title)}</h4>
               <span style="padding:2px 8px; background:#f1f5f9; color:${c.badgeColor || '#0f172a'}; font-size:0.72rem; font-weight:700; border-radius:12px;">${escapeHTML(c.badge)}</span>

@@ -142,7 +142,14 @@ function groupedPanels(items, rowRenderer, type) {
 }
 
 function metric(label, value, note = '') {
-  return `<article class="system-metric"><span>${escapeHTML(label)}</span><strong>${escapeHTML(String(value ?? 0))}</strong><small>${escapeHTML(note)}</small></article>`;
+  const icons = {
+    Database: 'ri-database-2-line',
+    'Tài khoản hoạt động': 'ri-user-follow-line',
+    'Dữ liệu chấm công': 'ri-time-line',
+    'Đồng bộ lỗi': 'ri-loop-left-line',
+    'Lỗi ứng dụng': 'ri-bug-line',
+  };
+  return `<article class="system-metric"><div class="system-metric-head"><i class="${icons[label] || 'ri-bar-chart-box-line'}"></i><em>Hệ thống</em></div><span>${escapeHTML(label)}</span><strong>${escapeHTML(String(value ?? 0))}</strong><small>${escapeHTML(note)}</small></article>`;
 }
 
 function filterOptions(map, selected = 'all') {

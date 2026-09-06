@@ -12256,3 +12256,312 @@ table td {
   .metric-card-head { margin-bottom: 10px; }
   .attendance-work-summary-line > span { min-height: 94px; padding: 12px; }
 }
+
+/* ══ DESIGN SYSTEM 2026 · đồng bộ các module chuyên biệt ══════════════
+   Một số màn hình cũ tự định nghĩa thẻ KPI riêng nên không nhận chuẩn
+   .metric-card. Nhóm quy tắc này đưa toàn bộ KPI về cùng ngôn ngữ giao
+   diện: nền trắng, viền mảnh, icon có màu và nhãn trạng thái nhỏ. */
+.kh-the-luoi,
+.shift-overview-metrics,
+.pilot-schedule-metrics,
+.system-health-grid,
+.gift-summary-grid,
+.tsm-kpis {
+  gap: 14px;
+}
+
+.kh-the,
+.shift-overview-metrics article,
+.pilot-schedule-metrics article,
+.system-metric,
+.gift-summary-grid article,
+.tsm-kpis article {
+  position: relative;
+  min-width: 0;
+  min-height: 132px;
+  padding: 16px !important;
+  overflow: hidden;
+  border: 1px solid #e6ebe9 !important;
+  border-left: 1px solid #e6ebe9 !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 5px 18px rgba(32, 57, 51, .04) !important;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.kh-the:hover,
+.shift-overview-metrics article:hover,
+.pilot-schedule-metrics article:hover,
+.system-metric:hover,
+.gift-summary-grid article:hover,
+.tsm-kpis article:hover {
+  border-color: #cedbd7 !important;
+  box-shadow: 0 10px 26px rgba(28, 58, 50, .07) !important;
+  transform: translateY(-1px);
+}
+
+/* Kho: 6 chỉ số thành lưới cân bằng 3 × 2, không còn hàng 4 + 2 hụt chỗ. */
+.kh-the-luoi {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kh-the {
+  align-content: start;
+  gap: 4px;
+}
+
+.kh-the-dau {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 13px;
+  color: inherit !important;
+}
+
+.kh-the-dau i,
+.system-metric-head i {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 1rem;
+  place-items: center;
+}
+
+.kh-the-dau em,
+.system-metric-head em {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: .58rem;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.kh-the-bad .kh-the-dau i { color: #bd3f35; background: #fff0ef; }
+.kh-the-bad .kh-the-dau em { color: #a83b33; background: #fff0ef; }
+.kh-the-warn .kh-the-dau i { color: #b7770a; background: #fff7e5; }
+.kh-the-warn .kh-the-dau em { color: #98620a; background: #fff7e5; }
+.kh-the-info .kh-the-dau i { color: #3379b7; background: #eef6fd; }
+.kh-the-info .kh-the-dau em { color: #306d9f; background: #eef6fd; }
+
+.kh-the > b,
+.shift-overview-metrics strong,
+.pilot-schedule-metrics strong,
+.system-metric strong,
+.gift-summary-grid strong,
+.tsm-kpis strong {
+  color: #172622 !important;
+  letter-spacing: -.035em;
+}
+
+.kh-the-bad > b { color: #a8392c !important; }
+.kh-the > span:not(.kh-the-dau) { color: #34433f; font-size: .8rem; }
+.kh-the > small { margin-top: auto; color: #7a8783; line-height: 1.4; }
+
+/* Danh sách việc dùng tín hiệu ở icon, không phủ đỏ/cam cả một hàng. */
+.kh-viec-dong {
+  min-height: 68px;
+  padding: 11px 13px;
+  border-color: #e6ebe9 !important;
+  border-radius: 13px;
+  background: #fff !important;
+}
+
+.kh-viec-dong > i {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  border-radius: 10px;
+  place-items: center;
+}
+
+.kh-viec-bad > i { background: #fff0ef; }
+.kh-viec-warn > i { background: #fff7e5; }
+.kh-viec-info > i { background: #eef6fd; }
+
+/* KPI không có icon trong HTML: tạo một dấu hiệu gọn, có ý nghĩa theo cột. */
+.shift-overview-metrics article,
+.pilot-schedule-metrics article,
+.system-metric {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.shift-overview-metrics article::before,
+.pilot-schedule-metrics article::before {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  color: #087f75;
+  background: #edf8f5;
+  font-size: .88rem;
+  font-weight: 900;
+  content: '✓';
+  place-items: center;
+}
+
+.shift-overview-metrics article:nth-child(2)::before { content: '◷'; }
+.shift-overview-metrics article.has-warning::before {
+  color: #a96c08;
+  background: #fff6e4;
+  content: '!';
+}
+.pilot-schedule-metrics article:nth-child(1)::before { content: '●'; }
+.pilot-schedule-metrics article:nth-child(2)::before { content: '▦'; }
+.pilot-schedule-metrics article:nth-child(3)::before { content: '◷'; }
+.pilot-schedule-metrics article:nth-child(4)::before { content: '✎'; }
+
+.shift-overview-metrics article.has-warning,
+.gift-summary-grid article.warn {
+  border-color: #eadfca !important;
+  background: #fff !important;
+}
+
+.shift-overview-metrics span,
+.pilot-schedule-metrics span,
+.system-metric > span,
+.gift-summary-grid span,
+.tsm-kpis small {
+  color: #34433f !important;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.shift-overview-metrics small,
+.system-metric small,
+.gift-summary-grid small,
+.tsm-kpis span {
+  color: #7a8783 !important;
+  font-size: .7rem;
+  line-height: 1.4;
+}
+
+.system-metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.system-metric-head i { color: #087f75; background: #edf8f5; }
+.system-metric-head em { color: #52716a; background: #f2f6f4; }
+
+/* Các thẻ vốn đã có icon được đưa về cùng tỷ lệ và nhịp nội dung. */
+.gift-summary-grid article {
+  align-content: start;
+  gap: 5px;
+}
+
+.gift-summary-grid span {
+  justify-content: space-between;
+  flex-direction: row-reverse;
+}
+
+.gift-summary-grid i,
+.tsm-kpis i {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 1rem;
+}
+
+.gift-summary-grid strong { margin-top: 8px; font-size: 1.55rem; }
+
+.tsm-kpis article {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  gap: 11px;
+}
+
+.tsm-kpis article > div { min-width: 0; }
+.tsm-kpis strong { margin: 3px 0 7px; font-size: 1.5rem; }
+
+.gift-category-strip article {
+  border-left: 1px solid #e6ebe9;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.gift-category-strip i {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gift-category-color) 9%, white);
+  place-items: center;
+}
+
+.gift-item-card,
+.pg-shift-create,
+.tsm-bulk-assign,
+.tsm-header,
+.pilot-banner,
+.monthly-schedule-hero,
+.lead-insight-report,
+.gift-hero {
+  border-color: #e2e9e6;
+  background: #fff;
+  box-shadow: 0 6px 22px rgba(28, 54, 48, .045);
+}
+
+.gift-hero::after { opacity: .38; }
+
+.featured-event-card {
+  border: 1px solid #e6ebe9 !important;
+  border-left: 1px solid #e6ebe9 !important;
+  box-shadow: 0 5px 18px rgba(32, 57, 51, .04);
+}
+
+.telesale-lead-card {
+  padding: 16px;
+  border-left: 1px solid #e6ebe9 !important;
+  background: #fff !important;
+  box-shadow: 0 5px 18px rgba(32, 57, 51, .04) !important;
+}
+
+@media (min-width: 1500px) {
+  .kh-the-luoi { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+@media (max-width: 980px) {
+  .kh-the-luoi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .kh-the-luoi,
+  .shift-overview-metrics,
+  .pilot-schedule-metrics,
+  .system-health-grid,
+  .gift-summary-grid,
+  .tsm-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .kh-the,
+  .shift-overview-metrics article,
+  .pilot-schedule-metrics article,
+  .system-metric,
+  .gift-summary-grid article,
+  .tsm-kpis article {
+    min-height: 124px;
+    padding: 13px !important;
+    border-radius: 15px !important;
+  }
+}
+
+@media (max-width: 470px) {
+  .system-health-grid { grid-template-columns: minmax(0, 1fr); }
+  .kh-viec-dong { grid-template-columns: 31px minmax(0, 1fr); }
+  .kh-viec-dong .kh-nho { grid-column: 2; justify-self: start; }
+}
