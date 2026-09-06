@@ -23,6 +23,7 @@ const tables = new Set([
   'performance_metrics', 'audit_logs', 'clinic_state_snapshots', 'clinic_locations',
   'integration_outbox', 'system_bug_logs', 'system_announcements', 'system_error_logs',
   'work_shifts', 'employee_allowed_shifts', 'leader_scopes', 'push_subscriptions',
+  'attendance_work_days',
   // Ghi đè phân quyền màn hình. MỌI người đăng nhập phải ĐỌC được: ứng dụng
   // nạp bảng này ngay sau khi xác thực để biết người đó thấy những màn nào.
   // Quyền GHI đã bị chặn sẵn ở canWrite — chỉ admin/admin_it/superadmin, vì
@@ -97,7 +98,7 @@ export class DataService {
     }
     if (table === 'profiles') return String(row.id || '') === user.id;
     if (table === 'employees') return String(row.code || '').toLowerCase() === employee;
-    if (table === 'attendance_records' || table === 'leave_requests' || table === 'schedule_requests' || table === 'schedule_assignments') {
+    if (table === 'attendance_records' || table === 'attendance_work_days' || table === 'leave_requests' || table === 'schedule_requests' || table === 'schedule_assignments') {
       return String(row.employee_code || '').toLowerCase() === employee;
     }
     if (table === 'messages') {

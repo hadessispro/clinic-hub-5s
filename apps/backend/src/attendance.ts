@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 
@@ -20,6 +20,106 @@ function clinicParts(value: Date) {
 function seconds(value: unknown) {
   const [hour = 0, minute = 0, second = 0] = String(value || '').split(':').map(Number);
   return hour * 3600 + minute * 60 + second;
+}
+
+function positiveMinutes(value: unknown) {
+  return Math.max(0, Math.min(24 * 60, Math.round(Number(value || 0))));
+}
+
+function minuteOfClinicDay(value: unknown) {
+  const parsed = new Date(String(value || ''));
+  if (!Number.isFinite(parsed.getTime())) return null;
+  const local = clinicParts(parsed);
+  return Math.floor(seconds(local.time) / 60);
+}
+
+function monthBounds(value: unknown) {
+  const month = String(value || clinicParts(new Date()).date.slice(0, 7));
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('Tháng tính công không hợp lệ.');
+  if (month < '2026-09') throw new BadRequestException('Bảng công PostgreSQL bắt đầu từ tháng 09/2026.');
+  const [year, number] = month.split('-').map(Number);
+  const from = `${month}-01`;
+  const end = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  const until = `${month}-${String(end).padStart(2, '0')}`;
+  const today = clinicParts(new Date()).date;
+  return { month, from, until, effectiveUntil: until < today ? until : today };
+}
+
+type WorkDay = {
+  id: string;
+  employee_code: string;
+  work_date: string;
+  shift_code: string | null;
+  shift_name: string | null;
+  scheduled_minutes: number;
+  regular_minutes: number;
+  overtime_minutes: number;
+  late_minutes: number;
+  early_leave_minutes: number;
+  payable_minutes: number;
+  workday_credit: number;
+  checkin_at: string | null;
+  checkout_at: string | null;
+  status: 'complete' | 'missing_checkin' | 'missing_checkout' | 'no_attendance' | 'missing_shift';
+  calculated_at: string;
+  source: 'postgresql-vps';
+};
+
+function calculateWorkDay(employeeCode: string, workDate: string, assignment: JsonMap | undefined, events: JsonMap[], shifts: Map<string, JsonMap>): WorkDay {
+  const checkins = events.filter((row) => row.record_type === 'checkin').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
+  const checkouts = events.filter((row) => row.record_type === 'checkout').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
+  const checkin = checkins[0];
+  const checkout = checkouts.at(-1);
+  const shiftCode = String(assignment?.shift_code || checkin?.shift_code || checkout?.shift_code || '') || null;
+  const shift = shiftCode ? shifts.get(shiftCode) : undefined;
+  const start = shift ? Math.floor(seconds(shift.start_time) / 60) : 0;
+  let end = shift ? Math.floor(seconds(shift.end_time) / 60) : 0;
+  if (shift && end <= start) end += 24 * 60;
+  const breakMinutes = positiveMinutes(shift?.break_minutes);
+  const scheduledMinutes = shift ? Math.max(0, end - start - breakMinutes) : 0;
+  const checkinMinute = minuteOfClinicDay(checkin?.recorded_at);
+  let checkoutMinute = minuteOfClinicDay(checkout?.recorded_at);
+  if (checkoutMinute !== null && checkinMinute !== null && checkoutMinute < checkinMinute) checkoutMinute += 24 * 60;
+
+  let status: WorkDay['status'] = 'complete';
+  if (!shift) status = 'missing_shift';
+  else if (!checkin && !checkout) status = 'no_attendance';
+  else if (!checkin) status = 'missing_checkin';
+  else if (!checkout) status = 'missing_checkout';
+
+  let lateMinutes = 0;
+  let earlyLeaveMinutes = 0;
+  let regularMinutes = 0;
+  let overtimeMinutes = 0;
+  if (status === 'complete' && checkinMinute !== null && checkoutMinute !== null) {
+    lateMinutes = Math.max(0, checkinMinute - start);
+    earlyLeaveMinutes = Math.max(Math.max(0, end - checkoutMinute), positiveMinutes(assignment?.early_leave_minutes));
+    const regularByRules = Math.max(0, scheduledMinutes - lateMinutes - earlyLeaveMinutes);
+    const regularByPresence = Math.max(0, checkoutMinute - checkinMinute - breakMinutes);
+    regularMinutes = Math.min(scheduledMinutes, regularByRules, regularByPresence);
+    overtimeMinutes = positiveMinutes(assignment?.overtime_minutes) + positiveMinutes(assignment?.early_arrival_minutes);
+  }
+
+  const payableMinutes = regularMinutes + overtimeMinutes;
+  return {
+    id: `work:${employeeCode}:${workDate}`,
+    employee_code: employeeCode,
+    work_date: workDate,
+    shift_code: shiftCode,
+    shift_name: shift ? String(shift.name || shiftCode) : null,
+    scheduled_minutes: scheduledMinutes,
+    regular_minutes: regularMinutes,
+    overtime_minutes: overtimeMinutes,
+    late_minutes: lateMinutes,
+    early_leave_minutes: earlyLeaveMinutes,
+    payable_minutes: payableMinutes,
+    workday_credit: scheduledMinutes ? Number(Math.min(1, regularMinutes / scheduledMinutes).toFixed(3)) : 0,
+    checkin_at: checkin ? String(checkin.recorded_at) : null,
+    checkout_at: checkout ? String(checkout.recorded_at) : null,
+    status,
+    calculated_at: new Date().toISOString(),
+    source: 'postgresql-vps',
+  };
 }
 
 /**
@@ -143,5 +243,91 @@ export class AttendanceController {
     );
     await this.infrastructure.markDataChanged(['attendance_records'], user.id, user.role);
     return { data: payload };
+  }
+}
+
+@Controller('/api/v2/attendance-work')
+@UseGuards(AuthGuard)
+export class AttendanceWorkController {
+  constructor(private readonly infrastructure: InfrastructureService) {}
+
+  @Get()
+  async summary(
+    @Req() request: { user: AuthUser },
+    @Query('month') requestedMonth?: string,
+    @Query('employeeCode') requestedEmployee?: string,
+  ) {
+    const user = request.user;
+    const employeeCode = String(requestedEmployee || user.employeeCode || '').trim();
+    if (!employeeCode) throw new BadRequestException('Tài khoản chưa liên kết mã nhân viên.');
+    if (requestedEmployee && requestedEmployee.toLowerCase() !== user.employeeCode.toLowerCase() && !managerRoles.has(user.role)) {
+      throw new ForbiddenException('Bạn chỉ được xem bảng công của chính mình.');
+    }
+    const bounds = monthBounds(requestedMonth);
+    const [assignmentResult, attendanceResult, shiftResult] = await Promise.all([
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
+         and lower(payload->>'employee_code')=lower($1) and payload->>'work_date' between $2 and $3`,
+        [employeeCode, bounds.from, bounds.effectiveUntil],
+      ),
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and lower(payload->>'employee_code')=lower($1) and payload->>'work_date' between $2 and $3
+         order by payload->>'recorded_at'`,
+        [employeeCode, bounds.from, bounds.effectiveUntil],
+      ),
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='work_shifts' and deleted_at is null`,
+      ),
+    ]);
+
+    const assignments = new Map(assignmentResult.rows.map((row) => [String(row.payload.work_date), row.payload]));
+    const events = new Map<string, JsonMap[]>();
+    for (const row of attendanceResult.rows) {
+      const date = String(row.payload.work_date);
+      events.set(date, [...(events.get(date) || []), row.payload]);
+    }
+    const shifts = new Map(shiftResult.rows.map((row) => [String(row.payload.code), row.payload]));
+    const dates = [...new Set([...assignments.keys(), ...events.keys()])].sort();
+    const days = dates.map((date) => calculateWorkDay(employeeCode, date, assignments.get(date), events.get(date) || [], shifts));
+
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      await client.query(`select set_config('app.suppress_backup_outbox','on',true)`);
+      await client.query(
+        `update app.records set deleted_at=now(),updated_at=now(),version=version+1
+         where entity_type='attendance_work_days' and lower(payload->>'employee_code')=lower($1)
+           and payload->>'work_date' between $2 and $3`,
+        [employeeCode, bounds.from, bounds.until],
+      );
+      for (const day of days) {
+        await client.query(
+          `insert into app.records(entity_type,record_key,payload,origin)
+           values ('attendance_work_days',$1,$2::jsonb,'vps-work-calculation')
+           on conflict(entity_type,record_key) do update set payload=excluded.payload,origin=excluded.origin,
+             version=app.records.version+1,updated_at=now(),deleted_at=null`,
+          [day.id, JSON.stringify(day)],
+        );
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const totals = days.reduce((sum, day) => ({
+      workdays: sum.workdays + day.workday_credit,
+      regularMinutes: sum.regularMinutes + day.regular_minutes,
+      overtimeMinutes: sum.overtimeMinutes + day.overtime_minutes,
+      lateMinutes: sum.lateMinutes + day.late_minutes,
+      earlyLeaveMinutes: sum.earlyLeaveMinutes + day.early_leave_minutes,
+      payableMinutes: sum.payableMinutes + day.payable_minutes,
+      incompleteDays: sum.incompleteDays + (day.status === 'complete' ? 0 : 1),
+    }), { workdays: 0, regularMinutes: 0, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0, payableMinutes: 0, incompleteDays: 0 });
+
+    return { month: bounds.month, employeeCode, source: 'postgresql-vps', formulaVersion: '2026-09-v1', totals: { ...totals, workdays: Number(totals.workdays.toFixed(3)) }, days };
   }
 }

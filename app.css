@@ -4740,6 +4740,162 @@ body.dialog-open {
   display: block;
 }
 
+.attendance-work-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(42, 61, 52, 0.07);
+}
+
+.attendance-work-heading {
+  align-items: end;
+}
+
+.attendance-work-heading label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.attendance-work-heading input {
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.attendance-work-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.attendance-work-stats article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.attendance-work-stats article.has-warning {
+  border-color: rgba(231, 167, 45, 0.45);
+  background: #fff8e7;
+}
+
+.attendance-work-stats span,
+.attendance-work-day span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.attendance-work-stats strong {
+  overflow-wrap: anywhere;
+  color: var(--teal-dark);
+  font-size: 1.05rem;
+}
+
+.attendance-work-stats small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.attendance-work-days {
+  display: grid;
+  gap: 7px;
+}
+
+.attendance-work-day {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.25fr) repeat(5, minmax(82px, 0.8fr)) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.attendance-work-day > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.attendance-work-date strong {
+  font-size: 0.95rem;
+}
+
+.attendance-work-date span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .attendance-work-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .attendance-work-day {
+    grid-template-columns: minmax(120px, 1.25fr) repeat(3, minmax(82px, 0.8fr)) auto;
+  }
+
+  .attendance-work-day > div:nth-child(5),
+  .attendance-work-day > div:nth-child(6) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .attendance-work-panel {
+    padding: 14px;
+    border-radius: 15px;
+  }
+
+  .attendance-work-heading {
+    display: grid;
+    gap: 12px;
+  }
+
+  .attendance-work-heading label,
+  .attendance-work-heading input {
+    width: 100%;
+  }
+
+  .attendance-work-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .attendance-work-day {
+    grid-template-columns: 1fr 1fr auto;
+    gap: 9px;
+  }
+
+  .attendance-work-day > div:nth-child(4),
+  .attendance-work-day > div:nth-child(5),
+  .attendance-work-day > div:nth-child(6) {
+    display: none;
+  }
+
+  .attendance-work-day .status-pill {
+    grid-column: 1 / -1;
+    width: fit-content;
+  }
+}
+
 .attendance-history-list {
   display: grid;
   gap: 8px;

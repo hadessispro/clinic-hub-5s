@@ -21,8 +21,17 @@ const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession
 const postgres = new Pool({ connectionString: databaseUrl, max: 5 });
 const runId = randomUUID();
 const pageSize = 500;
+const localOnlyTables = new Set([
+  'attendance_records',
+  'attendance_work_days',
+  'schedule_assignments',
+  'schedule_requests',
+  'work_shifts',
+  'employee_allowed_shifts',
+  'payroll_feedback',
+]);
 const tables = String(process.env.MIGRATION_TABLES || defaultTables.join(','))
-  .split(',').map((entry) => entry.trim()).filter(Boolean);
+  .split(',').map((entry) => entry.trim()).filter((entry) => entry && !localOnlyTables.has(entry));
 
 function recordKey(row: Record<string, unknown>) {
   const direct = row.id || row.code || row.client_event_id;

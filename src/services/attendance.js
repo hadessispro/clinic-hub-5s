@@ -1,5 +1,4 @@
 import { supabase } from '../supabase.js';
-import { requestSheetSync } from './sheet-sync.js';
 
 const QUEUE_PREFIX = '5s_attendance_queue_v2';
 
@@ -133,18 +132,21 @@ async function submitToAttendanceApi(record) {
 
 async function submitCheckIn(record) {
   const row = await submitToAttendanceApi(record);
-  await requestSheetSync().catch((syncError) => {
-    console.warn('[Attendance] Check-in saved; Google Sheet sync will retry:', syncError);
-  });
   return mapAttendanceToUI(row);
 }
 
 async function submitCheckOut(record) {
   const row = await submitToAttendanceApi(record);
-  await requestSheetSync().catch((syncError) => {
-    console.warn('[Attendance] Check-out saved; Google Sheet sync will retry:', syncError);
-  });
   return mapAttendanceToUI(row);
+}
+
+export async function getAttendanceWorkSummary(month) {
+  if (!supabase.isLocal) {
+    throw new Error('Bảng công chỉ sử dụng cơ sở dữ liệu PostgreSQL của hệ thống mới.');
+  }
+  const value = String(month || '').trim();
+  const query = value ? `?month=${encodeURIComponent(value)}` : '';
+  return supabase.request(`/attendance-work${query}`);
 }
 
 async function submitAttendance(record) {

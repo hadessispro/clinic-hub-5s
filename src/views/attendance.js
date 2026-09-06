@@ -1,4 +1,4 @@
-import { clockIn, clockOut, discardRejectedAttendance, getAttendance, getOfflineQueue, getRejectedQueue, syncOfflineAttendance } from '../services/attendance.js';
+import { clockIn, clockOut, discardRejectedAttendance, getAttendance, getAttendanceWorkSummary, getOfflineQueue, getRejectedQueue, syncOfflineAttendance } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
 import { getEmployeeAllowedShifts } from '../services/schedule.js';
 import {
@@ -35,6 +35,7 @@ let attendanceBranchFilter = 'all';
 let attendanceTypeFilter = 'all';
 let attendanceStatusFilter = 'all';
 let attendanceDateFilter = '';
+let attendanceWorkMonth = '';
 const REQUIRE_CHECKIN_PHOTO = false;
 
 function makeEventId() {
@@ -84,6 +85,64 @@ function attendanceLabel(record) {
 
 function recordTypeLabel(record) {
   return record?.type === 'checkout' ? 'Check-out' : 'Check-in';
+}
+
+function minuteLabel(value) {
+  const minutes = Math.max(0, Math.round(Number(value || 0)));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} phút`;
+  return rest ? `${hours} giờ ${rest} phút` : `${hours} giờ`;
+}
+
+function workDayStatus(day) {
+  const labels = {
+    complete: ['Đủ vào/ra', 'good'],
+    missing_checkin: ['Thiếu check-in', 'bad'],
+    missing_checkout: ['Thiếu check-out', 'bad'],
+    no_attendance: ['Chưa chấm công', 'warn'],
+    missing_shift: ['Thiếu ca làm', 'warn'],
+  };
+  return labels[day?.status] || ['Cần kiểm tra', 'warn'];
+}
+
+function renderWorkSummary(summary, month) {
+  if (!summary) {
+    return `<section class="attendance-work-panel">
+      <div class="section-title"><div><p class="eyebrow">Bảng công PostgreSQL</p><h3>Công làm việc của tôi</h3></div></div>
+      <div class="attendance-empty"><strong>Chưa tải được bảng công</strong><span>Dữ liệu chấm công vẫn được lưu an toàn trên máy chủ. Hãy thử tải lại màn hình.</span></div>
+    </section>`;
+  }
+  const totals = summary.totals || {};
+  const days = [...(summary.days || [])].reverse();
+  return `<section class="attendance-work-panel">
+    <div class="section-title attendance-work-heading">
+      <div><p class="eyebrow">Bảng công PostgreSQL</p><h3>Công làm việc của tôi</h3><span class="subtle">Không đồng bộ Google Sheet · công thức ${escapeHTML(summary.formulaVersion || '2026-09-v1')}</span></div>
+      <label>Tháng xem công<input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(month)}"></label>
+    </div>
+    <div class="attendance-work-stats">
+      <article><span>Ngày công</span><strong>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</strong><small>Không gồm tăng ca</small></article>
+      <article><span>Giờ công thường</span><strong>${minuteLabel(totals.regularMinutes)}</strong><small>Đã trừ đi muộn/về sớm</small></article>
+      <article><span>Tăng ca đã duyệt</span><strong>${minuteLabel(totals.overtimeMinutes)}</strong><small>Chỉ lấy từ phân ca đã duyệt</small></article>
+      <article><span>Tổng giờ tính công</span><strong>${minuteLabel(totals.payableMinutes)}</strong><small>Công thường + tăng ca</small></article>
+      <article><span>Đi muộn</span><strong>${minuteLabel(totals.lateMinutes)}</strong><small>So với giờ bắt đầu ca</small></article>
+      <article class="${Number(totals.incompleteDays || 0) ? 'has-warning' : ''}"><span>Cần đối chiếu</span><strong>${Number(totals.incompleteDays || 0)} ngày</strong><small>Thiếu giờ vào, ra hoặc ca</small></article>
+    </div>
+    <div class="attendance-work-days">
+      ${days.length ? days.map((day) => {
+        const [label, tone] = workDayStatus(day);
+        return `<article class="attendance-work-day">
+          <div class="attendance-work-date"><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</strong><span>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</span></div>
+          <div><span>Vào</span><strong>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</strong></div>
+          <div><span>Ra</span><strong>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</strong></div>
+          <div><span>Công thường</span><strong>${minuteLabel(day.regular_minutes)}</strong></div>
+          <div><span>Tăng ca</span><strong>${minuteLabel(day.overtime_minutes)}</strong></div>
+          <div><span>Ngày công</span><strong>${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</strong></div>
+          ${statusPill(label, tone)}
+        </article>`;
+      }).join('') : '<div class="attendance-empty"><strong>Chưa có dữ liệu trong tháng</strong><span>Các ngày công sẽ xuất hiện sau khi có phân ca hoặc chấm công.</span></div>'}
+    </div>
+  </section>`;
 }
 
 function renderTodayCard(checkin, checkout, shift, employee) {
@@ -305,17 +364,25 @@ export async function renderView(state) {
     ? { ...localBranchSettings, ...state.settings }
     : localBranchSettings;
   const workDate = clinicDateISO(new Date(), settings.timeZone);
+  const selfAttendance = !khongPhaiChamCong(state.profile?.role || state.role);
+  if (!attendanceWorkMonth) attendanceWorkMonth = workDate.slice(0, 7);
   const offlineQueue = getOfflineQueue(state.user?.id);
   const rejectedQueue = getRejectedQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
-  const [employees, remoteRecords, pendingProofs, allowedShiftRows] = await Promise.all([
+  const [employees, remoteRecords, pendingProofs, allowedShiftRows, workSummary] = await Promise.all([
     navigator.onLine ? getEmployees().catch(() => (state.employeeCode ? [employeeFallback] : [])) : Promise.resolve(state.employeeCode ? [employeeFallback] : []),
     state.employeeCode && navigator.onLine
       ? getAttendance({ employee: isOpsRole(state.role) ? undefined : state.employeeCode, limit: isOpsRole(state.role) ? 200 : 31 }).catch(() => [])
       : Promise.resolve([]),
     state.user?.id ? listPendingProofs(state.user.id).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getEmployeeAllowedShifts(state.employeeCode).catch(() => []) : Promise.resolve([]),
+    navigator.onLine && state.employeeCode && selfAttendance
+      ? getAttendanceWorkSummary(attendanceWorkMonth).catch((error) => {
+        console.error('[Attendance] Không tải được bảng công PostgreSQL:', error);
+        return null;
+      })
+      : Promise.resolve(null),
   ]);
 
   const employee = employees.find((item) => item.id === state.employeeCode) || employeeFallback;
@@ -438,6 +505,7 @@ export async function renderView(state) {
       </div>
 
       ` : dauTrangGon()}
+      ${tuChamCong ? renderWorkSummary(workSummary, attendanceWorkMonth) : ''}
       <section class="attendance-history-panel">
         <div class="section-title">
           <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
@@ -901,6 +969,16 @@ export function initView() {
   if (!page) return;
 
   const refreshAttendanceFilters = () => store.notify();
+  document.getElementById('attendanceWorkMonth')?.addEventListener('change', (event) => {
+    const month = String(event.target.value || '');
+    if (month < '2026-09') {
+      showToast('Bảng công mới bắt đầu từ tháng 09/2026.', true);
+      event.target.value = attendanceWorkMonth;
+      return;
+    }
+    attendanceWorkMonth = month;
+    navigateTo('attendance');
+  });
   document.getElementById('attendanceSearchFilter')?.addEventListener('input', (event) => {
     attendanceSearch = event.target.value;
     window.clearTimeout(event.target._attendanceFilterTimer);

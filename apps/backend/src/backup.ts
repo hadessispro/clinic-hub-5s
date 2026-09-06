@@ -44,6 +44,19 @@ const MAX_ATTEMPTS = Math.max(3, Number(process.env.BACKUP_MAX_ATTEMPTS || 12));
 /** Bao nhiêu vòng thì in một lần tóm tắt sức khỏe hàng đợi. */
 const HEALTH_EVERY = Math.max(1, Number(process.env.BACKUP_HEALTH_EVERY || 20));
 
+// Chấm công từ tháng 09/2026 trở đi thuộc hoàn toàn về PostgreSQL trên VPS.
+// Các bảng này không được đẩy ngược sang Supabase; migration 040 chặn ngay ở
+// trigger, còn danh sách này là lớp bảo vệ cho sự kiện cũ hoặc trigger cũ.
+const LOCAL_ONLY_ENTITIES = new Set([
+  'attendance_records',
+  'attendance_work_days',
+  'schedule_assignments',
+  'schedule_requests',
+  'work_shifts',
+  'employee_allowed_shifts',
+  'payroll_feedback',
+]);
+
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   try { return JSON.stringify(error); } catch { return String(error); }
@@ -84,6 +97,7 @@ function permanentReason(error: unknown): string | null {
 
 async function syncRow(row: OutboxRow) {
   const table = row.entity_type;
+  if (LOCAL_ONLY_ENTITIES.has(table)) return;
   if (!/^[a-z][a-z0-9_]*$/.test(table)) throw new Error(`Invalid backup table: ${table}`);
   if (row.operation === 'upsert') {
     const { error } = await supabase.from(table).upsert(row.payload || {});
