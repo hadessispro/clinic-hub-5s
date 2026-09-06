@@ -398,7 +398,7 @@ lenh_chay() {
   fi
 
   local dv
-  dv="$(cat "$TAM/doi.txt" "$TAM/moi.txt" 2>/dev/null | while read -r f; do dich_vu_cua "$f"; done | tr ',' '\n' | sort -u | tr '\n' ' ')"
+  dv="$(cat "$TAM/doi.txt" "$TAM/moi.txt" 2>/dev/null | while read -r f; do dich_vu_cua "$f" || true; done | tr ',' '\n' | sort -u | tr '\n' ' ')"
 
   # Chụp danh sách migration NGAY BÂY GIỜ.
   #
