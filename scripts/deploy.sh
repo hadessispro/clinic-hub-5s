@@ -100,6 +100,9 @@ PHAM_VI=(
   "package.json|web"
   "pnpm-lock.yaml|web"
   "pnpm-workspace.yaml|web"
+  # Công cụ nhập dữ liệu chấm công từ app cũ. Không dựng lại dịch vụ; chỉ
+  # được chạy thủ công sau khi dry-run và đối chiếu số dòng với Sheet.
+  "scripts/import-legacy-attendance-sheet.mjs|"
 )
 
 xanh()  { printf '\033[36m%s\033[0m\n' "$*"; }
