@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
+import { createClient } from '@supabase/supabase-js';
 import XLSX from 'xlsx';
 
 // Backend đã có `pg`; nạp từ workspace backend để không kéo driver database
@@ -95,6 +96,11 @@ function instant(workDate, clock) {
   return new Date(`${workDate}T${clock}+07:00`).toISOString();
 }
 
+function localClock(value) {
+  const parts = clinicDateParts(new Date(value));
+  return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 const workbook = XLSX.read(await readFile(file), { type: 'buffer', cellDates: true });
 const sheet = workbook.Sheets.ChamCong;
 if (!sheet) throw new Error('Không tìm thấy tab ChamCong trong workbook.');
@@ -135,6 +141,11 @@ if (!apply) {
 }
 
 if (!process.env.DATABASE_URL) throw new Error('Thiếu DATABASE_URL.');
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const shadow = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } })
+  : null;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 const client = await pool.connect();
 let schedulesInserted = 0;
@@ -144,6 +155,23 @@ let attendanceRefreshed = 0;
 let existingSkipped = 0;
 
 try {
+  const shadowAttendance = new Map();
+  const shadowSchedules = new Map();
+  if (shadow) {
+    const [attendanceResult, scheduleResult] = await Promise.all([
+      shadow.from('attendance_records').select('*').gte('work_date', fromDate).lte('work_date', toDate),
+      shadow.from('schedule_assignments').select('*').gte('work_date', fromDate).lte('work_date', toDate),
+    ]);
+    if (attendanceResult.error) throw attendanceResult.error;
+    if (scheduleResult.error) throw scheduleResult.error;
+    for (const item of attendanceResult.data || []) {
+      shadowAttendance.set(`${item.work_date}:${String(item.employee_code).toLowerCase()}:${item.record_type}`, item);
+    }
+    for (const item of scheduleResult.data || []) {
+      shadowSchedules.set(`${item.work_date}:${String(item.employee_code).toLowerCase()}`, item);
+    }
+  }
+
   await client.query('begin');
   const employeeResult = await client.query(
     `select lower(payload->>'code') code from app.records where entity_type='employees' and deleted_at is null and payload->>'status'='active'`,
@@ -158,8 +186,12 @@ try {
        and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 limit 1`,
       [row.employeeCode, row.workDate],
     );
-    const scheduleId = scheduleCollision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:schedule:${row.workDate}:${row.employeeCode}`);
-    const schedulePayload = {
+    const shadowSchedule = shadowSchedules.get(`${row.workDate}:${row.employeeCode.toLowerCase()}`);
+    if (shadowSchedule?.shift_code && shadowSchedule.shift_code !== row.shiftCode) {
+      throw new Error(`Ca trên Supabase không khớp Sheet tại ${row.workDate}:${row.employeeCode}.`);
+    }
+    const scheduleId = String(shadowSchedule?.id || scheduleCollision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:schedule:${row.workDate}:${row.employeeCode}`));
+    const schedulePayload = shadowSchedule || {
       id: scheduleId, employee_code: row.employeeCode, work_date: row.workDate, shift_code: row.shiftCode,
       status: 'planned', owner_code: row.employeeCode, swap_with_code: null,
       overtime_minutes: 0, early_leave_minutes: 0, early_arrival_minutes: 0, proof_url: null,
@@ -173,9 +205,10 @@ try {
       schedulesInserted += 1;
     } else if (scheduleCollision.rows[0].origin === 'google-sheet-legacy') {
       const refreshed = await client.query(
-        `update app.records set payload=$2::jsonb,version=version+1,updated_at=now()
-         where entity_type='schedule_assignments' and record_key=$1 and payload is distinct from $2::jsonb returning record_key`,
-        [scheduleId, JSON.stringify(schedulePayload)],
+        `update app.records set record_key=$2,payload=$3::jsonb,version=version+1,updated_at=now()
+         where entity_type='schedule_assignments' and record_key=$1
+           and (record_key is distinct from $2 or payload is distinct from $3::jsonb) returning record_key`,
+        [scheduleCollision.rows[0].record_key, scheduleId, JSON.stringify(schedulePayload)],
       );
       schedulesRefreshed += refreshed.rowCount || 0;
     }
@@ -191,9 +224,13 @@ try {
         existingSkipped += 1;
         continue;
       }
-      const id = collision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:attendance:${row.workDate}:${row.employeeCode}:${recordType}`);
+      const shadowRow = shadowAttendance.get(`${row.workDate}:${row.employeeCode.toLowerCase()}:${recordType}`);
+      if (shadowRow && localClock(shadowRow.recorded_at) !== clock) {
+        throw new Error(`Giờ ${recordType} trên Supabase không khớp Sheet tại ${row.workDate}:${row.employeeCode}.`);
+      }
+      const id = String(shadowRow?.id || collision.rows[0]?.record_key || uuidFromKey(`legacy-sheet:attendance:${row.workDate}:${row.employeeCode}:${recordType}`));
       const recordedAt = instant(row.workDate, clock);
-      const payload = {
+      const payload = shadowRow || {
         id, client_event_id: id, employee_code: row.employeeCode, shift_code: row.shiftCode,
         record_type: recordType, work_date: row.workDate, recorded_at: recordedAt,
         lat: null, lng: null, distance_m: null, accuracy_m: null, status: 'valid',
@@ -209,9 +246,10 @@ try {
         attendanceInserted += 1;
       } else {
         const refreshed = await client.query(
-          `update app.records set payload=$2::jsonb,version=version+1,updated_at=now()
-           where entity_type='attendance_records' and record_key=$1 and payload is distinct from $2::jsonb returning record_key`,
-          [id, JSON.stringify(payload)],
+          `update app.records set record_key=$2,payload=$3::jsonb,version=version+1,updated_at=now()
+           where entity_type='attendance_records' and record_key=$1
+             and (record_key is distinct from $2 or payload is distinct from $3::jsonb) returning record_key`,
+          [collision.rows[0].record_key, id, JSON.stringify(payload)],
         );
         attendanceRefreshed += refreshed.rowCount || 0;
       }
