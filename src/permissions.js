@@ -261,7 +261,7 @@ export function khongPhaiChamCong(role) {
 }
 
 export function isOpsRole(role) {
-  return ['admin', 'hr', 'leader', 'finance', 'admin_it'].includes(role);
+  return ['admin', 'hr', 'leader', 'phu_ta_truong', 'finance', 'admin_it'].includes(role);
 }
 
 /** Get nav items filtered by role */

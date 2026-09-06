@@ -32,6 +32,7 @@ const tables = new Set([
 ]);
 
 const adminRoles = new Set(['admin', 'admin_it', 'superadmin']);
+const departmentLeaderRoles = new Set(['leader', 'phu_ta_truong']);
 const hrWriteTables = new Set([
   'profiles', 'employees', 'attendance_records', 'leave_requests', 'schedule_requests',
   'schedule_assignments', 'work_shifts', 'employee_allowed_shifts', 'leader_scopes',
@@ -85,15 +86,22 @@ export class DataService {
     if (user.role === 'pg_staff') return false;
     if (adminRoles.has(user.role)) return true;
     if (user.role === 'hr') return hrWriteTables.has(table);
-    if (user.role === 'leader') return staffWriteTables.has(table);
+    if (departmentLeaderRoles.has(user.role)) return staffWriteTables.has(table);
     return staffWriteTables.has(table);
   }
 
-  private owns(user: AuthUser, table: string, row: JsonMap) {
+  private owns(user: AuthUser, table: string, row: JsonMap, managedCodes: Set<string> | null = null) {
     if (adminRoles.has(user.role) || user.role === 'hr') return true;
     const employee = user.employeeCode.toLowerCase();
-    if (user.role === 'leader') {
+    if (departmentLeaderRoles.has(user.role)) {
       if (table === 'employees' || table === 'profiles') return String(row.department || '').toLowerCase() === user.department.toLowerCase();
+      if (['attendance_records', 'attendance_work_days', 'leave_requests', 'schedule_requests', 'schedule_assignments'].includes(table)) {
+        return managedCodes?.has(String(row.employee_code || '').toLowerCase()) || false;
+      }
+      if (table === 'tasks') {
+        return String(row.department || '').toLowerCase() === user.department.toLowerCase()
+          || (managedCodes?.has(String(row.assignee_code || '').toLowerCase()) || false);
+      }
       return true;
     }
     if (table === 'profiles') return String(row.id || '') === user.id;
@@ -110,7 +118,7 @@ export class DataService {
 
   private protectWrite(user: AuthUser, table: string, row: JsonMap) {
     if (!this.canWrite(user, table)) throw new ForbiddenException('Tài khoản không có quyền thay đổi dữ liệu này.');
-    if (!adminRoles.has(user.role) && user.role !== 'hr' && user.role !== 'leader') {
+    if (!adminRoles.has(user.role) && user.role !== 'hr' && !departmentLeaderRoles.has(user.role)) {
       if (['attendance_records', 'leave_requests', 'schedule_requests', 'schedule_assignments'].includes(table)) {
         row.employee_code = user.employeeCode;
       }
@@ -135,7 +143,16 @@ export class DataService {
     const stored = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
       'select record_key,payload from app.records where entity_type=$1 and deleted_at is null order by updated_at desc limit 5000', [table],
     );
-    let selected = stored.rows.filter(({ payload }) => filters.every((filter) => matches(payload, filter)) && this.owns(user, table, payload));
+    let managedCodes: Set<string> | null = null;
+    if (departmentLeaderRoles.has(user.role)) {
+      const team = await this.infrastructure.postgres.query<{ employee_code: string }>(
+        `select lower(payload->>'code') employee_code from app.records
+         where entity_type='employees' and deleted_at is null and lower(payload->>'department')=lower($1)`,
+        [user.department],
+      );
+      managedCodes = new Set(team.rows.map((row) => row.employee_code));
+    }
+    let selected = stored.rows.filter(({ payload }) => filters.every((filter) => matches(payload, filter)) && this.owns(user, table, payload, managedCodes));
 
     if (operation === 'select') {
       const orders = request.order || [];
@@ -186,7 +203,7 @@ export class DataService {
 
     const output: JsonMap[] = [];
     for (const current of selected) {
-      if (!this.owns(user, table, current.payload)) throw new ForbiddenException();
+      if (!this.owns(user, table, current.payload, managedCodes)) throw new ForbiddenException();
       if (operation === 'delete') {
         await this.infrastructure.postgres.query(
           `update app.records set deleted_at=now(),origin='vps',version=version+1,updated_at=now() where entity_type=$1 and record_key=$2`,

@@ -5,7 +5,7 @@ import { InfrastructureService } from './infrastructure';
 
 type JsonMap = Record<string, unknown>;
 const timeZone = 'Asia/Ho_Chi_Minh';
-const managerRoles = new Set(['admin', 'hr', 'leader', 'admin_it', 'superadmin']);
+const managerRoles = new Set(['admin', 'hr', 'leader', 'phu_ta_truong', 'admin_it', 'superadmin']);
 const fallbackBranches: Record<string, JsonMap> = {
   'pham-van-chieu': { id: 'pham-van-chieu', latitude: 10.848632, longitude: 106.649181, allowed_radius_m: 100, max_gps_accuracy_m: 100 },
   'le-van-tho': { id: 'le-van-tho', latitude: 10.8381574, longitude: 106.6579553, allowed_radius_m: 100, max_gps_accuracy_m: 100 },

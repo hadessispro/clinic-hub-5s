@@ -1,8 +1,11 @@
-import { getAttendance } from '../services/attendance.js';
+import { getAttendance, getAttendanceWorkSummary } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
 import { getTasks } from '../services/tasks.js';
 import { getMarketingLeads, getMarketingReports } from '../services/marketing.js';
-import { DEPARTMENTS, SHIFTS } from '../constants.js';
+import { getLeaveRequests } from '../services/leave.js';
+import { getScheduleAssignments } from '../services/schedule.js';
+import { BRANCHES } from '../branch.js';
+import { SHIFTS } from '../constants.js';
 import { todayISO, formatTime, escapeHTML, formatCurrency, attendanceStatusLabel, departmentName } from '../utils.js';
 import { pill, metric, statusPill, emptyState } from '../components/shared.js';
 import { initMarketingChart, funnelOption, dataClassOption, sourceOption, roleOption, staffOption, resizeMarketingCharts } from '../components/marketing-charts.js';
@@ -19,108 +22,121 @@ const STATIC_NOTES = [
   { id: "n-003", title: "Kiểm tra vị trí", text: "Bán kính mặc định 180m quanh phòng khám; quản lý có thể chỉnh trong Báo cáo.", owner: "Admin" },
 ];
 
+async function safeDashboardLoad(label, operation, fallback = []) {
+  try {
+    return await operation();
+  } catch (error) {
+    console.warn(`[Dashboard] Không tải được ${label}:`, error);
+    return fallback;
+  }
+}
+
+function minuteLabel(value) {
+  const minutes = Math.max(0, Number(value || 0));
+  const hours = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  if (!hours) return `${rest} phút`;
+  return rest ? `${hours} giờ ${rest} phút` : `${hours} giờ`;
+}
+
+function leaveStatusLabel(request) {
+  if (request.status === 'approved') return ['Đã duyệt', 'good'];
+  if (request.status === 'rejected') return ['Đã từ chối', 'bad'];
+  if (request.leaderStatus === 'approved') return ['Chờ duyệt cuối', 'warn'];
+  return ['Chờ duyệt', 'warn'];
+}
+
+function renderWorkDashboard({ state, profile, today, attendance, employees, tasks, requests, workSummary, assignments }) {
+  const employeeCode = state.employeeCode || profile.employee_code || '';
+  const isDepartmentManager = ['leader', 'phu_ta_truong'].includes(profile.role);
+  const isCompanyManager = ['admin', 'hr', 'superadmin'].includes(profile.role);
+  const isManager = isDepartmentManager || isCompanyManager;
+  const ownAttendance = attendance.filter((row) => row.employee === employeeCode);
+  const ownCheckin = ownAttendance.find((row) => row.type === 'checkin');
+  const ownCheckout = ownAttendance.find((row) => row.type === 'checkout');
+  const ownAssignment = assignments.find((row) => row.employee === employeeCode);
+  const shift = SHIFTS.find((row) => row.id === (ownAssignment?.shift || ownCheckin?.shift));
+  const activeEmployees = employees.filter((row) => row.status !== 'inactive');
+  const checkedInCodes = new Set(attendance.filter((row) => row.type === 'checkin').map((row) => row.employee));
+  const openTasks = tasks.filter((row) => row.status !== 'done');
+  const pendingRequests = requests.filter((row) => row.status === 'pending');
+  const ownTasks = tasks.filter((row) => row.assignee === employeeCode);
+  const ownRequests = requests.filter((row) => row.employee === employeeCode);
+  const totals = workSummary?.totals || {};
+  const attendanceState = ownCheckout ? 'Đã hoàn thành ca' : ownCheckin ? 'Đang trong ca' : 'Chưa vào ca';
+  const teamLabel = isCompanyManager ? 'toàn hệ thống' : `bộ phận ${departmentName(profile.department)}`;
+  const visibleTasks = isManager ? openTasks : ownTasks.filter((row) => row.status !== 'done');
+  const visibleRequests = isManager ? requests : ownRequests;
+
+  return `<div class="view-header">
+    <div><p class="eyebrow">Tổng quan công việc</p><h3>${isManager ? `Điều hành ${escapeHTML(teamLabel)}` : `Ngày làm việc của ${escapeHTML(profile.full_name || state.user?.email || 'nhân viên')}`}</h3></div>
+    <div class="pill-row">${pill(departmentName(profile.department))}${pill(new Date(`${today}T12:00:00+07:00`).toLocaleDateString('vi-VN'))}</div>
+  </div>
+
+  <div class="grid cols-4">
+    ${isManager
+      ? `${metric('Nhân sự đang hoạt động', activeEmployees.length, teamLabel)}${metric('Đã vào ca hôm nay', checkedInCodes.size, `${Math.max(activeEmployees.length - checkedInCodes.size, 0)} người chưa ghi nhận`)}${metric('Công việc đang mở', openTasks.length, `${openTasks.filter((row) => row.status === 'in_progress').length} việc đang thực hiện`)}${metric('Đơn đang chờ duyệt', pendingRequests.length, `${pendingRequests.filter((row) => row.type === 'Đơn tăng ca').length} đơn tăng ca`)}`
+      : `${metric('Chấm công hôm nay', attendanceState, ownCheckin ? `Vào ${formatTime(ownCheckin.time)}${ownCheckout ? ` · Ra ${formatTime(ownCheckout.time)}` : ''}` : 'Chưa có lượt vào ca')}${metric('Ngày công tháng này', Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '') || '0', `${minuteLabel(totals.regularMinutes)} công thường`)}${metric('Tăng ca đã duyệt', minuteLabel(totals.overtimeMinutes), `${minuteLabel(totals.payableMinutes)} tổng tính công`)}${metric('Công việc đang mở', visibleTasks.length, `${pendingRequests.length} đơn đang chờ duyệt`)}`}
+  </div>
+
+  <div class="grid cols-2" style="margin-top:14px">
+    <section class="panel">
+      <div class="section-title"><div><p class="eyebrow">Chuỗi làm việc</p><h3>${isManager ? 'Chấm công trong ngày' : 'Ca làm việc của tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="attendance">Xem bảng công</button></div>
+      ${isManager ? `<div class="table-wrap"><table><thead><tr><th>Nhân sự</th><th>Phòng ban</th><th>Vào</th><th>Ra</th><th>Chi nhánh</th></tr></thead><tbody>${activeEmployees.slice(0, 12).map((employee) => {
+        const rows = attendance.filter((row) => row.employee === employee.id);
+        const checkin = rows.find((row) => row.type === 'checkin');
+        const checkout = rows.find((row) => row.type === 'checkout');
+        return `<tr><td><strong>${escapeHTML(employee.name)}</strong></td><td>${escapeHTML(departmentName(employee.department))}</td><td>${checkin ? formatTime(checkin.time) : '—'}</td><td>${checkout ? formatTime(checkout.time) : '—'}</td><td>${escapeHTML(BRANCHES[checkin?.branchId]?.shortName || '—')}</td></tr>`;
+      }).join('') || '<tr><td colspan="5">Chưa có nhân sự trong phạm vi quản lý.</td></tr>'}</tbody></table></div>` : `<div class="dashboard-work-chain">
+        <div><span>Ca hôm nay</span><strong>${escapeHTML(shift ? `${shift.name} · ${shift.start}–${shift.end}` : 'Chưa được phân ca')}</strong></div>
+        <div><span>Chi nhánh thực tế</span><strong>${escapeHTML(BRANCHES[ownCheckin?.branchId]?.shortName || 'Chưa xác nhận')}</strong></div>
+        <div><span>Giờ vào</span><strong>${ownCheckin ? formatTime(ownCheckin.time) : '—'}</strong></div>
+        <div><span>Giờ ra</span><strong>${ownCheckout ? formatTime(ownCheckout.time) : '—'}</strong></div>
+        <div><span>Đi muộn / về sớm tháng</span><strong>${minuteLabel(totals.lateMinutes)} / ${minuteLabel(totals.earlyLeaveMinutes)}</strong></div>
+        <div><span>Cần đối chiếu</span><strong>${Number(totals.incompleteDays || 0)} ngày</strong></div>
+      </div>`}
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><div><p class="eyebrow">Công việc</p><h3>${isManager ? 'Việc của bộ phận' : 'Việc được giao cho tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="tasks">Mở công việc</button></div>
+      <div class="dashboard-compact-list">${visibleTasks.slice(0, 7).map((task) => `<article><div><strong>${escapeHTML(task.title || 'Công việc')}</strong><span>${escapeHTML(task.due ? `Hạn ${task.due}` : 'Chưa đặt hạn')} · Tiến độ ${Number(task.progress || 0)}%</span></div>${statusPill(task.status === 'done' ? 'Hoàn thành' : task.status === 'in_progress' ? 'Đang làm' : 'Cần thực hiện', task.status === 'done' ? 'good' : 'warn')}</article>`).join('') || '<div class="attendance-empty"><strong>Chưa có công việc đang mở</strong><span>Công việc mới được giao sẽ xuất hiện tại đây.</span></div>'}</div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:14px">
+    <div class="section-title"><div><p class="eyebrow">Đơn từ và tăng ca</p><h3>${isManager ? 'Đơn trong phạm vi quản lý' : 'Đơn của tôi'}</h3></div><button class="ghost-button" type="button" data-view-jump="leave">Xem tất cả đơn</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Nhân sự</th><th>Loại đơn</th><th>Ngày</th><th>Thời lượng tăng ca</th><th>Trạng thái</th></tr></thead><tbody>${visibleRequests.slice(0, 10).map((request) => {
+      const employee = employees.find((row) => row.id === request.employee);
+      const [label, tone] = leaveStatusLabel(request);
+      return `<tr><td><strong>${escapeHTML(employee?.name || request.employee)}</strong></td><td>${escapeHTML(request.type || 'Đơn từ')}</td><td>${escapeHTML(request.from || '—')}</td><td>${request.type === 'Đơn tăng ca' ? minuteLabel(request.overtimeMinutes) : '—'}</td><td>${statusPill(label, tone)}</td></tr>`;
+    }).join('') || '<tr><td colspan="5">Chưa có đơn từ trong phạm vi hiển thị.</td></tr>'}</tbody></table></div>
+  </section>`;
+}
+
 export async function renderView(state) {
   const profile = store.getState().profile || {};
   const today = todayISO();
-  
-  // Fetch dashboard data & marketing leads in parallel
-  const [
-    todayAttendance,
-    employees,
-    tasks,
-    leads,
-    marketingReport
-  ] = await Promise.all([
-    getAttendance({ date: today }),
-    getEmployees(),
-    getTasks(),
-    getMarketingLeads(),
-    ['admin_marketing', 'telesale_leader'].includes(profile.role)
-      ? getMarketingReports().catch(() => ({})) : Promise.resolve({})
+  const isMarketingUser = ['admin_marketing', 'support_marketing', 'pg_staff', 'telesale_leader', 'telesale_staff'].includes(profile.role) || profile.department === 'mkt';
+  const isManager = ['admin', 'superadmin', 'hr', 'leader', 'phu_ta_truong'].includes(profile.role);
+  const employeeCode = state.employeeCode || profile.employee_code || '';
+  const [todayAttendance, employees, tasks, requests, workSummary, assignments] = await Promise.all([
+    safeDashboardLoad('chấm công hôm nay', () => getAttendance({ date: today })),
+    safeDashboardLoad('danh sách nhân sự', () => getEmployees()),
+    safeDashboardLoad('công việc', () => getTasks(isManager ? (profile.department && !['admin', 'superadmin', 'hr'].includes(profile.role) ? { department: profile.department } : {}) : { assignee: employeeCode })),
+    safeDashboardLoad('đơn từ', () => getLeaveRequests(isManager ? {} : { employee: employeeCode })),
+    employeeCode ? safeDashboardLoad('bảng công cá nhân', () => getAttendanceWorkSummary(today.slice(0, 7)), null) : Promise.resolve(null),
+    safeDashboardLoad('ca làm hôm nay', () => getScheduleAssignments(today)),
   ]);
 
-  const isMarketingUser = ['admin_marketing', 'support_marketing', 'pg_staff', 'telesale_leader', 'telesale_staff'].includes(profile.role) || profile.department === 'mkt';
-
-  // For General/Non-marketing accounts (e.g. Nguyễn Thị Như Huỳnh - Leader / HR / Admin): Render Clinic Operational Dashboard
   if (!isMarketingUser) {
-    const activeEmployees = employees.filter(e => e.status !== 'inactive');
-    const checkedInIds = new Set(todayAttendance.filter(r => r.type === 'checkin').map(r => r.employee));
-    const openTasks = tasks.filter(t => t.status !== 'done');
-    const averageProgress = tasks.length
-      ? Math.round(tasks.reduce((sum, t) => sum + Number(t.progress || 0), 0) / tasks.length)
-      : 0;
-
-    return `
-      <div class="view-header">
-        <div>
-          <p class="eyebrow">Clinic Live Operations</p>
-          <h3>Tổng quan vận hành phòng khám (Đại diện các bộ phận & Chi nhánh).</h3>
-        </div>
-        <div class="pill-row">
-          ${pill(state.settings.clinicName)}
-          ${pill(`${state.settings.allowedRadius}m GPS`)}
-          ${pill(`${SHIFTS.length} ca làm`)}
-        </div>
-      </div>
-
-      <div class="grid cols-4">
-        ${metric("Nhân sự hoạt động", activeEmployees.length, `${DEPARTMENTS.length} phòng ban`)}
-        ${metric("Đã check-in hôm nay", checkedInIds.size, `${Math.max(activeEmployees.length - checkedInIds.size, 0)} người chưa check-in`)}
-        ${metric("Task đang mở", openTasks.length, `Tiến độ trung bình ${averageProgress}%`)}
-        ${metric("Lead Marketing", leads.length, `${leads.filter(l => l.status === 'converted').length} chốt thành công`)}
-      </div>
-
-      <div class="grid cols-2" style="margin-top:14px">
-        <section class="panel">
-          <div class="section-title">
-            <h3>Dòng chảy trong ngày</h3>
-            <button class="ghost-button" type="button" data-view-jump="attendance"><span>⌖</span>Xem chấm công</button>
-          </div>
-          <div class="timeline">
-            ${renderTimeline(todayAttendance, employees)}
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="section-title">
-            <h3>Ghi chú quản lý</h3>
-            <button class="ghost-button" type="button" data-view-jump="reports"><span>▣</span>Chỉnh ghi chú</button>
-          </div>
-          <p class="subtle" style="margin-bottom: 16px;">${escapeHTML(state.settings.managerNote)}</p>
-          <div class="grid cols-1">
-            ${STATIC_NOTES.map(note => `
-              <article class="schedule-card" style="margin-bottom: 10px;">
-                <div class="section-title">
-                  <h3>${escapeHTML(note.title)}</h3>
-                  ${pill(note.owner)}
-                </div>
-                <p class="subtle">${escapeHTML(note.text)}</p>
-              </article>
-            `).join('')}
-          </div>
-        </section>
-      </div>
-
-      <section class="panel" style="margin-top:14px">
-        <div class="section-title">
-          <h3>Ca làm theo tài liệu 5S - HCM</h3>
-          ${pill("Check-in trước ca 5 phút")}
-        </div>
-        <div class="grid cols-4" style="margin-top: 10px;">
-          ${SHIFTS.slice(0, 4).map(shift => `
-            <article class="metric-card">
-              <div class="section-title">
-                <h3>${escapeHTML(shift.group)}</h3>
-                ${pill(shift.name)}
-              </div>
-              <p class="metric-value" style="font-size:1.45rem">${escapeHTML(shift.start)}-${escapeHTML(shift.end)}</p>
-              <p class="subtle">${escapeHTML(shift.breakText)} · ${escapeHTML(shift.checkinRule)}</p>
-            </article>
-          `).join('')}
-        </div>
-      </section>
-    `;
+    return renderWorkDashboard({ state, profile, today, attendance: todayAttendance, employees, tasks, requests, workSummary, assignments });
   }
+
+  const [leads, marketingReport] = await Promise.all([
+    safeDashboardLoad('dữ liệu khách hàng', () => getMarketingLeads()),
+    ['admin_marketing', 'telesale_leader'].includes(profile.role)
+      ? safeDashboardLoad('báo cáo Marketing', () => getMarketingReports(), {}) : Promise.resolve({}),
+  ]);
 
   // Managers receive database aggregates. Other marketing roles retain a
   // restricted, small personal view and never receive department-wide reports.

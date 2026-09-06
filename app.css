@@ -4876,6 +4876,52 @@ body.dialog-open {
   line-height: 1.5;
 }
 
+.dashboard-work-chain {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--line);
+}
+
+.dashboard-work-chain > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: #fff;
+}
+
+.dashboard-work-chain span,
+.dashboard-compact-list article span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.dashboard-compact-list {
+  display: grid;
+}
+
+.dashboard-compact-list article {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dashboard-compact-list article:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-compact-list article > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
 .attendance-work-stats {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -4986,6 +5032,10 @@ body.dialog-open {
   .attendance-pagination {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .dashboard-work-chain {
+    grid-template-columns: 1fr;
   }
 
   .attendance-work-stats {
