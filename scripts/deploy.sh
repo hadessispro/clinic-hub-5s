@@ -333,7 +333,10 @@ lenh_kiem_tra() {
   bao_cao_so_sanh
   echo
   local dv
-  dv="$(cat "$TAM/doi.txt" "$TAM/moi.txt" 2>/dev/null | while read -r f; do dich_vu_cua "$f"; done | tr ',' '\n' | sort -u | tr '\n' ' ')"
+  # File vận hành chạy tay có thể không gắn với dịch vụ nào. Khi đó grep/
+  # vòng lặp không in gì và trả mã khác 0; với `set -euo pipefail`, phép gán
+  # cũ làm cả lượt triển khai dừng ngay sau phần so sánh mà không báo lý do.
+  dv="$(cat "$TAM/doi.txt" "$TAM/moi.txt" 2>/dev/null | while read -r f; do dich_vu_cua "$f" || true; done | tr ',' '\n' | sort -u | tr '\n' ' ')"
   echo "  Dịch vụ sẽ dựng lại: ${dv:-không có}"
   # grep không tìm thấy gì thì trả về 1, và set -o pipefail biến nó thành lỗi
   # làm thoát cả script trong im lặng. Một script triển khai mà nuốt lỗi thì
