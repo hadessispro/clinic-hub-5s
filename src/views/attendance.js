@@ -99,6 +99,7 @@ function workDayStatus(day) {
   const labels = {
     complete: ['Đủ vào/ra', 'good'],
     in_progress: ['Đang trong ca', 'good'],
+    attendance_anomaly: ['Dữ liệu bất thường', 'bad'],
     missing_checkin: ['Thiếu check-in', 'bad'],
     missing_checkout: ['Thiếu check-out', 'bad'],
     no_attendance: ['Chưa chấm công', 'warn'],

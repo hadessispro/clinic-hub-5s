@@ -60,7 +60,7 @@ type WorkDay = {
   workday_credit: number;
   checkin_at: string | null;
   checkout_at: string | null;
-  status: 'complete' | 'in_progress' | 'missing_checkin' | 'missing_checkout' | 'no_attendance' | 'missing_shift';
+  status: 'complete' | 'in_progress' | 'attendance_anomaly' | 'missing_checkin' | 'missing_checkout' | 'no_attendance' | 'missing_shift';
   calculated_at: string;
   source: 'postgresql-vps';
 };
@@ -86,6 +86,16 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   else if (!checkin && !checkout) status = 'no_attendance';
   else if (!checkin) status = 'missing_checkin';
   else if (!checkout) status = workDate === clinicParts(new Date()).date ? 'in_progress' : 'missing_checkout';
+
+  // Bấm vào và ra gần như cùng lúc ở cuối ca là lỗi thao tác/thiếu công, không
+  // phải một ca làm hai phút và cũng không phải "đi muộn 568 phút". Để ở
+  // trạng thái cần đối chiếu, giữ nguyên hai mốc gốc và không tạo số phạt ảo.
+  if (status === 'complete' && checkinMinute !== null && checkoutMinute !== null) {
+    const observedMinutes = checkoutMinute - checkinMinute;
+    if (observedMinutes < Math.min(60, Math.max(1, Math.round(scheduledMinutes * 0.25)))) {
+      status = 'attendance_anomaly';
+    }
+  }
 
   let lateMinutes = 0;
   let earlyLeaveMinutes = 0;
