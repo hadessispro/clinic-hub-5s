@@ -12983,23 +12983,59 @@ table td {
   white-space: nowrap;
 }
 
-/* ══ BẢO VỆ TOÀN CỤC CHỐNG TRÀN NGANG TRÊN DI ĐỘNG ═════════════════════ */
+/* ══ BẢO VỆ TOÀN CỤC CHỐNG TRÀN NGANG & ĐẢM BẢO SIDEBAR STICKY ═════════════════════ */
 html, body {
   max-width: 100vw;
-  overflow-x: hidden;
 }
 
-.app-shell {
-  min-width: 0 !important;
-  max-width: 100vw !important;
-  box-sizing: border-box !important;
-  overflow-x: clip;
+/* Trên Desktop (>= 761px): .app-shell bắt buộc overflow: visible để .sidebar
+   với position: sticky; top: 0 bám chặt vào khung nhìn khi cuộn trang dài.
+   Chống tràn ngang được khóa tuyệt đối ở .main-area và .view-stack. */
+@media (min-width: 761px) {
+  html, body {
+    overflow-x: visible;
+  }
+  .app-shell {
+    display: grid !important;
+    grid-template-columns: 258px minmax(0, 1fr) !important;
+    min-height: 100vh !important;
+    overflow: visible !important;
+  }
+  .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    align-self: start !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    z-index: 40 !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+  }
+  .main-area {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+  }
 }
 
-.main-area {
-  min-width: 0 !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
+/* Trên Di động (<= 760px): .sidebar chuyển thành thanh nổi dưới đáy, .app-shell khoá tràn ngang */
+@media (max-width: 760px) {
+  html, body {
+    overflow-x: hidden;
+  }
+  .app-shell {
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+  }
+  .main-area {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
 }
 
 .view-stack {

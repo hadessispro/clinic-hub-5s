@@ -20,6 +20,7 @@
  */
 
 import { BRANCHES } from '../branch.js';
+import { VAT_TU_THUC_TE, TON_KHO_THUC_TE, DON_HANG_THUC_TE } from './kho-hang-data.js';
 
 /* ── Danh mục ────────────────────────────────────────────────────────── */
 
@@ -38,68 +39,61 @@ export const NHOM_VAT_TU = {
 
 /* Cờ đặc biệt — thứ khiến một vật tư KHÔNG được đặt hàng như mọi thứ khác.
  *
- * Mỗi cờ gắn với một hậu quả thật nếu bỏ qua, nên chúng hiện nổi ngay trên
- * thẻ vật tư chứ không nằm trong phần ghi chú ai đó phải nhớ mở ra đọc. */
+ *   can_bao_quan_lanh      kho không có tủ lạnh chuyên dụng là hỏng lô hàng
+ *   vat_tu_kiem_soat_dac_biet  thuốc tê, thuốc gây nghiện — phải ký nhận từng ống
+ *   chi_dat_theo_ca        vật tư chỉ mua khi có ca cấy ghép được duyệt
+ *   sap_het_han_dung       còn trong kho nhưng date ngắn, phải đẩy đi trước
+ */
 export const CO_DAC_BIET = {
-  han_dung: {
-    ten: 'Có hạn dùng', icon: 'ri-calendar-close-line', lop: 'warn',
-    canh: 'Đặt dư là hết hạn phải bỏ. Đặt theo nhu cầu thực, không gom lô lớn cho rẻ.',
-  },
-  lanh: {
+  can_bao_quan_lanh: {
     ten: 'Bảo quản lạnh', icon: 'ri-temp-cold-line', lop: 'info',
-    canh: 'Cần tủ mát 2–8°C từ lúc nhận. Không nhận hàng nếu thùng đã ấm.',
+    canh: 'Nhiệt độ bảo quản 2–8°C. Giao hàng phải có thùng xốp kèm đá gel.',
   },
-  kiem_soat: {
-    ten: 'Quản lý đặc biệt', icon: 'ri-shield-keyhole-line', lop: 'bad',
-    canh: 'Thuốc phải vào sổ theo dõi riêng, đối chiếu số lô mỗi lần xuất dùng.',
+  vat_tu_kiem_soat_dac_biet: {
+    ten: 'Kiểm soát đặc biệt', icon: 'ri-shield-keyhole-line', lop: 'bad',
+    canh: 'Thuộc danh mục kiểm soát. Phải có chữ ký của bác sĩ điều trị khi xuất.',
   },
-  dat_rieng: {
-    ten: 'Đặt riêng theo ca', icon: 'ri-time-line', lop: 'warn',
-    canh: 'Không giữ tồn sẵn. Đặt khi đã chốt ca, và phải tính đủ thời gian giao.',
+  chi_dat_theo_ca: {
+    ten: 'Đặt theo ca', icon: 'ri-calendar-check-line', lop: 'warn',
+    canh: 'Không dự trữ đại trà. Chỉ đặt khi có lịch phẫu thuật cụ thể.',
   },
-  gia_tri_cao: {
-    ten: 'Giá trị cao', icon: 'ri-price-tag-3-line', lop: 'bad',
-    canh: 'Kiểm đếm hai người khi nhận. Ghi số lô và số sê-ri vào hồ sơ ca.',
+  sap_het_han_dung: {
+    ten: 'Date ngắn', icon: 'ri-time-line', lop: 'warn',
+    canh: 'Hạn dùng dưới 6 tháng. Ưu tiên xuất trước để tránh huỷ hàng.',
   },
+};
+
+export const MUC_TON = {
+  het:   { ten: 'Hết hàng',       lop: 'bad' },
+  thieu: { ten: 'Dưới định mức',  lop: 'warn' },
+  du:    { ten: 'Đủ dùng',        lop: 'good' },
+  duoi:  { ten: 'Vượt định mức',  lop: 'info' },
 };
 
 export const TRANG_THAI_DON = {
-  nhap:       { ten: 'Nháp',            lop: 'neutral' },
-  cho_duyet:  { ten: 'Chờ duyệt',       lop: 'warn' },
-  da_dat:     { ten: 'Đã đặt',          lop: 'info' },
-  giao_mot_phan: { ten: 'Giao một phần', lop: 'warn' },
-  da_giao:    { ten: 'Đã giao đủ',      lop: 'good' },
-  huy:        { ten: 'Đã huỷ',          lop: 'bad' },
-};
-
-/* Nơi nhận của phiếu xuất kho. Vật tư ra khỏi kho phải đi tới một chỗ CÓ TÊN
- * — "xuất dùng" chung chung là chỗ hàng bốc hơi mà không ai chịu trách nhiệm. */
-export const NOI_NHAN = {
-  phong_1:    'Phòng khám 1',
-  phong_2:    'Phòng khám 2',
-  phong_3:    'Phòng khám 3',
-  phong_pt:   'Phòng phẫu thuật',
-  vo_trung:   'Khu vô trùng',
-  le_tan:     'Quầy lễ tân',
-  chi_nhanh:  'Điều chuyển chi nhánh khác',
-  huy_hong:   'Xuất huỷ · hỏng, hết hạn',
+  cho_duyet: { ten: 'Chờ duyệt',  lop: 'warn' },
+  da_dat:    { ten: 'Đã đặt hàng', lop: 'info' },
+  da_giao:   { ten: 'Đã giao đủ',  lop: 'good' },
+  tre_hen:   { ten: 'Trễ hẹn',     lop: 'bad' },
+  huy:       { ten: 'Đã huỷ',      lop: 'muted' },
 };
 
 export const TRANG_THAI_PHIEU = {
-  nhap:    { ten: 'Nháp',        lop: 'neutral' },
+  nhap:    { ten: 'Phiếu nháp',  lop: 'warn' },
   da_xuat: { ten: 'Đã xuất kho', lop: 'good' },
-  huy:     { ten: 'Đã huỷ',      lop: 'bad' },
+  huy:     { ten: 'Đã huỷ',      lop: 'muted' },
 };
 
-/* Mức tồn kho — tính từ số lượng so với ngưỡng tối thiểu, không gõ tay. */
-export const MUC_TON = {
-  het:     { ten: 'Hết hàng',     lop: 'bad' },
-  thieu:   { ten: 'Dưới định mức', lop: 'warn' },
-  sap_het: { ten: 'Sắp chạm mức',  lop: 'warn' },
-  du:      { ten: 'Đủ dùng',      lop: 'good' },
+export const NOI_NHAN = {
+  ca_dieu_tri: 'Ca điều trị lâm sàng',
+  phong_1:     'Phòng điều trị 1',
+  phong_2:     'Phòng điều trị 2',
+  phong_3:     'Phòng điều trị 3',
+  phong_phau:  'Phòng phẫu thuật Implant',
+  vo_trung:    'Khu vô trùng',
+  chinh_nha:   'Phòng chỉnh nha',
+  le_tan:      'Quầy lễ tân',
 };
-
-/* ── Dữ liệu dựng màn ─────────────────────────────────────────────────── */
 
 const ngayLech = (n) => {
   const d = new Date();
@@ -108,16 +102,52 @@ const ngayLech = (n) => {
 };
 
 export const NGUOI_KHO = {
-  'PVC003':    { ten: 'Nguyễn Thị Như Huỳnh', chuc: 'Trưởng bộ phận Phụ tá', chi_nhanh: 'le-van-tho' },
-  'PVC-10199': { ten: 'Võ Đoàn Thái Tuấn',    chuc: 'Phụ tá',                chi_nhanh: 'pham-van-chieu' },
+  'PVC003':    { ten: 'Nguyễn Thị Như Huỳnh', chuc: 'Trưởng bộ phận Phụ tá (LVT)', chi_nhanh: 'le-van-tho' },
+  'PVC-10199': { ten: 'Võ Đoàn Thái Tuấn',    chuc: 'Phụ tá Kho (PVC)',            chi_nhanh: 'pham-van-chieu' },
+  'PVC-10001': { ten: 'Admin IT (Quản trị)', chuc: 'Quản trị viên IT',           chi_nhanh: 'all' },
+  '10096':     { ten: 'Trần Đức Mạnh',         chuc: 'Giám Đốc Vận Hành',           chi_nhanh: 'all' },
 };
 export const tenNguoi = (ma) => NGUOI_KHO[ma]?.ten || ma || '—';
 
-let NHA_CUNG_CAP = [];
-let VAT_TU = [];
-let BANG_GIA = [];
-let TON_KHO = [];
-let DON_HANG = [];
+export const KHO_XUAT = {
+  'pvc_tong_quat': { ma: 'pvc_tong_quat', ten: 'PVC_Kho Tổng Quát', chi_nhanh: 'pham-van-chieu' },
+  'pvc_dieu_tri':  { ma: 'pvc_dieu_tri',  ten: 'PVC_Kho Điều Trị',  chi_nhanh: 'pham-van-chieu' },
+  'lvt_tong_quat': { ma: 'lvt_tong_quat', ten: 'LVT_Kho Tổng Quát', chi_nhanh: 'le-van-tho' },
+  'lvt_dieu_tri':  { ma: 'lvt_dieu_tri',  ten: 'LVT_Kho Điều Trị',  chi_nhanh: 'le-van-tho' },
+};
+
+export const BAC_SI = [
+  // Chi nhánh Phạm Văn Chiêu (PVC)
+  { ma: 'PVC10187', ten: 'Huỳnh Kim Thy',        chuc: 'Bác sĩ Trưởng Khoa', chi_nhanh: 'pham-van-chieu' },
+  { ma: 'PVC10179', ten: 'Hoàng Thị Phương Nam', chuc: 'Bác sĩ Trưởng Khoa', chi_nhanh: 'pham-van-chieu' },
+  { ma: 'PVC10180', ten: 'Mai Quốc Việt',        chuc: 'Bác sĩ Điều trị',    chi_nhanh: 'pham-van-chieu' },
+  { ma: 'PVC10181', ten: 'Nguyễn Phương Quỳnh',   chuc: 'Bác sĩ Điều trị',    chi_nhanh: 'pham-van-chieu' },
+  { ma: 'PVC10140', ten: 'Nguyễn Việt Tân',      chuc: 'Bác sĩ Điều trị',    chi_nhanh: 'pham-van-chieu' },
+  { ma: 'PVC10188', ten: 'Bùi Thị Thanh Thái',    chuc: 'Bác sĩ Điều trị',    chi_nhanh: 'pham-van-chieu' },
+
+  // Chi nhánh Lê Văn Thọ (LVT)
+  { ma: 'LVT10241', ten: 'Trần Văn Nguyên',      chuc: 'Bác sĩ Fulltime',    chi_nhanh: 'le-van-tho' },
+  { ma: 'LVT10242', ten: 'Nguyễn Tuấn Ngọc',     chuc: 'Bác sĩ Fulltime',    chi_nhanh: 'le-van-tho' },
+  { ma: 'LVT10244', ten: 'Lâm Hưng Long',        chuc: 'Bác sĩ Fulltime',    chi_nhanh: 'le-van-tho' },
+  { ma: 'LVT10243', ten: 'Triệu Văn Hoài',       chuc: 'Bác sĩ Điều trị',    chi_nhanh: 'le-van-tho' },
+  { ma: 'LVT10261', ten: 'Trần Hoàng My',        chuc: 'Bác sĩ Part-time',   chi_nhanh: 'le-van-tho' },
+];
+
+let NHA_CUNG_CAP = [
+  { id: 'NCC-01', ten: 'Công ty TNHH Thiết Bị Nha Khoa Sài Gòn 5S', nguoi: 'Võ Đoàn Thái Tuấn', dien_thoai: '0909199199', ngay_giao: 3, thanh_toan: 'Chuyển khoản theo đợt', danh_gia: 5, ghi_chu: 'Nhà cung cấp vật tư chính thức toàn hệ thống 5S' },
+  { id: 'NCC-02', ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ', nguoi: 'Nguyễn Thị Như Huỳnh', dien_thoai: '0911548525', ngay_giao: 2, thanh_toan: 'Giao hàng thanh toán', danh_gia: 5, ghi_chu: 'Cung cấp vật tư CCDC và chỉnh nha LVT' },
+];
+let VAT_TU = [...VAT_TU_THUC_TE];
+let BANG_GIA = VAT_TU_THUC_TE.filter((v) => v.gia_von > 0).map((v) => ({
+  vat_tu: v.id,
+  ncc: v.chi_nhanh === 'pham-van-chieu' ? 'NCC-01' : 'NCC-02',
+  don_vi_mua: v.don_vi,
+  quy_cach: 1,
+  gia: v.gia_von,
+  toi_thieu: 1,
+}));
+let TON_KHO = [...TON_KHO_THUC_TE];
+let DON_HANG = [...DON_HANG_THUC_TE];
 let PHIEU_XUAT = [];
 let HOA_DON = [];
 let KHO_ANH_HD = [];
@@ -303,6 +333,9 @@ function dungVatTu(v, chiNhanh) {
 export function layVatTu({ tim, nhom, chiNhanh, mucTon: locMuc, co, chiThieu } = {}) {
   let ds = VAT_TU.map((v) => dungVatTu(v, chiNhanh));
 
+  if (chiNhanh) {
+    ds = ds.filter((v) => !v.chi_nhanh || v.chi_nhanh === chiNhanh || v.ton_kho.some((t) => t.chi_nhanh === chiNhanh));
+  }
   if (nhom) ds = ds.filter((v) => v.nhom === nhom);
   if (co) ds = ds.filter((v) => v.co.includes(co));
   if (locMuc) ds = ds.filter((v) => v.muc_ton === locMuc);
@@ -852,4 +885,152 @@ export function xuatCsvDeXuat(dx) {
     x.can_bu, x.can_mua, x.don_vi_mua, x.quy_cach, x.don_gia, x.thanh_tien,
   ])));
   return dong.map((r) => r.map((o) => `"${String(o ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+
+/* ── Xuất vật tư theo ca điều trị (Thủ thuật lâm sàng) ─────────────────── */
+
+let CA_DIEU_TRI = [];
+
+export function layCaDieuTri({ chiNhanh, ngay, tim } = {}) {
+  let ds = [...CA_DIEU_TRI];
+  if (chiNhanh) ds = ds.filter((c) => c.chi_nhanh === chiNhanh);
+  if (ngay) ds = ds.filter((c) => c.ngay === ngay);
+  if (tim) {
+    const q = boDau(tim);
+    ds = ds.filter((c) => boDau(`${c.id} ${c.ma_bn} ${c.ten_bn} ${c.dien_thoai} ${c.dich_vu} ${c.bac_si}`).includes(q));
+  }
+  return cho(ds);
+}
+
+export function layChiTietCa(caId) {
+  const ca = CA_DIEU_TRI.find((c) => c.id === caId);
+  return cho(ca || null);
+}
+
+export function themCaDieuTri(duLieu) {
+  if (!duLieu?.ten_bn?.trim()) throw new Error('Vui lòng nhập tên bệnh nhân.');
+  if (!duLieu?.dich_vu?.trim()) throw new Error('Vui lòng nhập tên dịch vụ / thủ thuật.');
+  const idMoi = `SP${(duLieu.ngay || ngayLech(0)).replace(/-/g, '')}.${Math.floor(10000 + Math.random() * 90000)}`;
+  const moi = {
+    id: duLieu.id || idMoi,
+    ma_bn: duLieu.ma_bn?.trim() || `PVC${Math.floor(10000000 + Math.random() * 90000000)}`,
+    ten_bn: duLieu.ten_bn.trim().toUpperCase(),
+    dien_thoai: duLieu.dien_thoai?.trim() || '',
+    dich_vu: duLieu.dich_vu.trim(),
+    so_luong_dv: Number(duLieu.so_luong_dv) || 1,
+    bac_si: duLieu.bac_si || 'Nguyễn Phương Quỳnh',
+    ngay: duLieu.ngay || ngayLech(0),
+    gio: new Date().toTimeString().slice(0, 8),
+    chi_nhanh: duLieu.chi_nhanh || 'pham-van-chieu',
+    kho_xuat: duLieu.kho_xuat || 'pvc_tong_quat',
+    trang_thai_xuat: 'chua_xuat',
+    ghi_chu: duLieu.ghi_chu?.trim() || '',
+    dong_vat_tu: [],
+  };
+  CA_DIEU_TRI.unshift(moi);
+  return cho(moi);
+}
+
+export function kiemTraTonKhoCa(dongVatTu, chiNhanh) {
+  const kq = (dongVatTu || []).map((x) => {
+    const v = VAT_TU.find((y) => y.id === x.vat_tu || y.ma === x.vat_tu);
+    const t = TON_KHO.find((y) => y.vat_tu === (v?.id || x.vat_tu) && y.chi_nhanh === chiNhanh);
+    const tonKhaDung = t?.so_luong ?? 0;
+    const soLuong = Number(x.so_luong) || 0;
+    return {
+      vat_tu: v?.id || x.vat_tu,
+      ma: v?.ma || x.vat_tu,
+      ten: v?.ten || x.ten || x.vat_tu,
+      don_vi: v?.don_vi || x.don_vi || 'cái',
+      so_luong: soLuong,
+      ton_kha_dung: tonKhaDung,
+      hop_le: soLuong <= tonKhaDung && soLuong > 0,
+    };
+  });
+  return cho({
+    hop_le: kq.every((x) => x.hop_le),
+    dong: kq,
+  });
+}
+
+export function xuatKhoCaDieuTri({ caId, bacSi, nguoiXuat, khoXuat, ghiChu, dong }) {
+  const ca = CA_DIEU_TRI.find((c) => c.id === caId);
+  if (!ca) throw new Error('Không tìm thấy ca điều trị này.');
+  if (ca.trang_thai_xuat === 'da_xuat') {
+    throw new Error('Ca điều trị này đã được xuất kho rồi.');
+  }
+  const dongHopLe = (dong || []).filter((x) => Number(x.so_luong) > 0);
+  if (!dongHopLe.length) {
+    throw new Error('Vui lòng thêm ít nhất một vật tư tiêu hao cho ca này.');
+  }
+
+  const chiNhanh = ca.chi_nhanh || 'pham-van-chieu';
+
+  // 1. Kiểm tra tồn nếu vật tư có đăng ký trong VAT_TU
+  for (const x of dongHopLe) {
+    const v = VAT_TU.find((y) => y.id === x.vat_tu || y.ma === x.vat_tu);
+    if (v) {
+      const t = TON_KHO.find((y) => y.vat_tu === v.id && y.chi_nhanh === chiNhanh);
+      const ton = t?.so_luong ?? 0;
+      if (Number(x.so_luong) > ton) {
+        throw new Error(`${v.ten}: kho chỉ còn ${ton} ${v.don_vi}, không đủ xuất ${x.so_luong}.`);
+      }
+    }
+  }
+
+  // 2. Trừ tồn kho nếu có
+  dongHopLe.forEach((x) => {
+    const v = VAT_TU.find((y) => y.id === x.vat_tu || y.ma === x.vat_tu);
+    if (v) {
+      const t = TON_KHO.find((y) => y.vat_tu === v.id && y.chi_nhanh === chiNhanh);
+      if (t) {
+        t.so_luong -= Number(x.so_luong);
+        t.kiem_ke = ngayLech(0);
+      }
+    }
+  });
+
+  // 3. Tự động lập phiếu xuất đối soát trong PHIEU_XUAT
+  const tenKho = KHO_XUAT[khoXuat]?.ten || khoXuat || 'PVC_Kho Tổng Quát';
+  const phieuMoi = {
+    id: `PX-${String(PHIEU_XUAT.length + 1).padStart(4, '0')}`,
+    chi_nhanh: chiNhanh,
+    ngay: ngayLech(0),
+    noi_nhan: 'ca_dieu_tri',
+    nguoi_xuat: nguoiXuat || 'PVC-10199',
+    nguoi_nhan: bacSi || ca.bac_si || 'BS. Điều trị',
+    ly_do: `Xuất cho ca ${ca.id} · ${ca.dich_vu} · BN ${ca.ten_bn} · Kho: ${tenKho}${ghiChu ? ` · ${ghiChu}` : ''}`,
+    trang_thai: 'da_xuat',
+    xuat_boi: nguoiXuat || 'PVC-10199',
+    xuat_luc: new Date().toISOString(),
+    dong: dongHopLe.map((x) => {
+      const v = VAT_TU.find((y) => y.id === x.vat_tu || y.ma === x.vat_tu);
+      return {
+        vat_tu: v?.id || x.vat_tu,
+        so_luong: Number(x.so_luong),
+      };
+    }),
+  };
+  PHIEU_XUAT.unshift(phieuMoi);
+
+  // 4. Cập nhật ca
+  ca.trang_thai_xuat = 'da_xuat';
+  ca.bac_si = bacSi || ca.bac_si;
+  ca.kho_xuat = khoXuat;
+  ca.ngay_xuat = new Date().toISOString();
+  ca.nguoi_xuat = nguoiXuat;
+  ca.ghi_chu = ghiChu || ca.ghi_chu;
+  ca.phieu_xuat_id = phieuMoi.id;
+  ca.dong_vat_tu = dongHopLe.map((x) => {
+    const v = VAT_TU.find((y) => y.id === x.vat_tu || y.ma === x.vat_tu);
+    return {
+      vat_tu: v?.id || x.vat_tu,
+      ma: v?.ma || x.vat_tu,
+      ten: v?.ten || x.ten || x.vat_tu,
+      don_vi: v?.don_vi || x.don_vi || 'cái',
+      so_luong: Number(x.so_luong),
+    };
+  });
+
+  return cho({ ca, phieu: dungPhieu(phieuMoi) });
 }
