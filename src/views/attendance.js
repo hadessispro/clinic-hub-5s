@@ -28,6 +28,7 @@ import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTim
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
+import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
 let context = null;
 let lastLocation = null;
