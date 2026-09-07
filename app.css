@@ -1910,8 +1910,9 @@ h3 {
 }
 
 .topbar {
-  margin: 0 auto 14px;
-  max-width: 1440px;
+  margin: 0 0 14px;
+  width: 100%;
+  max-width: 100%;
   align-items: center;
 }
 
@@ -2142,8 +2143,9 @@ h3 {
 }
 
 .manager-strip {
-  max-width: 1440px;
-  margin: 0 auto 18px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 18px;
   padding: 14px 16px;
   border: 1px solid rgba(8, 127, 123, 0.26);
   border-radius: var(--radius);
@@ -2154,8 +2156,9 @@ h3 {
 }
 
 .view-stack {
-  max-width: 1440px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
 
 .view-header {
@@ -4483,8 +4486,9 @@ body.dialog-open {
 .attendance-page {
   display: grid;
   gap: 22px;
-  max-width: 1280px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
 
 .attendance-page-header,
@@ -12983,28 +12987,42 @@ table td {
   white-space: nowrap;
 }
 
-/* ══ BẢO VỆ TOÀN CỤC CHỐNG TRÀN NGANG & ĐẢM BẢO SIDEBAR STICKY ═════════════════════ */
+/* ══ BẢO VỆ TOÀN CỤC CHỐNG TRÀN NGANG & TỰ ĐỘNG DÃN THEO MÀN HÌNH LỚN ═════════════════════ */
 html, body {
   max-width: 100vw;
 }
 
-/* Trên Desktop (>= 761px): .app-shell và html, body bắt buộc overflow: visible để .sidebar
-   với position: sticky; top: 0 bám chặt cố định vào khung nhìn khi cuộn trang dài.
-   Chống tràn ngang được khóa tuyệt đối ở .main-area và .view-stack. */
+/* Trên Desktop (>= 761px): .app-shell, .main-area, .topbar và .view-stack
+   tự động DÃN TOÀN DIỆN theo kích thước màn hình lớn (1080p, 2K, 4K, Ultra-wide),
+   loại bỏ khoảng trắng thừa, đồng thời giữ thanh sidebar dính cố định khi cuộn. */
 @media (min-width: 761px) {
   html, body {
     overflow: visible !important;
   }
+
   .app-shell {
     display: grid !important;
     grid-template-columns: 278px minmax(0, 1fr) !important;
     min-height: 100vh !important;
     overflow: visible !important;
     position: relative !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    transition: grid-template-columns .22s ease;
   }
+
+  /* Màn hình lớn (>= 1600px Full HD rộng / 2K): Sidebar dãn 292px cân đối,
+     nội dung chính dãn phủ đầy khung nhìn */
+  @media (min-width: 1600px) {
+    .app-shell:not(.sidebar-collapsed) {
+      grid-template-columns: 292px minmax(0, 1fr) !important;
+    }
+  }
+
   .app-shell.sidebar-collapsed {
     grid-template-columns: 88px minmax(0, 1fr) !important;
   }
+
   .sidebar {
     position: -webkit-sticky !important;
     position: sticky !important;
@@ -13012,16 +13030,79 @@ html, body {
     height: 100vh !important;
     max-height: 100vh !important;
     align-self: start !important;
+    display: flex !important;
+    flex-direction: column !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     z-index: 40 !important;
     background: rgba(255, 255, 255, 0.96) !important;
+    border-right: 1px solid #e5ebe8 !important;
   }
+
+  .sidebar .nav-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .sidebar .sidebar-note {
+    margin-top: auto;
+    flex-shrink: 0;
+  }
+
   .main-area {
     min-width: 0 !important;
+    width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
     overflow-x: clip !important;
+    padding: 20px 28px 36px !important;
+  }
+
+  @media (min-width: 1600px) {
+    .main-area {
+      padding: 24px 36px 40px !important;
+    }
+  }
+
+  /* Header Topbar dãn toàn diện theo chiều rộng màn hình lớn */
+  .topbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 0 16px 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+  }
+
+  .top-actions {
+    flex: 1 1 auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+    max-width: 100% !important;
+  }
+
+  .top-actions > .search-box {
+    flex: 0 1 440px !important;
+    max-width: 520px !important;
+    width: 100% !important;
+    transition: flex-basis .2s ease;
+  }
+
+  /* Nội dung View Stack, Manager Strip, Attendance Page dãn toàn diện */
+  .view-stack,
+  .manager-strip,
+  .attendance-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .manager-strip {
+    margin-bottom: 18px !important;
   }
 }
 
