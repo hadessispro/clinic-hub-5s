@@ -4,6 +4,7 @@ import {
   updateUserAccess, updateUserProfile, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
   getDatabaseCatalog, runDatabaseQuery,
+  getAttendanceAdjustments, createAttendanceAdjustment, updateAttendanceAdjustment, deleteAttendanceAdjustment,
 } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -37,14 +38,67 @@ let tkAccountStates = new Map();
 let dbCatalog = [];
 let dbQueryResult = null;
 let dbSql = 'SELECT *\nFROM marketing.leads\nORDER BY created_at DESC\nLIMIT 100';
+let ccMonth = new Date().toISOString().slice(0, 7);
+let ccSearch = '';
+let ccPage = 1;
+let ccPageSize = 20;
+let ccData = null;
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
+  'cham-cong': 'Điều chỉnh chấm công',
   database: 'Truy vấn cơ sở dữ liệu',
   bug: 'Bug và thông báo',
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
 };
+
+function attendanceClock(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function attendanceAdjustmentPanel(data) {
+  const rows = data?.rows || [];
+  const employees = data?.employees || [];
+  const shifts = data?.shifts || [];
+  const total = Number(data?.total || 0);
+  const pageCount = Math.max(1, Math.ceil(total / ccPageSize));
+  const pageStart = Math.min(Math.max(1, ccPage - 2), Math.max(1, pageCount - 4));
+  const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, index) => pageStart + index);
+  const employeeOptions = employees.map((item) => `<option value="${escapeHTML(item.code)}">${escapeHTML(item.full_name || item.name || item.code)} · ${escapeHTML(item.code)}</option>`).join('');
+  const shiftOptions = shifts.map((item) => `<option value="${escapeHTML(item.code)}">${escapeHTML(item.name || item.code)} · ${String(item.start_time || '').slice(0, 5)}–${String(item.end_time || '').slice(0, 5)}</option>`).join('');
+  const start = total ? (ccPage - 1) * ccPageSize + 1 : 0;
+  const end = Math.min(ccPage * ccPageSize, total);
+  return `<div class="attendance-adjustment-dashboard">
+    <section class="attendance-adjustment-metrics">
+      <article><span>Tổng lượt trong tháng</span><strong>${total.toLocaleString('vi-VN')}</strong><small>Dữ liệu đang hoạt động</small></article>
+      <article><span>Lượt vào ca</span><strong>${Number(data?.stats?.checkins || 0).toLocaleString('vi-VN')}</strong><small>Check-in</small></article>
+      <article><span>Lượt ra ca</span><strong>${Number(data?.stats?.checkouts || 0).toLocaleString('vi-VN')}</strong><small>Check-out</small></article>
+      <article><span>Đã điều chỉnh tay</span><strong>${Number(data?.stats?.manual || 0).toLocaleString('vi-VN')}</strong><small>Có nhật ký kiểm toán</small></article>
+    </section>
+    <section class="panel attendance-adjustment-editor">
+      <div class="section-title"><div><p class="eyebrow">QUYỀN QUẢN TRỊ CẤP CAO</p><h3 id="ccFormTitle">Thêm lượt chấm công</h3></div><span class="status-pill warn"><i class="ri-shield-keyhole-line"></i> Mọi thay đổi đều lưu audit</span></div>
+      <form id="ccAdjustmentForm" class="attendance-adjustment-form">
+        <input type="hidden" name="id">
+        <label><span>Nhân viên</span><select name="employeeCode" required><option value="">— Chọn nhân viên —</option>${employeeOptions}</select></label>
+        <label><span>Ngày làm việc</span><input type="date" name="workDate" required></label>
+        <label><span>Loại lượt chấm</span><select name="recordType" required><option value="checkin">Vào ca</option><option value="checkout">Ra ca</option></select></label>
+        <label><span>Thời gian</span><input type="time" name="time" step="1" required></label>
+        <label><span>Ca làm việc</span><select name="shiftCode" required><option value="">— Chọn ca —</option>${shiftOptions}</select></label>
+        <label><span>Chi nhánh trong ngày</span><select name="branchId" required><option value="le-van-tho">5S Lê Văn Thọ</option><option value="pham-van-chieu">5S Phạm Văn Chiêu</option></select></label>
+        <label class="span-2"><span>Lý do điều chỉnh</span><input name="reason" minlength="5" maxlength="300" required placeholder="VD: Nhân viên quên chấm công, đã đối chiếu với quản lý"></label>
+        <div class="attendance-adjustment-actions span-2"><button class="secondary-button" id="ccCancelEdit" type="button" hidden>Hủy sửa</button><button class="primary-button" type="submit"><i class="ri-save-3-line"></i> <span id="ccSaveLabel">Thêm lượt chấm công</span></button></div>
+      </form>
+    </section>
+    <section class="panel attendance-adjustment-list">
+      <div class="section-title"><div><p class="eyebrow">DỮ LIỆU CHẤM CÔNG</p><h3>Kiểm tra và điều chỉnh</h3></div><span class="subtle">Hiển thị ${start}–${end} trong ${total} lượt</span></div>
+      <form id="ccFilters" class="attendance-adjustment-filters"><label><span>Tháng</span><input type="month" name="month" value="${escapeHTML(ccMonth)}"></label><label class="is-search"><span>Tìm nhân viên</span><input type="search" name="search" value="${escapeHTML(ccSearch)}" placeholder="Tên hoặc mã nhân viên"></label><label><span>Số dòng</span><select name="pageSize">${[10, 20, 50, 100].map((size) => `<option value="${size}" ${ccPageSize === size ? 'selected' : ''}>${size} dòng</option>`).join('')}</select></label><button class="secondary-button" type="submit"><i class="ri-filter-3-line"></i> Lọc dữ liệu</button></form>
+      <div class="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày</th><th>Loại</th><th>Thời gian</th><th>Ca</th><th>Chi nhánh</th><th>Nguồn</th><th>Thao tác</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td><strong>${escapeHTML(row.employee_name || row.employee_code)}</strong><small>${escapeHTML(row.employee_code)}</small></td><td>${new Date(`${row.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</td><td><span class="status-pill ${row.record_type === 'checkin' ? 'good' : 'neutral'}">${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</span></td><td><strong>${attendanceClock(row.recorded_at)}</strong></td><td>${escapeHTML(row.shift_code || '—')}</td><td>${row.branch_id === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : row.branch_id === 'le-van-tho' ? 'Lê Văn Thọ' : 'Chưa xác định'}</td><td>${row.origin === 'manual-reconciliation' ? '<span class="status-pill warn">Điều chỉnh tay</span>' : '<span class="subtle">Chấm công GPS</span>'}</td><td class="attendance-adjustment-row-actions"><button class="secondary-button compact-button" type="button" data-cc-edit="${escapeHTML(row.id)}"><i class="ri-edit-line"></i> Sửa</button><button class="secondary-button compact-button danger-button" type="button" data-cc-delete="${escapeHTML(row.id)}"><i class="ri-delete-bin-6-line"></i> Xóa</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty-table-cell">Không có lượt chấm công phù hợp.</td></tr>'}</tbody></table></div>
+      <nav class="attendance-adjustment-pagination" aria-label="Phân trang điều chỉnh chấm công"><button type="button" class="secondary-button compact-button" data-cc-page="1" ${ccPage <= 1 ? 'disabled' : ''}>« Đầu</button><button type="button" class="secondary-button compact-button" data-cc-page="${ccPage - 1}" ${ccPage <= 1 ? 'disabled' : ''}>‹ Trước</button><span class="attendance-adjustment-page-numbers">${visiblePages.map((page) => `<button type="button" data-cc-page="${page}" class="${page === ccPage ? 'is-active' : ''}" ${page === ccPage ? 'aria-current="page"' : ''}>${page}</button>`).join('')}</span><span>Trang <b>${ccPage}</b> / ${pageCount}</span><button type="button" class="secondary-button compact-button" data-cc-page="${ccPage + 1}" ${ccPage >= pageCount ? 'disabled' : ''}>Sau ›</button><button type="button" class="secondary-button compact-button" data-cc-page="${pageCount}" ${ccPage >= pageCount ? 'disabled' : ''}>Cuối »</button></nav>
+    </section>
+  </div>`;
+}
 
 function databaseCell(value) {
   if (value === null || value === undefined) return '<span class="db-null">NULL</span>';
@@ -306,6 +360,10 @@ export async function renderView(state) {
   if (theDangMo === 'database' && !dbCatalog.length) {
     dbCatalog = await getDatabaseCatalog().catch(() => []);
   }
+  if (theDangMo === 'cham-cong') {
+    ccData = await getAttendanceAdjustments({ month: ccMonth, search: ccSearch, page: ccPage, pageSize: ccPageSize })
+      .catch((error) => ({ rows: [], employees: [], shifts: [], total: 0, stats: {}, error: error.message }));
+  }
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   tkProfiles = profiles;
   tkAccountStates = tkTrangThaiMap;
@@ -351,6 +409,9 @@ export async function renderView(state) {
         : `<div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Hồ sơ</th><th>Đăng nhập</th><th></th></tr></thead><tbody>${profileRows(daLoc, state.user.id, tkTrangThaiMap)}</tbody></table></div>`}
     </section>`,
     'phan-quyen': veThePhanQuyen(profiles),
+    'cham-cong': ccData?.error
+      ? `<section class="panel"><div class="db-query-error"><strong>Không tải được dữ liệu chấm công</strong><span>${escapeHTML(ccData.error)}</span></div></section>`
+      : attendanceAdjustmentPanel(ccData),
     'database': databasePanel(dbCatalog),
     'bug': `<div class="grid cols-2 system-admin-grid">
       <section class="panel"><div class="section-title"><div><p class="eyebrow">THÔNG BÁO PHÁT HÀNH</p><h3>Gửi cập nhật đến người dùng</h3></div></div>
@@ -557,6 +618,87 @@ export function initView() {
       store.notify();
     } catch (error) {
       showToast(error.message || 'Không thể cập nhật thông tin người dùng.', true);
+      button.disabled = false;
+    }
+  }));
+
+  /* ── Điều chỉnh chấm công cấp cao ── */
+  document.getElementById('ccFilters')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    ccMonth = String(values.month || ccMonth);
+    ccSearch = String(values.search || '').trim();
+    ccPageSize = Number(values.pageSize || 20);
+    ccPage = 1;
+    store.notify();
+  });
+  document.querySelectorAll('[data-cc-page]').forEach((button) => button.addEventListener('click', () => {
+    if (button.disabled) return;
+    ccPage = Math.max(1, Number(button.dataset.ccPage || 1));
+    store.notify();
+  }));
+
+  const resetAttendanceForm = () => {
+    const form = document.getElementById('ccAdjustmentForm');
+    if (!form) return;
+    form.reset();
+    form.elements.id.value = '';
+    document.getElementById('ccFormTitle').textContent = 'Thêm lượt chấm công';
+    document.getElementById('ccSaveLabel').textContent = 'Thêm lượt chấm công';
+    document.getElementById('ccCancelEdit').hidden = true;
+  };
+  document.getElementById('ccCancelEdit')?.addEventListener('click', resetAttendanceForm);
+  document.querySelectorAll('[data-cc-edit]').forEach((button) => button.addEventListener('click', () => {
+    const row = ccData?.rows?.find((item) => String(item.id) === String(button.dataset.ccEdit));
+    const form = document.getElementById('ccAdjustmentForm');
+    if (!row || !form) return;
+    form.elements.id.value = row.id;
+    form.elements.employeeCode.value = row.employee_code || '';
+    form.elements.workDate.value = row.work_date || '';
+    form.elements.recordType.value = row.record_type || 'checkin';
+    form.elements.time.value = attendanceClock(row.recorded_at);
+    form.elements.shiftCode.value = row.shift_code || '';
+    form.elements.branchId.value = row.branch_id || 'le-van-tho';
+    form.elements.reason.value = '';
+    document.getElementById('ccFormTitle').textContent = `Sửa lượt chấm công · ${row.employee_code}`;
+    document.getElementById('ccSaveLabel').textContent = 'Lưu thay đổi';
+    document.getElementById('ccCancelEdit').hidden = false;
+    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
+  document.getElementById('ccAdjustmentForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const id = String(values.id || '');
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      if (id) await updateAttendanceAdjustment(id, values);
+      else await createAttendanceAdjustment(values);
+      showToast(id ? 'Đã sửa lượt chấm công và tính lại ngày công.' : 'Đã thêm lượt chấm công và tính lại ngày công.');
+      ccPage = 1;
+      store.notify();
+    } catch (error) {
+      showToast(error.message || 'Không thể lưu điều chỉnh chấm công.', true);
+      button.disabled = false;
+    }
+  });
+  document.querySelectorAll('[data-cc-delete]').forEach((button) => button.addEventListener('click', async () => {
+    const row = ccData?.rows?.find((item) => String(item.id) === String(button.dataset.ccDelete));
+    if (!row) return;
+    const reason = await requestInput(
+      `Nhập lý do xóa ${row.record_type === 'checkin' ? 'giờ vào' : 'giờ ra'} lúc ${attendanceClock(row.recorded_at)} ngày ${row.work_date} của ${row.employee_name || row.employee_code}. Dữ liệu sẽ được ẩn nhưng vẫn còn trong nhật ký kiểm toán.`,
+      { title: 'Xóa lượt chấm công', label: 'Lý do xóa', placeholder: 'Ít nhất 5 ký tự', confirmText: 'Tiếp tục', tone: 'danger' },
+    );
+    if (!reason || String(reason).trim().length < 5) return;
+    if (!await confirmAction('Ngày công của nhân viên sẽ được tính lại ngay sau khi xóa. Xác nhận thực hiện?', { title: 'Xác nhận xóa dữ liệu', confirmText: 'Xóa và tính lại', tone: 'danger' })) return;
+    button.disabled = true;
+    try {
+      await deleteAttendanceAdjustment(row.id, String(reason).trim());
+      showToast('Đã xóa lượt chấm công và tính lại ngày công.');
+      store.notify();
+    } catch (error) {
+      showToast(error.message || 'Không thể xóa lượt chấm công.', true);
       button.disabled = false;
     }
   }));

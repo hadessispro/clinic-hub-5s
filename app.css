@@ -2984,6 +2984,81 @@ tr:last-child td {
 .system-admin-grid ~ .panel table tbody tr { transition: background-color .14s ease; }
 .system-admin-grid ~ .panel table tbody tr:hover { background: #f8fbf9; }
 
+.attendance-adjustment-dashboard { display: grid; gap: 16px; }
+.attendance-adjustment-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.attendance-adjustment-metrics article {
+  display: grid;
+  gap: 5px;
+  padding: 16px 18px;
+  border: 1px solid #d7e4df;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(28, 65, 58, .06);
+}
+.attendance-adjustment-metrics article:first-child { border-top: 4px solid #2563eb; }
+.attendance-adjustment-metrics article:nth-child(2) { border-top: 4px solid #0f8b7f; }
+.attendance-adjustment-metrics article:nth-child(3) { border-top: 4px solid #7c3aed; }
+.attendance-adjustment-metrics article:last-child { border-top: 4px solid #d97706; }
+.attendance-adjustment-metrics span,
+.attendance-adjustment-metrics small { color: var(--muted); }
+.attendance-adjustment-metrics strong { color: var(--teal-dark); font-size: 1.55rem; }
+.attendance-adjustment-editor { border-top: 4px solid #d97706; }
+.attendance-adjustment-list { border-top: 4px solid var(--teal); }
+.attendance-adjustment-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.attendance-adjustment-form label,
+.attendance-adjustment-filters label { display: grid; gap: 6px; min-width: 0; color: var(--ink); font-size: .82rem; font-weight: 750; }
+.attendance-adjustment-form input,
+.attendance-adjustment-form select,
+.attendance-adjustment-filters input,
+.attendance-adjustment-filters select {
+  width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px;
+  border: 1px solid #cfddd5; border-radius: 10px; outline: 0;
+  color: var(--ink); background: #f8fbfa; font: inherit;
+}
+.attendance-adjustment-form input:focus,
+.attendance-adjustment-form select:focus,
+.attendance-adjustment-filters input:focus,
+.attendance-adjustment-filters select:focus { border-color: var(--teal); background: #fff; box-shadow: 0 0 0 3px rgba(8, 127, 123, .11); }
+.attendance-adjustment-form .span-2 { grid-column: span 2; }
+.attendance-adjustment-actions { display: flex; justify-content: flex-end; gap: 9px; }
+.attendance-adjustment-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, .7fr) minmax(260px, 1.5fr) minmax(120px, .55fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 13px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f5f9f7;
+}
+.attendance-adjustment-row-actions { display: flex; gap: 7px; min-width: 178px; }
+.attendance-adjustment-row-actions .danger-button { color: #a52f26; border-color: #efc5c1; }
+.attendance-adjustment-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 13px; }
+.attendance-adjustment-pagination span { color: var(--muted); font-size: .84rem; }
+.attendance-adjustment-page-numbers { display: inline-flex; gap: 5px; }
+.attendance-adjustment-page-numbers button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #d4e1dd; border-radius: 9px; color: var(--teal-dark); background: #fff; font-weight: 800; }
+.attendance-adjustment-page-numbers button.is-active { border-color: var(--teal); color: #fff; background: var(--teal); }
+
+@media (max-width: 1000px) {
+  .attendance-adjustment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attendance-adjustment-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attendance-adjustment-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 650px) {
+  .attendance-adjustment-metrics,
+  .attendance-adjustment-form,
+  .attendance-adjustment-filters { grid-template-columns: minmax(0, 1fr); }
+  .attendance-adjustment-form .span-2 { grid-column: auto; }
+  .attendance-adjustment-actions { display: grid; }
+}
+
 @media (max-width: 1100px) {
   .system-health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .system-filterbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }

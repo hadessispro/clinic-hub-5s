@@ -112,6 +112,23 @@ export async function runDatabaseQuery(sql) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+export async function getAttendanceAdjustments({ month, search = '', page = 1, pageSize = 20 } = {}) {
+  const query = new URLSearchParams({ month, search, page: String(page), pageSize: String(pageSize) });
+  return supabase.request(`/attendance-adjustments?${query}`);
+}
+
+export async function createAttendanceAdjustment(payload) {
+  return supabase.request('/attendance-adjustments', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function updateAttendanceAdjustment(id, payload) {
+  return supabase.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export async function deleteAttendanceAdjustment(id, reason) {
+  return supabase.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
+}
+
 /* Trạng thái tài khoản ĐĂNG NHẬP, khác với trạng thái hồ sơ.
  *
  * "Hoạt động" trên hồ sơ nói về việc người đó còn làm việc hay không.

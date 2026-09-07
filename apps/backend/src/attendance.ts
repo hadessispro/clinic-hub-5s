@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 
@@ -385,5 +385,175 @@ export class AttendanceWorkController {
     }), { workdays: 0, regularMinutes: 0, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0, payableMinutes: 0, incompleteDays: 0 });
 
     return { month: bounds.month, employeeCode, source: 'postgresql-vps', formulaVersion: '2026-09-v1', totals: { ...totals, workdays: Number(totals.workdays.toFixed(3)) }, days };
+  }
+}
+
+const attendanceAdminRoles = new Set(['admin', 'admin_it', 'superadmin']);
+
+@Controller('/api/v2/attendance-adjustments')
+@UseGuards(AuthGuard)
+export class AttendanceAdjustmentController {
+  constructor(private readonly infrastructure: InfrastructureService) {}
+
+  private authorize(user: AuthUser) {
+    if (!attendanceAdminRoles.has(user.role)) {
+      throw new ForbiddenException('Chỉ Admin IT hoặc quản trị cấp cao được điều chỉnh chấm công.');
+    }
+  }
+
+  private monthRange(value: unknown) {
+    const month = String(value || clinicParts(new Date()).date.slice(0, 7));
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('Tháng không hợp lệ.');
+    const [year, number] = month.split('-').map(Number);
+    return { month, from: `${month}-01`, until: `${month}-${String(new Date(Date.UTC(year, number, 0)).getUTCDate()).padStart(2, '0')}` };
+  }
+
+  private async validateInput(client: any, body: JsonMap, ignoreId = '') {
+    const employeeCode = String(body.employeeCode || '').trim();
+    const workDate = String(body.workDate || '');
+    const recordType = body.recordType === 'checkout' ? 'checkout' : body.recordType === 'checkin' ? 'checkin' : '';
+    const time = String(body.time || '');
+    const shiftCode = String(body.shiftCode || '').trim();
+    const branchId = String(body.branchId || '').trim();
+    const reason = String(body.reason || '').trim();
+    if (!employeeCode || !/^20\d{2}-\d{2}-\d{2}$/.test(workDate)) throw new BadRequestException('Chọn nhân viên và ngày làm việc.');
+    if (!recordType || !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(time)) throw new BadRequestException('Loại lượt chấm hoặc thời gian không hợp lệ.');
+    if (!shiftCode) throw new BadRequestException('Chọn ca làm việc.');
+    if (!fallbackBranches[branchId]) throw new BadRequestException('Chi nhánh không hợp lệ.');
+    if (reason.length < 5) throw new BadRequestException('Nhập lý do điều chỉnh tối thiểu 5 ký tự.');
+    const [employee, shift, duplicate] = await Promise.all([
+      client.query(`select payload from app.records where entity_type='employees' and deleted_at is null and lower(payload->>'code')=lower($1) and payload->>'status'='active' limit 1`, [employeeCode]),
+      client.query(`select payload from app.records where entity_type='work_shifts' and deleted_at is null and payload->>'code'=$1 and coalesce((payload->>'active')::boolean,true) limit 1`, [shiftCode]),
+      client.query(`select record_key from app.records where entity_type='attendance_records' and deleted_at is null and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'record_type'=$3 and record_key<>$4 limit 1`, [employeeCode, workDate, recordType, ignoreId]),
+    ]);
+    if (!employee.rows[0]) throw new BadRequestException('Không tìm thấy nhân viên đang hoạt động.');
+    if (!shift.rows[0]) throw new BadRequestException('Ca làm việc chưa được cấu hình.');
+    if (duplicate.rows[0]) throw new BadRequestException(`Nhân viên đã có ${recordType === 'checkin' ? 'giờ vào' : 'giờ ra'} trong ngày này.`);
+    const fullTime = time.length === 5 ? `${time}:00` : time;
+    const recordedAt = new Date(`${workDate}T${fullTime}+07:00`);
+    if (!Number.isFinite(recordedAt.getTime())) throw new BadRequestException('Thời gian điều chỉnh không hợp lệ.');
+    return { employeeCode, workDate, recordType, time: fullTime, shiftCode, branchId, reason, recordedAt };
+  }
+
+  private async recalculate(client: any, employeeCode: string, workDate: string) {
+    const [assignmentResult, attendanceResult, shiftResult, overtimeResult] = await Promise.all([
+      client.query(`select payload from app.records where entity_type='schedule_assignments' and deleted_at is null and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 limit 1`, [employeeCode, workDate]),
+      client.query(`select payload from app.records where entity_type='attendance_records' and deleted_at is null and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 order by payload->>'recorded_at'`, [employeeCode, workDate]),
+      client.query(`select payload from app.records where entity_type='work_shifts' and deleted_at is null`),
+      client.query(`select payload from app.records where entity_type='leave_requests' and deleted_at is null and lower(payload->>'employee_code')=lower($1) and payload->>'from_date'=$2 and (lower(payload->>'request_type') like '%tăng ca%' or lower(payload->>'request_type') like '%overtime%') and payload->>'status'='approved' and payload->>'operations_status'='approved'`, [employeeCode, workDate]),
+    ]);
+    const overtime = overtimeResult.rows.reduce((sum: number, row: any) => sum + positiveMinutes(row.payload.overtime_minutes), 0);
+    const day = calculateWorkDay(
+      employeeCode,
+      workDate,
+      assignmentResult.rows[0]?.payload,
+      attendanceResult.rows.map((row: any) => row.payload),
+      new Map(shiftResult.rows.map((row: any) => [String(row.payload.code), row.payload])),
+      { minutes: overtime, ids: overtimeResult.rows.map((row: any) => String(row.payload.id || '')) },
+    );
+    await client.query(
+      `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_work_days',$1,$2::jsonb,'vps-work-calculation')
+       on conflict(entity_type,record_key) do update set payload=excluded.payload,origin=excluded.origin,version=app.records.version+1,updated_at=now(),deleted_at=null`,
+      [day.id, JSON.stringify(day)],
+    );
+    return day;
+  }
+
+  private async audit(client: any, user: AuthUser, action: string, entityId: string, reason: string, before: JsonMap | null, after: JsonMap | null) {
+    const id = randomUUID();
+    const payload = { id, action, entity: 'attendance_records', entity_id: entityId, actor_id: user.id, actor_employee_code: user.employeeCode, actor_role: user.role, reason, before, after, created_at: new Date().toISOString() };
+    await client.query(`insert into app.records(entity_type,record_key,payload,origin) values ('audit_logs',$1,$2::jsonb,'vps')`, [id, JSON.stringify(payload)]);
+  }
+
+  @Get()
+  async list(@Req() request: { user: AuthUser }, @Query('month') monthValue?: string, @Query('search') searchValue = '', @Query('page') pageValue = '1', @Query('pageSize') pageSizeValue = '20') {
+    this.authorize(request.user);
+    const bounds = this.monthRange(monthValue);
+    const search = String(searchValue || '').trim();
+    const pageSize = Math.min(100, Math.max(10, Number(pageSizeValue) || 20));
+    const page = Math.max(1, Number(pageValue) || 1);
+    const params: unknown[] = [bounds.from, bounds.until];
+    let searchSql = '';
+    if (search) {
+      params.push(`%${search}%`);
+      searchSql = ` and (a.payload->>'employee_code' ilike $3 or coalesce(e.payload->>'full_name',e.payload->>'name','') ilike $3)`;
+    }
+    const base = `from app.records a left join app.records e on e.entity_type='employees' and e.deleted_at is null and lower(e.payload->>'code')=lower(a.payload->>'employee_code') where a.entity_type='attendance_records' and a.deleted_at is null and a.payload->>'work_date' between $1 and $2${searchSql}`;
+    const countResult = await this.infrastructure.postgres.query<{ total: string; checkins: string; checkouts: string; manual: string }>(
+      `select count(*) total,count(*) filter(where a.payload->>'record_type'='checkin') checkins,count(*) filter(where a.payload->>'record_type'='checkout') checkouts,count(*) filter(where a.origin='manual-reconciliation') manual ${base}`,
+      params,
+    );
+    params.push(pageSize, (page - 1) * pageSize);
+    const rows = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap; employee_name: string; origin: string }>(
+      `select a.record_key,a.payload,coalesce(e.payload->>'full_name',e.payload->>'name',a.payload->>'employee_code') employee_name,a.origin ${base} order by a.payload->>'recorded_at' desc limit $${params.length - 1} offset $${params.length}`,
+      params,
+    );
+    const [employees, shifts] = await Promise.all([
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(`select payload from app.records where entity_type='employees' and deleted_at is null and payload->>'status'='active' order by coalesce(payload->>'full_name',payload->>'name',payload->>'code')`),
+      this.infrastructure.postgres.query<{ payload: JsonMap }>(`select payload from app.records where entity_type='work_shifts' and deleted_at is null and coalesce((payload->>'active')::boolean,true) order by payload->>'start_time',payload->>'code'`),
+    ]);
+    const stats = countResult.rows[0] || { total: '0', checkins: '0', checkouts: '0', manual: '0' };
+    return { month: bounds.month, page, pageSize, total: Number(stats.total), stats: { checkins: Number(stats.checkins), checkouts: Number(stats.checkouts), manual: Number(stats.manual) }, rows: rows.rows.map((row) => ({ ...row.payload, id: row.record_key, employee_name: row.employee_name, origin: row.origin })), employees: employees.rows.map((row) => row.payload), shifts: shifts.rows.map((row) => row.payload) };
+  }
+
+  @Post()
+  async create(@Req() request: { user: AuthUser }, @Body() body: JsonMap) {
+    this.authorize(request.user);
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const input = await this.validateInput(client, body);
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      const payload: JsonMap = { id, client_event_id: id, employee_code: input.employeeCode, shift_code: input.shiftCode, record_type: input.recordType, work_date: input.workDate, recorded_at: input.recordedAt.toISOString(), lat: null, lng: null, branch_id: input.branchId, distance_m: null, accuracy_m: null, status: 'valid', created_by: request.user.id, device_id: 'admin-it-adjustment', captured_offline: false, synced_at: now, proof_url: null, note: `[ADMIN_IT_ADJUSTMENT] ${input.reason}`, created_at: now, updated_at: now };
+      await client.query(`insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'manual-reconciliation')`, [id, JSON.stringify(payload)]);
+      await this.audit(client, request.user, 'attendance_create', id, input.reason, null, payload);
+      const day = await this.recalculate(client, input.employeeCode, input.workDate);
+      await client.query('commit');
+      await this.infrastructure.markDataChanged(['attendance_records', 'attendance_work_days', 'audit_logs'], request.user.id, request.user.role);
+      return { data: payload, workDay: day };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  @Patch(':id')
+  async update(@Req() request: { user: AuthUser }, @Param('id') id: string, @Body() body: JsonMap) {
+    this.authorize(request.user);
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query(`select payload from app.records where entity_type='attendance_records' and record_key=$1 and deleted_at is null for update`, [id]);
+      if (!current.rows[0]) throw new BadRequestException('Không tìm thấy lượt chấm công cần sửa.');
+      const before = current.rows[0].payload as JsonMap;
+      const input = await this.validateInput(client, body, id);
+      const now = new Date().toISOString();
+      const after: JsonMap = { ...before, employee_code: input.employeeCode, shift_code: input.shiftCode, record_type: input.recordType, work_date: input.workDate, recorded_at: input.recordedAt.toISOString(), lat: null, lng: null, branch_id: input.branchId, distance_m: null, accuracy_m: null, status: 'valid', device_id: 'admin-it-adjustment', synced_at: now, note: `[ADMIN_IT_ADJUSTMENT] ${input.reason}`, updated_at: now };
+      await client.query(`update app.records set payload=$2::jsonb,origin='manual-reconciliation',version=version+1,updated_at=now() where entity_type='attendance_records' and record_key=$1`, [id, JSON.stringify(after)]);
+      await this.audit(client, request.user, 'attendance_update', id, input.reason, before, after);
+      await this.recalculate(client, String(before.employee_code), String(before.work_date));
+      const day = await this.recalculate(client, input.employeeCode, input.workDate);
+      await client.query('commit');
+      await this.infrastructure.markDataChanged(['attendance_records', 'attendance_work_days', 'audit_logs'], request.user.id, request.user.role);
+      return { data: after, workDay: day };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+  }
+
+  @Delete(':id')
+  async remove(@Req() request: { user: AuthUser }, @Param('id') id: string, @Body() body: JsonMap) {
+    this.authorize(request.user);
+    const reason = String(body.reason || '').trim();
+    if (reason.length < 5) throw new BadRequestException('Nhập lý do xóa tối thiểu 5 ký tự.');
+    const client = await this.infrastructure.postgres.connect();
+    try {
+      await client.query('begin');
+      const current = await client.query(`select payload from app.records where entity_type='attendance_records' and record_key=$1 and deleted_at is null for update`, [id]);
+      if (!current.rows[0]) throw new BadRequestException('Không tìm thấy lượt chấm công cần xóa.');
+      const before = current.rows[0].payload as JsonMap;
+      await client.query(`update app.records set deleted_at=now(),origin='manual-reconciliation',version=version+1,updated_at=now() where entity_type='attendance_records' and record_key=$1`, [id]);
+      await this.audit(client, request.user, 'attendance_delete', id, reason, before, null);
+      const day = await this.recalculate(client, String(before.employee_code), String(before.work_date));
+      await client.query('commit');
+      await this.infrastructure.markDataChanged(['attendance_records', 'attendance_work_days', 'audit_logs'], request.user.id, request.user.role);
+      return { data: before, workDay: day };
+    } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
   }
 }

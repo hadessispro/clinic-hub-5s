@@ -2,7 +2,7 @@ import { Controller, Get, Module } from '@nestjs/common';
 import { InfrastructureService } from './infrastructure';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { DataController, DataService } from './data';
-import { AttendanceController, AttendanceWorkController } from './attendance';
+import { AttendanceAdjustmentController, AttendanceController, AttendanceWorkController } from './attendance';
 import { RpcController, RpcService } from './rpc';
 import { FilesController } from './files';
 import { PushController } from './push';
@@ -22,7 +22,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, PgRegistrationController, DataController, AttendanceController, AttendanceWorkController, RpcController, FilesController, PushController, MarketingController, GiftsController, ScheduleController],
+  controllers: [HealthController, AuthController, PgRegistrationController, DataController, AttendanceController, AttendanceWorkController, AttendanceAdjustmentController, RpcController, FilesController, PushController, MarketingController, GiftsController, ScheduleController],
   providers: [InfrastructureService, AuthService, PgRegistrationService, AuthGuard, DataService, RpcService, MarketingService, GiftsService, ScheduleService],
 })
 export class AppModule {}
