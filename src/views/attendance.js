@@ -324,9 +324,37 @@ function renderHistory(records, employees, ops) {
   `;
 }
 
-function renderCheckinDialog(employee, shift, settings, allowedShifts) {
-  const shiftChoices = allowedShifts.length ? allowedShifts : [shift].filter(Boolean);
-  const requiresChoice = shiftChoices.length > 1;
+function shiftPaidHours(item) {
+  const [startHour, startMinute] = String(item?.start || '00:00').split(':').map(Number);
+  const [endHour, endMinute] = String(item?.end || '00:00').split(':').map(Number);
+  const duration = ((endHour * 60 + endMinute) - (startHour * 60 + startMinute) - 60) / 60;
+  return Number.isInteger(duration) ? String(duration) : String(duration).replace('.', ',');
+}
+
+function renderShiftCatalog(shifts, assignedShiftId) {
+  if (!shifts.length) return '';
+  return `<section class="attendance-shift-catalog">
+    <div class="attendance-shift-catalog-heading">
+      <div><p class="eyebrow">Ca làm việc áp dụng</p><h3>Đủ ${shifts.length} ca theo vị trí</h3></div>
+      <span>Ca hôm nay lấy từ lịch phân công</span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ca làm</th><th>Thời gian</th><th>Nghỉ</th><th>Công chuẩn</th><th>Hôm nay</th></tr></thead>
+      <tbody>${shifts.map((item) => `<tr class="${item.id === assignedShiftId ? 'is-current' : ''}">
+        <td><strong>${escapeHTML(item.name)}</strong></td>
+        <td>${escapeHTML(item.start)}–${escapeHTML(item.end)}</td>
+        <td>1 giờ</td>
+        <td><strong>${shiftPaidHours(item)} giờ</strong></td>
+        <td>${item.id === assignedShiftId ? statusPill('Ca được phân', 'good') : '<span class="subtle">—</span>'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </section>`;
+}
+
+function renderCheckinDialog(employee, shift, settings, allowedShifts, displayShifts = allowedShifts, assignedShiftId = '') {
+  const shiftChoices = displayShifts.length ? displayShifts : [shift].filter(Boolean);
+  const assignmentLocked = Boolean(assignedShiftId);
+  const requiresChoice = !assignmentLocked && allowedShifts.length > 1;
   return `
     <div class="checkin-dialog" id="checkinDialog" hidden>
       <button class="checkin-dialog-backdrop" type="button" data-action="close-checkin" aria-label="Đóng"></button>
@@ -354,11 +382,11 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
 
         <fieldset class="attendance-shift-picker">
           <legend>Chọn đúng ca làm việc hôm nay</legend>
-          <p>Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.</p>
+          <p>${assignmentLocked ? 'Ca hôm nay đã được khóa đúng theo lịch phân công; các ca còn lại chỉ hiển thị để đối chiếu.' : 'Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.'}</p>
           <div class="attendance-shift-options">
             ${shiftChoices.map((item, index) => `
-              <label class="attendance-shift-option">
-                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${!requiresChoice && index === 0 ? 'checked' : ''}>
+              <label class="attendance-shift-option ${assignmentLocked && item.id !== assignedShiftId ? 'is-disabled' : ''}">
+                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${(assignmentLocked ? item.id === assignedShiftId : (!requiresChoice && index === 0)) ? 'checked' : ''} ${assignmentLocked && item.id !== assignedShiftId ? 'disabled' : ''}>
                 <span><strong>${escapeHTML(item.name || 'Ca làm')}</strong><small>${escapeHTML(item.start)}–${escapeHTML(item.end)}</small></span>
               </label>
             `).join('')}
@@ -486,9 +514,15 @@ export async function renderView(state) {
   const configuredAllowedShifts = allowedShiftRows
     .map((row) => SHIFTS.find((item) => item.id === row.code))
     .filter(Boolean);
+  const positionShiftPrefix = shiftId.startsWith('doctor-')
+    ? 'doctor-'
+    : (shiftId.startsWith('front-') ? 'front-' : '');
+  const positionShifts = configuredAllowedShifts.length
+    ? configuredAllowedShifts
+    : (positionShiftPrefix ? SHIFTS.filter((item) => item.id.startsWith(positionShiftPrefix)) : [shift].filter(Boolean));
   const allowedShifts = todayAssignment
     ? [shift].filter(Boolean)
-    : (configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean));
+    : (positionShifts.length ? positionShifts : [shift].filter(Boolean));
   const records = mergeRecords(offlineQueue, remoteRecords);
   const todayRecords = mergeRecords(
     offlineQueue.filter((item) => item.employee === state.employeeCode && item.date === workDate),
@@ -597,6 +631,8 @@ export async function renderView(state) {
         </section>
       </div>
 
+      ${renderShiftCatalog(positionShifts, todayAssignment?.shift || shift?.id)}
+
       ` : dauTrangGon()}
       ${tuChamCong ? renderWorkSummary(workSummary, attendanceWorkMonth) : ''}
       <section class="attendance-history-panel">
@@ -617,7 +653,7 @@ export async function renderView(state) {
         ${renderHistory(filteredRecords, scopedEmployees, ops)}
       </section>
     </div>
-    ${renderCheckinDialog(employee, shift, settings, allowedShifts)}
+    ${renderCheckinDialog(employee, shift, settings, allowedShifts, positionShifts, todayAssignment?.shift || '')}
   `;
 }
 
