@@ -178,16 +178,39 @@ async function renderCurrentView(state) {
 
   // 1. Dải nhắc nhở .manager-strip:
   // - Ẩn trên màn hình Chấm công để tránh trùng lặp tiêu đề và nút tự gọi chính nó
-  // - Ẩn với vai trò quản trị không cần chấm công (Admin, IT, Marketing, Leader...)
-  // - ẨN KHI ĐÃ CHẤM CÔNG VÀO CA (xử lý dứt điểm: "đã chấm công rồi thì sao noti nhắc nhở này không tắt")
+  // - Ẩn với vai trò quản trị không cần chấm công (Admin, IT, Marketing, Leader...) khi không có ca
+  // - Khi đã vào ca mà chưa ra ca: hiển thị dải nhắc kết ca kèm nút Check-out!
   const dai = document.querySelector('.manager-strip');
   if (dai) {
-    if (dangOTrangChamCong || khongCanCham || daVaoCa) {
+    if (dangOTrangChamCong || khongCanCham || daKetCa) {
       dai.hidden = true;
       dai.style.display = 'none';
+    } else if (daVaoCa) {
+      dai.hidden = false;
+      dai.style.display = '';
+      dai.innerHTML = `
+        <div>
+          <p class="eyebrow" style="color: #047857; font-weight: 600;">✓ Đang trong ca làm việc · Vào lúc ${formatTime(att?.checkinTime)}</p>
+          <h3 id="managerNotesTitle" style="color: #065f46;">Đừng quên Check-out GPS tại phòng khám khi kết thúc ngày làm việc.</h3>
+        </div>
+        <button class="primary-button" type="button" data-view-jump="attendance" style="background: #059669; color: white; border: none; font-weight: 600;">
+          <span>↗</span>
+          Check-out kết ca
+        </button>
+      `;
     } else {
       dai.hidden = false;
       dai.style.display = '';
+      dai.innerHTML = `
+        <div>
+          <p class="eyebrow">Ghi chú vận hành</p>
+          <h3 id="managerNotesTitle">Chấm công tại 60 Lê Văn Thọ bằng GPS trực tiếp; dữ liệu ngoại tuyến sẽ tự đồng bộ.</h3>
+        </div>
+        <button class="primary-button" type="button" data-view-jump="attendance">
+          <span>⌖</span>
+          Chấm công ngay
+        </button>
+      `;
     }
   }
 
@@ -207,7 +230,10 @@ async function renderCurrentView(state) {
     } else if (daVaoCa) {
       sidebarNote.innerHTML = `
         <span class="note-dot online" style="background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);"></span>
-        <p><strong style="color: #065f46;">✓ Đã vào ca:</strong> ${formatTime(att?.checkinTime)}<br/><small style="color: #047857;">GPS hợp lệ · Đang làm việc</small></p>
+        <div style="flex: 1; min-width: 0;">
+          <p><strong style="color: #065f46;">✓ Đã vào ca:</strong> ${formatTime(att?.checkinTime)}<br/><small style="color: #047857;">GPS hợp lệ · Đang làm việc</small></p>
+        </div>
+        <button type="button" data-view-jump="attendance" title="Đi tới Check-out kết ca" style="background: #059669; color: #fff; border: none; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; white-space: nowrap;">↗ Ra ca</button>
       `;
     } else {
       sidebarNote.innerHTML = `

@@ -90,9 +90,13 @@ class Store {
     this.notify();
   }
 
-  setTodayAttendance(attendance) {
-    this.state.todayAttendance = { ...this.state.todayAttendance, ...attendance };
-    this.notify();
+  setTodayAttendance(attendance, silent = false) {
+    const current = this.state.todayAttendance || {};
+    const changed = Object.keys(attendance).some((k) => current[k] !== attendance[k]);
+    this.state.todayAttendance = { ...current, ...attendance };
+    if (changed && !silent) {
+      this.notify();
+    }
   }
 
   getState() {

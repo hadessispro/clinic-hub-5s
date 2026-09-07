@@ -623,7 +623,7 @@ export async function renderView(state) {
     checkedOut: Boolean(todayCheckout),
     checkoutTime: todayCheckout ? (todayCheckout.recorded_at || todayCheckout.time) : null,
     branchName: BRANCHES[settings.branchId]?.shortName || settings.clinicName,
-  });
+  }, true);
 
   const scopedEmployeeCodes = new Set(scopedEmployees.map((item) => item.id));
   const scopedRecords = state.role === 'leader'
@@ -665,7 +665,7 @@ export async function renderView(state) {
   const mapUrl = `https://www.google.com/maps?q=${settings.latitude},${settings.longitude}`;
   const pendingCount = offlineQueue.length + pendingProofs.length;
 
-  if (tuChamCong) {
+  if (!ops) {
     return `
       <div class="attendance-page">
         <header class="attendance-page-header">
@@ -678,7 +678,6 @@ export async function renderView(state) {
             <span class="network-status ${navigator.onLine ? 'is-online' : 'is-offline'}" data-network-status>
               <span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}
             </span>
-            ${ops ? '<button class="secondary-button" type="button" data-action="export-attendance">Xuất CSV</button>' : ''}
           </div>
         </header>
 
@@ -725,7 +724,7 @@ export async function renderView(state) {
             <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
             <span class="subtle">${filteredRecords.length}/${scopedRecords.length} bản ghi</span>
           </div>
-          ${renderHistory(filteredRecords, scopedEmployees, ops)}
+          ${renderHistory(filteredRecords, scopedEmployees, false)}
         </section>
       </div>
       ${renderCheckinDialog(employee, shift, settings, allowedShifts)}
@@ -753,6 +752,15 @@ export async function renderView(state) {
           </button>
         </div>
       </header>
+
+      ${pendingCount ? `
+        <div class="attendance-sync-banner">
+          <div><strong>${pendingCount} mục đang chờ đồng bộ</strong><span>Bản ghi và ảnh chấm công vẫn an toàn trên điện thoại này.</span></div>
+          <button type="button" data-action="sync-attendance" ${navigator.onLine ? '' : 'disabled'}>Đồng bộ ngay</button>
+        </div>
+      ` : ''}
+
+      ${state.employeeCode ? renderTodayCard(todayCheckin, todayCheckout, shift, employee) : ''}
 
       <div class="attendance-admin-toolbar">
         <label class="employee-select-box">
@@ -820,6 +828,7 @@ export async function renderView(state) {
       `}
     </div>
     ${renderAdjustmentDialog(scopedEmployees)}
+    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts) : ''}
   `;
 }
 
