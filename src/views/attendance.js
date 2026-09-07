@@ -548,6 +548,7 @@ export async function renderView(state) {
   if (clockTimer) clearTimeout(clockTimer);
   stopWorkplaceCamera();
   let settings = settingsForBranch(BRANCH.id, state.settings);
+  const workDate = clinicDateISO(new Date(), settings.timeZone);
   const userRole = state.profile?.role || state.role;
   const ops = isOpsRole(userRole);
   const canEditWorkday = canEditAttendance(userRole);
