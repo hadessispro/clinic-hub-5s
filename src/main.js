@@ -344,11 +344,20 @@ async function bootstrap() {
       const groupTitle = event.target.closest('.nav-group-title');
       if (groupTitle) {
         const group = groupTitle.closest('.nav-group');
+        const groupName = groupTitle.dataset.group;
         if (group) {
           const isOpen = group.classList.contains('is-open');
-          group.classList.toggle('is-open', !isOpen);
-          group.classList.toggle('is-collapsed', isOpen);
-          groupTitle.setAttribute('aria-expanded', String(!isOpen));
+          const willOpen = !isOpen;
+          group.classList.toggle('is-open', willOpen);
+          group.classList.toggle('is-collapsed', !willOpen);
+          groupTitle.setAttribute('aria-expanded', String(willOpen));
+          if (groupName) {
+            try {
+              const tap = new Set(JSON.parse(localStorage.getItem('clinic_nhom_gap') || '[]'));
+              if (willOpen) tap.delete(groupName); else tap.add(groupName);
+              localStorage.setItem('clinic_nhom_gap', JSON.stringify([...tap]));
+            } catch {}
+          }
         }
         return;
       }
