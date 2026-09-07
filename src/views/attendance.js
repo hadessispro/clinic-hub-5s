@@ -497,6 +497,14 @@ export async function renderView(state) {
   const todayCheckin = todayRecords.find((record) => record.type === 'checkin');
   const todayCheckout = todayRecords.find((record) => record.type === 'checkout');
   if (todayCheckin?.branchId) settings = settingsForBranch(todayCheckin.branchId, state.settings);
+
+  store.setTodayAttendance({
+    checkedIn: Boolean(todayCheckin),
+    checkinTime: todayCheckin ? (todayCheckin.recorded_at || todayCheckin.time) : null,
+    checkedOut: Boolean(todayCheckout),
+    checkoutTime: todayCheckout ? (todayCheckout.recorded_at || todayCheckout.time) : null,
+    branchName: BRANCHES[settings.branchId]?.shortName || settings.clinicName,
+  });
   const ops = isOpsRole(state.role);
   const scopedEmployees = state.role === 'leader'
     ? employees.filter((item) => item.department === state.department)
@@ -549,8 +557,8 @@ export async function renderView(state) {
     <div class="attendance-page">
       ${tuChamCong ? `<header class="attendance-page-header">
         <div>
-          <p class="eyebrow">Chấm công GPS · ${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</p>
-          <h3>Chấm công vào ca</h3>
+          <p class="eyebrow">Điểm trực: ${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)} · Bán kính ${Number(settings.allowedRadius)}m</p>
+          <h3>${todayCheckin ? 'Ca làm việc hôm nay' : 'Chấm công vào ca'}</h3>
           <p>${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: settings.timeZone })}</p>
         </div>
         <div class="attendance-header-actions">
@@ -950,6 +958,14 @@ async function confirmCheckin(button) {
       }
     }
 
+    store.setTodayAttendance({
+      checkedIn: true,
+      checkinTime: now.toISOString(),
+      checkedOut: false,
+      checkoutTime: null,
+      branchName: BRANCHES[context.settings.branchId]?.shortName || context.settings.clinicName,
+    });
+
     closeDialog();
     showToast(proofPending
       ? 'Đã ghi nhận chấm công. Dữ liệu đang được giữ an toàn và sẽ tự đồng bộ khi có mạng.'
@@ -1012,6 +1028,11 @@ async function confirmCheckout(button) {
       deviceId: getOrCreateDeviceId(),
       capturedOffline: !navigator.onLine,
     }, context.state.user?.id);
+
+    store.setTodayAttendance({
+      checkedOut: true,
+      checkoutTime: now.toISOString(),
+    });
 
     showToast(result.isOfflinePending
       ? 'Đã lưu giờ kết ca trên điện thoại. Hệ thống sẽ tự đồng bộ khi có mạng.'

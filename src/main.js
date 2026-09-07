@@ -6,13 +6,13 @@ import { renderTopbar } from './components/topbar.js';
 import { showLogin, hideLogin } from './components/login.js';
 import { loadSettings } from './services/reports.js';
 import { getNotifications, subscribeToNotifications } from './services/notifications.js';
-import { syncOfflineAttendance } from './services/attendance.js';
+import { checkTodayAttendance, getOfflineQueue, syncOfflineAttendance } from './services/attendance.js';
 import { syncPendingProofs } from './services/attendance-proofs.js';
 import { showToast } from './components/toast.js';
 import { canAccessView, getDefaultView, isOpsRole, khongPhaiChamCong, napGhiDePhanQuyen } from './permissions.js';
 import { layGhiDe } from './services/phan-quyen.js';
 import { loadClinicLocation } from './services/clinic.js';
-import { BRANCH, branchSettings, getEffectiveBranchId, setActiveBranch } from './branch.js';
+import { BRANCH, branchSettings, clinicDateISO, getEffectiveBranchId, setActiveBranch } from './branch.js';
 import { subscribeToLeaveRequests } from './services/leave.js';
 import { initSmartChat, destroySmartChat } from './components/smart-chat.js';
 import { initErrorMonitoring } from './services/error-monitor.js';
@@ -71,6 +71,29 @@ window.addEventListener('clinic:overlay-closed', () => {
 });
 
 initErrorMonitoring();
+
+export async function syncTodayAttendance(employeeCode, userId) {
+  if (!employeeCode) return;
+  try {
+    const settings = branchSettings();
+    const workDate = clinicDateISO(new Date(), settings.timeZone);
+    const remoteRecords = navigator.onLine ? await checkTodayAttendance(employeeCode, workDate).catch(() => []) : [];
+    const offlineQueue = userId ? getOfflineQueue(userId) : [];
+    const todayOffline = offlineQueue.filter((item) => item.employee === employeeCode && item.date === workDate);
+    const todayRecords = [...todayOffline, ...remoteRecords];
+    const checkin = todayRecords.find((r) => r.type === 'checkin');
+    const checkout = todayRecords.find((r) => r.type === 'checkout');
+    store.setTodayAttendance({
+      checkedIn: Boolean(checkin),
+      checkinTime: checkin ? (checkin.recorded_at || checkin.time) : null,
+      checkedOut: Boolean(checkout),
+      checkoutTime: checkout ? (checkout.recorded_at || checkout.time) : null,
+      branchName: BRANCH.shortName,
+    });
+  } catch (error) {
+    console.warn('[Clinic Hub] Failed to sync today attendance status:', error);
+  }
+}
 
 async function syncAllPendingAttendance(userId) {
   if (!userId || !navigator.onLine) return { attendance: 0, proofs: 0, rejected: 0 };
@@ -183,13 +206,7 @@ async function bootstrap() {
       const activeBranchId = getEffectiveBranchId(authInfo.profile);
       setActiveBranch(activeBranchId);
       store.updateSettings(branchSettings());
-      
-      // Dải nhắc chấm công chỉ hiện với người thật sự phải chấm. Trưởng bộ
-      // phận và trưởng phòng nhìn thấy nó trên MỌI màn, kể cả màn duyệt hoa
-      // hồng, mà họ lại không chấm công — một lời nhắc không dành cho mình
-      // xuất hiện khắp nơi thì người ta học được cách không đọc lời nhắc nào.
-      const dai = document.querySelector('.manager-strip');
-      if (dai) dai.hidden = khongPhaiChamCong(store.getState().profile?.role);
+      syncTodayAttendance(authInfo.profile?.employee_code, authInfo.user?.id);
 
       const managerNotesTitle = document.getElementById('managerNotesTitle');
       if (managerNotesTitle) {

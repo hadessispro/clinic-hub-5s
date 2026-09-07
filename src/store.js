@@ -14,6 +14,13 @@ class Store {
       employeeCode: null,
       department: null,
       notifications: [],
+      todayAttendance: {
+        checkedIn: false,
+        checkinTime: null,
+        checkedOut: false,
+        checkoutTime: null,
+        branchName: '',
+      },
       settings: {
         ...branchSettings(),
         googleGasUrl: '',
@@ -80,6 +87,11 @@ class Store {
     // Avoid duplicates
     if (this.state.notifications.some(n => n.id === notification.id)) return;
     this.state.notifications = [notification, ...this.state.notifications];
+    this.notify();
+  }
+
+  setTodayAttendance(attendance) {
+    this.state.todayAttendance = { ...this.state.todayAttendance, ...attendance };
     this.notify();
   }
 

@@ -1,5 +1,6 @@
 import { store } from './store.js';
-import { canAccessView, getDefaultView, scheduleTitleForRole } from './permissions.js';
+import { canAccessView, getDefaultView, khongPhaiChamCong, scheduleTitleForRole } from './permissions.js';
+import { formatTime } from './utils.js';
 
 // Map of view names to their lazy loaded module import functions
 const viewImports = {
@@ -166,6 +167,55 @@ async function renderCurrentView(state) {
   const mobileMore = document.querySelector('[data-mobile-nav-toggle]');
   const activeOverflowItem = document.querySelector(`.mobile-nav-menu-item[data-view="${currentView}"]`);
   mobileMore?.classList.toggle('active', Boolean(activeOverflowItem));
+
+  // ══ Đồng bộ Header, Manager Strip & Sidebar Note theo trạng thái chấm công ══
+  const role = state.role || state.profile?.role;
+  const khongCanCham = khongPhaiChamCong(role);
+  const att = state.todayAttendance;
+  const daVaoCa = Boolean(att?.checkedIn);
+  const daKetCa = Boolean(att?.checkedOut);
+  const dangOTrangChamCong = currentView === 'attendance';
+
+  // 1. Dải nhắc nhở .manager-strip:
+  // - Ẩn trên màn hình Chấm công để tránh trùng lặp tiêu đề và nút tự gọi chính nó
+  // - Ẩn với vai trò quản trị không cần chấm công (Admin, IT, Marketing, Leader...)
+  // - ẨN KHI ĐÃ CHẤM CÔNG VÀO CA (xử lý dứt điểm: "đã chấm công rồi thì sao noti nhắc nhở này không tắt")
+  const dai = document.querySelector('.manager-strip');
+  if (dai) {
+    if (dangOTrangChamCong || khongCanCham || daVaoCa) {
+      dai.hidden = true;
+      dai.style.display = 'none';
+    } else {
+      dai.hidden = false;
+      dai.style.display = '';
+    }
+  }
+
+  // 2. Sidebar Note (.sidebar-note) đồng bộ trạng thái:
+  const sidebarNote = document.querySelector('.sidebar-note');
+  if (sidebarNote) {
+    if (khongCanCham) {
+      sidebarNote.innerHTML = `
+        <span class="note-dot" style="background: #0d9488;"></span>
+        <p><strong>Nha Khoa 5S</strong><br/><small style="color: #6e7a76;">Vận hành hệ thống 2 chi nhánh</small></p>
+      `;
+    } else if (daKetCa) {
+      sidebarNote.innerHTML = `
+        <span class="note-dot" style="background: #6b7280;"></span>
+        <p><strong style="color: #374151;">✓ Đã kết ca:</strong> ${formatTime(att?.checkoutTime)}<br/><small style="color: #6b7280;">Hoàn thành ca làm việc hôm nay</small></p>
+      `;
+    } else if (daVaoCa) {
+      sidebarNote.innerHTML = `
+        <span class="note-dot online" style="background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);"></span>
+        <p><strong style="color: #065f46;">✓ Đã vào ca:</strong> ${formatTime(att?.checkinTime)}<br/><small style="color: #047857;">GPS hợp lệ · Đang làm việc</small></p>
+      `;
+    } else {
+      sidebarNote.innerHTML = `
+        <span class="note-dot" style="background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);"></span>
+        <p><strong style="color: #92400e;">Chưa check-in ca hôm nay</strong><br/><small style="color: #b45309;">Bật GPS xác minh tại phòng khám</small></p>
+      `;
+    }
+  }
 
   // Load the view and render it
   try {
