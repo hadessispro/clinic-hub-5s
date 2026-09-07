@@ -70,7 +70,7 @@ done
 truoc="$loi"
 trung="$(ls "$MIG"/*.sql | xargs -n1 basename | cut -c1-3 | sort | uniq -d)"
 for so in $trung; do
-  if [ -f "$TRUNG_CU" ] && grep -qx "$so" "$TRUNG_CU"; then
+  if [ -f "$TRUNG_CU" ] && grep -qE "^$so[[:space:]]*$" "$TRUNG_CU"; then
     continue
   fi
   do_ "Số $so bị trùng bởi: $(ls "$MIG"/$so-*.sql | xargs -n1 basename | tr '\n' ' ')"
@@ -148,6 +148,7 @@ moi=0
 if [ -f "$CHU_KY" ]; then
   while read -r ky ten; do
     [ -n "${ten:-}" ] || continue
+    ten="${ten%$'\r'}"
     if [ ! -f "$MIG/$ten" ]; then
       do_ "$ten đã bị xóa. Migration đã áp thì không được biến mất."
       continue
@@ -160,7 +161,7 @@ if [ -f "$CHU_KY" ]; then
     fi
   done < "$CHU_KY"
   for f in "$MIG"/*.sql; do
-    grep -q " $(basename "$f")\$" "$CHU_KY" || moi=$((moi + 1))
+    grep -qE "[[:space:]]$(basename "$f")[[:space:]]*$" "$CHU_KY" || moi=$((moi + 1))
   done
   [ "$loi" -eq "$truoc" ] && xanh "Migration đã chốt còn nguyên vẹn$([ "$moi" -gt 0 ] && echo " · $moi file mới chưa chốt")"
 else
