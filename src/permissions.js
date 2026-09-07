@@ -264,6 +264,10 @@ export function isOpsRole(role) {
   return ['admin', 'hr', 'leader', 'phu_ta_truong', 'finance', 'admin_it', 'superadmin'].includes(role);
 }
 
+export function canEditAttendance(role) {
+  return ['admin_it', 'superadmin', 'admin'].includes(role);
+}
+
 const DOCTOR_ROSTER_VIEWER_ROLES = new Set(['staff', 'phu_ta', 'le_tan', 'telesale_staff']);
 
 export function scheduleTitleForRole(role) {
