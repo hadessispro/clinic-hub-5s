@@ -259,17 +259,26 @@ async function bootstrap() {
           if (currentState.currentView === 'leave') store.notify();
         });
 
-        // Setup marketing & lead realtime sync
-        import('./services/marketing.js').then(({ subscribeToRealtime }) => {
+        // Setup marketing & lead realtime sync for authorized marketing roles only
+        const userRole = authInfo?.profile?.role || authInfo?.user?.role || store.getState()?.role;
+        const MARKETING_SYNC_ROLES = ['admin', 'superadmin', 'admin_it', 'admin_marketing', 'telesale_leader', 'telesale_staff', 'support_marketing', 'pg_staff'];
+        if (MARKETING_SYNC_ROLES.includes(userRole)) {
+          import('./services/marketing.js').then(({ subscribeToRealtime }) => {
+            marketingSub?.();
+            marketingSub = subscribeToRealtime((change) => {
+              const currentState = store.getState();
+              const marketingViews = ['marketing-leads', 'telesale-workspace', 'telesale-management', 'marketing-analytics', 'pg-management'];
+              const isMarketingDashboard = currentState.currentView === 'dashboard' && MARKETING_SYNC_ROLES.includes(currentState.role);
+              if (marketingViews.includes(currentState.currentView) || isMarketingDashboard) {
+                console.log('[Realtime Auto-Refresh] Updating active view:', currentState.currentView);
+                refreshActiveViewFromRealtime({ ...(change || {}), source: 'marketing-realtime' });
+              }
+            });
+          }).catch(err => console.warn('[Main] Realtime subscription init error:', err));
+        } else {
           marketingSub?.();
-          marketingSub = subscribeToRealtime((change) => {
-            const currentState = store.getState();
-            if (['marketing-leads', 'telesale-workspace', 'telesale-management', 'marketing-analytics', 'pg-management', 'dashboard'].includes(currentState.currentView)) {
-              console.log('[Realtime Auto-Refresh] Updating active view:', currentState.currentView);
-              refreshActiveViewFromRealtime({ ...(change || {}), source: 'marketing-realtime' });
-            }
-          });
-        }).catch(err => console.warn('[Main] Realtime subscription init error:', err));
+          marketingSub = null;
+        }
 
         if (!vpsChangeSub && import.meta.env.VITE_DATA_BACKEND === 'vps') {
           vpsChangeSub = subscribeToVpsChanges((change) => {
