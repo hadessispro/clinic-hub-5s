@@ -12565,3 +12565,176 @@ table td {
   .kh-viec-dong { grid-template-columns: 31px minmax(0, 1fr); }
   .kh-viec-dong .kh-nho { grid-column: 2; justify-self: start; }
 }
+
+/* ══ LỊCH BÁC SĨ DÀNH CHO NHÂN VIÊN ════════════════════════════════════ */
+.monthly-schedule-hero.is-doctor-roster {
+  border-color: #dce7e3;
+  background: #fff;
+}
+
+.doctor-roster-readonly {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid #bde0d3;
+  border-radius: 999px;
+  color: #166c57;
+  background: #eff9f5;
+  font-size: .73rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.monthly-toolbar:has(.doctor-roster-search) {
+  grid-template-columns: 105px 115px minmax(170px, .8fr) minmax(160px, .7fr) minmax(230px, 1.2fr);
+}
+
+.doctor-roster-search .smart-search-control {
+  display: block;
+}
+
+.doctor-roster-search .smart-search-control > input {
+  padding-left: 38px;
+}
+
+.doctor-roster-focus {
+  padding: 16px;
+  border: 1px solid #e2e9e6;
+  border-radius: 16px;
+  background: #f8faf9;
+}
+
+.doctor-roster-focus > .section-title {
+  margin-bottom: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid #e7ecea;
+}
+
+.doctor-roster-focus .section-title h3 {
+  margin: 2px 0 3px;
+}
+
+.doctor-roster-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 9px;
+}
+
+.doctor-roster-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #e1e8e5;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(32, 57, 51, .035);
+}
+
+.doctor-roster-card[hidden] { display: none !important; }
+
+.doctor-roster-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  color: #087b6e;
+  background: #e9f7f2;
+  font-size: 1.05rem;
+  place-items: center;
+}
+
+.doctor-roster-card > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.doctor-roster-card > div strong,
+.doctor-roster-card > div small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doctor-roster-card > div strong { color: #1a2c28; font-size: .84rem; }
+.doctor-roster-card > div small { color: #74827e; font-size: .68rem; }
+
+.doctor-roster-shift {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 1px solid #e8edeb;
+}
+
+.doctor-roster-shift b { color: #0c7569; font-size: .82rem; }
+.doctor-roster-shift small { color: #6e7e79; font-size: .66rem; white-space: nowrap; }
+
+.doctor-roster-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 22px;
+  border: 1px dashed #ccd9d5;
+  border-radius: 12px;
+  color: #71817c;
+  background: #fff;
+  text-align: center;
+}
+
+.doctor-published-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #278068;
+  font-size: .62rem;
+  font-weight: 800;
+}
+
+.doctor-roster-cell {
+  display: grid;
+  width: 100%;
+  height: 48px;
+  color: #a5afac;
+  font-size: .78rem;
+  font-weight: 800;
+  place-items: center;
+}
+
+.doctor-roster-cell.has-shift {
+  color: #086d63;
+  background: #eaf7f3;
+}
+
+.doctor-roster-cell[data-shift="S"] { color: #9a6209; background: #fff6e5; }
+.doctor-roster-cell[data-shift="C"] { color: #6550a4; background: #f3effd; }
+.doctor-roster-cell[data-shift="F"] { color: #a84949; background: #fff0ef; }
+
+@media (max-width: 1180px) {
+  .monthly-toolbar:has(.doctor-roster-search) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .doctor-roster-search { grid-column: span 2; }
+}
+
+@media (max-width: 760px) {
+  .monthly-toolbar:has(.doctor-roster-search) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .doctor-roster-search { grid-column: 1 / -1; }
+  .doctor-roster-focus { padding: 12px; }
+  .doctor-roster-focus-grid { grid-template-columns: 1fr; }
+  .doctor-roster-readonly { white-space: normal; }
+  .doctor-published-label { font-size: .56rem; }
+  .doctor-roster-cell { width: 42px; height: 42px; margin: auto; border-radius: 7px; }
+}
+
+@media (max-width: 480px) {
+  .monthly-toolbar:has(.doctor-roster-search) { grid-template-columns: 1fr !important; }
+  .doctor-roster-search { grid-column: auto; }
+}

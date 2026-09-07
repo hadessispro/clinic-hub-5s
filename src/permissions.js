@@ -264,6 +264,12 @@ export function isOpsRole(role) {
   return ['admin', 'hr', 'leader', 'phu_ta_truong', 'finance', 'admin_it'].includes(role);
 }
 
+const DOCTOR_ROSTER_VIEWER_ROLES = new Set(['staff', 'phu_ta', 'le_tan', 'telesale_staff']);
+
+export function scheduleTitleForRole(role) {
+  return DOCTOR_ROSTER_VIEWER_ROLES.has(role) ? 'Lịch làm bác sĩ' : 'Lịch làm việc';
+}
+
 /** Get nav items filtered by role */
 export function getNavForRole(role) {
   if (!role) return [];
@@ -271,7 +277,9 @@ export function getNavForRole(role) {
   return NAV_ITEMS
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => allowed.includes(item.view)),
+      items: group.items
+        .filter((item) => allowed.includes(item.view))
+        .map((item) => item.view === 'schedule' ? { ...item, label: scheduleTitleForRole(role) } : item),
     }))
     .filter((group) => group.items.length > 0);
 }

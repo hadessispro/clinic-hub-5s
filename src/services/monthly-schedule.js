@@ -21,6 +21,24 @@ function parseWorkflow(request) {
   return { workflow: 'monthly_schedule_v1', stage: meta.stage || fallback, ...meta };
 }
 
+function isPublishedDoctorSchedule(request) {
+  if (!request) return true;
+  try {
+    const meta = JSON.parse(request.preference || '{}');
+    if (meta.workflow !== 'monthly_schedule_v1') return true;
+    return parseWorkflow(request).stage === 'approved';
+  } catch {
+    return true;
+  }
+}
+
+function localScheduleAccessMode(profile) {
+  if (['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile?.role)) return 'manage_all';
+  if (['leader', 'phu_ta_truong'].includes(profile?.role)) return 'manage_department';
+  if (profile?.role === 'bac_si' || profile?.department === 'bs') return 'doctor_self';
+  return 'doctor_roster';
+}
+
 async function localMonthlySchedule({ month, branch = 'all', department = 'all' }) {
   const [profileResult, employeeResult, shiftResult, allowedResult, assignmentResult, requestResult] = await Promise.all([
     supabase.auth.getSession(),
@@ -31,26 +49,48 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
     supabase.from('schedule_requests').select('*').eq('work_month', month).order('submitted_at', { ascending: false }),
   ]);
   for (const result of [employeeResult, shiftResult, allowedResult, assignmentResult, requestResult]) if (result.error) throw result.error;
+  const user = profileResult.data.session?.user;
+  const { data: profiles } = await supabase.from('profiles').select('*').eq('id', user?.id || '').maybeSingle();
+  const profile = profiles || { id: user?.id, role: user?.role, employee_code: user?.user_metadata?.employee_code,
+    branch_id: user?.branch_id, department: user?.department };
+  const viewMode = localScheduleAccessMode(profile);
   let employees = employeeResult.data || [];
+  if (viewMode === 'doctor_self') employees = employees.filter((item) => item.code === profile.employee_code);
+  if (viewMode === 'doctor_roster') employees = employees.filter((item) => item.department === 'bs');
+  if (viewMode === 'manage_department' && profile.department) employees = employees.filter((item) => item.department === profile.department);
   if (branch !== 'all') employees = employees.filter((item) => item.branch_id === branch);
-  if (department !== 'all') employees = employees.filter((item) => item.department === department);
-  const codes = new Set(employees.map((item) => item.code));
+  if (department !== 'all' && viewMode !== 'doctor_roster') employees = employees.filter((item) => item.department === department);
+  let codes = new Set(employees.map((item) => item.code));
   const latest = new Map();
   (requestResult.data || []).forEach((item) => { if (codes.has(item.employee_code) && !latest.has(item.employee_code)) latest.set(item.employee_code, item); });
+  if (viewMode === 'doctor_roster') {
+    const assignedCodes = new Set((assignmentResult.data || []).map((item) => item.employee_code));
+    employees = employees.filter((employee) => {
+      const request = latest.get(employee.code);
+      return assignedCodes.has(employee.code) && isPublishedDoctorSchedule(request);
+    });
+    codes = new Set(employees.map((item) => item.code));
+  }
   const requests = employees.map((employee) => {
     const request = latest.get(employee.code);
     return { employee_code: employee.code, id: request?.id || null, status: request?.status || 'pending', submitted_at: request?.submitted_at || null, ...parseWorkflow(request) };
   });
-  const user = profileResult.data.session?.user;
-  const { data: profiles } = await supabase.from('profiles').select('*').eq('id', user?.id || '').maybeSingle();
-  return { month, profile: profiles || { id: user?.id, role: user?.role, employee_code: user?.user_metadata?.employee_code,
-    branch_id: user?.branch_id, department: user?.department }, employees, shifts: shiftResult.data || [],
+  return { month, profile, view_mode: viewMode, published_only: viewMode === 'doctor_roster', employees, shifts: shiftResult.data || [],
     allowed: (allowedResult.data || []).filter((item) => codes.has(item.employee_code)),
     assignments: (assignmentResult.data || []).filter((item) => codes.has(item.employee_code)), requests };
 }
 
-export function getMonthlySchedule({ month, branch = 'all', department = 'all' }) {
-  if (supabase.isLocal) return localMonthlySchedule({ month, branch, department });
+export async function getMonthlySchedule({ month, branch = 'all', department = 'all' }) {
+  if (supabase.isLocal) {
+    const { data } = await supabase.auth.getSession();
+    const user = data.session?.user || {};
+    const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'leader', 'phu_ta_truong'].includes(user.role);
+    const doctor = user.role === 'bac_si' || user.department === 'bs';
+    if (!manager && !doctor) {
+      return supabase.request(`/schedule/doctor-roster?${new URLSearchParams({ month, branch })}`);
+    }
+    return localMonthlySchedule({ month, branch, department });
+  }
   return scheduleRequest(`?${new URLSearchParams({ month, branch, department })}`);
 }
 

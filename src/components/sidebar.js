@@ -39,6 +39,7 @@ const MOBILE_NAV_LABELS = {
 };
 
 function mobileNavLabel(item) {
+  if (item.view === 'schedule' && item.label === 'Lịch làm bác sĩ') return 'Lịch BS';
   return MOBILE_NAV_LABELS[item.view] || item.label;
 }
 

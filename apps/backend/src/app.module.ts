@@ -9,6 +9,7 @@ import { PushController } from './push';
 import { MarketingController, MarketingService } from './marketing';
 import { PgRegistrationController, PgRegistrationService } from './pg-registration';
 import { GiftsController, GiftsService } from './gifts';
+import { ScheduleController, ScheduleService } from './schedule';
 
 @Controller()
 class HealthController {
@@ -21,7 +22,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, PgRegistrationController, DataController, AttendanceController, AttendanceWorkController, RpcController, FilesController, PushController, MarketingController, GiftsController],
-  providers: [InfrastructureService, AuthService, PgRegistrationService, AuthGuard, DataService, RpcService, MarketingService, GiftsService],
+  controllers: [HealthController, AuthController, PgRegistrationController, DataController, AttendanceController, AttendanceWorkController, RpcController, FilesController, PushController, MarketingController, GiftsController, ScheduleController],
+  providers: [InfrastructureService, AuthService, PgRegistrationService, AuthGuard, DataService, RpcService, MarketingService, GiftsService, ScheduleService],
 })
 export class AppModule {}

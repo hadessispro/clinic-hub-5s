@@ -12,6 +12,7 @@ let selectedEmployeeSearch = '';
 let selectedSearchMode = 'near';
 let selectedWorkflowStage = 'all';
 let selectedAssignmentState = 'all';
+let selectedDoctorFocusDate = todayISO();
 let currentData = null;
 let currentVisibleEmployeeCodes = new Set();
 let stopRealtime = null;
@@ -97,10 +98,11 @@ function ensureScheduleRealtime() {
   }
 }
 
-function canEditRow(role, employeeCode, request, profile) {
+function canEditRow(role, employeeCode, request, profile, viewMode = '') {
   if (role === 'admin_it') return true;
+  if (viewMode === 'doctor_self') return employeeCode === profile.employee_code && ['draft', 'returned'].includes(request.stage);
   if (role === 'staff') return employeeCode === profile.employee_code && ['draft', 'returned'].includes(request.stage);
-  if (role === 'leader') return ['draft', 'returned', 'leader_review'].includes(request.stage);
+  if (['leader', 'phu_ta_truong'].includes(role)) return ['draft', 'returned', 'leader_review'].includes(request.stage);
   if (['hr', 'admin'].includes(role)) return request.stage === 'hr_review';
   return false;
 }
@@ -156,7 +158,7 @@ function actionCard(employee, request, role, profile, hasAssignments = false) {
   const own = employee.code === profile.employee_code;
   let actions = '';
   let noteLabel = 'Ghi chú xử lý';
-  if (role === 'staff' && own && ['draft', 'returned'].includes(request.stage)) {
+  if ((role === 'staff' || role === 'bac_si' || profile.department === 'bs') && own && ['draft', 'returned'].includes(request.stage)) {
     noteLabel = 'Ghi chú đăng ký';
     actions = `<button class="primary-button" type="button" data-schedule-action="submit" data-employee="${escapeHTML(employee.code)}" ${hasAssignments ? '' : 'disabled title="Hãy đăng ký và lưu ca làm trước"'}>${hasAssignments ? 'Chốt và gửi trưởng bộ phận' : 'Chưa có ca để gửi duyệt'}</button>`;
   } else if (['leader', 'admin', 'hr', 'admin_it', 'admin_marketing', 'telesale_leader'].includes(role)) {
@@ -165,6 +167,26 @@ function actionCard(employee, request, role, profile, hasAssignments = false) {
   }
   const actionPanel = actions ? `<details class="schedule-workflow-details"><summary><span>Xử lý lịch</span><span class="schedule-workflow-chevron" aria-hidden="true">⌄</span></summary><div class="schedule-workflow-details-body"><label class="schedule-note-field"><span>${noteLabel}</span><textarea data-schedule-note="${escapeHTML(employee.code)}" placeholder="Nhập nội dung cần lưu hoặc phản hồi..."></textarea></label><div class="schedule-workflow-actions">${actions}</div></div></details>` : '';
   return `<article class="schedule-workflow-card ${own ? 'is-own-schedule' : ''}" data-schedule-card="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}"><div class="schedule-workflow-card-head"><div class="schedule-workflow-person"><strong>${escapeHTML(employee.full_name)}</strong><small>${escapeHTML(employee.title)} · ${escapeHTML(employee.code)} · ${escapeHTML(branchLabel(employee.branch_id))}</small></div>${stagePill(request.stage)}</div><p>${escapeHTML(workflowDescription(request))}</p>${actionPanel}</article>`;
+}
+
+function renderDoctorFocus({ employees, assignments, shiftByCode, focusDate }) {
+  const employeeByCode = new Map(employees.map((employee) => [employee.code, employee]));
+  const rows = assignments
+    .filter((item) => item.work_date === focusDate && employeeByCode.has(item.employee_code))
+    .map((item) => ({ item, employee: employeeByCode.get(item.employee_code), shift: shiftByCode.get(item.shift_code) }))
+    .sort((left, right) => String(left.shift?.start_time || '').localeCompare(String(right.shift?.start_time || ''))
+      || left.employee.full_name.localeCompare(right.employee.full_name, 'vi'));
+  const dateLabel = new Date(`${focusDate}T12:00:00+07:00`).toLocaleDateString('vi-VN', {
+    weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+  return `<section class="doctor-roster-focus" aria-label="Bác sĩ làm việc ngày ${escapeHTML(dateLabel)}">
+    <div class="section-title"><div><p class="eyebrow">ĐIỀU PHỐI TRONG NGÀY</p><h3>Bác sĩ làm việc ${escapeHTML(dateLabel)}</h3><p class="subtle">Dùng lịch đã công bố để phụ tá chuẩn bị phòng, lễ tân và tư vấn phối hợp khách.</p></div><span class="pill">${rows.length} bác sĩ</span></div>
+    <div class="doctor-roster-focus-grid">${rows.length ? rows.map(({ employee, shift }) => `<article class="doctor-roster-card" data-doctor-roster-code="${escapeHTML(employee.code)}">
+      <span class="doctor-roster-avatar"><i class="ri-stethoscope-line"></i></span>
+      <div><strong>${escapeHTML(employee.full_name)}</strong><small>${escapeHTML(employee.title || 'Bác sĩ')} · ${escapeHTML(branchLabel(employee.branch_id))}</small></div>
+      <span class="doctor-roster-shift"><b>${escapeHTML(shift ? shiftShortLabel(shift) : '—')}</b><small>${shift ? `${String(shift.start_time).slice(0, 5)}–${String(shift.end_time).slice(0, 5)}` : 'Chưa xác định giờ'}</small></span>
+    </article>`).join('') : '<p class="doctor-roster-empty">Không có bác sĩ nào trong lịch đã công bố ở ngày này.</p>'}</div>
+  </section>`;
 }
 
 export async function renderMonthlySchedule(state) {
@@ -186,8 +208,11 @@ export async function renderMonthlySchedule(state) {
   currentData = data;
   const role = state.role;
   const profile = data.profile;
-  const canManageSchedule = ['admin', 'hr', 'admin_it', 'leader', 'admin_marketing', 'telesale_leader'].includes(role);
-  const canScopeFilter = canManageSchedule;
+  const fallbackManage = ['admin', 'hr', 'admin_it', 'leader', 'phu_ta_truong', 'admin_marketing', 'telesale_leader'].includes(role);
+  const viewMode = data.view_mode || (fallbackManage ? 'manage_all' : role === 'bac_si' || profile.department === 'bs' ? 'doctor_self' : 'doctor_roster');
+  const isDoctorRoster = viewMode === 'doctor_roster';
+  const canManageSchedule = ['manage_all', 'manage_department'].includes(viewMode);
+  const canScopeFilter = canManageSchedule || isDoctorRoster;
   const [year, monthNumber] = selectedMonth.split('-').map(Number);
   const monthIndex = monthNumber - 1;
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
@@ -206,6 +231,7 @@ export async function renderMonthlySchedule(state) {
   const employeesWithAssignments = new Set(data.assignments.map((item) => item.employee_code));
   const requestByEmployee = new Map(data.requests.map((item) => [item.employee_code, item]));
   const structuredEmployees = data.employees.filter((employee) => {
+    if (isDoctorRoster) return true;
     const request = requestByEmployee.get(employee.code) || { stage: 'draft' };
     const matchesStage = selectedWorkflowStage === 'all' || request.stage === selectedWorkflowStage;
     const hasAssignments = employeesWithAssignments.has(employee.code);
@@ -216,11 +242,20 @@ export async function renderMonthlySchedule(state) {
   });
   const visibleEmployees = structuredEmployees.filter(matchesEmployeeSearch);
   currentVisibleEmployeeCodes = new Set(visibleEmployees.map((employee) => employee.code));
-  const visibleShifts = [...new Set(data.allowed.map((item) => item.shift_code))].map((code) => shiftByCode.get(code)).filter(Boolean);
+  const visibleShiftCodes = isDoctorRoster
+    ? data.assignments.map((item) => item.shift_code)
+    : data.allowed.map((item) => item.shift_code);
+  const visibleShifts = [...new Set(visibleShiftCodes)].map((code) => shiftByCode.get(code)).filter(Boolean);
+  const monthStart = `${selectedMonth}-01`;
+  const monthEnd = `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
+  if (selectedDoctorFocusDate < monthStart || selectedDoctorFocusDate > monthEnd) {
+    selectedDoctorFocusDate = todayISO().startsWith(`${selectedMonth}-`) ? todayISO() : monthStart;
+  }
+  const focusAssignmentCount = data.assignments.filter((item) => item.work_date === selectedDoctorFocusDate).length;
   let monthHours = 0;
   const rows = structuredEmployees.map((employee) => {
     const request = requestByEmployee.get(employee.code) || { stage: 'draft' };
-    const editable = canManageSchedule || canEditRow(role, employee.code, request, profile);
+    const editable = !isDoctorRoster && (canManageSchedule || canEditRow(role, employee.code, request, profile, viewMode));
     const allowedCodes = allowedByEmployee.get(employee.code) || [employee.shift_code].filter(Boolean);
     let total = 0;
     const cells = dates.map((date) => {
@@ -236,10 +271,13 @@ export async function renderMonthlySchedule(state) {
       }).join('');
       const dirtyClass = selected !== stored ? ' is-dirty' : '';
       const cellBg = date.sunday ? ' roster-table-cell is-sunday' : ' roster-table-cell';
+      if (isDoctorRoster) {
+        return `<td class="${cellBg}"><span class="doctor-roster-cell${shift ? ' has-shift' : ''}" data-shift="${escapeHTML(shiftLabel)}" title="${escapeHTML(shift ? `${shift.name} ${String(shift.start_time).slice(0, 5)}–${String(shift.end_time).slice(0, 5)}` : 'Bác sĩ không có lịch')}">${escapeHTML(shiftLabel || '—')}</span></td>`;
+      }
       return `<td class="${cellBg}"><select class="pilot-schedule-select${dirtyClass}" data-employee="${escapeHTML(employee.code)}" data-date="${date.key}" data-original="${escapeHTML(stored)}" data-shift-label="${escapeHTML(shiftLabel)}" aria-label="${escapeHTML(employee.full_name)}, ngày ${date.day}" ${editable ? '' : 'disabled'}><option value="" data-hours="0">—</option>${options}</select></td>`;
     }).join('');
     if (matchesEmployeeSearch(employee)) monthHours += total;
-    return `<tr data-monthly-employee="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}" ${matchesEmployeeSearch(employee) ? '' : 'hidden'}><th class="pilot-employee-cell"><strong class="emp-name" title="${escapeHTML(employee.full_name)}">${escapeHTML(employee.full_name)}</strong><small class="emp-meta">${escapeHTML(employee.title || 'Nhân viên')} · ${escapeHTML(employee.code)}</small>${stagePill(request.stage)}</th>${cells}<td class="pilot-total-cell"><strong data-monthly-total>${total.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong><span>giờ</span></td></tr>`;
+    return `<tr data-monthly-employee="${escapeHTML(employee.code)}" data-schedule-search="${escapeHTML(employeeSearchText(employee))}" ${matchesEmployeeSearch(employee) ? '' : 'hidden'}><th class="pilot-employee-cell"><strong class="emp-name" title="${escapeHTML(employee.full_name)}">${escapeHTML(employee.full_name)}</strong><small class="emp-meta">${escapeHTML(employee.title || (isDoctorRoster ? 'Bác sĩ' : 'Nhân viên'))} · ${escapeHTML(employee.code)}</small>${isDoctorRoster ? '<span class="doctor-published-label"><i class="ri-checkbox-circle-fill"></i> Đã công bố</span>' : stagePill(request.stage)}</th>${cells}<td class="pilot-total-cell"><strong data-monthly-total>${total.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong><span>giờ</span></td></tr>`;
   }).join('');
   const reviewCards = structuredEmployees.map((employee) => actionCard(
     employee,
@@ -250,7 +288,9 @@ export async function renderMonthlySchedule(state) {
   )).map((card, index) => matchesEmployeeSearch(structuredEmployees[index]) ? card : card.replace('<article ', '<article hidden ')).join('');
 
   const branchControl = canScopeFilter ? `<label>Chi nhánh<select id="monthlyScheduleBranch"><option value="all" ${selectedBranch === 'all' ? 'selected' : ''}>Cả hai chi nhánh</option><option value="le-van-tho" ${selectedBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>` : '';
-  const departmentControl = canScopeFilter ? `<label>Phòng ban<select id="monthlyScheduleDepartment"><option value="all">Tất cả phòng ban</option>${DEPARTMENTS.map((item) => `<option value="${item.id}" ${selectedDepartment === item.id ? 'selected' : ''}>${escapeHTML(item.name)}</option>`).join('')}</select></label>` : '';
+  const departmentControl = canManageSchedule ? `<label>Phòng ban<select id="monthlyScheduleDepartment"><option value="all">Tất cả phòng ban</option>${DEPARTMENTS.map((item) => `<option value="${item.id}" ${selectedDepartment === item.id ? 'selected' : ''}>${escapeHTML(item.name)}</option>`).join('')}</select></label>` : '';
+  const doctorRosterControls = isDoctorRoster ? `<label>Ngày điều phối<input id="doctorRosterFocusDate" type="date" min="${monthStart}" max="${monthEnd}" value="${selectedDoctorFocusDate}"></label>
+    <label class="doctor-roster-search">Tìm bác sĩ<span class="smart-search-control"><i class="ri-search-line smart-search-icon"></i><input id="monthlyScheduleSearch" type="search" value="${escapeHTML(selectedEmployeeSearch)}" placeholder="Tên hoặc mã bác sĩ" autocomplete="off" aria-expanded="false" aria-controls="monthlySearchSuggestionPanel"><span class="smart-search-suggestions" id="monthlySearchSuggestionPanel" role="listbox" hidden></span></span></label>` : '';
 
   const weekNav = `<div class="shift-legend-bar" aria-label="Chuyển nhanh ngày trong tháng" style="margin-top:10px; margin-bottom:10px;">
     <span style="font-size:0.8rem; font-weight:700; color:#475569;">Chuyển ngày:</span>
@@ -262,12 +302,13 @@ export async function renderMonthlySchedule(state) {
   </div>`;
 
   return `<div class="monthly-schedule-page">
-    <section class="monthly-schedule-hero">
+    <section class="monthly-schedule-hero${isDoctorRoster ? ' is-doctor-roster' : ''}">
       <div>
-        <p class="eyebrow">LỊCH TRÌNH PHÂN BỔ ĐỘI NGŨ LÀM VIỆC & GIAO TIẾP NỘI BỘ THÁNG ${monthNumber}/${year}</p>
-        <h3>Bảng phân bổ lịch làm việc & trao đổi công việc linh hoạt các phòng ban</h3>
-        <p>Cho phép các cấp quản lý sắp xếp phân bổ nhân sự, trao đổi công việc nội bộ và chốt lịch trình vận hành.</p>
+        <p class="eyebrow">${isDoctorRoster ? 'LỊCH BÁC SĨ ĐÃ CÔNG BỐ' : 'LỊCH TRÌNH PHÂN BỔ ĐỘI NGŨ LÀM VIỆC & GIAO TIẾP NỘI BỘ'} · THÁNG ${monthNumber}/${year}</p>
+        <h3>${isDoctorRoster ? 'Lịch làm bác sĩ để phối hợp vận hành trong ngày' : 'Bảng phân bổ lịch làm việc & trao đổi công việc linh hoạt các phòng ban'}</h3>
+        <p>${isDoctorRoster ? 'Phụ tá chuẩn bị ca và phòng điều trị; lễ tân, tư vấn chủ động sắp khách theo bác sĩ có mặt. Chỉ lịch đã chốt mới xuất hiện tại đây.' : 'Cho phép các cấp quản lý sắp xếp phân bổ nhân sự, trao đổi công việc nội bộ và chốt lịch trình vận hành.'}</p>
       </div>
+      ${isDoctorRoster ? '<span class="doctor-roster-readonly"><i class="ri-shield-check-line"></i> Chỉ đọc · dữ liệu đã chốt</span>' : ''}
     </section>
 
     <!-- Shift Legend Header matching Image 2 -->
@@ -280,23 +321,26 @@ export async function renderMonthlySchedule(state) {
         ${monthSelectors()}
         ${branchControl}
         ${departmentControl}
+        ${doctorRosterControls}
         ${canManageSchedule ? `<button class="primary-button" type="button" id="saveMonthlySchedule" disabled>Lưu các ô phân bổ đã đổi</button>` : ''}
       </div>
 
       ${weekNav}
 
       <div class="pilot-schedule-metrics">
-        <article><span>Nhân sự đang xem</span><strong id="monthlyVisibleMetric">${visibleEmployees.length}</strong></article>
-        <article><span>Ca đã phân bổ</span><strong id="monthlyVisibleAssignments">${data.assignments.filter((item) => currentVisibleEmployeeCodes.has(item.employee_code)).length}</strong></article>
-        <article><span>Tổng giờ phân bổ</span><strong id="monthlyVisibleHours">${monthHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong></article>
-        <article><span>Thay đổi chưa lưu</span><strong id="monthlyDirtyCount">0</strong></article>
+        <article><span>${isDoctorRoster ? 'Bác sĩ đã công bố lịch' : 'Nhân sự đang xem'}</span><strong id="monthlyVisibleMetric">${visibleEmployees.length}</strong></article>
+        <article><span>${isDoctorRoster ? 'Ca bác sĩ trong tháng' : 'Ca đã phân bổ'}</span><strong id="monthlyVisibleAssignments">${data.assignments.filter((item) => currentVisibleEmployeeCodes.has(item.employee_code)).length}</strong></article>
+        <article><span>${isDoctorRoster ? 'Bác sĩ ngày đang chọn' : 'Tổng giờ phân bổ'}</span><strong id="monthlyVisibleHours">${isDoctorRoster ? focusAssignmentCount : monthHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}</strong></article>
+        <article><span>${isDoctorRoster ? 'Trạng thái dữ liệu' : 'Thay đổi chưa lưu'}</span><strong id="monthlyDirtyCount">${isDoctorRoster ? 'Đã chốt' : '0'}</strong></article>
       </div>
+
+      ${isDoctorRoster ? renderDoctorFocus({ employees: visibleEmployees, assignments: data.assignments, shiftByCode, focusDate: selectedDoctorFocusDate }) : ''}
 
       <div class="pilot-schedule-table-wrap">
         <table class="pilot-schedule-table">
           <thead>
             <tr>
-              <th class="pilot-employee-cell" style="min-width:180px;">NHÂN VIÊN</th>
+              <th class="pilot-employee-cell" style="min-width:180px;">${isDoctorRoster ? 'BÁC SĨ' : 'NHÂN VIÊN'}</th>
               ${dates.map((date) => `<th data-day="${date.day}" class="${date.sunday ? 'roster-table-cell is-sunday-header' : ''}"><span>${date.day}</span><small>${date.weekday}</small></th>`).join('')}
               <th class="pilot-total-cell">TỔNG</th>
             </tr>
@@ -306,10 +350,10 @@ export async function renderMonthlySchedule(state) {
           </tbody>
         </table>
       </div>
-      <p class="pilot-schedule-note"><b>Quy ước ca làm việc:</b> HC = hành chính, S = sáng, C = chiều, F = full. Ngày Chủ nhật (CN) được tô màu nền riêng; ô trống là ngày chưa đăng ký/nghỉ. Chỉ các cấp quản lý mới có quyền chỉnh sửa & công bố lịch trình phân bổ.</p>
+      <p class="pilot-schedule-note"><b>Quy ước ca làm việc:</b> HC = hành chính, S = sáng, C = chiều, F = full. Ngày Chủ nhật (CN) được tô màu nền riêng; ô trống là ${isDoctorRoster ? 'bác sĩ không có lịch đã công bố' : 'ngày chưa đăng ký/nghỉ'}. ${isDoctorRoster ? 'Nhân viên chỉ xem lịch để phối hợp, không thể chỉnh sửa ca bác sĩ.' : 'Chỉ các cấp quản lý mới có quyền chỉnh sửa & công bố lịch trình phân bổ.'}</p>
     </section>
 
-    <section class="panel monthly-workflow-panel">
+    ${isDoctorRoster ? '' : `<section class="panel monthly-workflow-panel">
       <div class="section-title">
         <div>
           <p class="eyebrow">LUỒNG CÔNG BỐ LỊCH TRÌNH</p>
@@ -317,7 +361,7 @@ export async function renderMonthlySchedule(state) {
         </div>
       </div>
       <div class="schedule-workflow-grid">${reviewCards || '<p class="subtle">Chưa có lịch trong phạm vi này.</p>'}</div>
-    </section>
+    </section>`}
   </div>`;
 }
 
@@ -337,6 +381,7 @@ function applyInstantScheduleSearch() {
     }
   });
   document.querySelectorAll('[data-schedule-card]').forEach((card) => { card.hidden = !visibleCodes.has(card.dataset.scheduleCard); });
+  document.querySelectorAll('[data-doctor-roster-code]').forEach((card) => { card.hidden = !visibleCodes.has(card.dataset.doctorRosterCode); });
   currentVisibleEmployeeCodes = visibleCodes;
   const assignmentCount = currentData.assignments.filter((item) => visibleCodes.has(item.employee_code)).length;
   const approvedCount = [...visibleCodes].filter((code) => requestByCode.get(code)?.stage === 'approved').length;
@@ -345,7 +390,12 @@ function applyInstantScheduleSearch() {
   document.getElementById('monthlyVisibleFilterCount')?.replaceChildren(document.createTextNode(String(visibleCodes.size)));
   document.getElementById('monthlyVisibleMetric')?.replaceChildren(document.createTextNode(String(visibleCodes.size)));
   document.getElementById('monthlyVisibleAssignments')?.replaceChildren(document.createTextNode(String(assignmentCount)));
-  document.getElementById('monthlyVisibleHours')?.replaceChildren(document.createTextNode(visibleHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })));
+  const visibleFocusAssignments = currentData.view_mode === 'doctor_roster'
+    ? currentData.assignments.filter((item) => visibleCodes.has(item.employee_code) && item.work_date === selectedDoctorFocusDate).length
+    : null;
+  document.getElementById('monthlyVisibleHours')?.replaceChildren(document.createTextNode(
+    visibleFocusAssignments === null ? visibleHours.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) : String(visibleFocusAssignments),
+  ));
   const approvedNode = document.getElementById('monthlyApprovedCount');
   if (approvedNode) approvedNode.textContent = `${approvedCount}/${visibleCodes.size} lịch đang lọc đã chốt`;
   const batchButton = document.getElementById('confirmAllLeaderSchedules');
@@ -411,12 +461,20 @@ export function initMonthlySchedule() {
   const changeMonth = () => {
     const month = String(document.getElementById('monthlyScheduleMonth')?.value || '').padStart(2, '0');
     const year = document.getElementById('monthlyScheduleYear')?.value;
-    if (month && year) { selectedMonth = `${year}-${month}`; store.notify(); }
+    if (month && year) {
+      selectedMonth = `${year}-${month}`;
+      selectedDoctorFocusDate = todayISO().startsWith(`${selectedMonth}-`) ? todayISO() : `${selectedMonth}-01`;
+      store.notify();
+    }
   };
   document.getElementById('monthlyScheduleMonth')?.addEventListener('change', changeMonth);
   document.getElementById('monthlyScheduleYear')?.addEventListener('change', changeMonth);
   document.getElementById('monthlyScheduleBranch')?.addEventListener('change', (event) => { selectedBranch = event.target.value; store.notify(); });
   document.getElementById('monthlyScheduleDepartment')?.addEventListener('change', (event) => { selectedDepartment = event.target.value; store.notify(); });
+  document.getElementById('doctorRosterFocusDate')?.addEventListener('change', (event) => {
+    selectedDoctorFocusDate = event.target.value || `${selectedMonth}-01`;
+    store.notify();
+  });
   const smartSearchInput = document.getElementById('monthlyScheduleSearch');
   smartSearchInput?.addEventListener('input', (event) => {
     selectedEmployeeSearch = event.target.value;

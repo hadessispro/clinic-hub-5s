@@ -1,8 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 import { insertNotificationsAndPush } from './_lib/push.js';
 
-const MANAGER_ROLES = new Set(['admin', 'hr', 'admin_it']);
+const FULL_MANAGER_ROLES = new Set(['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader']);
+const DEPARTMENT_MANAGER_ROLES = new Set(['leader', 'phu_ta_truong']);
 const WORKFLOW = 'monthly_schedule_v1';
+
+function isDoctorProfile(profile) {
+  return profile?.role === 'bac_si' || profile?.department === 'bs';
+}
+
+export function scheduleAccessMode(profile) {
+  if (FULL_MANAGER_ROLES.has(profile?.role)) return 'manage_all';
+  if (DEPARTMENT_MANAGER_ROLES.has(profile?.role)) return 'manage_department';
+  if (isDoctorProfile(profile)) return 'doctor_self';
+  return 'doctor_roster';
+}
 
 function clients() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -41,6 +53,17 @@ function parseWorkflow(request) {
   if (meta.workflow !== WORKFLOW) meta = {};
   const fallback = request?.status === 'approved' ? 'approved' : request?.status === 'rejected' ? 'returned' : 'draft';
   return { workflow: WORKFLOW, stage: meta.stage || fallback, ...meta };
+}
+
+export function isPublishedDoctorSchedule(request) {
+  if (!request) return true;
+  try {
+    const meta = JSON.parse(request.preference || '{}');
+    if (meta.workflow !== WORKFLOW) return true;
+    return parseWorkflow(request).stage === 'approved';
+  } catch {
+    return true;
+  }
 }
 
 function requestPayload(meta) {
@@ -90,11 +113,16 @@ async function getLeaderScopes(db, profile) {
 }
 
 async function scopedEmployees(db, profile, filters = {}) {
+  const accessMode = scheduleAccessMode(profile);
   let query = db.admin.from('employees')
     .select('code,full_name,department,title,branch_id,shift_code,manager_code,status')
     .eq('status', 'active').order('full_name');
-  if (profile.role === 'staff') query = query.eq('code', profile.employee_code || '__none__');
-  if (profile.role === 'leader') {
+  if (accessMode === 'doctor_self') query = query.eq('code', profile.employee_code || '__none__');
+  if (accessMode === 'doctor_roster') {
+    query = query.eq('department', 'bs');
+    if (filters.branch && filters.branch !== 'all') query = query.eq('branch_id', filters.branch);
+  }
+  if (accessMode === 'manage_department') {
     const scopes = await getLeaderScopes(db, profile);
     const departments = [...new Set(scopes.map((item) => item.department).filter(Boolean))];
     const branches = [...new Set(scopes.map((item) => item.branch_id).filter(Boolean))];
@@ -102,7 +130,7 @@ async function scopedEmployees(db, profile, filters = {}) {
     query = query.in('department', departments);
     if (branches.length) query = query.in('branch_id', branches);
   }
-  if (MANAGER_ROLES.has(profile.role)) {
+  if (accessMode === 'manage_all') {
     if (filters.branch && filters.branch !== 'all') query = query.eq('branch_id', filters.branch);
     if (filters.department && filters.department !== 'all') query = query.eq('department', filters.department);
   }
@@ -151,8 +179,8 @@ async function notifyDepartmentLeaders(db, department, title, body) {
 
 function actionPermission(action, profile) {
   if (profile.role === 'admin_it') return true;
-  if (action === 'submit') return ['staff', 'leader'].includes(profile.role);
-  if (['leader_forward', 'return_to_staff'].includes(action)) return profile.role === 'leader';
+  if (action === 'submit') return ['staff', 'leader', 'bac_si'].includes(profile.role) || isDoctorProfile(profile);
+  if (['leader_forward', 'return_to_staff'].includes(action)) return DEPARTMENT_MANAGER_ROLES.has(profile.role);
   if (['hr_approve', 'hr_return'].includes(action)) return ['hr', 'admin'].includes(profile.role);
   return false;
 }
@@ -221,8 +249,9 @@ async function handleSave(db, profile, body) {
     const request = await getRequest(db, code, month);
     const stage = parseWorkflow(request).stage;
     const editable = profile.role === 'admin_it'
-      || (profile.role === 'staff' && ['draft', 'returned'].includes(stage))
-      || (profile.role === 'leader' && ['draft', 'returned', 'leader_review'].includes(stage))
+      || (isDoctorProfile(profile) && code === profile.employee_code && ['draft', 'returned'].includes(stage))
+      || (profile.role === 'staff' && code === profile.employee_code && ['draft', 'returned'].includes(stage))
+      || (DEPARTMENT_MANAGER_ROLES.has(profile.role) && ['draft', 'returned', 'leader_review'].includes(stage))
       || (['hr', 'admin'].includes(profile.role) && stage === 'hr_review');
     if (!editable) throw new Error(`Lịch của ${employeeMap.get(code).full_name} đang ở bước không thể sửa.`);
   }
@@ -269,7 +298,9 @@ export default async function handler(req, res) {
   const profile = await authorize(req, db);
   if (!profile) return res.status(403).json({ error: 'Phiên đăng nhập không hợp lệ hoặc tài khoản đã bị khóa.' });
   try {
+    const viewMode = scheduleAccessMode(profile);
     if (req.method === 'POST') {
+      if (viewMode === 'doctor_roster') return res.status(403).json({ error: 'Lịch làm bác sĩ dành cho nhân viên là dữ liệu chỉ đọc.' });
       const result = req.body?.action
         ? await handleAction(db, profile, req.body)
         : await handleSave(db, profile, req.body || {});
@@ -279,7 +310,7 @@ export default async function handler(req, res) {
     const month = String(req.query.month || '');
     const bounds = monthBounds(month);
     if (!bounds) return res.status(400).json({ error: 'Tháng không hợp lệ.' });
-    const employees = await scopedEmployees(db, profile, { branch: String(req.query.branch || ''), department: String(req.query.department || '') });
+    let employees = await scopedEmployees(db, profile, { branch: String(req.query.branch || ''), department: String(req.query.department || '') });
     const codes = employees.map((item) => item.code);
     const [shiftResult, allowedResult, assignmentResult, requestResult] = await Promise.all([
       db.admin.from('work_shifts').select('code,name,start_time,end_time,break_minutes,active').eq('active', true).order('start_time'),
@@ -291,11 +322,36 @@ export default async function handler(req, res) {
     if (error) throw error;
     const latest = new Map();
     (requestResult.data || []).forEach((item) => { if (!latest.has(item.employee_code)) latest.set(item.employee_code, item); });
+    let assignments = assignmentResult.data || [];
+    let allowed = allowedResult.data || [];
+    if (viewMode === 'doctor_roster') {
+      const assignedCodes = new Set(assignments.map((item) => item.employee_code));
+      const publishedCodes = new Set(employees.filter((employee) => {
+        if (!assignedCodes.has(employee.code)) return false;
+        const request = latest.get(employee.code);
+        // Lịch theo quy trình mới chỉ hiện sau khi duyệt cuối. Lịch cũ đã có ca
+        // nhưng chưa có phiếu quy trình vẫn được xem là đã công bố để không mất dữ liệu.
+        return isPublishedDoctorSchedule(request);
+      }).map((employee) => employee.code));
+      employees = employees.filter((employee) => publishedCodes.has(employee.code));
+      assignments = assignments.filter((item) => publishedCodes.has(item.employee_code));
+      allowed = allowed.filter((item) => publishedCodes.has(item.employee_code));
+    }
     const requests = employees.map((employee) => {
       const request = latest.get(employee.code);
       return { employee_code: employee.code, id: request?.id || null, status: request?.status || 'pending', submitted_at: request?.submitted_at || null, ...parseWorkflow(request) };
     });
-    return res.status(200).json({ month, profile, employees, shifts: shiftResult.data || [], allowed: allowedResult.data || [], assignments: assignmentResult.data || [], requests });
+    return res.status(200).json({
+      month,
+      profile,
+      view_mode: viewMode,
+      published_only: viewMode === 'doctor_roster',
+      employees,
+      shifts: shiftResult.data || [],
+      allowed,
+      assignments,
+      requests,
+    });
   } catch (error) {
     return res.status(400).json({ error: error.message || 'Không thể xử lý lịch làm việc.' });
   }

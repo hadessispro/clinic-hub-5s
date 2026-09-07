@@ -1,5 +1,5 @@
 import { store } from './store.js';
-import { canAccessView, getDefaultView } from './permissions.js';
+import { canAccessView, getDefaultView, scheduleTitleForRole } from './permissions.js';
 
 // Map of view names to their lazy loaded module import functions
 const viewImports = {
@@ -151,7 +151,9 @@ async function renderCurrentView(state) {
   
   // Update view title
   if (viewTitle) {
-    viewTitle.textContent = viewTitles[currentView] || 'Clinic Hub';
+    viewTitle.textContent = currentView === 'schedule'
+      ? scheduleTitleForRole(store.getState().role)
+      : viewTitles[currentView] || 'Clinic Hub';
   }
 
   // Update navigation items active state
