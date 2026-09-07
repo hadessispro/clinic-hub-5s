@@ -113,232 +113,131 @@ export const NGUOI_KHO = {
 };
 export const tenNguoi = (ma) => NGUOI_KHO[ma]?.ten || ma || '—';
 
-let NHA_CUNG_CAP = [
-  { id: 'NCC-01', ten: 'Công ty TNHH Nha khoa Việt Tiên', nguoi: 'Chị Lan', dien_thoai: '0903 118 224',
-    ngay_giao: 2, thanh_toan: 'Công nợ 30 ngày', danh_gia: 4.5,
-    ghi_chu: 'Giao nhanh, hàng tiêu hao ổn định. Hay thiếu hàng cuối tháng.' },
-  { id: 'NCC-02', ten: 'Công ty CP Vật tư Y tế Đông Á', nguoi: 'Anh Dũng', dien_thoai: '0918 442 907',
-    ngay_giao: 4, thanh_toan: 'Công nợ 45 ngày', danh_gia: 4.0,
-    ghi_chu: 'Giá tốt khi lấy số lượng lớn. Giao chậm hơn, cần đặt sớm.' },
-  { id: 'NCC-03', ten: 'Nha khoa Kim Phát', nguoi: 'Chị Trâm', dien_thoai: '0977 305 118',
-    ngay_giao: 1, thanh_toan: 'Thanh toán ngay', danh_gia: 4.2,
-    ghi_chu: 'Kho gần, lấy gấp trong ngày được. Giá nhỉnh hơn.' },
-  { id: 'NCC-04', ten: 'Straumann Việt Nam', nguoi: 'Anh Phúc', dien_thoai: '0908 776 512',
-    ngay_giao: 7, thanh_toan: 'Chuyển khoản trước 50%', danh_gia: 4.8,
-    ghi_chu: 'Hàng chính hãng có tem truy xuất. Chỉ đặt khi đã chốt ca.' },
-  { id: 'NCC-05', ten: 'Công ty TNHH TM Dược phẩm Minh Châu', nguoi: 'Chị Hà', dien_thoai: '0939 214 668',
-    ngay_giao: 3, thanh_toan: 'Công nợ 30 ngày', danh_gia: 4.3,
-    ghi_chu: 'Chuyên thuốc và hoá chất, có giấy tờ đầy đủ cho hàng kiểm soát.' },
-];
-
-/* Vật tư.
- *
- * `don_vi` là ĐƠN VỊ DÙNG, không phải đơn vị mua. Găng tay dùng theo "đôi"
- * nhưng mua theo "hộp 100 đôi" — tách hai thứ này ra là điều kiện để so giá
- * giữa các nhà cung cấp bán quy cách khác nhau. Gộp làm một là chỗ mọi phần
- * mềm kho làm ẩu bị sai.
- */
-let VAT_TU = [
-  { id: 'VT-001', ma: 'GT-NIT-M', ten: 'Găng tay nitrile không bột · size M',
-    nhom: 'vo_trung', don_vi: 'đôi', dinh_muc: 1200, co: [] },
-  { id: 'VT-002', ma: 'KT-27G', ten: 'Kim tiêm nha khoa 27G',
-    nhom: 'tieu_hao', don_vi: 'cây', dinh_muc: 500, co: [] },
-  { id: 'VT-003', ma: 'TT-LIDO2', ten: 'Thuốc tê Lidocaine 2% có Adrenaline',
-    nhom: 'thuoc', don_vi: 'ống', dinh_muc: 300, co: ['han_dung', 'kiem_soat'] },
-  { id: 'VT-004', ma: 'CP-Z350-A2', ten: 'Composite Filtek Z350 XT · màu A2',
-    nhom: 'phuc_hinh', don_vi: 'ống', dinh_muc: 12, co: ['han_dung', 'lanh'] },
-  { id: 'VT-005', ma: 'TR-PTAPER', ten: 'Trâm nội nha ProTaper Gold · bộ 6 cây',
-    nhom: 'noi_nha', don_vi: 'bộ', dinh_muc: 20, co: [] },
-  { id: 'VT-006', ma: 'MK-KC-FG', ten: 'Mũi khoan kim cương FG · hỗn hợp',
-    nhom: 'thiet_bi', don_vi: 'cây', dinh_muc: 150, co: [] },
-  { id: 'VT-007', ma: 'BG-CUON', ten: 'Bông gòn cuộn nha khoa',
-    nhom: 'tieu_hao', don_vi: 'gói', dinh_muc: 80, co: [] },
-  { id: 'VT-008', ma: 'KT-YT-4L', ten: 'Khẩu trang y tế 4 lớp',
-    nhom: 'vo_trung', don_vi: 'cái', dinh_muc: 2000, co: [] },
-  { id: 'VT-009', ma: 'IMP-STR-RC', ten: 'Trụ Implant Straumann BLT RC 4.1×10mm',
-    nhom: 'implant', don_vi: 'trụ', dinh_muc: 0, co: ['dat_rieng', 'gia_tri_cao'] },
-  { id: 'VT-010', ma: 'OH-NB', ten: 'Ống hút nước bọt dùng một lần',
-    nhom: 'tieu_hao', don_vi: 'cái', dinh_muc: 3000, co: [] },
-  { id: 'VT-011', ma: 'CM-TAM', ten: 'Cement gắn tạm Temp-Bond',
-    nhom: 'phuc_hinh', don_vi: 'tuýp', dinh_muc: 10, co: ['han_dung'] },
-  { id: 'VT-012', ma: 'MC-MC-018', ten: 'Mắc cài kim loại MBT 0.018 · bộ 20',
-    nhom: 'chinh_nha', don_vi: 'bộ', dinh_muc: 8, co: [] },
-  { id: 'VT-013', ma: 'CK-VICRYL', ten: 'Chỉ khâu tiêu Vicryl 4-0',
-    nhom: 'implant', don_vi: 'sợi', dinh_muc: 40, co: ['han_dung'] },
-  { id: 'VT-014', ma: 'KH-VT-BO', ten: 'Khay khám vô trùng · bộ 5 món',
-    nhom: 'vo_trung', don_vi: 'bộ', dinh_muc: 200, co: [] },
-  { id: 'VT-015', ma: 'HC-NAOCL', ten: 'Dung dịch bơm rửa NaOCl 3%',
-    nhom: 'thuoc', don_vi: 'chai', dinh_muc: 24, co: ['han_dung'] },
-];
-
-/* Bảng giá.
- *
- * `quy_cach` là số ĐƠN VỊ DÙNG trong một đơn vị mua. Hộp găng 100 đôi thì
- * quy_cach = 100, don_vi_mua = 'hộp'. Đơn giá thật = gia / quy_cach, và đó
- * mới là con số so sánh được giữa các nhà cung cấp.
- *
- * `toi_thieu` là số đơn vị MUA tối thiểu mỗi lần đặt. Nhà rẻ nhất mà bắt lấy
- * 10 thùng trong khi mình cần 1 thì rẻ đó không dùng được.
- */
-let BANG_GIA = [
-  // Găng tay — ba nhà, quy cách khác nhau: đây là ví dụ rõ nhất của bẫy so giá
-  { vat_tu: 'VT-001', ncc: 'NCC-01', don_vi_mua: 'hộp', quy_cach: 100, gia: 118000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-001', ncc: 'NCC-02', don_vi_mua: 'thùng', quy_cach: 1000, gia: 1050000, toi_thieu: 1, cap_nhat: ngayLech(-8) },
-  { vat_tu: 'VT-001', ncc: 'NCC-03', don_vi_mua: 'hộp', quy_cach: 100, gia: 125000, toi_thieu: 1, cap_nhat: ngayLech(-3) },
-
-  { vat_tu: 'VT-002', ncc: 'NCC-01', don_vi_mua: 'hộp', quy_cach: 100, gia: 165000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-002', ncc: 'NCC-03', don_vi_mua: 'hộp', quy_cach: 100, gia: 172000, toi_thieu: 1, cap_nhat: ngayLech(-3) },
-
-  { vat_tu: 'VT-003', ncc: 'NCC-05', don_vi_mua: 'hộp', quy_cach: 50, gia: 385000, toi_thieu: 1, cap_nhat: ngayLech(-6) },
-  { vat_tu: 'VT-003', ncc: 'NCC-01', don_vi_mua: 'hộp', quy_cach: 50, gia: 402000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-
-  { vat_tu: 'VT-004', ncc: 'NCC-01', don_vi_mua: 'ống', quy_cach: 1, gia: 520000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-004', ncc: 'NCC-02', don_vi_mua: 'bộ', quy_cach: 6, gia: 2820000, toi_thieu: 1, cap_nhat: ngayLech(-8) },
-
-  { vat_tu: 'VT-005', ncc: 'NCC-01', don_vi_mua: 'bộ', quy_cach: 1, gia: 1250000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-005', ncc: 'NCC-02', don_vi_mua: 'bộ', quy_cach: 1, gia: 1180000, toi_thieu: 5, cap_nhat: ngayLech(-8) },
-
-  { vat_tu: 'VT-006', ncc: 'NCC-02', don_vi_mua: 'vỉ', quy_cach: 10, gia: 285000, toi_thieu: 2, cap_nhat: ngayLech(-8) },
-  { vat_tu: 'VT-006', ncc: 'NCC-03', don_vi_mua: 'vỉ', quy_cach: 10, gia: 298000, toi_thieu: 1, cap_nhat: ngayLech(-3) },
-
-  { vat_tu: 'VT-007', ncc: 'NCC-01', don_vi_mua: 'gói', quy_cach: 1, gia: 32000, toi_thieu: 10, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-007', ncc: 'NCC-03', don_vi_mua: 'gói', quy_cach: 1, gia: 35000, toi_thieu: 1, cap_nhat: ngayLech(-3) },
-
-  { vat_tu: 'VT-008', ncc: 'NCC-02', don_vi_mua: 'thùng', quy_cach: 2000, gia: 1240000, toi_thieu: 1, cap_nhat: ngayLech(-8) },
-  { vat_tu: 'VT-008', ncc: 'NCC-01', don_vi_mua: 'hộp', quy_cach: 50, gia: 38000, toi_thieu: 5, cap_nhat: ngayLech(-12) },
-
-  { vat_tu: 'VT-009', ncc: 'NCC-04', don_vi_mua: 'trụ', quy_cach: 1, gia: 8950000, toi_thieu: 1, cap_nhat: ngayLech(-20) },
-
-  { vat_tu: 'VT-010', ncc: 'NCC-01', don_vi_mua: 'bịch', quy_cach: 100, gia: 42000, toi_thieu: 5, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-010', ncc: 'NCC-02', don_vi_mua: 'thùng', quy_cach: 2000, gia: 760000, toi_thieu: 1, cap_nhat: ngayLech(-8) },
-
-  { vat_tu: 'VT-011', ncc: 'NCC-01', don_vi_mua: 'tuýp', quy_cach: 1, gia: 385000, toi_thieu: 1, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-011', ncc: 'NCC-05', don_vi_mua: 'tuýp', quy_cach: 1, gia: 368000, toi_thieu: 3, cap_nhat: ngayLech(-6) },
-
-  { vat_tu: 'VT-012', ncc: 'NCC-02', don_vi_mua: 'bộ', quy_cach: 1, gia: 1450000, toi_thieu: 1, cap_nhat: ngayLech(-8) },
-
-  { vat_tu: 'VT-013', ncc: 'NCC-04', don_vi_mua: 'hộp', quy_cach: 12, gia: 1680000, toi_thieu: 1, cap_nhat: ngayLech(-20) },
-  { vat_tu: 'VT-013', ncc: 'NCC-05', don_vi_mua: 'hộp', quy_cach: 12, gia: 1590000, toi_thieu: 1, cap_nhat: ngayLech(-6) },
-
-  { vat_tu: 'VT-014', ncc: 'NCC-01', don_vi_mua: 'bộ', quy_cach: 1, gia: 28000, toi_thieu: 20, cap_nhat: ngayLech(-12) },
-  { vat_tu: 'VT-014', ncc: 'NCC-03', don_vi_mua: 'bộ', quy_cach: 1, gia: 26500, toi_thieu: 50, cap_nhat: ngayLech(-3) },
-
-  { vat_tu: 'VT-015', ncc: 'NCC-05', don_vi_mua: 'chai', quy_cach: 1, gia: 68000, toi_thieu: 6, cap_nhat: ngayLech(-6) },
-];
-
-/* Tồn kho theo chi nhánh. Vật tư nào không có dòng ở đây nghĩa là chi nhánh
- * đó không giữ tồn — không phải bằng 0 vì quên nhập. */
-let TON_KHO = [
-  { vat_tu: 'VT-001', chi_nhanh: 'pham-van-chieu', so_luong: 340,  vi_tri: 'Kệ A1', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-001', chi_nhanh: 'le-van-tho',     so_luong: 1450, vi_tri: 'Kệ A1', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-002', chi_nhanh: 'pham-van-chieu', so_luong: 120,  vi_tri: 'Kệ A2', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-002', chi_nhanh: 'le-van-tho',     so_luong: 640,  vi_tri: 'Kệ A2', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-003', chi_nhanh: 'pham-van-chieu', so_luong: 0,    vi_tri: 'Tủ thuốc khoá', kiem_ke: ngayLech(-1) },
-  { vat_tu: 'VT-003', chi_nhanh: 'le-van-tho',     so_luong: 210,  vi_tri: 'Tủ thuốc khoá', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-004', chi_nhanh: 'pham-van-chieu', so_luong: 4,    vi_tri: 'Tủ mát',  kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-004', chi_nhanh: 'le-van-tho',     so_luong: 15,   vi_tri: 'Tủ mát',  kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-005', chi_nhanh: 'pham-van-chieu', so_luong: 18,   vi_tri: 'Kệ B1', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-005', chi_nhanh: 'le-van-tho',     so_luong: 26,   vi_tri: 'Kệ B1', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-006', chi_nhanh: 'pham-van-chieu', so_luong: 210,  vi_tri: 'Kệ B2', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-006', chi_nhanh: 'le-van-tho',     so_luong: 95,   vi_tri: 'Kệ B2', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-007', chi_nhanh: 'pham-van-chieu', so_luong: 62,   vi_tri: 'Kệ A3', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-007', chi_nhanh: 'le-van-tho',     so_luong: 110,  vi_tri: 'Kệ A3', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-008', chi_nhanh: 'pham-van-chieu', so_luong: 2400, vi_tri: 'Kệ A1', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-008', chi_nhanh: 'le-van-tho',     so_luong: 1750, vi_tri: 'Kệ A1', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-010', chi_nhanh: 'pham-van-chieu', so_luong: 1800, vi_tri: 'Kệ A4', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-010', chi_nhanh: 'le-van-tho',     so_luong: 4200, vi_tri: 'Kệ A4', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-011', chi_nhanh: 'pham-van-chieu', so_luong: 3,    vi_tri: 'Kệ C1', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-011', chi_nhanh: 'le-van-tho',     so_luong: 11,   vi_tri: 'Kệ C1', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-012', chi_nhanh: 'le-van-tho',     so_luong: 6,    vi_tri: 'Kệ C2', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-013', chi_nhanh: 'pham-van-chieu', so_luong: 12,   vi_tri: 'Tủ mát',  kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-013', chi_nhanh: 'le-van-tho',     so_luong: 48,   vi_tri: 'Tủ mát',  kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-014', chi_nhanh: 'pham-van-chieu', so_luong: 145,  vi_tri: 'Phòng hấp', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-014', chi_nhanh: 'le-van-tho',     so_luong: 320,  vi_tri: 'Phòng hấp', kiem_ke: ngayLech(-2) },
-  { vat_tu: 'VT-015', chi_nhanh: 'pham-van-chieu', so_luong: 9,    vi_tri: 'Kệ B3', kiem_ke: ngayLech(-4) },
-  { vat_tu: 'VT-015', chi_nhanh: 'le-van-tho',     so_luong: 30,   vi_tri: 'Kệ B3', kiem_ke: ngayLech(-2) },
-];
-
-/* Đơn hàng. `dong[].da_nhan` là số ĐƠN VỊ MUA đã nhận — số còn thiếu tính ra
- * từ đây, không lưu thành cột riêng. */
-let DON_HANG = [
-  { id: 'DH-0001', ncc: 'NCC-01', chi_nhanh: 'pham-van-chieu',
-    ngay_dat: ngayLech(-6), hen_giao: ngayLech(-2), trang_thai: 'giao_mot_phan',
-    nguoi_dat: 'PVC-10199', ghi_chu: 'Đơn bù gấp cho tuần cao điểm.',
-    dong: [
-      { vat_tu: 'VT-001', so_luong: 10, da_nhan: 10, don_gia: 118000, don_vi_mua: 'hộp', quy_cach: 100 },
-      { vat_tu: 'VT-002', so_luong: 6,  da_nhan: 2,  don_gia: 165000, don_vi_mua: 'hộp', quy_cach: 100 },
-      { vat_tu: 'VT-007', so_luong: 20, da_nhan: 0,  don_gia: 32000,  don_vi_mua: 'gói', quy_cach: 1 },
-    ] },
-  { id: 'DH-0002', ncc: 'NCC-05', chi_nhanh: 'pham-van-chieu',
-    ngay_dat: ngayLech(-3), hen_giao: ngayLech(1), trang_thai: 'da_dat',
-    nguoi_dat: 'PVC-10199', ghi_chu: 'Thuốc tê — kho PVC đã hết sạch.',
-    dong: [
-      { vat_tu: 'VT-003', so_luong: 8, da_nhan: 0, don_gia: 385000, don_vi_mua: 'hộp', quy_cach: 50 },
-      { vat_tu: 'VT-015', so_luong: 12, da_nhan: 0, don_gia: 68000, don_vi_mua: 'chai', quy_cach: 1 },
-    ] },
-  { id: 'DH-0003', ncc: 'NCC-04', chi_nhanh: 'le-van-tho',
-    ngay_dat: ngayLech(-9), hen_giao: ngayLech(-2), trang_thai: 'da_giao',
-    nguoi_dat: 'PVC003', ghi_chu: 'Đặt riêng cho ca implant BN-00002.',
-    dong: [
-      { vat_tu: 'VT-009', so_luong: 1, da_nhan: 1, don_gia: 8950000, don_vi_mua: 'trụ', quy_cach: 1 },
-      { vat_tu: 'VT-013', so_luong: 2, da_nhan: 2, don_gia: 1680000, don_vi_mua: 'hộp', quy_cach: 12 },
-    ] },
-  { id: 'DH-0004', ncc: 'NCC-02', chi_nhanh: 'le-van-tho',
-    ngay_dat: ngayLech(-11), hen_giao: ngayLech(-5), trang_thai: 'giao_mot_phan',
-    nguoi_dat: 'PVC003', ghi_chu: 'Nhà cung cấp báo thiếu hàng, hẹn giao nốt.',
-    dong: [
-      { vat_tu: 'VT-008', so_luong: 2, da_nhan: 1, don_gia: 1240000, don_vi_mua: 'thùng', quy_cach: 2000 },
-      { vat_tu: 'VT-006', so_luong: 8, da_nhan: 8, don_gia: 285000, don_vi_mua: 'vỉ', quy_cach: 10 },
-    ] },
-  { id: 'DH-0005', ncc: 'NCC-03', chi_nhanh: 'pham-van-chieu',
-    ngay_dat: ngayLech(-1), hen_giao: ngayLech(0), trang_thai: 'cho_duyet',
-    nguoi_dat: 'PVC-10199', ghi_chu: 'Lấy gấp trong ngày, chờ chị Huỳnh duyệt.',
-    dong: [
-      { vat_tu: 'VT-011', so_luong: 4, da_nhan: 0, don_gia: 385000, don_vi_mua: 'tuýp', quy_cach: 1 },
-    ] },
-];
-
-/* Phiếu xuất kho — vật tư đi RA khỏi kho.
- *
- * Đối xứng với nhận hàng: nhận thì cộng tồn, xuất thì trừ tồn. Có đủ hai
- * chiều thì con số tồn kho mới là con số thật; thiếu một chiều là sổ sách chỉ
- * biết hàng vào mà không biết hàng đi đâu.
- */
-let PHIEU_XUAT = [
-  { id: 'PX-0001', chi_nhanh: 'pham-van-chieu', ngay: ngayLech(-2),
-    noi_nhan: 'phong_1', nguoi_xuat: 'PVC-10199', nguoi_nhan: 'Phụ tá Yến Thư',
-    ly_do: 'Cấp vật tư đầu ca sáng.', trang_thai: 'da_xuat',
-    dong: [
-      { vat_tu: 'VT-001', so_luong: 60 },
-      { vat_tu: 'VT-008', so_luong: 100 },
-      { vat_tu: 'VT-010', so_luong: 200 },
-    ] },
-  { id: 'PX-0002', chi_nhanh: 'le-van-tho', ngay: ngayLech(-1),
-    noi_nhan: 'phong_pt', nguoi_xuat: 'PVC003', nguoi_nhan: 'BS. Nguyễn Tuấn Ngọc',
-    ly_do: 'Ca cấy ghép implant 46 — có trụ giá trị cao, kiểm đếm hai người.',
-    trang_thai: 'da_xuat',
-    dong: [
-      { vat_tu: 'VT-013', so_luong: 4 },
-      { vat_tu: 'VT-001', so_luong: 20 },
-    ] },
-  { id: 'PX-0003', chi_nhanh: 'pham-van-chieu', ngay: ngayLech(0),
-    noi_nhan: 'huy_hong', nguoi_xuat: 'PVC-10199', nguoi_nhan: '—',
-    ly_do: 'Composite A2 quá hạn sử dụng, huỷ theo quy định.',
-    trang_thai: 'nhap',
-    dong: [{ vat_tu: 'VT-004', so_luong: 1 }] },
-];
-
-/* Hoá đơn của đơn mua, kèm ảnh chụp.
- *
- * Ảnh lưu theo MÃ BĂM nội dung, giống kho ảnh bệnh án: chụp lại cùng một tờ
- * hoá đơn hai lần thì chỉ tốn chỗ một lần. `KHO_ANH_HD` là chỗ chứa thật,
- * `HOA_DON.anh` chỉ giữ mã băm trỏ vào đó.
- */
-let HOA_DON = [
-  { id: 'HD-0001', don: 'DH-0003', so: 'STR-2026-0914', ngay: ngayLech(-2),
-    tien: 12310000, anh: [], ghi_chu: 'Hoá đơn VAT bản cứng đã gửi kế toán.' },
-];
+let NHA_CUNG_CAP = [];
+let VAT_TU = [];
+let BANG_GIA = [];
+let TON_KHO = [];
+let DON_HANG = [];
+let PHIEU_XUAT = [];
+let HOA_DON = [];
 let KHO_ANH_HD = [];
+
+/* ── Thao tác danh mục & dữ liệu cơ sở ────────────────────────────────── */
+
+export function themVatTu(duLieu) {
+  if (!duLieu?.ten?.trim()) throw new Error('Vui lòng nhập tên vật tư.');
+  if (!duLieu?.ma?.trim()) throw new Error('Vui lòng nhập mã vật tư.');
+  const maTrim = duLieu.ma.trim().toUpperCase();
+  const maTrung = VAT_TU.find((v) => v.ma.toUpperCase() === maTrim);
+  if (maTrung) throw new Error(`Mã vật tư "${maTrim}" đã tồn tại.`);
+
+  const moi = {
+    id: `VT-${String(VAT_TU.length + 1).padStart(3, '0')}`,
+    ma: maTrim,
+    ten: duLieu.ten.trim(),
+    nhom: duLieu.nhom || 'tieu_hao',
+    don_vi: duLieu.don_vi?.trim() || 'cái',
+    dinh_muc: Math.max(0, Number(duLieu.dinh_muc) || 0),
+    co: Array.isArray(duLieu.co) ? duLieu.co : [],
+  };
+  VAT_TU.push(moi);
+  return cho(dungVatTu(moi));
+}
+
+export function themNhaCungCap(duLieu) {
+  if (!duLieu?.ten?.trim()) throw new Error('Vui lòng nhập tên nhà cung cấp.');
+  const moi = {
+    id: `NCC-${String(NHA_CUNG_CAP.length + 1).padStart(2, '0')}`,
+    ten: duLieu.ten.trim(),
+    nguoi: duLieu.nguoi?.trim() || '—',
+    dien_thoai: duLieu.dien_thoai?.trim() || '—',
+    ngay_giao: Math.max(1, Number(duLieu.ngay_giao) || 3),
+    thanh_toan: duLieu.thanh_toan?.trim() || 'Thanh toán ngay',
+    danh_gia: Number(duLieu.danh_gia) || 5.0,
+    ghi_chu: duLieu.ghi_chu?.trim() || '',
+  };
+  NHA_CUNG_CAP.push(moi);
+  return cho(moi);
+}
+
+export function themBangGia(duLieu) {
+  if (!duLieu?.vat_tu) throw new Error('Chưa chọn vật tư.');
+  if (!duLieu?.ncc) throw new Error('Chưa chọn nhà cung cấp.');
+  const gia = Number(duLieu.gia);
+  if (!Number.isFinite(gia) || gia <= 0) throw new Error('Đơn giá không hợp lệ.');
+  const quyCach = Math.max(1, Number(duLieu.quy_cach) || 1);
+  const toiThieu = Math.max(1, Number(duLieu.toi_thieu) || 1);
+
+  const daCo = BANG_GIA.find((g) => g.vat_tu === duLieu.vat_tu && g.ncc === duLieu.ncc);
+  if (daCo) {
+    daCo.don_vi_mua = duLieu.don_vi_mua?.trim() || 'hộp';
+    daCo.quy_cach = quyCach;
+    daCo.gia = gia;
+    daCo.toi_thieu = toiThieu;
+    daCo.cap_nhat = ngayLech(0);
+    return cho(daCo);
+  }
+
+  const moi = {
+    vat_tu: duLieu.vat_tu,
+    ncc: duLieu.ncc,
+    don_vi_mua: duLieu.don_vi_mua?.trim() || 'hộp',
+    quy_cach: quyCach,
+    gia,
+    toi_thieu: toiThieu,
+    cap_nhat: ngayLech(0),
+  };
+  BANG_GIA.push(moi);
+  return cho(moi);
+}
+
+export function capNhatTonKho(vatTuId, chiNhanh, soLuong, viTri) {
+  const so = Number(soLuong);
+  if (!Number.isFinite(so) || so < 0) throw new Error('Số lượng tồn không hợp lệ.');
+  let t = TON_KHO.find((x) => x.vat_tu === vatTuId && x.chi_nhanh === chiNhanh);
+  if (t) {
+    t.so_luong = so;
+    if (viTri !== undefined) t.vi_tri = viTri.trim();
+    t.kiem_ke = ngayLech(0);
+  } else {
+    t = {
+      vat_tu: vatTuId,
+      chi_nhanh,
+      so_luong: so,
+      vi_tri: viTri?.trim() || 'Chưa xếp kệ',
+      kiem_ke: ngayLech(0),
+    };
+    TON_KHO.push(t);
+  }
+  return cho(t);
+}
+
+export function taoDonHang(duLieu, boi) {
+  if (!duLieu?.ncc) throw new Error('Vui lòng chọn nhà cung cấp.');
+  const dong = (duLieu.dong || []).filter((x) => Number(x.so_luong) > 0);
+  if (!dong.length) throw new Error('Đơn hàng phải có ít nhất một dòng vật tư.');
+  const ncc = NHA_CUNG_CAP.find((n) => n.id === duLieu.ncc);
+  const moi = {
+    id: `DH-${String(DON_HANG.length + 1).padStart(4, '0')}`,
+    ncc: duLieu.ncc,
+    chi_nhanh: duLieu.chi_nhanh || CHI_NHANH[0]?.ma || 'le-van-tho',
+    ngay_dat: duLieu.ngay_dat || ngayLech(0),
+    hen_giao: duLieu.hen_giao || ngayLech(ncc?.ngay_giao ?? 3),
+    trang_thai: 'cho_duyet',
+    nguoi_dat: boi,
+    ghi_chu: String(duLieu.ghi_chu || '').trim(),
+    dong: dong.map((x) => ({
+      vat_tu: x.vat_tu,
+      so_luong: Number(x.so_luong),
+      da_nhan: 0,
+      don_gia: Number(x.don_gia) || 0,
+      don_vi_mua: x.don_vi_mua || 'hộp',
+      quy_cach: Number(x.quy_cach) || 1,
+    })),
+  };
+  DON_HANG.unshift(moi);
+  return cho(dungDon(moi));
+}
 
 /* ── Tiện ích ─────────────────────────────────────────────────────────── */
 

@@ -17,11 +17,11 @@
 import {
   CHI_NHANH, CO_DAC_BIET, MUC_TON, NHOM_VAT_TU, NOI_NHAN,
   TRANG_THAI_DON, TRANG_THAI_PHIEU,
-  deXuatMuaHang, doiTrangThaiDon, huyPhieuXuat, layDonHang, layHoaDon,
+  capNhatTonKho, deXuatMuaHang, doiTrangThaiDon, huyPhieuXuat, layDonHang, layHoaDon,
   layNhaCungCap, layPhieuXuat, layVatTu, nhanHang, soSanhGia,
-  taoDonTuDeXuat, taoPhieuXuat, tenChiNhanhKho, tenNhaCungCap, tenNguoi,
-  themAnhHoaDon, themHoaDon, thongKeKho, xoaAnhHoaDon, xuatKho,
-  xuatCsvDeXuat, xuatCsvVatTu,
+  taoDonHang, taoDonTuDeXuat, taoPhieuXuat, tenChiNhanhKho, tenNhaCungCap, tenNguoi,
+  themAnhHoaDon, themBangGia, themHoaDon, themNhaCungCap, themVatTu, thongKeKho,
+  xoaAnhHoaDon, xuatKho, xuatCsvDeXuat, xuatCsvVatTu,
 } from '../services/kho-hang.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -59,6 +59,11 @@ let nTim = '';
 let nganMo = null;   // { loai: 'vat_tu' | 'don', id, so_sanh?, can? }
 let hoaDonCuaDon = [];
 let hienFormPhieu = false; let dongPhieuMoi = [];
+let hienFormVatTu = false;
+let hienFormNcc = false;
+let hienFormDon = false; let dongDonMoi = [];
+let hienFormBangGia = false;
+let hienFormTonKho = false;
 
 /* ── Mảnh dùng lại ────────────────────────────────────────────────────── */
 
@@ -199,6 +204,38 @@ function veViecCanLam() {
 
 /* ── Tab: Vật tư ──────────────────────────────────────────────────────── */
 
+function veFormVatTu() {
+  if (!hienFormVatTu) return '';
+  return `<div class="kh-form-phieu" style="margin-bottom:14px;">
+    <b>Thêm vật tư mới vào danh mục</b>
+    <div class="kh-form-luoi">
+      ${oLoc('Mã vật tư *', '<input type="text" id="vtMa" placeholder="VD: GT-NIT-M, TT-LIDO2">')}
+      ${oLoc('Tên vật tư *', '<input type="text" id="vtTen" placeholder="VD: Găng tay nitrile không bột · size M">')}
+      ${oLoc('Nhóm vật tư *', `<select id="vtNhom">
+        ${Object.entries(NHOM_VAT_TU).map(([m, t]) => opt(m, t, 'tieu_hao')).join('')}</select>`)}
+      ${oLoc('Đơn vị dùng *', '<input type="text" id="vtDonVi" placeholder="đôi, cây, ống, vỉ, gói..." value="cái">')}
+      ${oLoc('Định mức tồn kho', '<input type="number" id="vtDinhMuc" min="0" placeholder="VD: 100" value="50">')}
+    </div>
+    <div class="kh-px-dong">
+      <b>Lưu ý & điều kiện bảo quản đặc biệt</b>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
+        ${Object.entries(CO_DAC_BIET).map(([k, v]) => `
+          <label class="kh-tick">
+            <input type="checkbox" data-co-chon="${escapeHTML(k)}">
+            <span><i class="${v.icon}"></i> ${escapeHTML(v.ten)}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
+    <div class="kh-nut-hang">
+      <button type="button" class="ghost-button" id="vtHuy">Huỷ</button>
+      <button type="button" class="primary-button" id="vtLuu">
+        <i class="ri-save-line"></i> Lưu vật tư
+      </button>
+    </div>
+  </div>`;
+}
+
 function veVatTu() {
   const kq = phanTrang(dsVatTu, vTrang, 20);
   const dong = kq.ds.map((v) => {
@@ -245,8 +282,13 @@ function veVatTu() {
         <button type="button" class="ghost-button" id="khXuatVt">
           <i class="ri-download-2-line"></i> Xuất CSV
         </button>
+        <button type="button" class="${hienFormVatTu ? 'secondary-button' : 'primary-button'}" id="khMoFormVt">
+          <i class="ri-add-line"></i> ${hienFormVatTu ? 'Đóng biểu mẫu' : 'Thêm vật tư'}
+        </button>
       </div>
     </header>
+
+    ${veFormVatTu()}
 
     <div class="lt-tim-lon">
       <i class="ri-search-line"></i>
@@ -348,20 +390,65 @@ function veNganVatTu() {
     </div>`).join('')}
   </div>` : '';
 
-  const tonKho = nganMuc('Tồn theo kho', v.ton_kho.length
-    ? `<table class="kh-ngan-bang">
-        <tbody>${v.ton_kho.map((t) => `<tr>
-          <td>${escapeHTML(tenChiNhanhKho(t.chi_nhanh))}
-            <small>${escapeHTML(t.vi_tri)} · kiểm kê ${ngayHien(t.kiem_ke)}</small></td>
-          <td class="kh-so"><b>${t.so_luong.toLocaleString('vi-VN')}</b>
-            <small>${escapeHTML(v.don_vi)}</small></td>
-        </tr>`).join('')}</tbody>
-      </table>`
-    : '<p class="kh-ngan-trong">Chưa kho nào giữ tồn mặt hàng này.</p>');
+  const formTon = hienFormTonKho ? `
+    <div class="kh-form-phieu" style="margin-top:10px;">
+      <b>Cập nhật số lượng tồn kho</b>
+      <div class="kh-form-luoi">
+        ${oLoc('Chi nhánh *', `<select id="tkChiNhanh">
+          ${CHI_NHANH.map((c) => opt(c.ma, c.ten, chiNhanh || CHI_NHANH[0].ma)).join('')}</select>`)}
+        ${oLoc(`Số lượng (${v.don_vi}) *`, '<input type="number" id="tkSoLuong" min="0" placeholder="0">')}
+        ${oLoc('Vị trí lưu kho', '<input type="text" id="tkViTri" placeholder="Kệ A1, Tủ mát, Phòng hấp...">')}
+      </div>
+      <div class="kh-nut-hang">
+        <button type="button" class="ghost-button kh-nho" id="tkHuy">Đóng</button>
+        <button type="button" class="primary-button kh-nho" id="tkLuu" data-vt-id="${escapeHTML(v.id)}">
+          <i class="ri-save-line"></i> Lưu tồn kho
+        </button>
+      </div>
+    </div>` : '';
 
-  const bangGia = !ss || !ss.bang.length
-    ? nganMuc('So sánh giá', '<p class="kh-ngan-trong">Chưa có nhà cung cấp nào báo giá mặt hàng này.</p>')
-    : nganMuc('So sánh giá', `
+  const tonKho = nganMuc('Tồn theo kho', `
+    ${v.ton_kho.length
+      ? `<table class="kh-ngan-bang">
+          <tbody>${v.ton_kho.map((t) => `<tr>
+            <td>${escapeHTML(tenChiNhanhKho(t.chi_nhanh))}
+              <small>${escapeHTML(t.vi_tri)} · kiểm kê ${ngayHien(t.kiem_ke)}</small></td>
+            <td class="kh-so"><b>${t.so_luong.toLocaleString('vi-VN')}</b>
+              <small>${escapeHTML(v.don_vi)}</small></td>
+          </tr>`).join('')}</tbody>
+        </table>`
+      : '<p class="kh-ngan-trong">Chưa kho nào giữ tồn mặt hàng này.</p>'}
+    <div style="margin-top:8px;">
+      <button type="button" class="secondary-button kh-nho" id="khMoFormTon">
+        <i class="ri-edit-line"></i> ${hienFormTonKho ? 'Đóng biểu mẫu' : 'Cập nhật tồn kho'}
+      </button>
+    </div>
+    ${formTon}`);
+
+  const formGia = hienFormBangGia ? `
+    <div class="kh-form-phieu" style="margin-top:10px;">
+      <b>Thêm báo giá nhà cung cấp</b>
+      <div class="kh-form-luoi">
+        ${oLoc('Nhà cung cấp *', `<select id="bgNcc">
+          ${opt('', '— Chọn nhà cung cấp —', '')}
+          ${dsNcc.map((n) => opt(n.id, n.ten, '')).join('')}</select>`)}
+        ${oLoc('Đơn vị mua *', `<input type="text" id="bgDvm" placeholder="hộp, thùng, vỉ, tuýp..." value="hộp">`)}
+        ${oLoc(`Quy cách (${v.don_vi}/đơn vị mua) *`, `<input type="number" id="bgQuyCach" min="1" value="100">`)}
+        ${oLoc('Đơn giá niêm yết (đ) *', `<input type="number" id="bgGia" min="0" step="1000" placeholder="VD: 120000">`)}
+        ${oLoc('Mua tối thiểu (đơn vị mua)', `<input type="number" id="bgToiThieu" min="1" value="1">`)}
+      </div>
+      <div class="kh-nut-hang">
+        <button type="button" class="ghost-button kh-nho" id="bgHuy">Đóng</button>
+        <button type="button" class="primary-button kh-nho" id="bgLuu" data-vt-id="${escapeHTML(v.id)}">
+          <i class="ri-save-line"></i> Lưu báo giá
+        </button>
+      </div>
+    </div>` : '';
+
+  const bangGia = nganMuc('So sánh giá', `
+    ${!ss || !ss.bang.length
+      ? '<p class="kh-ngan-trong">Chưa có nhà cung cấp nào báo giá mặt hàng này.</p>'
+      : `
         ${ss.canh_bao_moq ? `<div class="kh-canh kh-canh-warn">
           <i class="ri-error-warning-line"></i>
           <div><b>Rẻ theo đơn giá không phải rẻ theo tiền thật</b>
@@ -410,7 +497,13 @@ function veNganVatTu() {
         <p class="kh-ngan-ghi"><i class="ri-information-line"></i>
           <span>Đơn giá quy đổi là giá của <b>một ${escapeHTML(v.don_vi)}</b> sau khi chia theo
           quy cách đóng gói. Đây là con số duy nhất so sánh được khi các nhà bán hộp,
-          thùng, vỉ khác nhau.</span></p>`);
+          thùng, vỉ khác nhau.</span></p>`}
+    <div style="margin-top:8px;">
+      <button type="button" class="secondary-button kh-nho" id="khMoFormGia">
+        <i class="ri-add-line"></i> ${hienFormBangGia ? 'Đóng biểu mẫu' : 'Thêm báo giá mới'}
+      </button>
+    </div>
+    ${formGia}`);
 
   const donVe = dsDon.filter((d) => !['da_giao', 'huy'].includes(d.trang_thai)
     && d.dong.some((x) => x.vat_tu === v.id && !x.da_du));
@@ -449,6 +542,49 @@ function veNganVatTu() {
 
 /* ── Tab: Đơn hàng ────────────────────────────────────────────────────── */
 
+function veFormDonHang() {
+  if (!hienFormDon) return '';
+  const cn = chiNhanh || CHI_NHANH[0]?.ma || 'le-van-tho';
+  return `<div class="kh-form-phieu" style="margin-bottom:14px;">
+    <b>Tạo đơn đặt hàng mới</b>
+    <div class="kh-form-luoi">
+      ${oLoc('Chi nhánh nhận hàng', `<select id="dhChiNhanh">
+        ${CHI_NHANH.map((c) => opt(c.ma, c.ten, cn)).join('')}</select>`)}
+      ${oLoc('Nhà cung cấp *', `<select id="dhNcc">
+        ${opt('', '— Chọn nhà cung cấp —', '')}
+        ${dsNcc.map((n) => opt(n.id, n.ten, '')).join('')}</select>`)}
+      ${oLoc('Ngày hẹn giao', `<input type="date" id="dhHenGiao" value="${todayISO()}">`)}
+      ${oLoc('Ghi chú đơn', '<input type="text" id="dhGhiChu" placeholder="Ghi chú đơn hàng...">')}
+    </div>
+
+    <div class="kh-px-dong">
+      <b>Danh sách vật tư đặt mua</b>
+      ${dongDonMoi.map((d, i) => `<div class="kh-px-hang" style="grid-template-columns: minmax(0, 1.5fr) 100px 90px 110px auto;">
+        <select data-dh-dong-vt="${i}">
+          ${opt('', '— chọn vật tư —', d.vat_tu)}
+          ${dsVatTu.map((v) => opt(v.id, `${v.ma} · ${v.ten} (${v.don_vi})`, d.vat_tu)).join('')}
+        </select>
+        <input type="number" min="1" placeholder="SL" value="${d.so_luong || ''}" data-dh-dong-sl="${i}">
+        <input type="text" placeholder="Đơn vị mua" value="${escapeHTML(d.don_vi_mua || 'hộp')}" data-dh-dong-dvm="${i}">
+        <input type="number" min="0" step="1000" placeholder="Đơn giá (đ)" value="${d.don_gia || ''}" data-dh-dong-dg="${i}">
+        <button type="button" class="ghost-button kh-nho" data-dh-bo-dong="${i}">
+          <i class="ri-delete-bin-line"></i>
+        </button>
+      </div>`).join('')}
+      <button type="button" class="ghost-button kh-nho" id="dhThemDong">
+        <i class="ri-add-line"></i> Thêm dòng vật tư
+      </button>
+    </div>
+
+    <div class="kh-nut-hang">
+      <button type="button" class="ghost-button" id="dhHuy">Huỷ</button>
+      <button type="button" class="primary-button" id="dhLuu">
+        <i class="ri-save-line"></i> Tạo đơn hàng (chờ duyệt)
+      </button>
+    </div>
+  </div>`;
+}
+
 function veDonHang() {
   const dong = dsDon.map((d) => {
     const tt = TRANG_THAI_DON[d.trang_thai];
@@ -479,7 +615,14 @@ function veDonHang() {
     <header class="section-title kh-header">
       <h3>Đơn đặt hàng</h3>
       <span class="pill">${dsDon.length} đơn khớp bộ lọc</span>
+      <div class="kh-header-nut">
+        <button type="button" class="${hienFormDon ? 'secondary-button' : 'primary-button'}" id="khMoFormDon">
+          <i class="ri-add-line"></i> ${hienFormDon ? 'Đóng biểu mẫu' : 'Tạo đơn đặt hàng'}
+        </button>
+      </div>
     </header>
+
+    ${veFormDonHang()}
 
     <div class="lt-tim-lon">
       <i class="ri-search-line"></i>
@@ -851,14 +994,40 @@ function veDeXuat() {
   </section>`;
 }
 
-/* ── Tab: Nhà cung cấp ────────────────────────────────────────────────── */
+function veFormNcc() {
+  if (!hienFormNcc) return '';
+  return `<div class="kh-form-phieu" style="margin-bottom:14px;">
+    <b>Thêm nhà cung cấp mới</b>
+    <div class="kh-form-luoi">
+      ${oLoc('Tên nhà cung cấp *', '<input type="text" id="nccTen" placeholder="VD: Công ty TNHH Nha khoa ABC">')}
+      ${oLoc('Người liên hệ', '<input type="text" id="nccNguoi" placeholder="Chị Lan / Anh Dũng">')}
+      ${oLoc('Số điện thoại', '<input type="text" id="nccDienThoai" placeholder="0903 118 224">')}
+      ${oLoc('Thời gian giao (ngày)', '<input type="number" id="nccNgayGiao" min="1" max="30" value="2">')}
+      ${oLoc('Điều khoản thanh toán', '<input type="text" id="nccThanhToan" placeholder="Công nợ 30 ngày, Thanh toán ngay...">')}
+      ${oLoc('Đánh giá (sao)', '<input type="number" id="nccDanhGia" min="1" max="5" step="0.1" value="5.0">')}
+      ${oLoc('Ghi chú', '<input type="text" id="nccGhiChu" placeholder="Giao nhanh, chuyên thuốc...">')}
+    </div>
+    <div class="kh-nut-hang">
+      <button type="button" class="ghost-button" id="nccHuy">Huỷ</button>
+      <button type="button" class="primary-button" id="nccLuu">
+        <i class="ri-save-line"></i> Lưu nhà cung cấp
+      </button>
+    </div>
+  </div>`;
+}
 
 function veNcc() {
   return `<section class="panel">
     <header class="section-title kh-header">
       <h3>Nhà cung cấp</h3>
       <span class="pill">${dsNcc.length} nhà đang hợp tác</span>
+      <div class="kh-header-nut">
+        <button type="button" class="${hienFormNcc ? 'secondary-button' : 'primary-button'}" id="khMoFormNcc">
+          <i class="ri-add-line"></i> ${hienFormNcc ? 'Đóng biểu mẫu' : 'Thêm nhà cung cấp'}
+        </button>
+      </div>
     </header>
+    ${veFormNcc()}
     <div class="lt-tim-lon">
       <i class="ri-search-line"></i>
       <input type="search" id="nTim" value="${escapeHTML(nTim)}"
@@ -912,16 +1081,6 @@ export async function renderView() {
   hoaDonCuaDon = nganMo?.loai === 'don' ? await layHoaDon(nganMo.id) : [];
 
   return `<div class="view-stack kh-view">
-    <div class="lt-canh-bao" role="status">
-      <i class="ri-flask-line"></i>
-      <div>
-        <b>Dữ liệu mẫu — màn hình đang ở giai đoạn dựng giao diện</b>
-        <span>Vật tư, tồn kho, đơn hàng và nhà cung cấp trên màn này là dữ liệu dựng
-        sẵn để xem giao diện. Chưa nối cơ sở dữ liệu, và mọi thao tác nhận hàng hay
-        xuất kho sẽ mất khi tải lại trang.</span>
-      </div>
-    </div>
-
     <div class="kh-thanh-tren">
       <nav class="lt-tabs" role="tablist">
         ${TABS.map((t) => `<button type="button" role="tab" class="lt-tab${tab === t.ma ? ' is-active' : ''}"
@@ -1192,8 +1351,138 @@ export function initView() {
     });
   });
 
-  document.querySelectorAll('[data-loc-ncc]').forEach((b) => {
-    b.addEventListener('click', () => { dNcc = b.dataset.locNcc; tab = 'don-hang'; ve(); });
+  /* Thêm vật tư mới */
+  g('khMoFormVt')?.addEventListener('click', () => {
+    hienFormVatTu = !hienFormVatTu; ve();
+  });
+  g('vtHuy')?.addEventListener('click', () => {
+    hienFormVatTu = false; ve();
+  });
+  g('vtLuu')?.addEventListener('click', () => {
+    const co = [];
+    document.querySelectorAll('[data-co-chon]:checked').forEach((c) => co.push(c.dataset.coChon));
+    chay(async () => {
+      await themVatTu({
+        ma: g('vtMa')?.value,
+        ten: g('vtTen')?.value,
+        nhom: g('vtNhom')?.value,
+        don_vi: g('vtDonVi')?.value,
+        dinh_muc: g('vtDinhMuc')?.value,
+        co,
+      });
+      hienFormVatTu = false;
+    }, 'Đã thêm vật tư mới vào danh mục.');
+  });
+
+  /* Thêm nhà cung cấp mới */
+  g('khMoFormNcc')?.addEventListener('click', () => {
+    hienFormNcc = !hienFormNcc; ve();
+  });
+  g('nccHuy')?.addEventListener('click', () => {
+    hienFormNcc = false; ve();
+  });
+  g('nccLuu')?.addEventListener('click', () => {
+    chay(async () => {
+      await themNhaCungCap({
+        ten: g('nccTen')?.value,
+        nguoi: g('nccNguoi')?.value,
+        dien_thoai: g('nccDienThoai')?.value,
+        ngay_giao: g('nccNgayGiao')?.value,
+        thanh_toan: g('nccThanhToan')?.value,
+        danh_gia: g('nccDanhGia')?.value,
+        ghi_chu: g('nccGhiChu')?.value,
+      });
+      hienFormNcc = false;
+    }, 'Đã thêm nhà cung cấp mới.');
+  });
+
+  /* Tạo đơn đặt hàng mới */
+  g('khMoFormDon')?.addEventListener('click', () => {
+    hienFormDon = !hienFormDon;
+    if (hienFormDon && !dongDonMoi.length) dongDonMoi = [{ vat_tu: '', so_luong: 1, don_vi_mua: 'hộp', don_gia: 0 }];
+    ve();
+  });
+  g('dhThemDong')?.addEventListener('click', () => {
+    dongDonMoi.push({ vat_tu: '', so_luong: 1, don_vi_mua: 'hộp', don_gia: 0 }); ve();
+  });
+  document.querySelectorAll('[data-dh-bo-dong]').forEach((b) => {
+    b.addEventListener('click', () => {
+      dongDonMoi.splice(Number(b.dataset.dhBoDong), 1);
+      if (!dongDonMoi.length) dongDonMoi = [{ vat_tu: '', so_luong: 1, don_vi_mua: 'hộp', don_gia: 0 }];
+      ve();
+    });
+  });
+  document.querySelectorAll('[data-dh-dong-vt]').forEach((o) => {
+    o.addEventListener('change', () => { dongDonMoi[Number(o.dataset.dhDongVt)].vat_tu = o.value; });
+  });
+  document.querySelectorAll('[data-dh-dong-sl]').forEach((o) => {
+    o.addEventListener('input', () => { dongDonMoi[Number(o.dataset.dhDongSl)].so_luong = o.value; });
+  });
+  document.querySelectorAll('[data-dh-dong-dvm]').forEach((o) => {
+    o.addEventListener('input', () => { dongDonMoi[Number(o.dataset.dhDongDvm)].don_vi_mua = o.value; });
+  });
+  document.querySelectorAll('[data-dh-dong-dg]').forEach((o) => {
+    o.addEventListener('input', () => { dongDonMoi[Number(o.dataset.dhDongDg)].don_gia = o.value; });
+  });
+  g('dhHuy')?.addEventListener('click', () => {
+    hienFormDon = false; dongDonMoi = []; ve();
+  });
+  g('dhLuu')?.addEventListener('click', () => {
+    chay(async () => {
+      await taoDonHang({
+        chi_nhanh: g('dhChiNhanh')?.value,
+        ncc: g('dhNcc')?.value,
+        hen_giao: g('dhHenGiao')?.value,
+        ghi_chu: g('dhGhiChu')?.value,
+        dong: dongDonMoi.filter((d) => d.vat_tu),
+      }, maToi);
+      hienFormDon = false; dongDonMoi = [];
+    }, 'Đã tạo đơn đặt hàng mới ở trạng thái chờ duyệt.');
+  });
+
+  /* Cập nhật tồn kho trong ngăn kéo */
+  g('khMoFormTon')?.addEventListener('click', () => {
+    hienFormTonKho = !hienFormTonKho; ve();
+  });
+  g('tkHuy')?.addEventListener('click', () => {
+    hienFormTonKho = false; ve();
+  });
+  g('tkLuu')?.addEventListener('click', (e) => {
+    const vtId = e.currentTarget.dataset.vtId;
+    chay(async () => {
+      await capNhatTonKho(vtId, g('tkChiNhanh')?.value, g('tkSoLuong')?.value, g('tkViTri')?.value);
+      hienFormTonKho = false;
+      if (nganMo?.id === vtId) {
+        const can = Math.max(0, (dsVatTu.find((x) => x.id === vtId)?.dinh_muc_hien || 0));
+        nganMo.so_sanh = await soSanhGia(vtId, can);
+      }
+    }, 'Đã cập nhật tồn kho.');
+  });
+
+  /* Thêm báo giá trong ngăn kéo */
+  g('khMoFormGia')?.addEventListener('click', () => {
+    hienFormBangGia = !hienFormBangGia; ve();
+  });
+  g('bgHuy')?.addEventListener('click', () => {
+    hienFormBangGia = false; ve();
+  });
+  g('bgLuu')?.addEventListener('click', (e) => {
+    const vtId = e.currentTarget.dataset.vtId;
+    chay(async () => {
+      await themBangGia({
+        vat_tu: vtId,
+        ncc: g('bgNcc')?.value,
+        don_vi_mua: g('bgDvm')?.value,
+        quy_cach: g('bgQuyCach')?.value,
+        gia: g('bgGia')?.value,
+        toi_thieu: g('bgToiThieu')?.value,
+      });
+      hienFormBangGia = false;
+      if (nganMo?.id === vtId) {
+        const can = Math.max(0, (dsVatTu.find((x) => x.id === vtId)?.dinh_muc_hien || 0));
+        nganMo.so_sanh = await soSanhGia(vtId, can);
+      }
+    }, 'Đã lưu báo giá của nhà cung cấp.');
   });
 
   /* Xuất báo cáo */
