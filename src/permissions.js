@@ -261,7 +261,7 @@ export function khongPhaiChamCong(role) {
 }
 
 export function isOpsRole(role) {
-  return ['admin', 'hr', 'leader', 'phu_ta_truong', 'finance', 'admin_it'].includes(role);
+  return ['admin', 'hr', 'leader', 'phu_ta_truong', 'finance', 'admin_it', 'superadmin'].includes(role);
 }
 
 const DOCTOR_ROSTER_VIEWER_ROLES = new Set(['staff', 'phu_ta', 'le_tan', 'telesale_staff']);

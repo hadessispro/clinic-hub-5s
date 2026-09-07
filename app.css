@@ -13032,17 +13032,34 @@ html, body {
     align-self: start !important;
     display: flex !important;
     flex-direction: column !important;
-    overflow-y: auto !important;
+    overflow-y: hidden !important;
     overflow-x: hidden !important;
     z-index: 40 !important;
     background: rgba(255, 255, 255, 0.96) !important;
     border-right: 1px solid #e5ebe8 !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .sidebar::-webkit-scrollbar,
+  .sidebar *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 
   .sidebar .nav-list {
     flex: 1 1 auto;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .sidebar .nav-list::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 
   .sidebar .sidebar-note {
@@ -13455,6 +13472,252 @@ section.panel {
     max-width: calc(100vw - 20px) !important;
     margin: 0 auto !important;
     box-sizing: border-box !important;
+  }
+}
+
+/* ══ ẨN SCROLLBAR TOÀN DIỆN CHO KHU VỰC SIDEBAR MENU ════════════════════════════════ */
+.sidebar,
+.sidebar *,
+.sidebar .nav-list,
+.sidebar-nav,
+.mobile-nav-sheet {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.sidebar::-webkit-scrollbar,
+.sidebar *::-webkit-scrollbar,
+.sidebar .nav-list::-webkit-scrollbar,
+.sidebar-nav::-webkit-scrollbar,
+.mobile-nav-sheet::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* ══ QUẢN TRỊ & ĐIỀU CHỈNH NGÀY CÔNG NHÂN SỰ (ADMIN ATTENDANCE MANAGEMENT) ═════════ */
+.attendance-admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.attendance-admin-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.attendance-admin-toolbar select,
+.attendance-admin-toolbar input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #111827;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.attendance-admin-toolbar .employee-select-box {
+  flex: 1 1 280px;
+}
+
+.attendance-admin-toolbar .employee-select-box select {
+  font-weight: 600;
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.4);
+  background: #f0fdfa;
+}
+
+.attendance-nav-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.attendance-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all .18s ease;
+}
+
+.attendance-tab-btn:hover {
+  color: var(--text);
+}
+
+.attendance-tab-btn.is-active {
+  color: #0f766e;
+  border-bottom-color: #0f766e;
+  background: rgba(15, 118, 110, 0.07);
+  border-radius: 8px 8px 0 0;
+}
+
+.btn-adjust-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  background: rgba(15, 118, 110, 0.08);
+  color: #0f766e;
+  border: 1px solid rgba(15, 118, 110, 0.25);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s ease;
+}
+
+.btn-adjust-day:hover {
+  background: #0f766e;
+  color: #ffffff;
+  border-color: #0f766e;
+}
+
+/* Modal Điều chỉnh & Bổ sung ngày công */
+.attendance-adjust-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.attendance-adjust-dialog[hidden] {
+  display: none !important;
+}
+
+.attendance-adjust-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(4px);
+  border: none;
+}
+
+.attendance-adjust-sheet {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 580px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.2);
+  padding: 24px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.attendance-adjust-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.attendance-adjust-header h2 {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+  color: #111827;
+}
+
+.attendance-adjust-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.attendance-adjust-grid .full {
+  grid-column: 1 / -1;
+}
+
+.attendance-adjust-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.attendance-adjust-grid input,
+.attendance-adjust-grid select,
+.attendance-adjust-grid textarea {
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: #f9fafb;
+  color: #111827;
+  box-sizing: border-box;
+}
+
+.attendance-adjust-grid input:focus,
+.attendance-adjust-grid select:focus,
+.attendance-adjust-grid textarea:focus {
+  border-color: #0f766e;
+  background: #ffffff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.attendance-adjust-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.attendance-adjust-actions .danger-btn {
+  margin-right: auto;
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.attendance-adjust-actions .danger-btn:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+@media (max-width: 600px) {
+  .attendance-adjust-grid {
+    grid-template-columns: 1fr;
   }
 }
 
