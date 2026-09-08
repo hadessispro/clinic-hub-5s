@@ -85,6 +85,7 @@ PHAM_VI=(
   "apps/finance/Dockerfile|finance"
   "apps/backend/src/*.ts|backend"
   "apps/backend/package.json|backend"
+  "infra/postgres/init/*.sql|migrate"
   "infra/postgres/migrations/*.sql|migrate"
   "deploy/Caddyfile|web"
   "Dockerfile.backend|backend"
