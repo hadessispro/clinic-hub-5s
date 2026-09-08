@@ -128,7 +128,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-      args:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}
