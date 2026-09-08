@@ -39,3 +39,10 @@ a368b642e5842563  034-hoa-hong-ke-toan-quan-sat.sql
 981cc7369e8ea6ba  035-nhat-ky-tai-khoan.sql
 7ab0e9d4d80ecbd5  036-luong-pg.sql
 dadbb77ca6aa2ba9  037-ham-tinh-luong-pg.sql
+78516a595a743c3b  038-cap-nhat-ho-so-tai-khoan.sql
+5499672e2774d837  039-admin-it-readonly-query.sql
+130286a6932a935a  040-attendance-postgres-only.sql
+3599f435586d3de0  040-grant-readonly-query-to-backend.sql
+5ab89c75e388343e  041-doi-chieu-lich-lam-01-07-09-2026.sql
+16350f4a40008300  042-bo-sung-checkin-07-09-va-danh-muc-ca.sql
+31f95effe692274a  043-hoan-chinh-cong-06-09-va-my-phung-04-09.sql

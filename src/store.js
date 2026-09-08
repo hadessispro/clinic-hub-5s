@@ -14,6 +14,13 @@ class Store {
       employeeCode: null,
       department: null,
       notifications: [],
+      todayAttendance: {
+        checkedIn: false,
+        checkinTime: null,
+        checkedOut: false,
+        checkoutTime: null,
+        branchName: '',
+      },
       settings: {
         ...branchSettings(),
         googleGasUrl: '',
@@ -81,6 +88,15 @@ class Store {
     if (this.state.notifications.some(n => n.id === notification.id)) return;
     this.state.notifications = [notification, ...this.state.notifications];
     this.notify();
+  }
+
+  setTodayAttendance(attendance, silent = false) {
+    const current = this.state.todayAttendance || {};
+    const changed = Object.keys(attendance).some((k) => current[k] !== attendance[k]);
+    this.state.todayAttendance = { ...current, ...attendance };
+    if (changed && !silent) {
+      this.notify();
+    }
   }
 
   getState() {

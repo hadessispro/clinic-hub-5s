@@ -10,3 +10,5 @@
 # thứ phải nhớ.
 *.sh  text eol=lf
 *.sql text eol=lf
+.chu-ky text eol=lf
+.trung-so-da-biet text eol=lf

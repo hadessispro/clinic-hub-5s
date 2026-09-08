@@ -48,13 +48,20 @@ function mobileNavLabel(item) {
  * @param {string} role - The user's role (admin, hr, leader, finance, staff)
  * @returns {string} - HTML string representing navigation
  */
+const KHOA_NHOM_GAP = 'clinic_nhom_gap';
+function nhomDangGap() {
+  try { return new Set(JSON.parse(localStorage.getItem(KHOA_NHOM_GAP) || '[]')); }
+  catch { return new Set(); }
+}
+
 export function renderSidebar(role) {
   const currentView = store.getState()?.currentView || 'dashboard';
   const navGroups = getNavForRole(role);
+  const dangGap = nhomDangGap();
   const desktopNavigation = navGroups
     .map((group) => {
       const hasActive = group.items.some((item) => item.view === currentView);
-      const isExpanded = hasActive || group.group === 'Điều hành' || group.group === 'Marketing & Telesale';
+      const isExpanded = hasActive || !dangGap.has(group.group);
 
       const itemsHtml = group.items
         .map((item) => `
@@ -67,13 +74,12 @@ export function renderSidebar(role) {
         
       return `
         <div class="nav-group ${isExpanded ? 'is-open' : 'is-collapsed'}${hasActive ? ' co-man-dang-mo' : ''}">
-          <button type="button" class="nav-group-title" aria-expanded="${isExpanded}">
+          <button type="button" class="nav-group-title" aria-expanded="${isExpanded}" data-group="${escapeHTML(group.group)}">
             <div class="nav-group-title-content">
               <svg class="nav-group-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               <span>${escapeHTML(group.group)}</span>
             </div>
             <span class="nav-group-dem">${group.items.length}</span>
-            <span class="nav-group-plus" title="Đóng/Mở">+</span>
           </button>
           <div class="nav-group-items">
             ${itemsHtml}

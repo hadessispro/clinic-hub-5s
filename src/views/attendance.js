@@ -1,4 +1,14 @@
-import { clockIn, clockOut, discardRejectedAttendance, getAttendance, getAttendanceWorkSummary, getOfflineQueue, getRejectedQueue, syncOfflineAttendance } from '../services/attendance.js';
+import {
+  adjustAttendanceRecord,
+  clockIn, clockOut,
+  deleteAttendanceDayRecords,
+  discardRejectedAttendance,
+  getAttendance,
+  getAttendanceWorkSummary,
+  getOfflineQueue,
+  getRejectedQueue,
+  syncOfflineAttendance
+} from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
 import { getEmployeeAllowedShifts, getScheduleAssignments } from '../services/schedule.js';
 import {
@@ -11,14 +21,14 @@ import {
 import { captureWorkplacePhoto, startWorkplaceCamera, stopWorkplaceCamera } from '../services/camera.js';
 import { listPendingProofs, movePendingProof, removePendingProof, savePendingProof, syncPendingProofs, uploadAttendanceProof } from '../services/attendance-proofs.js';
 import { BRANCH, BRANCHES, clinicDateISO, clinicTimeLabel } from '../branch.js';
-import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
-import { isOpsRole, khongPhaiChamCong } from '../permissions.js';
+import { canEditAttendance, isOpsRole, khongPhaiChamCong } from '../permissions.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
+import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
 let context = null;
 let lastLocation = null;
@@ -45,6 +55,8 @@ let attendanceHistoryBranch = 'all';
 let attendanceHistoryPage = 1;
 let attendanceAdminPage = 1;
 let attendanceAdminPageSize = 10;
+let attendanceActiveTab = 'workdays';
+let attendanceAdminSelectedEmployee = '';
 const ATTENDANCE_PAGE_SIZE = 10;
 const REQUIRE_CHECKIN_PHOTO = false;
 
@@ -156,11 +168,15 @@ function workDayStatus(day) {
   return labels[day?.status] || ['Cần kiểm tra', 'warn'];
 }
 
-function renderWorkSummary(summary, month) {
+function renderWorkSummary(summary, month, targetEmployee = null, canEdit = false) {
+  const employeeTitle = targetEmployee ? `Bảng công: ${escapeHTML(targetEmployee.name)} (${escapeHTML(targetEmployee.id)})` : 'Công làm việc của tôi';
   if (!summary) {
     return `<section class="attendance-work-panel">
-      <div class="section-title"><div><p class="eyebrow">Bảng công việc</p><h3>Công làm việc của tôi</h3></div></div>
-      <div class="attendance-empty"><strong>Chưa tải được bảng công</strong><span>Dữ liệu chấm công vẫn được lưu an toàn trên máy chủ. Hãy thử tải lại màn hình.</span></div>
+      <div class="section-title attendance-work-heading">
+        <div><p class="eyebrow">Bảng công việc</p><h3>${employeeTitle}</h3></div>
+        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal" style="font-size:0.85rem;padding:6px 14px;">+ Bổ sung / Sửa công</button>` : ''}
+      </div>
+      <div class="attendance-empty"><strong>Chưa có dữ liệu bảng công của nhân sự này</strong><span>${canEdit ? 'Bấm nút "+ Bổ sung / Sửa công" ở trên để nhập hoặc điều chỉnh ngày công cho nhân sự.' : 'Nhân sự chưa có dữ liệu ngày công được ghi nhận trong tháng này.'}</span></div>
     </section>`;
   }
   const totals = summary.totals || {};
@@ -176,11 +192,15 @@ function renderWorkSummary(summary, month) {
   if (context) {
     context.workSummary = summary;
     context.workRows = filtered;
+    context.targetEmployee = targetEmployee;
   }
   return `<section class="attendance-work-panel">
     <div class="section-title attendance-work-heading">
-      <div><p class="eyebrow">Bảng công việc</p><h3>Công làm việc của tôi</h3><span class="subtle">Tính từ ca làm và chấm công đã xác nhận</span></div>
-      <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
+      <div><p class="eyebrow">Bảng công việc</p><h3>${employeeTitle}</h3><span class="subtle">Tính từ ca làm và chấm công đã xác nhận</span></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal" style="font-size:0.85rem;padding:6px 14px;">+ Bổ sung / Sửa công</button>` : ''}
+        <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
+      </div>
     </div>
     <div class="attendance-work-summary-line">
       <span class="is-workday"><small>Ngày công</small><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b></span>
@@ -189,18 +209,23 @@ function renderWorkSummary(summary, month) {
       <span class="is-payable"><small>Tổng tính công</small><b>${minuteLabel(totals.payableMinutes)}</b></span>
       <span class="is-review"><small>Cần đối chiếu</small><b>${Number(totals.incompleteDays || 0)} ngày</b></span>
     </div>
-    <div class="attendance-table-filters">
-      <label>Tháng<input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(month)}"></label>
-      <label>Chi nhánh<select id="attendanceWorkBranch"><option value="all">Tất cả</option>${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}" ${attendanceWorkBranchFilter === branch.id ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}</select></label>
-      <label>Đối chiếu<select id="attendanceWorkStatus"><option value="all">Tất cả trạng thái</option><option value="complete" ${attendanceWorkStatusFilter === 'complete' ? 'selected' : ''}>Đủ vào/ra</option><option value="in_progress" ${attendanceWorkStatusFilter === 'in_progress' ? 'selected' : ''}>Đang trong ca</option><option value="missing_checkout" ${attendanceWorkStatusFilter === 'missing_checkout' ? 'selected' : ''}>Thiếu check-out</option><option value="missing_checkin" ${attendanceWorkStatusFilter === 'missing_checkin' ? 'selected' : ''}>Thiếu check-in</option><option value="attendance_anomaly" ${attendanceWorkStatusFilter === 'attendance_anomaly' ? 'selected' : ''}>Dữ liệu bất thường</option></select></label>
-    </div>
     <div class="table-wrap attendance-work-table"><table>
-      <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status"></colgroup>
-      <thead><tr><th>Ngày & chi nhánh</th><th>Ca làm việc</th><th>Vào / Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn / Về sớm</th><th>Ngày công</th><th>Đối chiếu</th></tr></thead>
+      <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status">${canEdit ? '<col class="col-actions" style="width:105px;">' : ''}</colgroup>
+      <thead><tr><th>Ngày & chi nhánh</th><th>Ca làm việc</th><th>Vào / Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn / Về sớm</th><th>Ngày công</th><th>Đối chiếu</th>${canEdit ? '<th>Thao tác</th>' : ''}</tr></thead>
       <tbody>${days.length ? days.map((day) => {
         const [label, tone] = workDayStatus(day);
-        return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}"><td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span></td><td><strong>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</strong></td><td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td><td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td><td class="attendance-number is-overtime">${minuteLabel(day.overtime_minutes)}</td><td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td><td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td><td>${statusPill(label, tone)}</td></tr>`;
-      }).join('') : '<tr><td colspan="8" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
+        return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}">
+          <td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span></td>
+          <td><strong>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</strong></td>
+          <td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td>
+          <td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td>
+          <td class="attendance-number is-overtime">${minuteLabel(day.overtime_minutes)}</td>
+          <td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td>
+          <td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td>
+          <td>${statusPill(label, tone)}</td>
+          ${canEdit ? `<td><button type="button" class="btn-adjust-day" data-action="adjust-day" data-date="${day.work_date}" data-shift="${escapeHTML(day.shift_code || '')}" data-branch="${escapeHTML(day.branch_id || '')}" data-checkin="${day.checkin_at ? formatTime(day.checkin_at) : ''}" data-checkout="${day.checkout_at ? formatTime(day.checkout_at) : ''}">✎ Sửa công</button></td>` : ''}
+        </tr>`;
+      }).join('') : '<tr><td colspan="' + (canEdit ? 9 : 8) + '" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
     </table></div>
     <div class="attendance-pagination"><span>Hiển thị ${filtered.length ? offset + 1 : 0}–${Math.min(offset + ATTENDANCE_PAGE_SIZE, filtered.length)} trong ${filtered.length} ngày</span><div><button type="button" data-action="work-prev" ${attendanceWorkPage <= 1 ? 'disabled' : ''}>‹ Trước</button><b>${attendanceWorkPage}/${pageCount}</b><button type="button" data-action="work-next" ${attendanceWorkPage >= pageCount ? 'disabled' : ''}>Sau ›</button></div></div>
     <p class="attendance-formula-note"><b>Công thức:</b> Giờ công thường = thời lượng ca − đi muộn − về sớm. Tổng giờ tính công = giờ công thường + tăng ca có đơn được duyệt cuối cùng. Ngày thiếu giờ vào/ra hoặc có dữ liệu bất thường không tự cộng công.</p>
@@ -324,37 +349,9 @@ function renderHistory(records, employees, ops) {
   `;
 }
 
-function shiftPaidHours(item) {
-  const [startHour, startMinute] = String(item?.start || '00:00').split(':').map(Number);
-  const [endHour, endMinute] = String(item?.end || '00:00').split(':').map(Number);
-  const duration = ((endHour * 60 + endMinute) - (startHour * 60 + startMinute) - 60) / 60;
-  return Number.isInteger(duration) ? String(duration) : String(duration).replace('.', ',');
-}
-
-function renderShiftCatalog(shifts, assignedShiftId) {
-  if (!shifts.length) return '';
-  return `<section class="attendance-shift-catalog">
-    <div class="attendance-shift-catalog-heading">
-      <div><p class="eyebrow">Ca làm việc áp dụng</p><h3>Đủ ${shifts.length} ca theo vị trí</h3></div>
-      <span>Ca hôm nay lấy từ lịch phân công</span>
-    </div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Ca làm</th><th>Thời gian</th><th>Nghỉ</th><th>Công chuẩn</th><th>Hôm nay</th></tr></thead>
-      <tbody>${shifts.map((item) => `<tr class="${item.id === assignedShiftId ? 'is-current' : ''}">
-        <td><strong>${escapeHTML(item.name)}</strong></td>
-        <td>${escapeHTML(item.start)}–${escapeHTML(item.end)}</td>
-        <td>1 giờ</td>
-        <td><strong>${shiftPaidHours(item)} giờ</strong></td>
-        <td>${item.id === assignedShiftId ? statusPill('Ca được phân', 'good') : '<span class="subtle">—</span>'}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>
-  </section>`;
-}
-
-function renderCheckinDialog(employee, shift, settings, allowedShifts, displayShifts = allowedShifts, assignedShiftId = '') {
-  const shiftChoices = displayShifts.length ? displayShifts : [shift].filter(Boolean);
-  const assignmentLocked = Boolean(assignedShiftId);
-  const requiresChoice = !assignmentLocked && allowedShifts.length > 1;
+function renderCheckinDialog(employee, shift, settings, allowedShifts) {
+  const shiftChoices = allowedShifts.length ? allowedShifts : [shift].filter(Boolean);
+  const requiresChoice = shiftChoices.length > 1;
   return `
     <div class="checkin-dialog" id="checkinDialog" hidden>
       <button class="checkin-dialog-backdrop" type="button" data-action="close-checkin" aria-label="Đóng"></button>
@@ -382,11 +379,11 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts, displaySh
 
         <fieldset class="attendance-shift-picker">
           <legend>Chọn đúng ca làm việc hôm nay</legend>
-          <p>${assignmentLocked ? 'Ca hôm nay đã được khóa đúng theo lịch phân công; các ca còn lại chỉ hiển thị để đối chiếu.' : 'Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.'}</p>
+          <p>Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.</p>
           <div class="attendance-shift-options">
             ${shiftChoices.map((item, index) => `
-              <label class="attendance-shift-option ${assignmentLocked && item.id !== assignedShiftId ? 'is-disabled' : ''}">
-                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${(assignmentLocked ? item.id === assignedShiftId : (!requiresChoice && index === 0)) ? 'checked' : ''} ${assignmentLocked && item.id !== assignedShiftId ? 'disabled' : ''}>
+              <label class="attendance-shift-option">
+                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${!requiresChoice && index === 0 ? 'checked' : ''}>
                 <span><strong>${escapeHTML(item.name || 'Ca làm')}</strong><small>${escapeHTML(item.start)}–${escapeHTML(item.end)}</small></span>
               </label>
             `).join('')}
@@ -458,16 +455,91 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts, displaySh
   `;
 }
 
-// Đầu trang rút gọn cho người không tự chấm công. Không có nút bấm, không
-// có bán kính, không có sai số GPS — những thứ đó không nói gì với họ.
-function dauTrangGon() {
-  return `<header class="attendance-page-header">
-    <div>
-      <p class="eyebrow">Theo dõi chấm công</p>
-      <h3>Công của đội</h3>
-      <p>Vai trò của bạn không chấm công GPS. Bảng dưới đây để theo dõi và đối chiếu công của người khác.</p>
+function renderAdjustmentDialog(employees, canEdit = false) {
+  if (!canEdit) return '';
+  return `
+    <div class="attendance-adjust-dialog" id="attendanceAdjustModal" hidden>
+      <button class="attendance-adjust-backdrop" type="button" data-action="close-adjust-modal" aria-label="Đóng"></button>
+      <section class="attendance-adjust-sheet" role="dialog" aria-modal="true" aria-labelledby="adjustDialogTitle">
+        <div class="attendance-adjust-header">
+          <div>
+            <p class="eyebrow">Quản trị chấm công</p>
+            <h2 id="adjustDialogTitle">Điều chỉnh &amp; Bổ sung ngày công</h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-adjust-modal" aria-label="Đóng">×</button>
+        </div>
+
+        <form id="attendanceAdjustForm">
+          <div class="attendance-adjust-grid">
+            <label class="full">
+              <span>Nhân sự áp dụng *</span>
+              <select id="adjustEmployee" required>
+                ${employees.map((emp) => `<option value="${emp.id}">${escapeHTML(emp.name)} (${emp.id} - ${escapeHTML(departmentName(emp.department))})</option>`).join('')}
+              </select>
+            </label>
+
+            <label>
+              <span>Ngày làm việc *</span>
+              <input type="date" id="adjustWorkDate" required value="${clinicDateISO()}">
+            </label>
+
+            <label>
+              <span>Chi nhánh làm việc *</span>
+              <select id="adjustBranch" required>
+                ${Object.values(BRANCHES).map((b) => `<option value="${b.id}">${escapeHTML(b.shortName)}</option>`).join('')}
+              </select>
+            </label>
+
+            <label class="full">
+              <span>Ca làm việc *</span>
+              <select id="adjustShift" required>
+                ${SHIFTS.map((s) => `<option value="${s.id}">${escapeHTML(s.name)} (${escapeHTML(s.start)}–${escapeHTML(s.end)})</option>`).join('')}
+              </select>
+            </label>
+
+            <label>
+              <span>Giờ vào ca (Check-in)</span>
+              <input type="time" id="adjustCheckin" placeholder="08:00">
+              <small class="subtle">Để trống nếu không có lượt vào</small>
+            </label>
+
+            <label>
+              <span>Giờ kết ca (Check-out)</span>
+              <input type="time" id="adjustCheckout" placeholder="17:00">
+              <small class="subtle">Để trống nếu chưa ra ca</small>
+            </label>
+
+            <label class="full">
+              <span>Lý do điều chỉnh / Bổ sung *</span>
+              <select id="adjustReason">
+                <option value="Quên bấm chấm công">Quên bấm chấm công vào/ra</option>
+                <option value="Lỗi thiết bị hoặc GPS">Lỗi thiết bị / GPS chập chờn</option>
+                <option value="Điều động hỗ trợ phòng khám">Điều động công tác / chi viện phòng khám</option>
+                <option value="Đơn giải trình được duyệt">Theo đơn giải trình đã duyệt</option>
+                <option value="Đổi ca đột xuất">Đổi ca làm việc đột xuất</option>
+                <option value="Khác">Lý do khác</option>
+              </select>
+            </label>
+
+            <label class="full">
+              <span>Ghi chú quản lý (căn cứ duyệt)</span>
+              <textarea id="adjustNote" rows="2" placeholder="Ví dụ: Đã xác minh qua camera / xác nhận từ trưởng ca"></textarea>
+            </label>
+          </div>
+
+          <div class="attendance-adjust-actions">
+            <button type="button" class="danger-btn" id="adjustDeleteDayBtn" hidden>
+              🗑 Xóa lượt chấm ngày này
+            </button>
+            <button class="secondary-button" type="button" data-action="close-adjust-modal">Hủy</button>
+            <button class="primary-button" type="submit" id="adjustSubmitBtn">
+              Lưu &amp; Cập nhật ngày công
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
-  </header>`;
+  `;
 }
 
 export async function renderView(state) {
@@ -478,28 +550,45 @@ export async function renderView(state) {
   stopWorkplaceCamera();
   let settings = settingsForBranch(BRANCH.id, state.settings);
   const workDate = clinicDateISO(new Date(), settings.timeZone);
-  const selfAttendance = !khongPhaiChamCong(state.profile?.role || state.role);
+  const userRole = state.profile?.role || state.role;
+  const ops = isOpsRole(userRole);
+  const canEditWorkday = canEditAttendance(userRole);
+  const tuChamCong = !khongPhaiChamCong(state.profile?.role || state.role);
   if (!attendanceWorkMonth) attendanceWorkMonth = workDate.slice(0, 7);
   if (!attendanceHistoryMonth) attendanceHistoryMonth = workDate.slice(0, 7);
   const offlineQueue = getOfflineQueue(state.user?.id);
   const rejectedQueue = getRejectedQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
-  const [employees, remoteRecords, pendingProofs, allowedShiftRows, todayAssignments, workSummary] = await Promise.all([
+  const [employees, remoteRecords, pendingProofs, allowedShiftRows, todayAssignments] = await Promise.all([
     navigator.onLine ? getEmployees().catch(() => (state.employeeCode ? [employeeFallback] : [])) : Promise.resolve(state.employeeCode ? [employeeFallback] : []),
-    state.employeeCode && navigator.onLine
-      ? getAttendance({ employee: isOpsRole(state.role) ? undefined : state.employeeCode, limit: isOpsRole(state.role) ? 500 : 500 }).catch(() => [])
+    (state.employeeCode || ops) && navigator.onLine
+      ? getAttendance({ employee: ops ? undefined : state.employeeCode, limit: ops ? 500 : 500 }).catch(() => [])
       : Promise.resolve([]),
     state.user?.id ? listPendingProofs(state.user.id).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getEmployeeAllowedShifts(state.employeeCode).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getScheduleAssignments(workDate).catch(() => []) : Promise.resolve([]),
-    navigator.onLine && state.employeeCode && selfAttendance
-      ? getAttendanceWorkSummary(attendanceWorkMonth).catch((error) => {
+  ]);
+
+  const scopedEmployees = state.role === 'leader'
+    ? employees.filter((item) => item.department === state.department)
+    : employees;
+
+  if (!attendanceAdminSelectedEmployee || !scopedEmployees.some((e) => e.id === attendanceAdminSelectedEmployee)) {
+    attendanceAdminSelectedEmployee = (state.employeeCode && scopedEmployees.some((e) => e.id === state.employeeCode))
+      ? state.employeeCode
+      : (scopedEmployees[0]?.id || '');
+  }
+
+  const targetEmployeeCode = canEditWorkday ? attendanceAdminSelectedEmployee : state.employeeCode;
+  const targetEmployee = scopedEmployees.find((item) => item.id === targetEmployeeCode) || employeeFallback;
+
+  const workSummary = (navigator.onLine && targetEmployeeCode)
+    ? await getAttendanceWorkSummary(attendanceWorkMonth, targetEmployeeCode).catch((error) => {
         console.error('[Attendance] Không tải được bảng công:', error);
         return null;
       })
-      : Promise.resolve(null),
-  ]);
+    : null;
 
   const employee = employees.find((item) => item.id === state.employeeCode) || employeeFallback;
   const todayAssignment = todayAssignments.find((item) => item.employee === state.employeeCode);
@@ -514,15 +603,9 @@ export async function renderView(state) {
   const configuredAllowedShifts = allowedShiftRows
     .map((row) => SHIFTS.find((item) => item.id === row.code))
     .filter(Boolean);
-  const positionShiftPrefix = shiftId.startsWith('doctor-')
-    ? 'doctor-'
-    : (shiftId.startsWith('front-') ? 'front-' : '');
-  const positionShifts = configuredAllowedShifts.length
-    ? configuredAllowedShifts
-    : (positionShiftPrefix ? SHIFTS.filter((item) => item.id.startsWith(positionShiftPrefix)) : [shift].filter(Boolean));
   const allowedShifts = todayAssignment
     ? [shift].filter(Boolean)
-    : (positionShifts.length ? positionShifts : [shift].filter(Boolean));
+    : (configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean));
   const records = mergeRecords(offlineQueue, remoteRecords);
   const todayRecords = mergeRecords(
     offlineQueue.filter((item) => item.employee === state.employeeCode && item.date === workDate),
@@ -531,15 +614,20 @@ export async function renderView(state) {
   const todayCheckin = todayRecords.find((record) => record.type === 'checkin');
   const todayCheckout = todayRecords.find((record) => record.type === 'checkout');
   if (todayCheckin?.branchId) settings = settingsForBranch(todayCheckin.branchId, state.settings);
-  const ops = isOpsRole(state.role);
-  const scopedEmployees = state.role === 'leader'
-    ? employees.filter((item) => item.department === state.department)
-    : employees;
+
+  store.setTodayAttendance({
+    checkedIn: Boolean(todayCheckin),
+    checkinTime: todayCheckin ? (todayCheckin.recorded_at || todayCheckin.time) : null,
+    checkedOut: Boolean(todayCheckout),
+    checkoutTime: todayCheckout ? (todayCheckout.recorded_at || todayCheckout.time) : null,
+    branchName: BRANCHES[settings.branchId]?.shortName || settings.clinicName,
+  }, true);
+
   const scopedEmployeeCodes = new Set(scopedEmployees.map((item) => item.id));
-  const scopedRecords = state.role === 'leader'
-    ? records.filter((record) => scopedEmployeeCodes.has(record.employee))
-    : records;
-  const filteredRecords = ops ? scopedRecords.filter((record) => {
+  const scopedRecords = canEditWorkday
+    ? (state.role === 'leader' ? records.filter((record) => scopedEmployeeCodes.has(record.employee)) : records)
+    : records.filter((record) => record.employee === state.employeeCode);
+  const filteredRecords = canEditWorkday ? scopedRecords.filter((record) => {
     const recordEmployee = scopedEmployees.find((item) => item.id === record.employee);
     if (attendanceDepartmentFilter !== 'all' && recordEmployee?.department !== attendanceDepartmentFilter) return false;
     if (attendanceBranchFilter !== 'all' && record.branchId !== attendanceBranchFilter) return false;
@@ -555,12 +643,12 @@ export async function renderView(state) {
       record.status,
     ].join(' '), attendanceSearch, attendanceSearchMode);
   }) : scopedRecords;
-  const historyTitle = state.role === 'leader'
-    ? `Chấm công bộ phận ${departmentName(state.department)}`
-    : (ops ? 'Chấm công toàn hệ thống' : 'Chấm công của tôi');
+  const historyTitle = canEditWorkday
+    ? 'Chấm công toàn hệ thống'
+    : (state.role === 'leader' ? `Chấm công bộ phận ${departmentName(state.department)}` : 'Chấm công của tôi');
 
   context = {
-    state, settings, employee, employees: scopedEmployees, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops,
+    state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
     selectedShift: allowedShifts.length === 1 ? allowedShifts[0] : null,
     selectedBranchId: settings.branchId,
   };
@@ -568,30 +656,99 @@ export async function renderView(state) {
   capturedPhoto = null;
   currentEventId = null;
 
-  if (!state.employeeCode) {
+  if (!state.employeeCode && !canEditWorkday) {
     return `<section class="panel attendance-account-error"><h3>Tài khoản chưa liên kết nhân viên</h3><p>Quản trị viên cần gán mã nhân viên cho tài khoản này trước khi chấm công.</p></section>`;
   }
 
-  // Trưởng bộ phận và trưởng phòng không tự chấm công GPS, nhưng vẫn cần
-  // bảng theo dõi công của đội. Nên ẩn phần tự bấm, giữ phần lịch sử — chứ
-  // không chặn cả màn.
-  const tuChamCong = !khongPhaiChamCong(state.profile?.role || state.role);
-
   const mapUrl = `https://www.google.com/maps?q=${settings.latitude},${settings.longitude}`;
   const pendingCount = offlineQueue.length + pendingProofs.length;
+
+  if (!canEditWorkday) {
+    return `
+      <div class="attendance-page">
+        <header class="attendance-page-header">
+          <div>
+            <p class="eyebrow">Điểm trực: ${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)} · Bán kính ${Number(settings.allowedRadius)}m</p>
+            <h3>${todayCheckin ? 'Ca làm việc hôm nay' : 'Chấm công vào ca'}</h3>
+            <p>${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: settings.timeZone })}</p>
+          </div>
+          <div class="attendance-header-actions">
+            <span class="network-status ${navigator.onLine ? 'is-online' : 'is-offline'}" data-network-status>
+              <span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}
+            </span>
+          </div>
+        </header>
+
+        ${pendingCount ? `
+          <div class="attendance-sync-banner">
+            <div><strong>${pendingCount} mục đang chờ đồng bộ</strong><span>Bản ghi và ảnh chấm công vẫn an toàn trên điện thoại này.</span></div>
+            <button type="button" data-action="sync-attendance" ${navigator.onLine ? '' : 'disabled'}>Đồng bộ ngay</button>
+          </div>
+        ` : ''}
+
+        ${rejectedQueue.length ? `
+          <div class="attendance-sync-banner is-rejected">
+            <div>
+              <strong>${rejectedQueue.length} lượt chấm công bị máy chủ từ chối</strong>
+              <span>${escapeHTML(rejectedQueue[0].syncError || 'Bản ghi không hợp lệ.')}${rejectedQueue.length > 1 ? ` (và ${rejectedQueue.length - 1} lượt khác)` : ''} Hãy báo quản lý để bổ sung công thủ công.</span>
+            </div>
+            <button type="button" data-action="discard-rejected">Đã hiểu, xóa</button>
+          </div>
+        ` : ''}
+
+        ${renderTodayCard(todayCheckin, todayCheckout, shift, employee)}
+
+        <div class="attendance-info-grid">
+          <section class="attendance-office-card">
+            <div class="attendance-card-icon" aria-hidden="true">⌖</div>
+            <div>
+              <p class="eyebrow">Điểm chấm công</p>
+              <h3>${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</h3>
+              <p>${escapeHTML(settings.clinicAddress)}</p>
+              <a href="${mapUrl}" target="_blank" rel="noreferrer">Mở vị trí phòng khám</a>
+            </div>
+            <span class="attendance-radius">${Number(settings.allowedRadius)} m</span>
+          </section>
+          <section class="attendance-rule-card">
+            <div class="attendance-card-icon" aria-hidden="true">⏱</div>
+            <div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</h3><p>Check-in trước giờ bắt đầu ít nhất 5 phút. Check-in và check-out đều phải xác minh GPS tại phòng khám.</p></div>
+          </section>
+        </div>
+
+        ${renderWorkSummary(workSummary, attendanceWorkMonth, employee, false)}
+
+        <section class="attendance-history-panel">
+          <div class="section-title">
+            <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
+            <span class="subtle">${filteredRecords.length}/${scopedRecords.length} bản ghi</span>
+          </div>
+          ${renderHistory(filteredRecords, scopedEmployees, false)}
+        </section>
+      </div>
+      ${renderCheckinDialog(employee, shift, settings, allowedShifts)}
+    `;
+  }
+
+  // Giao diện Quản trị & Điều chỉnh ngày công dành cho Quản lý / Admin / HR
   return `
     <div class="attendance-page">
-      ${tuChamCong ? `<header class="attendance-page-header">
+      <header class="attendance-page-header">
         <div>
-          <p class="eyebrow">Chấm công GPS · ${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</p>
-          <h3>Chấm công vào ca</h3>
-          <p>${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: settings.timeZone })}</p>
+          <p class="eyebrow">${canEditWorkday ? 'Quản trị hệ thống · Đối chiếu &amp; Sửa công' : 'Theo dõi vận hành · Bảng ngày công'}</p>
+          <h3>Bảng ngày công &amp; Chấm công hệ thống</h3>
+          <p>${canEditWorkday ? 'Kiểm tra dữ liệu vào/ra thực tế, tính toán ngày công tự động và điều chỉnh bổ sung công cho nhân viên.' : 'Theo dõi dữ liệu vào/ra thực tế và chi tiết ngày công của nhân sự.'}</p>
         </div>
         <div class="attendance-header-actions">
-          <span class="network-status ${navigator.onLine ? 'is-online' : 'is-offline'}" data-network-status>
-            <span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}
-          </span>
-          ${ops ? '<button class="secondary-button" type="button" data-action="export-attendance">Xuất CSV</button>' : ''}
+          ${canEditWorkday ? `
+          <button class="primary-button" type="button" data-action="open-adjust-modal">
+            <span>✎</span> Điều chỉnh / Bổ sung công
+          </button>` : ''}
+          <button class="secondary-button" type="button" data-action="export-work-excel">
+            Xuất Excel bảng công
+          </button>
+          <button class="secondary-button" type="button" data-action="export-attendance">
+            Xuất CSV nhật ký GPS
+          </button>
         </div>
       </header>
 
@@ -602,58 +759,75 @@ export async function renderView(state) {
         </div>
       ` : ''}
 
-      ${rejectedQueue.length ? `
-        <div class="attendance-sync-banner is-rejected">
-          <div>
-            <strong>${rejectedQueue.length} lượt chấm công bị máy chủ từ chối</strong>
-            <span>${escapeHTML(rejectedQueue[0].syncError || 'Bản ghi không hợp lệ.')}${rejectedQueue.length > 1 ? ` (và ${rejectedQueue.length - 1} lượt khác)` : ''} Hãy báo quản lý để bổ sung công thủ công.</span>
-          </div>
-          <button type="button" data-action="discard-rejected">Đã hiểu, xóa</button>
-        </div>
-      ` : ''}
+      ${state.employeeCode ? renderTodayCard(todayCheckin, todayCheckout, shift, employee) : ''}
 
-      ${renderTodayCard(todayCheckin, todayCheckout, shift, employee)}
-
-      <div class="attendance-info-grid">
-        <section class="attendance-office-card">
-          <div class="attendance-card-icon" aria-hidden="true">⌖</div>
-          <div>
-            <p class="eyebrow">Điểm chấm công</p>
-            <h3>${escapeHTML(BRANCHES[settings.branchId]?.shortName || settings.clinicName)}</h3>
-            <p>${escapeHTML(settings.clinicAddress)}</p>
-            <a href="${mapUrl}" target="_blank" rel="noreferrer">Mở vị trí phòng khám</a>
-          </div>
-          <span class="attendance-radius">${Number(settings.allowedRadius)} m</span>
-        </section>
-        <section class="attendance-rule-card">
-          <div class="attendance-card-icon" aria-hidden="true">⏱</div>
-          <div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</h3><p>Check-in trước giờ bắt đầu ít nhất 5 phút. Check-in và check-out đều phải xác minh GPS tại phòng khám.</p></div>
-        </section>
+      <div class="attendance-admin-toolbar">
+        <label class="employee-select-box">
+          <span>${canEditWorkday ? 'Chọn nhân sự kiểm tra &amp; sửa công:' : 'Chọn nhân sự theo dõi công:'}</span>
+          <select id="attendanceSelectedEmployee">
+            ${scopedEmployees.map((emp) => `
+              <option value="${emp.id}" ${emp.id === targetEmployeeCode ? 'selected' : ''}>
+                ${escapeHTML(emp.name)} (${escapeHTML(emp.id)} - ${escapeHTML(departmentName(emp.department))})
+              </option>
+            `).join('')}
+          </select>
+        </label>
+        <label>
+          <span>Tháng tính công:</span>
+          <input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(attendanceWorkMonth)}">
+        </label>
+        <label>
+          <span>Chi nhánh:</span>
+          <select id="attendanceWorkBranch">
+            <option value="all">Tất cả chi nhánh</option>
+            <option value="le-van-tho" ${attendanceWorkBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option>
+            <option value="pham-van-chieu" ${attendanceWorkBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option>
+          </select>
+        </label>
+        <label>
+          <span>Trạng thái đối chiếu:</span>
+          <select id="attendanceWorkStatus">
+            <option value="all">Tất cả trạng thái</option>
+            <option value="complete" ${attendanceWorkStatusFilter === 'complete' ? 'selected' : ''}>Đủ vào/ra</option>
+            <option value="in_progress" ${attendanceWorkStatusFilter === 'in_progress' ? 'selected' : ''}>Đang trong ca</option>
+            <option value="missing_checkout" ${attendanceWorkStatusFilter === 'missing_checkout' ? 'selected' : ''}>Thiếu check-out</option>
+            <option value="missing_checkin" ${attendanceWorkStatusFilter === 'missing_checkin' ? 'selected' : ''}>Thiếu check-in</option>
+            <option value="attendance_anomaly" ${attendanceWorkStatusFilter === 'attendance_anomaly' ? 'selected' : ''}>Dữ liệu bất thường</option>
+          </select>
+        </label>
       </div>
 
-      ${renderShiftCatalog(positionShifts, todayAssignment?.shift || shift?.id)}
+      <div class="attendance-nav-tabs">
+        <button type="button" class="attendance-tab-btn ${attendanceActiveTab === 'workdays' ? 'is-active' : ''}" data-action="switch-tab" data-tab="workdays">
+          <span>📅 ${canEditWorkday ? 'Bảng ngày công &amp; Điều chỉnh' : 'Bảng ngày công'}</span>
+        </button>
+        <button type="button" class="attendance-tab-btn ${attendanceActiveTab === 'history' ? 'is-active' : ''}" data-action="switch-tab" data-tab="history">
+          <span>📍 Nhật ký quét GPS (${filteredRecords.length})</span>
+        </button>
+      </div>
 
-      ` : dauTrangGon()}
-      ${tuChamCong ? renderWorkSummary(workSummary, attendanceWorkMonth) : ''}
-      <section class="attendance-history-panel">
-        <div class="section-title">
-          <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
-          <span class="subtle">${filteredRecords.length}/${scopedRecords.length} bản ghi</span>
-        </div>
-        ${ops ? `<div class="operation-filterbar attendance-filterbar">
-          <label class="is-search">Tìm thông minh<input type="search" id="attendanceSearchFilter" value="${escapeHTML(attendanceSearch)}" placeholder="Gõ gần đúng tên, MNV hoặc chức danh" autocomplete="off"></label>
-          <label>Kiểu dò<select id="attendanceSearchMode"><option value="near" ${attendanceSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${attendanceSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
-          <label>Chi nhánh<select id="attendanceBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${attendanceBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${attendanceBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
-          <label>Phòng ban<select id="attendanceDepartmentFilter"><option value="all">Tất cả phòng ban được xem</option>${[...new Set(scopedEmployees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${attendanceDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
-          <label>Loại<select id="attendanceTypeFilter"><option value="all">Vào và ra</option><option value="checkin" ${attendanceTypeFilter === 'checkin' ? 'selected' : ''}>Check-in</option><option value="checkout" ${attendanceTypeFilter === 'checkout' ? 'selected' : ''}>Check-out</option></select></label>
-          <label>Trạng thái lượt<select id="attendanceStatusFilter"><option value="all">Vào ca và ra ca</option><option value="checkin" ${attendanceStatusFilter === 'checkin' ? 'selected' : ''}>Chỉ vào ca</option><option value="checkout" ${attendanceStatusFilter === 'checkout' ? 'selected' : ''}>Chỉ ra ca</option></select></label>
-          <label>Ngày<input type="date" id="attendanceDateFilter" value="${escapeHTML(attendanceDateFilter)}"></label>
-          <button class="secondary-button" type="button" id="clearAttendanceFilters">Xóa bộ lọc</button>
-        </div>` : ''}
-        ${renderHistory(filteredRecords, scopedEmployees, ops)}
-      </section>
+      ${attendanceActiveTab === 'workdays' ? renderWorkSummary(workSummary, attendanceWorkMonth, targetEmployee, canEditWorkday) : `
+        <section class="attendance-history-panel">
+          <div class="section-title">
+            <div><p class="eyebrow">Lịch sử</p><h3>${escapeHTML(historyTitle)}</h3></div>
+            <span class="subtle">${filteredRecords.length}/${scopedRecords.length} bản ghi</span>
+          </div>
+          <div class="operation-filterbar attendance-filterbar">
+            <label class="is-search">Tìm thông minh<input type="search" id="attendanceSearchFilter" value="${escapeHTML(attendanceSearch)}" placeholder="Gõ gần đúng tên, MNV hoặc chức danh" autocomplete="off"></label>
+            <label>Kiểu dò<select id="attendanceSearchMode"><option value="near" ${attendanceSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${attendanceSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
+            <label>Chi nhánh<select id="attendanceBranchFilter"><option value="all">Cả hai chi nhánh</option><option value="le-van-tho" ${attendanceBranchFilter === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${attendanceBranchFilter === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>
+            <label>Phòng ban<select id="attendanceDepartmentFilter"><option value="all">Tất cả phòng ban được xem</option>${[...new Set(scopedEmployees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${attendanceDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
+            <label>Loại<select id="attendanceTypeFilter"><option value="all">Vào và ra</option><option value="checkin" ${attendanceTypeFilter === 'checkin' ? 'selected' : ''}>Check-in</option><option value="checkout" ${attendanceTypeFilter === 'checkout' ? 'selected' : ''}>Check-out</option></select></label>
+            <label>Trạng thái lượt<select id="attendanceStatusFilter"><option value="all">Vào ca và ra ca</option><option value="checkin" ${attendanceStatusFilter === 'checkin' ? 'selected' : ''}>Chỉ vào ca</option><option value="checkout" ${attendanceStatusFilter === 'checkout' ? 'selected' : ''}>Chỉ ra ca</option></select></label>
+            <label>Ngày<input type="date" id="attendanceDateFilter" value="${escapeHTML(attendanceDateFilter)}"></label>
+            <button class="secondary-button" type="button" id="clearAttendanceFilters">Xóa bộ lọc</button>
+          </div>
+          ${renderHistory(filteredRecords, scopedEmployees, true)}
+        </section>
+      `}
     </div>
-    ${renderCheckinDialog(employee, shift, settings, allowedShifts, positionShifts, todayAssignment?.shift || '')}
+    ${renderAdjustmentDialog(scopedEmployees, canEditWorkday)}
+    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts) : ''}
   `;
 }
 
@@ -986,6 +1160,14 @@ async function confirmCheckin(button) {
       }
     }
 
+    store.setTodayAttendance({
+      checkedIn: true,
+      checkinTime: now.toISOString(),
+      checkedOut: false,
+      checkoutTime: null,
+      branchName: BRANCHES[context.settings.branchId]?.shortName || context.settings.clinicName,
+    });
+
     closeDialog();
     showToast(proofPending
       ? 'Đã ghi nhận chấm công. Dữ liệu đang được giữ an toàn và sẽ tự đồng bộ khi có mạng.'
@@ -1048,6 +1230,11 @@ async function confirmCheckout(button) {
       deviceId: getOrCreateDeviceId(),
       capturedOffline: !navigator.onLine,
     }, context.state.user?.id);
+
+    store.setTodayAttendance({
+      checkedOut: true,
+      checkoutTime: now.toISOString(),
+    });
 
     showToast(result.isOfflinePending
       ? 'Đã lưu giờ kết ca trên điện thoại. Hệ thống sẽ tự đồng bộ khi có mạng.'
@@ -1129,12 +1316,53 @@ async function exportWorkExcel() {
     rulesSheet['!cols'] = [{ wch: 24 }, { wch: 90 }];
     XLSX.utils.book_append_sheet(workbook, workSheet, 'Bảng công');
     XLSX.utils.book_append_sheet(workbook, rulesSheet, 'Quy tắc tính công');
-    XLSX.writeFile(workbook, `bang-cong-${context.employee?.id || 'nhan-vien'}-${attendanceWorkMonth}.xlsx`);
+    XLSX.writeFile(workbook, `bang-cong-${context.targetEmployee?.id || context.employee?.id || 'nhan-vien'}-${attendanceWorkMonth}.xlsx`);
     showToast('Đã xuất file Excel bảng công tiếng Việt.');
   } catch (error) {
     console.error('[Attendance] Export work Excel failed:', error);
     showToast('Không thể xuất file Excel. Vui lòng thử lại.', true);
   }
+}
+
+function openAdjustModal(data = {}) {
+  const modal = document.getElementById('attendanceAdjustModal');
+  if (!modal) return;
+  const empSelect = document.getElementById('adjustEmployee');
+  const dateInput = document.getElementById('adjustWorkDate');
+  const branchSelect = document.getElementById('adjustBranch');
+  const shiftSelect = document.getElementById('adjustShift');
+  const inInput = document.getElementById('adjustCheckin');
+  const outInput = document.getElementById('adjustCheckout');
+  const reasonSelect = document.getElementById('adjustReason');
+  const noteInput = document.getElementById('adjustNote');
+  const delBtn = document.getElementById('adjustDeleteDayBtn');
+  const submitBtn = document.getElementById('adjustSubmitBtn');
+
+  if (empSelect && data.employeeCode) empSelect.value = data.employeeCode;
+  if (dateInput) dateInput.value = data.workDate || clinicDateISO();
+  if (branchSelect && data.branchId) branchSelect.value = data.branchId;
+  if (shiftSelect && data.shiftCode) shiftSelect.value = data.shiftCode;
+  if (inInput) inInput.value = data.checkin || '';
+  if (outInput) outInput.value = data.checkout || '';
+  if (reasonSelect) reasonSelect.value = data.reason || 'Quên bấm chấm công';
+  if (noteInput) noteInput.value = data.note || '';
+
+  if (delBtn) {
+    delBtn.hidden = !(data.checkin || data.checkout);
+    delBtn.disabled = false;
+    delBtn.textContent = '🗑 Xóa lượt chấm ngày này';
+  }
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Lưu & Cập nhật ngày công';
+  }
+
+  modal.hidden = false;
+}
+
+function closeAdjustModal() {
+  const modal = document.getElementById('attendanceAdjustModal');
+  if (modal) modal.hidden = true;
 }
 
 export function initView() {
@@ -1147,6 +1375,13 @@ export function initView() {
   if (!page) return;
 
   const refreshAttendanceFilters = () => store.notify();
+
+  document.getElementById('attendanceSelectedEmployee')?.addEventListener('change', (event) => {
+    attendanceAdminSelectedEmployee = event.target.value;
+    attendanceWorkPage = 1;
+    navigateTo('attendance');
+  });
+
   document.getElementById('attendanceWorkMonth')?.addEventListener('change', (event) => {
     const month = String(event.target.value || '');
     if (month < '2026-09') {
@@ -1230,6 +1465,44 @@ export function initView() {
 
   page.addEventListener('click', async (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'switch-tab') {
+      const tab = event.target.closest('[data-tab]')?.dataset.tab;
+      if (tab) {
+        attendanceActiveTab = tab;
+        refreshAttendanceFilters();
+      }
+    }
+    if (action === 'open-adjust-modal') {
+      if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+        showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền sửa công.', true);
+        return;
+      }
+      openAdjustModal({
+        employeeCode: context?.targetEmployeeCode || '',
+        workDate: clinicDateISO(),
+        branchId: BRANCH.id,
+        shiftCode: 'clinic-0800',
+      });
+    }
+    if (action === 'adjust-day') {
+      if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+        showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền sửa công.', true);
+        return;
+      }
+      const btn = event.target.closest('button');
+      const d = btn.dataset;
+      openAdjustModal({
+        employeeCode: context?.targetEmployeeCode || '',
+        workDate: d.date,
+        shiftCode: d.shift || 'clinic-0800',
+        branchId: d.branch || 'le-van-tho',
+        checkin: d.checkin || '',
+        checkout: d.checkout || '',
+      });
+    }
+    if (action === 'close-adjust-modal') {
+      closeAdjustModal();
+    }
     if (action === 'open-checkin') openDialog();
     if (action === 'checkout') confirmCheckout(event.target.closest('button'));
     if (action === 'export-attendance') exportAttendance();
@@ -1260,6 +1533,65 @@ export function initView() {
       discardRejectedAttendance(context.state.user?.id);
       showToast('Đã xóa các lượt chấm công bị từ chối khỏi thiết bị.');
       navigateTo('attendance');
+    }
+  });
+
+  const adjustForm = document.getElementById('attendanceAdjustForm');
+  adjustForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+      showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền sửa công.', true);
+      return;
+    }
+    const submitBtn = document.getElementById('adjustSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Đang lưu…';
+    try {
+      const empCode = document.getElementById('adjustEmployee').value;
+      const wDate = document.getElementById('adjustWorkDate').value;
+      await adjustAttendanceRecord({
+        employeeCode: empCode,
+        workDate: wDate,
+        branchId: document.getElementById('adjustBranch').value,
+        shiftCode: document.getElementById('adjustShift').value,
+        checkinTime: document.getElementById('adjustCheckin').value,
+        checkoutTime: document.getElementById('adjustCheckout').value,
+        reason: document.getElementById('adjustReason').value,
+        note: document.getElementById('adjustNote').value,
+      });
+      attendanceAdminSelectedEmployee = empCode;
+      showToast(`Đã điều chỉnh công ngày ${wDate} thành công!`);
+      closeAdjustModal();
+      navigateTo('attendance');
+    } catch (err) {
+      console.error('[Attendance] Adjust failed:', err);
+      showToast(err?.message || 'Không thể lưu điều chỉnh. Vui lòng thử lại.', true);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Lưu & Cập nhật ngày công';
+    }
+  });
+
+  const deleteDayBtn = document.getElementById('adjustDeleteDayBtn');
+  deleteDayBtn?.addEventListener('click', async () => {
+    if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+      showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền sửa công.', true);
+      return;
+    }
+    const empCode = document.getElementById('adjustEmployee').value;
+    const wDate = document.getElementById('adjustWorkDate').value;
+    if (!confirm(`Bạn có chắc chắn muốn xóa tất cả lượt chấm công ngày ${wDate} của nhân sự này?`)) return;
+    deleteDayBtn.disabled = true;
+    deleteDayBtn.textContent = 'Đang xóa…';
+    try {
+      await deleteAttendanceDayRecords(empCode, wDate);
+      showToast(`Đã xóa lượt chấm công ngày ${wDate}.`);
+      closeAdjustModal();
+      navigateTo('attendance');
+    } catch (err) {
+      console.error('[Attendance] Delete day records failed:', err);
+      showToast(err?.message || 'Không thể xóa dữ liệu.', true);
+      deleteDayBtn.disabled = false;
+      deleteDayBtn.textContent = '🗑 Xóa lượt chấm ngày này';
     }
   });
 

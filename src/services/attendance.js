@@ -142,13 +142,17 @@ async function submitCheckOut(record) {
   return mapAttendanceToUI(row);
 }
 
-export async function getAttendanceWorkSummary(month) {
+export async function getAttendanceWorkSummary(month, employeeCode = '') {
   if (!supabase.isLocal) {
     throw new Error('Bảng công chỉ sử dụng dữ liệu của hệ thống mới.');
   }
-  const value = String(month || '').trim();
-  const query = value ? `?month=${encodeURIComponent(value)}` : '';
-  return supabase.request(`/attendance-work${query}`);
+  const params = new URLSearchParams();
+  const m = String(month || '').trim();
+  if (m) params.set('month', m);
+  const emp = String(employeeCode || '').trim();
+  if (emp) params.set('employeeCode', emp);
+  const q = params.toString();
+  return supabase.request(`/attendance-work${q ? '?' + q : ''}`);
 }
 
 async function submitAttendance(record) {
@@ -248,4 +252,158 @@ export async function syncOfflineAttendance(userId) {
     rejected: nextQueue.filter((item) => item.rejectedAt).length,
     pending: nextQueue.filter((item) => !item.rejectedAt).length,
   };
+}
+
+/**
+ * Điều chỉnh & Bổ sung công nhân viên (Dành cho Quản lý / Admin / HR)
+ * Hỗ trợ tạo mới hoặc cập nhật giờ vào, giờ ra, ca làm việc, chi nhánh, lý do điều chỉnh.
+ */
+export async function adjustAttendanceRecord({
+  employeeCode,
+  workDate,
+  branchId = 'le-van-tho',
+  shiftCode = 'clinic-0800',
+  checkinTime = '',
+  checkoutTime = '',
+  reason = 'Điều chỉnh bởi Quản trị viên',
+  note = '',
+}) {
+  if (!employeeCode || !workDate) {
+    throw new Error('Vui lòng chọn nhân viên và ngày cần điều chỉnh công.');
+  }
+
+  const fullNote = `[ĐIỀU CHỈNH QUẢN LÝ: ${reason}] ${note || ''}`.trim();
+
+  // 1. Tìm bản ghi chấm công hiện có của ngày này
+  const { data: existingRecords, error: fetchErr } = await supabase
+    .from('attendance_records')
+    .select('*')
+    .eq('employee_code', employeeCode)
+    .eq('work_date', workDate);
+
+  if (fetchErr) {
+    console.warn('[Attendance] Lỗi truy vấn bản ghi cũ:', fetchErr);
+  }
+
+  const existingIn = (existingRecords || []).find((r) => r.record_type === 'checkin');
+  const existingOut = (existingRecords || []).find((r) => r.record_type === 'checkout');
+
+  // 2. Xử lý Giờ Vào (checkin)
+  if (checkinTime) {
+    const timeStr = checkinTime.length === 5 ? `${checkinTime}:00` : checkinTime;
+    const recordedAt = `${workDate}T${timeStr}+07:00`;
+    if (existingIn?.id) {
+      await supabase.from('attendance_records').update({
+        recorded_at: recordedAt,
+        shift_code: shiftCode,
+        branch_id: branchId,
+        status: 'valid',
+        note: fullNote,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existingIn.id);
+    } else {
+      const id = globalThis.crypto?.randomUUID?.() || `adj-in-${Date.now()}`;
+      await supabase.from('attendance_records').insert({
+        id,
+        client_event_id: id,
+        employee_code: employeeCode,
+        work_date: workDate,
+        record_type: 'checkin',
+        shift_code: shiftCode,
+        branch_id: branchId,
+        recorded_at: recordedAt,
+        distance_m: 0,
+        accuracy_m: 10,
+        status: 'valid',
+        note: fullNote,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+  } else if (existingIn?.id) {
+    await supabase.from('attendance_records').delete().eq('id', existingIn.id);
+  }
+
+  // 3. Xử lý Giờ Ra (checkout)
+  if (checkoutTime) {
+    const timeStr = checkoutTime.length === 5 ? `${checkoutTime}:00` : checkoutTime;
+    const recordedAt = `${workDate}T${timeStr}+07:00`;
+    if (existingOut?.id) {
+      await supabase.from('attendance_records').update({
+        recorded_at: recordedAt,
+        shift_code: shiftCode,
+        branch_id: branchId,
+        status: 'valid',
+        note: fullNote,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existingOut.id);
+    } else {
+      const id = globalThis.crypto?.randomUUID?.() || `adj-out-${Date.now()}`;
+      await supabase.from('attendance_records').insert({
+        id,
+        client_event_id: id,
+        employee_code: employeeCode,
+        work_date: workDate,
+        record_type: 'checkout',
+        shift_code: shiftCode,
+        branch_id: branchId,
+        recorded_at: recordedAt,
+        distance_m: 0,
+        accuracy_m: 10,
+        status: 'valid',
+        note: fullNote,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+  } else if (existingOut?.id) {
+    await supabase.from('attendance_records').delete().eq('id', existingOut.id);
+  }
+
+  // 4. Đồng bộ ca làm việc vào schedule_assignments nếu có
+  try {
+    const { data: assignments } = await supabase
+      .from('schedule_assignments')
+      .select('*')
+      .eq('employee_code', employeeCode)
+      .eq('work_date', workDate);
+    if (assignments && assignments.length > 0) {
+      await supabase.from('schedule_assignments').update({
+        shift_code: shiftCode,
+        branch_id: branchId,
+        updated_at: new Date().toISOString(),
+      }).eq('id', assignments[0].id);
+    }
+  } catch (err) {
+    console.warn('[Attendance] Cập nhật schedule_assignments lỗi nhẹ:', err);
+  }
+
+  // 5. Yêu cầu backend tính lại bảng công tháng đó
+  const month = workDate.slice(0, 7);
+  return getAttendanceWorkSummary(month, employeeCode).catch((err) => {
+    console.warn('[Attendance] Recompute work summary:', err);
+    return null;
+  });
+}
+
+/**
+ * Xóa toàn bộ lượt chấm công trong ngày của nhân viên (khi chấm nhầm/trùng lặp)
+ */
+export async function deleteAttendanceDayRecords(employeeCode, workDate) {
+  if (!employeeCode || !workDate) return false;
+  const { data: records } = await supabase
+    .from('attendance_records')
+    .select('id')
+    .eq('employee_code', employeeCode)
+    .eq('work_date', workDate);
+
+  if (records && records.length) {
+    for (const r of records) {
+      await supabase.from('attendance_records').delete().eq('id', r.id);
+    }
+  }
+
+  const month = workDate.slice(0, 7);
+  await getAttendanceWorkSummary(month, employeeCode).catch(() => null);
+  return true;
 }

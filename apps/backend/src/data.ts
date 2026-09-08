@@ -24,6 +24,7 @@ const tables = new Set([
   'integration_outbox', 'system_bug_logs', 'system_announcements', 'system_error_logs',
   'work_shifts', 'employee_allowed_shifts', 'leader_scopes', 'push_subscriptions',
   'attendance_work_days',
+  'marketing_campaigns', 'marketing_leads', 'telesale_call_logs',
   // Ghi đè phân quyền màn hình. MỌI người đăng nhập phải ĐỌC được: ứng dụng
   // nạp bảng này ngay sau khi xác thực để biết người đó thấy những màn nào.
   // Quyền GHI đã bị chặn sẵn ở canWrite — chỉ admin/admin_it/superadmin, vì

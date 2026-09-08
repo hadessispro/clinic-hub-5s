@@ -7,6 +7,7 @@ import { showToast } from '../components/toast.js';
 import { store } from '../store.js';
 import { initAdminItPilot, renderAdminItPilot } from './pilot-schedule.js';
 import { initMonthlySchedule, renderMonthlySchedule } from './monthly-schedule.js';
+import { canEditAttendance } from '../permissions.js';
 
 let cachedEmployees = [];
 let cachedRequests = [];
@@ -164,6 +165,8 @@ export async function renderView(state) {
   });
 
   const detailedGroups = ["bs", "phuta", "dvkh"];
+  const userRole = store.getState()?.profile?.role || store.getState()?.role;
+  const canManageSchedule = canEditAttendance(userRole);
 
   return `
     <div class="view-header">
@@ -179,7 +182,7 @@ export async function renderView(state) {
 
     ${renderShiftOverview(employees, shiftConfig)}
 
-    <div class="grid cols-2">
+    <div class="${canManageSchedule ? 'grid cols-2' : 'grid cols-1'}">
       <section class="panel">
         <div class="section-title">
           <h3>Đăng ký lịch làm</h3>
@@ -212,10 +215,11 @@ export async function renderView(state) {
         </form>
       </section>
 
+      ${canManageSchedule ? `
       <section class="panel">
         <div class="section-title">
           <h3>Chia ca / đổi ca</h3>
-          ${pill("Trưởng bộ phận gán")}
+          ${pill("Admin IT / Quản trị gán")}
         </div>
         <form class="form-grid three" data-form="schedule-assignment" id="assignmentForm">
           <div class="form-field">
@@ -275,7 +279,7 @@ export async function renderView(state) {
             <button class="primary-button" type="submit"><span>+</span>Lưu lịch làm</button>
           </div>
         </form>
-      </section>
+      </section>` : ''}
     </div>
 
     <section class="panel" style="margin-top:14px">
@@ -349,6 +353,11 @@ export function initView() {
   if (assignmentForm) {
     assignmentForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const userRole = store.getState()?.profile?.role || store.getState()?.role;
+      if (!canEditAttendance(userRole)) {
+        showToast("Chỉ Quản trị viên hệ thống (Admin IT) mới có quyền chia và gán ca làm việc.", true);
+        return;
+      }
       const formData = new FormData(assignmentForm);
       const data = Object.fromEntries(formData.entries());
 

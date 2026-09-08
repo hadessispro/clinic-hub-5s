@@ -58,7 +58,13 @@ set -euo pipefail
 shopt -s globstar nullglob
 
 VPS_HOST="${VPS_HOST:-root@31.97.191.177}"
-VPS_KEY="${VPS_KEY:-/c/Users/thaibao/Documents/Codex/2026-08-13/https-github-com-hadessispro-clinic-hub/work/clinic-hub-vps-ed25519-v2}"
+if [ -z "${VPS_KEY:-}" ] || [ ! -f "$VPS_KEY" ]; then
+  if [ -f "$HOME/.ssh/id_ed25519" ]; then
+    VPS_KEY="$HOME/.ssh/id_ed25519"
+  else
+    VPS_KEY="/c/Users/thaibao/Documents/Codex/2026-08-13/https-github-com-hadessispro-clinic-hub/work/clinic-hub-vps-ed25519-v2"
+  fi
+fi
 VPS_DIR="/opt/clinic-hub-5s"
 URL="https://srv1892344.hstgr.cloud"
 

@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { store } from '../store.js';
 
 const useVps = Boolean(supabase?.isLocal && supabase?.request);
 
@@ -663,28 +664,44 @@ export function notifyDataChange(type = 'marketing_leads') {
 }
 
 export function subscribeToRealtime(callback) {
+  const currentRole = store?.getState?.()?.profile?.role || store?.getState?.()?.role;
+  const MARKETING_LEAD_ROLES = new Set([
+    'admin', 'superadmin', 'admin_it', 'admin_marketing',
+    'telesale_leader', 'telesale_staff', 'support_marketing', 'pg_staff',
+  ]);
+  const hasAccess = !currentRole || MARKETING_LEAD_ROLES.has(currentRole);
+
   if (useVps) {
     let stopped = false;
     let fingerprint = '';
     let timer = null;
     const poll = async () => {
-      if (stopped) return;
+      if (stopped || !hasAccess) return;
       try {
         const leads = await getMarketingLeads();
         const next = leads.map((lead) => `${lead.id}:${lead.updated_at || lead.created_at}:${lead.status}:${lead.assigned_telesale_id || ''}`).join('|');
         if (fingerprint && next !== fingerprint && callback) callback({ type: 'marketing_leads', source: 'vps-poll' });
         fingerprint = next;
       } catch (error) {
+        const status = error?.status || error?.statusCode || error?.response?.status;
+        const msg = String(error?.message || error || '').toLowerCase();
+        const isForbidden = status === 403 || status === 401 || msg.includes('403') || msg.includes('401') || msg.includes('forbidden') || msg.includes('không có quyền');
+        if (isForbidden) {
+          // Dừng hẳn polling ngay lập tức, không đặt timer để không spam lỗi 403
+          stopped = true;
+          clearTimeout(timer);
+          return;
+        }
         console.warn('[Marketing Realtime] VPS polling error:', error?.message || error);
       } finally {
-        if (!stopped) timer = window.setTimeout(poll, document.hidden ? 15000 : 5000);
+        if (!stopped && hasAccess) timer = window.setTimeout(poll, document.hidden ? 30000 : 10000);
       }
     };
     const handleUpdate = (event) => callback?.(event.detail);
-    const handleVisibility = () => { if (!document.hidden && !stopped) { clearTimeout(timer); poll(); } };
+    const handleVisibility = () => { if (!document.hidden && !stopped && hasAccess) { clearTimeout(timer); poll(); } };
     window.addEventListener('clinic_data_updated', handleUpdate);
     document.addEventListener('visibilitychange', handleVisibility);
-    poll();
+    if (hasAccess) poll();
     return () => {
       stopped = true; clearTimeout(timer);
       window.removeEventListener('clinic_data_updated', handleUpdate);

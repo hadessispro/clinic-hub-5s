@@ -31,3 +31,7 @@ gui-bao/
 # tuyet doi khong duoc day len. Muon dua hai tai lieu phan tich vao git thi
 # chep rieng chung sang docs/, dung bo cam nay.
 tham-khao/vttech/
+
+# Luu tru tam thoi cac script cu khong day len GitHub
+archive/
+

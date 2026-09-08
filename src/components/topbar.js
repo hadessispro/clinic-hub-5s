@@ -1,7 +1,7 @@
 import { store } from '../store.js';
 import { signOut } from '../auth.js';
 import { ROLE_PROFILES } from '../constants.js';
-import { escapeHTML } from '../utils.js';
+import { escapeHTML, formatTime } from '../utils.js';
 import { markAsRead, markAllAsRead } from '../services/notifications.js';
 import { navigateTo } from '../router.js';
 import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js';
@@ -78,7 +78,16 @@ export function renderTopbar(state) {
 
   if (profile) {
     const roleLabel = ROLE_PROFILES[role]?.label || role || 'Nhân viên';
-    const listNotifs = notifications || [];
+    const isCheckedIn = Boolean(state.todayAttendance?.checkedIn);
+    const isCheckedOut = Boolean(state.todayAttendance?.checkedOut);
+
+    // Lọc thông báo: nếu đã chấm công vào ca rồi, không làm sáng chấm cam vì thông báo nhắc đi check-in
+    const listNotifs = (notifications || []).filter((n) => {
+      if (isCheckedIn && n.type === 'attendance' && /nhắc|check-in|vào ca|chưa chấm/i.test(`${n.title} ${n.body}`)) {
+        return false;
+      }
+      return true;
+    });
     const unreadCount = listNotifs.filter(n => !n.read).length;
     const isManager = ['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing', 'telesale_leader'].includes(role);
 
@@ -126,12 +135,16 @@ export function renderTopbar(state) {
           </div>
         </div>
 
-        <!-- Auth Status Chip -->
+        <!-- Auth Status Chip (Đồng bộ trực tiếp trạng thái chấm công) -->
         <div class="auth-chip">
-          <span class="auth-dot online"></span>
+          <span class="auth-dot online" style="${isCheckedIn ? 'background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);' : (isCheckedOut ? 'background: #9ca3af;' : '')}"></span>
           <button class="auth-summary" type="button" data-action="jump-integrations" title="Mở bảo mật và Supabase">
             <strong>${escapeHTML(profile.full_name)}</strong>
-            <small>${escapeHTML(roleLabel)} · Online</small>
+            <small>${escapeHTML(roleLabel)} · ${isCheckedIn
+              ? `<span style="color: #047857; font-weight: 700;">Đã vào ca (${formatTime(state.todayAttendance.checkinTime)})</span>`
+              : (isCheckedOut
+                ? `<span style="color: #4b5563; font-weight: 600;">Đã kết ca</span>`
+                : 'Online')}</small>
           </button>
         </div>
 
