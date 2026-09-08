@@ -25,6 +25,9 @@
     />
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet" />
     <link rel="stylesheet" href="app.css" />
+    <!-- Attendance owns its layout in one late-loaded file. Keep this after
+         app.css so generic panel/table rules cannot silently replace it. -->
+    <link rel="stylesheet" href="/attendance-layout.css" />
   </head>
   <body>
     <div class="app-shell">

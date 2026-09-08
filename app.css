@@ -4591,63 +4591,6 @@ body.dialog-open {
   color: var(--muted);
 }
 
-/* Workspace quản lý công: bỏ phần chấm công cá nhân, đưa bộ lọc và bảng
-   dữ liệu lên trước; số liệu là dải tóm tắt chứ không phải năm "box" rời. */
-.attendance-admin-workspace { gap: 16px; }
-.attendance-admin-workspace .attendance-page-header { padding: 4px 2px 0; }
-.attendance-admin-workspace .attendance-page-header h3 { font-size: clamp(1.35rem, 2.2vw, 1.82rem); }
-.attendance-admin-workspace .attendance-header-actions { flex-wrap: wrap; justify-content: flex-end; }
-.attendance-work-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.attendance-work-actions .primary-button { display: inline-flex; align-items: center; gap: 7px; }
-.attendance-admin-workspace .attendance-admin-toolbar {
-  display: grid;
-  grid-template-columns: minmax(280px, 1.8fr) minmax(150px, .8fr) minmax(150px, .9fr) minmax(180px, 1fr);
-  gap: 10px;
-  align-items: end;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid #e1e9e6;
-  border-radius: 14px;
-  background: #fbfcfc;
-}
-.attendance-admin-workspace .attendance-admin-toolbar label { min-width: 0; gap: 5px; color: #506761; font-size: .74rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
-.attendance-admin-workspace .attendance-admin-toolbar select,
-.attendance-admin-workspace .attendance-admin-toolbar input { width: 100%; min-height: 42px; padding: 8px 10px; border-color: #dbe5e1; border-radius: 9px; background: #fff; color: #1e2e2a; font-size: .87rem; font-weight: 650; letter-spacing: normal; text-transform: none; }
-.attendance-admin-workspace .attendance-admin-toolbar .employee-select-box { min-width: 0; }
-.attendance-admin-workspace .attendance-admin-toolbar .employee-select-box select { color: #086f64; border-color: #b6dcd3; background: #f5fcfa; }
-.attendance-admin-workspace .attendance-nav-tabs { gap: 3px; margin: 0; padding-bottom: 8px; border-bottom: 1px solid #e3ebe7; }
-.attendance-admin-workspace .attendance-tab-btn { min-height: 36px; margin: 0; padding: 7px 11px; border: 1px solid transparent; border-radius: 8px; font-size: .82rem; }
-.attendance-admin-workspace .attendance-tab-btn.is-active { border-color: #b9ded5; background: #edf9f5; }
-.attendance-work-panel.is-admin-work-summary { gap: 14px; padding: 18px; border: 1px solid #e0e8e4; border-radius: 16px; background: #fff; box-shadow: 0 5px 18px rgba(32, 57, 51, .035); }
-.attendance-work-panel.is-admin-work-summary .attendance-work-heading { margin: 0; padding: 0 0 13px; border-bottom: 1px solid #e8eeeb; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-heading h3 { font-size: 1.15rem; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; overflow: hidden; border: 1px solid #e4ece8; border-radius: 12px; background: #fbfcfc; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span { min-height: 78px; padding: 12px 14px; border: 0; border-left: 1px solid #e4ece8; border-radius: 0; background: transparent; box-shadow: none; grid-template-columns: 28px minmax(0, 1fr); column-gap: 9px; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:first-child { border-left: 0; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span::before { width: 27px; height: 27px; border-radius: 8px; font-size: .76rem; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line small { font-size: .62rem; }
-.attendance-work-panel.is-admin-work-summary .attendance-work-summary-line b { font-size: 1.04rem; }
-
-@media (max-width: 1120px) {
-  .attendance-admin-workspace .attendance-admin-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:nth-child(4) { border-left: 0; border-top: 1px solid #e4ece8; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:nth-child(5) { border-top: 1px solid #e4ece8; }
-}
-
-@media (max-width: 760px) {
-  .attendance-admin-workspace .attendance-page-header { align-items: flex-start; flex-direction: column; }
-  .attendance-admin-workspace .attendance-header-actions { justify-content: flex-start; }
-  .attendance-admin-workspace .attendance-admin-toolbar { grid-template-columns: minmax(0, 1fr); }
-  .attendance-work-panel.is-admin-work-summary { padding: 14px; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-heading { align-items: flex-start; flex-direction: column; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-actions { justify-content: flex-start; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span { border-top: 1px solid #e4ece8; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:nth-child(odd) { border-left: 0; }
-  .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:nth-child(-n + 2) { border-top: 0; }
-}
-
 .attendance-header-actions {
   gap: 9px;
 }
@@ -14231,7 +14174,8 @@ section.panel {
   .attendance-adjustment-pagination { justify-content: center; }
 }
 
-/* ══ ADMIN ATTENDANCE WORKSPACE V2 ════════════════════════════════════ */
+/* Legacy ADMIN ATTENDANCE WORKSPACE V2 disabled.
+   Canonical rules now live in public/attendance-layout.css.
 .attendance-admin-workspace .attendance-admin-toolbar {
   position: relative;
   overflow: visible;
@@ -14400,3 +14344,4 @@ section.panel {
   .attendance-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .schedule-shift-choice { grid-template-columns: minmax(0, 1fr); }
 }
+*/

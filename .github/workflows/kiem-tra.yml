@@ -80,6 +80,12 @@ jobs:
         # sáu vai trò, triển khai lên production, và không ai tìm thấy nó.
         run: node scripts/kiem-menu.mjs
 
+      - name: Layout chấm công không bị ghi đè
+        # Màn quản trị từng có nhiều thế hệ CSS cùng dùng một selector trong
+        # app.css; khối nằm cuối file âm thầm thắng và làm giao diện đổi lại.
+        # Giữ một nguồn chính thức và kiểm cả thứ tự nạp stylesheet.
+        run: node scripts/kiem-layout-cham-cong.mjs
+
 
       - name: Miễn chi nhánh phải khớp giữa hai tầng
         # Frontend và backend giữ hai danh sách riêng cho cùng một luật.
