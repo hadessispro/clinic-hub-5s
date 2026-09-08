@@ -42,6 +42,11 @@ export class ScheduleService {
 
   async doctorRoster(user: AuthUser, month: string, branch = 'all') {
     if (!validMonth(month)) throw new BadRequestException('Tháng không hợp lệ.');
+    // The doctor roster is a coordination screen for staff, not a cross-branch
+    // directory.  Never trust a branch supplied by the browser here: a normal
+    // employee may only receive the doctors of the branch on their own account.
+    const viewerBranch = String(user.branchId || user.profile?.branch_id || '').trim();
+    if (!viewerBranch) throw new BadRequestException('Tài khoản chưa được gán chi nhánh để xem lịch bác sĩ.');
     const end = monthEnd(month);
     const [allEmployees, allAssignments, allRequests, shifts, allAllowed] = await Promise.all([
       this.records('employees'),
@@ -50,8 +55,8 @@ export class ScheduleService {
       this.records('work_shifts'),
       this.records('employee_allowed_shifts'),
     ]);
-    let doctors = allEmployees.filter((employee) => employee.status === 'active' && employee.department === 'bs');
-    if (branch !== 'all') doctors = doctors.filter((employee) => employee.branch_id === branch);
+    let doctors = allEmployees.filter((employee) => employee.status === 'active'
+      && employee.department === 'bs' && employee.branch_id === viewerBranch);
     const doctorCodes = new Set(doctors.map((employee) => String(employee.code)));
     const assignments = allAssignments.filter((item) => doctorCodes.has(String(item.employee_code))
       && String(item.work_date) >= `${month}-01` && String(item.work_date) <= end);
@@ -80,7 +85,8 @@ export class ScheduleService {
     });
     return {
       month,
-      profile: user.profile,
+      profile: { ...user.profile, branch_id: viewerBranch },
+      branch: viewerBranch,
       view_mode: 'doctor_roster',
       published_only: true,
       employees: doctors,

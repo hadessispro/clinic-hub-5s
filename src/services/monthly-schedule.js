@@ -34,7 +34,6 @@ function isPublishedDoctorSchedule(request) {
 
 function localScheduleAccessMode(profile) {
   if (['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile?.role)) return 'manage_all';
-  if (['leader', 'phu_ta_truong'].includes(profile?.role)) return 'manage_department';
   if (profile?.role === 'bac_si' || profile?.department === 'bs') return 'doctor_self';
   return 'doctor_roster';
 }
@@ -56,9 +55,14 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
   const viewMode = localScheduleAccessMode(profile);
   let employees = employeeResult.data || [];
   if (viewMode === 'doctor_self') employees = employees.filter((item) => item.code === profile.employee_code);
-  if (viewMode === 'doctor_roster') employees = employees.filter((item) => item.department === 'bs');
+  if (viewMode === 'doctor_roster') {
+    // Roster viewers coordinate only with doctors at their own location.  A
+    // URL/query parameter must not turn this screen into a cross-branch list.
+    const rosterBranch = String(profile.branch_id || '').trim();
+    employees = employees.filter((item) => item.department === 'bs' && item.branch_id === rosterBranch);
+  }
   if (viewMode === 'manage_department' && profile.department) employees = employees.filter((item) => item.department === profile.department);
-  if (branch !== 'all') employees = employees.filter((item) => item.branch_id === branch);
+  if (branch !== 'all' && viewMode !== 'doctor_roster') employees = employees.filter((item) => item.branch_id === branch);
   if (department !== 'all' && viewMode !== 'doctor_roster') employees = employees.filter((item) => item.department === department);
   let codes = new Set(employees.map((item) => item.code));
   const latest = new Map();
@@ -75,7 +79,8 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
     const request = latest.get(employee.code);
     return { employee_code: employee.code, id: request?.id || null, status: request?.status || 'pending', submitted_at: request?.submitted_at || null, ...parseWorkflow(request) };
   });
-  return { month, profile, view_mode: viewMode, published_only: viewMode === 'doctor_roster', employees, shifts: shiftResult.data || [],
+  return { month, profile, branch: viewMode === 'doctor_roster' ? profile.branch_id : branch,
+    view_mode: viewMode, published_only: viewMode === 'doctor_roster', employees, shifts: shiftResult.data || [],
     allowed: (allowedResult.data || []).filter((item) => codes.has(item.employee_code)),
     assignments: (assignmentResult.data || []).filter((item) => codes.has(item.employee_code)), requests };
 }
@@ -84,7 +89,7 @@ export async function getMonthlySchedule({ month, branch = 'all', department = '
   if (supabase.isLocal) {
     const { data } = await supabase.auth.getSession();
     const user = data.session?.user || {};
-    const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'leader', 'phu_ta_truong'].includes(user.role);
+    const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(user.role);
     const doctor = user.role === 'bac_si' || user.department === 'bs';
     if (!manager && !doctor) {
       return supabase.request(`/schedule/doctor-roster?${new URLSearchParams({ month, branch })}`);

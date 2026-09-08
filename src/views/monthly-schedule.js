@@ -208,11 +208,10 @@ export async function renderMonthlySchedule(state) {
   currentData = data;
   const role = state.role;
   const profile = data.profile;
-  const fallbackManage = ['admin', 'hr', 'admin_it', 'leader', 'phu_ta_truong', 'admin_marketing', 'telesale_leader'].includes(role);
+  const fallbackManage = ['admin', 'hr', 'admin_it', 'admin_marketing', 'telesale_leader'].includes(role);
   const viewMode = data.view_mode || (fallbackManage ? 'manage_all' : role === 'bac_si' || profile.department === 'bs' ? 'doctor_self' : 'doctor_roster');
   const isDoctorRoster = viewMode === 'doctor_roster';
   const canManageSchedule = ['manage_all', 'manage_department'].includes(viewMode);
-  const canScopeFilter = canManageSchedule || isDoctorRoster;
   const [year, monthNumber] = selectedMonth.split('-').map(Number);
   const monthIndex = monthNumber - 1;
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
@@ -287,7 +286,12 @@ export async function renderMonthlySchedule(state) {
     employeesWithAssignments.has(employee.code),
   )).map((card, index) => matchesEmployeeSearch(structuredEmployees[index]) ? card : card.replace('<article ', '<article hidden ')).join('');
 
-  const branchControl = canScopeFilter ? `<label>Chi nhánh<select id="monthlyScheduleBranch"><option value="all" ${selectedBranch === 'all' ? 'selected' : ''}>Cả hai chi nhánh</option><option value="le-van-tho" ${selectedBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>` : '';
+  const rosterBranch = data.branch || profile.branch_id;
+  const branchControl = canManageSchedule
+    ? `<label>Chi nhánh<select id="monthlyScheduleBranch"><option value="all" ${selectedBranch === 'all' ? 'selected' : ''}>Cả hai chi nhánh</option><option value="le-van-tho" ${selectedBranch === 'le-van-tho' ? 'selected' : ''}>Lê Văn Thọ</option><option value="pham-van-chieu" ${selectedBranch === 'pham-van-chieu' ? 'selected' : ''}>Phạm Văn Chiêu</option></select></label>`
+    : isDoctorRoster
+      ? `<div class="doctor-roster-branch-lock"><span>Chi nhánh đang phối hợp</span><strong><i class="ri-map-pin-2-line"></i> ${escapeHTML(branchLabel(rosterBranch))}</strong></div>`
+      : '';
   const departmentControl = canManageSchedule ? `<label>Phòng ban<select id="monthlyScheduleDepartment"><option value="all">Tất cả phòng ban</option>${DEPARTMENTS.map((item) => `<option value="${item.id}" ${selectedDepartment === item.id ? 'selected' : ''}>${escapeHTML(item.name)}</option>`).join('')}</select></label>` : '';
   const doctorRosterControls = isDoctorRoster ? `<label>Ngày điều phối<input id="doctorRosterFocusDate" type="date" min="${monthStart}" max="${monthEnd}" value="${selectedDoctorFocusDate}"></label>
     <label class="doctor-roster-search">Tìm bác sĩ<span class="smart-search-control"><i class="ri-search-line smart-search-icon"></i><input id="monthlyScheduleSearch" type="search" value="${escapeHTML(selectedEmployeeSearch)}" placeholder="Tên hoặc mã bác sĩ" autocomplete="off" aria-expanded="false" aria-controls="monthlySearchSuggestionPanel"><span class="smart-search-suggestions" id="monthlySearchSuggestionPanel" role="listbox" hidden></span></span></label>` : '';
@@ -306,7 +310,7 @@ export async function renderMonthlySchedule(state) {
       <div>
         <p class="eyebrow">${isDoctorRoster ? 'LỊCH BÁC SĨ ĐÃ CÔNG BỐ' : 'LỊCH TRÌNH PHÂN BỔ ĐỘI NGŨ LÀM VIỆC & GIAO TIẾP NỘI BỘ'} · THÁNG ${monthNumber}/${year}</p>
         <h3>${isDoctorRoster ? 'Lịch làm bác sĩ để phối hợp vận hành trong ngày' : 'Bảng phân bổ lịch làm việc & trao đổi công việc linh hoạt các phòng ban'}</h3>
-        <p>${isDoctorRoster ? 'Phụ tá chuẩn bị ca và phòng điều trị; lễ tân, tư vấn chủ động sắp khách theo bác sĩ có mặt. Chỉ lịch đã chốt mới xuất hiện tại đây.' : 'Cho phép các cấp quản lý sắp xếp phân bổ nhân sự, trao đổi công việc nội bộ và chốt lịch trình vận hành.'}</p>
+        <p>${isDoctorRoster ? 'Phụ tá chuẩn bị ca và phòng điều trị; lễ tân, tư vấn chủ động sắp khách theo bác sĩ có mặt tại chi nhánh của mình. Chỉ lịch đã chốt mới xuất hiện tại đây.' : 'Cho phép các cấp quản lý sắp xếp phân bổ nhân sự, trao đổi công việc nội bộ và chốt lịch trình vận hành.'}</p>
       </div>
       ${isDoctorRoster ? '<span class="doctor-roster-readonly"><i class="ri-shield-check-line"></i> Chỉ đọc · dữ liệu đã chốt</span>' : ''}
     </section>
