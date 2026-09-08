@@ -93,6 +93,8 @@ PHAM_VI=(
   "src/*.js|web"
   "src/**/*.js|web"
   "public/*|web"
+  "public/**/*|web"
+  "public/templates/*|web"
   "index.html|web"
   "app.css|web"
   "vite.config.js|web"

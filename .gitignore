@@ -21,6 +21,7 @@ gui-bao/
 *.xls
 *.xlsm
 !docs/**/*.xlsx
+!public/templates/**/*.xlsx
 
 # Cai dat cuc bo cua cong cu, khong thuoc du an.
 .claude/

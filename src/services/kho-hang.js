@@ -21,6 +21,10 @@
 
 import { BRANCHES } from '../branch.js';
 import { VAT_TU_THUC_TE, TON_KHO_THUC_TE, DON_HANG_THUC_TE } from './kho-hang-data.js';
+import { BM03_TEMPLATE_BASE64 } from './bm03-template-base64.js';
+import { BM03_STANDARD_ITEMS } from './bm03-standard-items.js';
+
+export { BM03_STANDARD_ITEMS };
 
 /* ── Danh mục ────────────────────────────────────────────────────────── */
 
@@ -173,6 +177,24 @@ let KHO_ANH_HD = [];
 const KHO_DE_XUAT_KEY = 'clinic-hub-kho-phieu-de-xuat';
 
 function khoiTaoDeXuatMau() {
+  const dsDongBM03 = BM03_STANDARD_ITEMS.map((it, idx) => ({
+    id: `D${idx + 1}`,
+    stt: it.stt || idx + 1,
+    nganh_hang: it.nganh_hang || 'Vật liệu tổng quát',
+    vat_tu_id: '',
+    ten: it.ten,
+    thong_so: it.thong_so || '',
+    don_vi: it.don_vi || 'Cái',
+    ton: it.ton ?? 0,
+    so_luong: it.so_luong || 1,
+    don_gia: it.don_gia || 0,
+    thanh_tien: (it.so_luong || 1) * (it.don_gia || 0),
+    thoi_gian: it.thoi_gian_can || '2026-09-15',
+    muc_dich: it.muc_dich || 'Sử dụng điều trị lâm sàng',
+    ncc_id: '',
+    ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT',
+  }));
+
   return [
     {
       id: 'DX-202609-01',
@@ -186,20 +208,8 @@ function khoiTaoDeXuatMau() {
       thu_kho: 'NGUYỄN THỊ NHƯ HUỲNH',
       ngay_tao: '2026-09-01',
       trang_thai: 'cho_duyet', // nhap | cho_duyet | da_duyet | da_tao_don
-      ghi_chu: 'Đề xuất bổ sung vật tư lâm sàng, chỉnh nha và CCDC định kỳ Tháng 09/2026',
-      dong: [
-        { id: 'D1', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '21TQ0137', ten: 'Khăn giấy thùng to 60 gói', thong_so: 'Thùng 60 gói', don_vi: 'Thùng', ton: 0, so_luong: 2, don_gia: 250000, thanh_tien: 500000, thoi_gian: '2026-09-15', muc_dich: 'Sử dụng điều trị lâm sàng', ncc_id: 'NCC-03', ncc_ten: 'Công ty CP Dược Phẩm & TBYT Laphaco' },
-        { id: 'D2', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '', ten: 'Hộp nhựa đựng gòn cuộn', thong_so: 'Loại tiêu chuẩn', don_vi: 'Cái', ton: 0, so_luong: 4, don_gia: 95000, thanh_tien: 380000, thoi_gian: '2026-09-15', muc_dich: 'Sử dụng điều trị lâm sàng', ncc_id: 'NCC-02', ncc_ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ' },
-        { id: 'D3', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '', ten: 'CỒN 70 ĐỘ CAN 30L - BIDOPHA', thong_so: 'Can 30L', don_vi: 'Can', ton: 0, so_luong: 1, don_gia: 1100000, thanh_tien: 1100000, thoi_gian: '2026-09-15', muc_dich: 'Sát khuẩn vô trùng', ncc_id: 'NCC-03', ncc_ten: 'Công ty CP Dược Phẩm & TBYT Laphaco' },
-        { id: 'D4', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '24CC0080', ten: 'Bảng so màu tháo lắp', thong_so: 'Nhựa chuẩn Vita', don_vi: 'Bộ', ton: 0, so_luong: 1, don_gia: 1180000, thanh_tien: 1180000, thoi_gian: '2026-09-15', muc_dich: 'Phục hình tháo lắp', ncc_id: 'NCC-03', ncc_ten: 'Công ty CP Dược Phẩm & TBYT Laphaco' },
-        { id: 'D5', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '24CC0081', ten: 'Bộ Mũi khoan đặt chốt 2 vạch', thong_so: 'Hộp 2 vạch', don_vi: 'Hộp', ton: 0, so_luong: 1, don_gia: 760000, thanh_tien: 760000, thoi_gian: '2026-09-15', muc_dich: 'Điều trị nội nha', ncc_id: 'NCC-05', ncc_ten: 'Công ty CP Trang Thiết Bị Nha Khoa Việt Đăng' },
-        { id: 'D6', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '24CC0082', ten: 'Máy rung rửa nội nha COXO', thong_so: 'MÁY COXO', don_vi: 'MÁY', ton: 0, so_luong: 1, don_gia: 4650000, thanh_tien: 4650000, thoi_gian: '2026-09-15', muc_dich: 'Trang bị phòng nội nha', ncc_id: 'NCC-05', ncc_ten: 'Công ty CP Trang Thiết Bị Nha Khoa Việt Đăng' },
-        { id: 'D7', nganh_hang: 'VẬT LIỆU - TỔNG QUÁT', vat_tu_id: '21TQ0136', ten: 'Nước ngâm CIDEX OPA', thong_so: 'Can 3.8L', don_vi: 'Can', ton: 0, so_luong: 2, don_gia: 920000, thanh_tien: 1840000, thoi_gian: '2026-09-15', muc_dich: 'Khử khuẩn mức độ cao', ncc_id: 'NCC-03', ncc_ten: 'Công ty CP Dược Phẩm & TBYT Laphaco' },
-        { id: 'D8', nganh_hang: 'CÔNG CỤ DỤNG CỤ', vat_tu_id: '', ten: 'Khăn vải to vô trùng (70x140cm)', thong_so: '70x140cm', don_vi: 'Cái', ton: 0, so_luong: 3, don_gia: 85000, thanh_tien: 255000, thoi_gian: '2026-09-15', muc_dich: 'Vô trùng phẫu thuật', ncc_id: 'NCC-02', ncc_ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ' },
-        { id: 'D9', nganh_hang: 'CÔNG CỤ DỤNG CỤ', vat_tu_id: '', ten: 'Khay lấy dấu nhựa bán hàm 1 & 2', thong_so: 'Bộ 4 cỡ', don_vi: 'Cái', ton: 0, so_luong: 10, don_gia: 12000, thanh_tien: 120000, thoi_gian: '2026-09-15', muc_dich: 'Lấy dấu phục hình', ncc_id: 'NCC-02', ncc_ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ' },
-        { id: 'D10', nganh_hang: 'CHỈNH NHA', vat_tu_id: '', ten: 'Mắc cài kim loại 022', thong_so: 'Roth 022 có hook 345', don_vi: 'Bộ', ton: 0, so_luong: 10, don_gia: 480000, thanh_tien: 4800000, thoi_gian: '2026-09-15', muc_dich: 'Gắn mắc cài khách chỉnh nha', ncc_id: 'NCC-04', ncc_ten: 'Công ty TNHH Thiết Bị Y Nha Khoa Việt Tân' },
-        { id: 'D11', nganh_hang: 'CHỈNH NHA', vat_tu_id: '', ten: 'MINI VIS (hãng Fix) 1.6x10 & 2.0x10', thong_so: 'Tiêu chuẩn Fix', don_vi: 'Cái', ton: 0, so_luong: 10, don_gia: 290000, thanh_tien: 2900000, thoi_gian: '2026-09-15', muc_dich: 'Neo chặn chỉnh nha', ncc_id: 'NCC-04', ncc_ten: 'Công ty TNHH Thiết Bị Y Nha Khoa Việt Tân' },
-      ],
+      ghi_chu: 'Đề xuất bổ sung vật tư lâm sàng, chỉnh nha và CCDC định kỳ Tháng 09/2026 (51 mục chuẩn BM03)',
+      dong: dsDongBM03,
     },
   ];
 }
@@ -209,7 +219,14 @@ let PHIEU_DE_XUAT = (() => {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KHO_DE_XUAT_KEY) : null;
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length) {
+        const p1 = parsed[0];
+        // Tự động nâng cấp mẫu 51 mục BM03 nếu localStorage đang lưu bản mẫu cũ ít dòng
+        if (p1 && p1.id === 'DX-202609-01' && (!p1.dong || p1.dong.length < 50)) {
+          return khoiTaoDeXuatMau();
+        }
+        return parsed;
+      }
     }
   } catch {}
   return khoiTaoDeXuatMau();
@@ -870,143 +887,285 @@ export function taoDonHangTuPhieu(phieuId, boi) {
   });
 }
 
-/** Xuất file Excel đúng 100% chuẩn mẫu 5S_QĐ_KT_01/BM03 */
+function base64ToUint8Array(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/** Xuất file Excel đúng 100% chuẩn mẫu 5S_QĐ_KT_01/BM03 dựa trên template gốc */
 export async function xuatExcelDeXuatBM03(phieu) {
   const XLSX = await import('xlsx');
-  const ws = {};
-  const merges = [];
 
-  function setCell(r, c, val, type = 's') {
-    const addr = XLSX.utils.encode_cell({ r, c });
-    ws[addr] = { v: val, t: typeof val === 'number' ? 'n' : type };
-  }
-  function merge(r1, c1, r2, c2) {
-    merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
-  }
-
-  // Row 0
-  setCell(0, 0, 'CÔNG TY CỔ PHẦN 5S SÀI GÒN');
-  setCell(0, 3, 'PHIẾU ĐỀ NGHỊ MUA HÀNG');
-  merge(0, 3, 0, 20);
-  setCell(0, 21, 'Số hiệu: 5S_QĐ_KT_01/BM03\nNgày hiệu lực : 18/06/2023\nLần ban hành : 01\nLần soát xét : 00');
-  merge(0, 21, 0, 22);
-
-  // Row 1
-  setCell(1, 0, 'Số phiếu :');
-  setCell(1, 3, phieu.so_phieu || '2026.09.01');
-  setCell(1, 13, 'Theo kế hoạch:');
-
-  // Row 5
-  setCell(5, 0, 'Đơn vị lập:');
-  setCell(5, 3, 'CÔNG TY CỔ PHẦN 5S SÀI GÒN');
-
-  // Row 6
-  setCell(6, 0, 'Bộ phận:');
-  setCell(6, 3, phieu.bo_phan || 'Kho Lê Văn Thọ');
-  setCell(6, 13, 'Mã code:');
-  setCell(6, 16, phieu.ma_code || '5S_QĐ_KT_01/BM03');
-
-  // Row 7
-  setCell(7, 0, 'Đơn vị hạch toán:');
-  setCell(7, 3, 'CÔNG TY CỔ PHẦN 5S SÀI GÒN');
-  setCell(7, 13, 'Người tạo:');
-  setCell(7, 16, phieu.nguoi_tao || 'NGUYỄN THỊ NHƯ HUỲNH');
-  setCell(7, 20, 'Ngày tạo:');
-  setCell(7, 21, phieu.ngay_tao || ngayLech(0));
-
-  // Row 8
-  setCell(8, 0, 'Kho hàng:');
-  setCell(8, 3, phieu.kho_hang || 'Kho Lê Văn Thọ');
-  setCell(8, 13, 'Thủ kho:');
-  setCell(8, 16, phieu.thu_kho || 'NGUYỄN THỊ NHƯ HUỲNH');
-  setCell(8, 20, 'Ngày duyệt:');
-
-  // Headers (Row 9 & 10)
-  setCell(9, 0, 'STT'); merge(9, 0, 10, 0);
-  setCell(9, 1, 'Mô tả\nhàng hóa'); merge(9, 1, 10, 4);
-  setCell(9, 5, 'Thông số kỹ thuật'); merge(9, 5, 10, 5);
-  setCell(9, 6, 'ĐVT'); merge(9, 6, 10, 6);
-  setCell(9, 7, 'Số lượng'); merge(9, 7, 9, 8);
-  setCell(10, 7, 'Tồn Kho');
-  setCell(10, 8, 'Đề xuất');
-  setCell(9, 9, 'Tham khảo'); merge(9, 9, 9, 12);
-  setCell(10, 9, 'Đơn giá\nđề xuất\n(có VAT)'); merge(10, 9, 10, 11);
-  setCell(10, 12, 'Thành \ntiền\n(Có VAT)');
-  setCell(9, 13, 'Thời gian\ncần hàng'); merge(9, 13, 10, 14);
-  setCell(9, 15, 'Mục đích\nsử dụng'); merge(9, 15, 10, 16);
-  setCell(9, 17, 'Tài khoản\nchi phí (Người lập)'); merge(9, 17, 10, 18);
-  setCell(9, 19, 'Tài khoản\nchi phí (KTT)'); merge(9, 19, 10, 19);
-  setCell(9, 20, 'Ngân sách\ncòn lại'); merge(9, 20, 10, 20);
-  setCell(9, 21, 'Nhà \ncung cấp'); merge(9, 21, 10, 22);
-
-  // Gom nhóm theo ngành hàng
-  const theoNganh = {};
-  (phieu.dong || []).forEach((d) => {
-    const nh = d.nganh_hang || 'VẬT LIỆU - TỔNG QUÁT';
-    (theoNganh[nh] ||= []).push(d);
-  });
-
-  let curRow = 11;
-  let stt = 1;
-  let totalAmount = 0;
-
-  for (const [nganhHang, dsItem] of Object.entries(theoNganh)) {
-    setCell(curRow, 0, nganhHang.toUpperCase());
-    merge(curRow, 0, curRow, 22);
-    curRow++;
-
-    for (const item of dsItem) {
-      const sl = Number(item.so_luong) || 0;
-      const dg = Number(item.don_gia) || 0;
-      const tt = sl * dg;
-      totalAmount += tt;
-
-      setCell(curRow, 0, stt++);
-      setCell(curRow, 1, item.ten);
-      merge(curRow, 1, curRow, 4);
-      setCell(curRow, 5, item.thong_so || '');
-      setCell(curRow, 6, item.don_vi || 'Cái');
-      setCell(curRow, 7, Number(item.ton) || 0);
-      setCell(curRow, 8, sl);
-      setCell(curRow, 9, dg);
-      merge(curRow, 9, curRow, 11);
-      setCell(curRow, 12, tt);
-      setCell(curRow, 13, item.thoi_gian || '2026-09-15');
-      merge(curRow, 13, curRow, 14);
-      setCell(curRow, 15, item.muc_dich || 'Sử dụng điều trị lâm sàng');
-      merge(curRow, 15, curRow, 16);
-      setCell(curRow, 17, '');
-      merge(curRow, 17, curRow, 18);
-      setCell(curRow, 19, '');
-      setCell(curRow, 20, '');
-      setCell(curRow, 21, item.ncc_ten || item.ncc || '');
-      merge(curRow, 21, curRow, 22);
-      curRow++;
+  let wb;
+  try {
+    const templateBytes = base64ToUint8Array(BM03_TEMPLATE_BASE64);
+    wb = XLSX.read(templateBytes, { type: 'array', cellStyles: true, cellNF: true });
+  } catch (err) {
+    console.warn('[Kho Hang] Không thể đọc base64 template, thử fetch template file:', err);
+    try {
+      const res = await fetch('/templates/mau_de_xuat_mua_hang_bm03.xlsx');
+      const ab = await res.arrayBuffer();
+      wb = XLSX.read(ab, { type: 'array', cellStyles: true, cellNF: true });
+    } catch (err2) {
+      console.error('[Kho Hang] Lỗi nạp template Excel:', err2);
+      wb = XLSX.utils.book_new();
     }
   }
 
-  // Dòng Tổng Cộng
-  setCell(curRow, 1, 'TỔNG CỘNG THÀNH TIỀN (CÓ VAT)');
-  merge(curRow, 1, curRow, 8);
-  setCell(curRow, 12, totalAmount);
-  curRow += 2;
+  const sheetName = wb.SheetNames?.[0] || 'ĐỀ XUẤT MUA HÀNG THÁNG 9';
+  const srcWs = wb.Sheets?.[sheetName] || {};
 
-  // Dòng Ngày tháng
-  setCell(curRow, 21, 'Ngày ……. tháng …... năm ……');
-  curRow++;
+  const newWs = {};
+  const newMerges = [];
+
+  // Copy rows 0..10 (Excel rows 1..11) from original template with full styles and values
+  for (let r = 0; r <= 10; r++) {
+    for (let c = 0; c < 24; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      if (srcWs[addr]) {
+        newWs[addr] = { ...srcWs[addr] };
+      }
+    }
+  }
+
+  // Preserve header merges
+  for (const m of (srcWs['!merges'] || [])) {
+    if (m.e.r <= 10) {
+      newMerges.push({ s: { ...m.s }, e: { ...m.e } });
+    }
+  }
+
+  // Helper functions
+  function setCell(r, c, val, type = 's', numFmt = null) {
+    const addr = XLSX.utils.encode_cell({ r, c });
+    const cell = { v: val, t: typeof val === 'number' ? 'n' : type };
+    if (numFmt) cell.z = numFmt;
+    newWs[addr] = cell;
+    return cell;
+  }
+  function addMerge(r1, c1, r2, c2) {
+    newMerges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+  }
+
+  // Update header metadata cells according to user's form inputs
+  setCell(1, 2, phieu.so_phieu || '2026.09.01'); // C2
+  setCell(1, 12, `Theo kế hoạch: ${phieu.ke_hoach || 'Định kỳ Tháng 09/2026'}`); // M2
+  setCell(5, 2, phieu.don_vi_lap || 'CÔNG TY CỔ PHẦN 5S SÀI GÒN'); // C6
+  setCell(6, 2, phieu.bo_phan || 'Kho vật tư & Khối lâm sàng'); // C7
+  setCell(6, 12, 'Mã code: 5S_QĐ_KT_01/BM03'); // M7
+  setCell(7, 2, phieu.don_vi_hach_toan || 'CÔNG TY CỔ PHẦN 5S SÀI GÒN'); // C8
+  setCell(7, 12, 'Người tạo:'); // M8
+  setCell(7, 16, phieu.nguoi_tao || 'NGUYỄN THỊ NHƯ HUỲNH'); // Q8
+  setCell(7, 19, 'Ngày tạo:'); // T8
+  setCell(7, 20, phieu.ngay_tao || ngayLech(0)); // U8
+  setCell(8, 0, 'Kho hàng:'); // A9
+  setCell(8, 2, phieu.kho_hang || 'Kho Lê Văn Thọ'); // C9
+  setCell(8, 12, 'Thủ kho:'); // M9
+  setCell(8, 15, phieu.thu_kho || 'NGUYỄN THỊ NHƯ HUỲNH'); // P9
+  setCell(8, 19, 'Ngày duyệt:'); // T9
+
+  let currR = 11; // 0-indexed row 11 is Excel row 12
+
+  // Category mapping
+  const items = phieu.dong || [];
+  const groups = {};
+  items.forEach((item) => {
+    const cat = item.nganh_hang || 'Vật liệu tổng quát';
+    (groups[cat] ||= []).push(item);
+  });
+
+  const CATEGORY_ORDER = [
+    'Vật liệu tổng quát',
+    'VẬT LIỆU - TỔNG QUÁT',
+    'Chỉnh nha',
+    'CHỈNH NHA',
+    'Implant',
+    'IMPLANT',
+    'Công cụ dụng cụ',
+    'CÔNG CỤ DỤNG CỤ',
+    'Tiêu hao & Vô trùng',
+    'TIÊU HAO & VÔ TRÙNG'
+  ];
+  const sortedCategories = [
+    ...CATEGORY_ORDER.filter(c => groups[c]),
+    ...Object.keys(groups).filter(c => !CATEGORY_ORDER.includes(c))
+  ];
+
+  if (!items.length) {
+    sortedCategories.push('VẬT LIỆU - TỔNG QUÁT');
+    groups['VẬT LIỆU - TỔNG QUÁT'] = [{
+      ten: 'Chưa có mặt hàng nào được chọn',
+      don_vi: 'Cái',
+      ton: 0,
+      so_luong: 0,
+      don_gia: 0,
+      thanh_tien: 0,
+      thoi_gian: ngayLech(0),
+      muc_dich: '',
+      ncc_ten: ''
+    }];
+  }
+
+  // Row 12: VẬT LIỆU banner
+  setCell(currR, 0, 'VẬT LIỆU');
+  addMerge(currR, 0, currR, 22);
+  currR++;
+
+  let globalStt = 1;
+  const firstItemRow = currR + 1;
+
+  sortedCategories.forEach((catName) => {
+    setCell(currR, 0, catName.toUpperCase());
+    addMerge(currR, 0, currR, 22);
+    currR++;
+
+    const catItems = groups[catName] || [];
+    catItems.forEach((it) => {
+      const r = currR;
+      const stt = globalStt++;
+      const ten = it.ten || '';
+      const thongSo = it.thong_so || '';
+      const dvt = it.don_vi || 'Cái';
+      const ton = Number(it.ton) || 0;
+      const sl = Number(it.so_luong) || 0;
+      const donGia = Number(it.don_gia) || 0;
+      const thanhTien = Number(it.thanh_tien) || (sl * donGia);
+      const thoiGian = it.thoi_gian || it.thoi_gian_can || ngayLech(7);
+      const mucDich = it.muc_dich || 'Sử dụng điều trị lâm sàng';
+      const ncc = it.ncc_ten || it.ncc || '';
+
+      // A: STT
+      setCell(r, 0, stt, 'n');
+      // B: Mô tả hàng hóa (merged B:D)
+      setCell(r, 1, ten, 's');
+      addMerge(r, 1, r, 3);
+      // E: Thông số kỹ thuật
+      setCell(r, 4, thongSo, 's');
+      // F: ĐVT
+      setCell(r, 5, dvt, 's');
+      // G: Tồn kho
+      setCell(r, 6, ton, 'n');
+      // H: Đề xuất
+      setCell(r, 7, sl, 'n');
+      // I: Đơn giá đề xuất (có VAT) (merged I:K)
+      setCell(r, 8, donGia, 'n', '#,##0');
+      addMerge(r, 8, r, 10);
+      // L: Thành tiền (Có VAT) with formula =H{row}*I{row}
+      const cellL = setCell(r, 11, thanhTien, 'n', '#,##0');
+      cellL.f = `H${r + 1}*I${r + 1}`;
+      // M: Thời gian cần hàng (merged M:N)
+      setCell(r, 12, thoiGian, 's');
+      addMerge(r, 12, r, 13);
+      // O: Mục đích sử dụng (merged O:P)
+      setCell(r, 14, mucDich, 's');
+      addMerge(r, 14, r, 15);
+      // Q: Tài khoản chi phí Người lập (merged Q:R)
+      setCell(r, 16, '', 's');
+      addMerge(r, 16, r, 17);
+      // S: Tài khoản chi phí KTT
+      setCell(r, 18, '', 's');
+      // T: Ngân sách còn lại
+      setCell(r, 19, '', 's');
+      // U: Nhà cung cấp (merged U:W)
+      setCell(r, 20, ncc, 's');
+      addMerge(r, 20, r, 22);
+
+      currR++;
+    });
+  });
+
+  const lastItemRow = currR;
+
+  // Dòng Tổng Cộng
+  setCell(currR, 0, 'TỔNG CỘNG THÀNH TIỀN (CÓ VAT):');
+  addMerge(currR, 0, currR, 10);
+  const totalAmount = items.reduce((s, x) => s + (Number(x.thanh_tien) || (Number(x.so_luong) * Number(x.don_gia)) || 0), 0);
+  const totalCell = setCell(currR, 11, totalAmount, 'n', '#,##0');
+  totalCell.f = `SUM(L${firstItemRow}:L${lastItemRow})`;
+  currR++;
+
+  // Procedure block (8 steps)
+  const steps = [
+    '01. Lập phiếu ĐNMH',
+    '02. Xác nhận tồn kho',
+    '03. Tổng hợp lại các mặt hàng cần mua/cấp',
+    '04. Kiểm tra phiếu đề nghị',
+    '05. Điều chỉnh/Hủy ĐNMH',
+    '06. Kiểm tra ngân sách ĐNMH',
+    '07. Phê duyệt đề nghị mua hàng',
+    '08. Tiếp nhận phiếu đề nghị'
+  ];
+  steps.forEach((st) => {
+    setCell(currR, 1, st, 's');
+    addMerge(currR, 1, currR, 3);
+    currR += 2;
+  });
+  currR++;
+
+  // Date line
+  const d = new Date();
+  const dateStr = `Ngày ${String(d.getDate()).padStart(2, '0')} tháng ${String(d.getMonth() + 1).padStart(2, '0')} năm ${d.getFullYear()}`;
+  setCell(currR, 20, dateStr, 's');
+  addMerge(currR, 20, currR, 22);
+  currR++;
 
   // Khối chữ ký 4 bên
-  setCell(curRow, 1, 'Trưởng bộ phận');
-  setCell(curRow, 7, 'Kế toán trưởng');
-  setCell(curRow, 13, 'Bộ phận quản lý kho');
-  setCell(curRow, 21, 'Phê duyệt BGĐ');
+  const sigRow = currR;
+  setCell(sigRow, 1, 'Trưởng bộ phận\n(Ký và ghi rõ họ tên)', 's');
+  addMerge(sigRow, 1, sigRow, 4);
 
-  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: curRow + 4, c: 22 } });
-  ws['!merges'] = merges;
+  setCell(sigRow, 7, 'Kế toán trưởng\n(Ký và ghi rõ họ tên)', 's');
+  addMerge(sigRow, 7, sigRow, 10);
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'ĐỀ XUẤT MUA HÀNG');
-  const tenFile = `DE_XUAT_MUA_HANG_${(phieu.so_phieu || 'BM03').replace(/[^a-zA-Z0-9._-]/g, '_')}.xlsx`;
+  setCell(sigRow, 14, 'Bộ phận quản lý kho\n(Ký và ghi rõ họ tên)', 's');
+  addMerge(sigRow, 14, sigRow, 17);
+
+  setCell(sigRow, 20, 'Phê duyệt BGĐ\n(Ký và ghi rõ họ tên)', 's');
+  addMerge(sigRow, 20, sigRow, 22);
+
+  currR += 4;
+  setCell(currR, 14, phieu.thu_kho || 'NGUYỄN THỊ NHƯ HUỲNH', 's');
+  addMerge(currR, 14, currR, 17);
+
+  // Set generous column widths so numbers never show as ###
+  const cols = srcWs['!cols'] ? [...srcWs['!cols']] : [];
+  while (cols.length < 24) cols.push({ wch: 10 });
+  cols[0] = { wch: 5 };   // Col A: STT
+  cols[1] = { wch: 28 };  // Col B: Mô tả hàng hóa
+  cols[2] = { wch: 6 };   // Col C
+  cols[3] = { wch: 6 };   // Col D
+  cols[4] = { wch: 18 };  // Col E: Thông số KT
+  cols[5] = { wch: 8 };   // Col F: ĐVT
+  cols[6] = { wch: 10 };  // Col G: Tồn kho
+  cols[7] = { wch: 10 };  // Col H: Đề xuất
+  cols[8] = { wch: 14 };  // Col I: Đơn giá đề xuất (có VAT)
+  cols[9] = { wch: 4 };   // Col J
+  cols[10] = { wch: 4 };  // Col K
+  cols[11] = { wch: 18 }; // Col L: Thành tiền (Có VAT) - Rộng để không bao giờ bị ###
+  cols[12] = { wch: 14 }; // Col M: Thời gian cần
+  cols[13] = { wch: 6 };  // Col N
+  cols[14] = { wch: 25 }; // Col O: Mục đích sử dụng
+  cols[15] = { wch: 6 };  // Col P
+  cols[16] = { wch: 12 }; // Col Q: Tài khoản CP
+  cols[17] = { wch: 6 };  // Col R
+  cols[18] = { wch: 12 }; // Col S: Tài khoản KTT
+  cols[19] = { wch: 14 }; // Col T: Ngân sách còn lại
+  cols[20] = { wch: 28 }; // Col U: Nhà cung cấp
+  cols[21] = { wch: 10 }; // Col V
+  cols[22] = { wch: 6 };  // Col W
+
+  newWs['!cols'] = cols;
+  newWs['!merges'] = newMerges;
+  newWs['!ref'] = `A1:W${currR + 2}`;
+
+  wb.Sheets[sheetName] = newWs;
+
+  const tenFile = `5S_BM03_DE_XUAT_MUA_HANG_${(phieu.so_phieu || 'BM03').replace(/[^a-zA-Z0-9._-]/g, '_')}.xlsx`;
   XLSX.writeFile(wb, tenFile);
   return tenFile;
 }

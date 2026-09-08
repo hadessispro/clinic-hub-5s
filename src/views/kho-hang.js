@@ -25,6 +25,7 @@ import {
   xoaAnhHoaDon, xuatKho, xuatCsvDeXuat, xuatCsvVatTu,
   layDanhSachDeXuat, layChiTietDeXuat, taoPhieuDeXuat, capNhatPhieuDeXuat, xoaPhieuDeXuat,
   goiYHangThieu, soSanhGiaNhaCungCap, taoDonHangTuPhieu, xuatExcelDeXuatBM03,
+  BM03_STANDARD_ITEMS,
 } from '../services/kho-hang.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -1017,6 +1018,9 @@ function veDeXuat() {
           <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới">
             <i class="ri-add-line"></i> Phiếu mới
           </button>
+          <button type="button" class="secondary-button" id="btnNapMauBM03" style="border-color: #2563eb; color: #1d4ed8; background: #eff6ff;" title="Nạp 51 mặt hàng vật tư chuẩn từ biểu mẫu 5S_QĐ_KT_01/BM03">
+            <i class="ri-file-list-3-line"></i> Nạp 51 mục chuẩn BM03
+          </button>
           <button type="button" class="secondary-button" id="btnMoGoiYHangThieu" style="border-color: #f59e0b; color: #b45309; background: #fffbeb;" title="Xem các mặt hàng tồn dưới định mức để tick chọn bổ sung">
             <i class="ri-flashlight-line"></i> Gợi ý hàng thiếu (${dsGoiYHangThieu.length})
           </button>
@@ -1148,6 +1152,22 @@ function veDeXuat() {
               </tr>
             </thead>
             <tbody>
+              ${soMatHang === 0 ? `
+                <tr>
+                  <td colspan="12" style="text-align: center; padding: 48px 20px; background: #f8fafc;">
+                    <div style="max-width: 480px; margin: 0 auto;">
+                      <i class="ri-file-excel-2-line" style="font-size: 3rem; color: #0f8b7f; display: inline-block; margin-bottom: 12px;"></i>
+                      <h4 style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-bottom: 6px;">Phiếu chưa có mặt hàng nào</h4>
+                      <p style="font-size: 0.85rem; color: #64748b; line-height: 1.5; margin-bottom: 16px;">
+                        Bạn có thể nhấn <b>Nạp 51 mặt hàng mẫu BM03</b> để tải sẵn toàn bộ danh mục vật tư chuẩn 5S_QĐ_KT_01, sau đó chỉ cần điền số lượng hoặc giá.
+                      </p>
+                      <button type="button" class="primary-button" id="btnNapMauBM03Empty" style="background: #0f8b7f; margin: 0 auto;">
+                        <i class="ri-download-2-line"></i> Nạp 51 mặt hàng chuẩn BM03
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ` : ''}
               ${Object.entries(theoNganh).map(([nganhHang, dsDong]) => {
                 if (dxNganhHangFilter !== 'all' && nganhHang !== dxNganhHangFilter) return '';
                 const subTotal = dsDong.reduce((s, x) => s + (Number(x.thanh_tien) || (Number(x.so_luong) * Number(x.don_gia)) || 0), 0);
@@ -2127,11 +2147,61 @@ export function initView() {
     }, `Đã bổ sung ${selected.length} mặt hàng thiếu vào phiếu đề xuất.`);
   });
 
+  const xuLyNapMauBM03 = async () => {
+    if (!phieuDeXuatHienTai) return;
+    const coDong = phieuDeXuatHienTai.dong?.length || 0;
+    if (coDong > 0) {
+      const ok = await confirmAction(
+        `Phiếu hiện có ${coDong} mặt hàng. Bạn có chắc muốn nạp 51 mặt hàng mẫu chuẩn BM03 (sẽ ghi đè danh sách hiện tại)?`,
+        { title: 'Nạp danh mục mẫu BM03', confirmText: 'Nạp 51 mặt hàng' }
+      );
+      if (!ok) return;
+    }
+
+    phieuDeXuatHienTai.dong = BM03_STANDARD_ITEMS.map((it, idx) => {
+      const vt = dsVatTu.find((v) => v.ten.toLowerCase().trim() === it.ten.toLowerCase().trim() || it.ten.toLowerCase().includes(v.ten.toLowerCase()));
+      const donGia = vt?.gia_von || it.don_gia || 0;
+      return {
+        id: `D${idx + 1}`,
+        stt: it.stt || idx + 1,
+        nganh_hang: it.nganh_hang || 'Vật liệu tổng quát',
+        vat_tu_id: vt?.id || '',
+        ten: it.ten,
+        thong_so: it.thong_so || (vt?.quy_cach || ''),
+        don_vi: it.don_vi || (vt?.don_vi || 'Cái'),
+        ton: vt ? vt.so_luong : (it.ton ?? 0),
+        so_luong: it.so_luong || 1,
+        don_gia: donGia,
+        thanh_tien: (it.so_luong || 1) * donGia,
+        thoi_gian: it.thoi_gian_can || '2026-09-15',
+        muc_dich: it.muc_dich || 'Sử dụng điều trị lâm sàng',
+        ncc_id: '',
+        ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT',
+      };
+    });
+
+    chay(async () => {
+      await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+    }, 'Đã nạp 51 mặt hàng chuẩn BM03 vào phiếu đề xuất!');
+  };
+
+  g('btnNapMauBM03')?.addEventListener('click', xuLyNapMauBM03);
+  g('btnNapMauBM03Empty')?.addEventListener('click', xuLyNapMauBM03);
+
   g('btnXuatExcelBM03')?.addEventListener('click', async () => {
     if (!phieuDeXuatHienTai || !phieuDeXuatHienTai.dong?.length) {
       showToast('Phiếu đề xuất chưa có mặt hàng nào để xuất file.', true);
       return;
     }
+    // Đồng bộ các trường thông tin trên form vào phiếu trước khi xuất file
+    if (g('bm03SoPhieu')) phieuDeXuatHienTai.so_phieu = g('bm03SoPhieu').value;
+    if (g('bm03BoPhan')) phieuDeXuatHienTai.bo_phan = g('bm03BoPhan').value;
+    if (g('bm03NguoiTao')) phieuDeXuatHienTai.nguoi_tao = g('bm03NguoiTao').value;
+    if (g('bm03NgayTao')) phieuDeXuatHienTai.ngay_tao = g('bm03NgayTao').value;
+    if (g('bm03KhoHang')) phieuDeXuatHienTai.kho_hang = g('bm03KhoHang').value;
+    if (g('bm03ThuKho')) phieuDeXuatHienTai.thu_kho = g('bm03ThuKho').value;
+    if (g('bm03GhiChu')) phieuDeXuatHienTai.ghi_chu = g('bm03GhiChu').value;
+
     try {
       await xuatExcelDeXuatBM03(phieuDeXuatHienTai);
       showToast('Đã tải xuống file Excel BM03 chuẩn 5S_QĐ_KT_01!');
