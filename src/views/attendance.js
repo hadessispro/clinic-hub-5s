@@ -30,7 +30,7 @@ import { BRANCH, BRANCHES, clinicDateISO, clinicTimeLabel } from '../branch.js';
 import { canEditAttendance, isOpsRole, khongPhaiChamCong } from '../permissions.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
-import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, smartMatch } from '../utils.js';
+import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, normalizeText, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
