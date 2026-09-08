@@ -91,6 +91,11 @@ jobs:
         # tiếp tục phục vụ ảnh cũ. Kiểm cả nội dung logo lẫn phạm vi deploy.
         run: node scripts/kiem-thuong-hieu.mjs
 
+      - name: Biểu mẫu đề xuất mua hàng BM03 còn đầy đủ
+        # Bắt lỗi mất danh mục 51 mặt hàng, lệch mẫu Excel hoặc đứt luồng
+        # tách đơn theo nhà cung cấp khi Kho được chỉnh sửa về sau.
+        run: node scripts/kiem-kho-bm03.mjs
+
 
       - name: Miễn chi nhánh phải khớp giữa hai tầng
         # Frontend và backend giữ hai danh sách riêng cho cùng một luật.
