@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { showToast } from '../components/toast.js';
 
 const PUSH_ROLES = new Set(['admin', 'hr', 'leader', 'admin_it']);
@@ -9,21 +9,8 @@ function base64ToBytes(value) {
   return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
 }
 
-async function accessToken() {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token || '';
-}
-
 async function apiRequest(path, options = {}) {
-  if (supabase.isLocal) return supabase.request(path.replace(/^\/api/, ''), options);
-  const token = await accessToken();
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || payload.error || 'Không thể cấu hình thông báo trên thiết bị.');
-  return payload;
+  return dataClient.request(path.replace(/^\/api/, ''), options);
 }
 
 async function ensurePushSubscription() {

@@ -1,5 +1,4 @@
-import { supabase } from '../supabase.js';
-import { requestSheetSync } from './sheet-sync.js';
+import { dataClient } from '../data-client.js';
 import { pollingSubscription } from './realtime-fallback.js';
 
 export function mapLeaveToUI(db) {
@@ -47,7 +46,7 @@ export function mapLeaveToDB(ui) {
 
 export async function getLeaveRequests(filters = {}) {
   try {
-    let query = supabase
+    let query = dataClient
       .from('leave_requests')
       .select('*');
       
@@ -70,7 +69,7 @@ export async function getLeaveRequests(filters = {}) {
 export function subscribeToLeaveRequests(callback) {
   let lastId = null;
   return pollingSubscription(async () => {
-    const { data } = await supabase.from('leave_requests').select('id,created_at')
+    const { data } = await dataClient.from('leave_requests').select('id,created_at')
       .order('created_at', { ascending: false }).limit(1);
     const newest = data?.[0];
     if (!lastId) { lastId = newest?.id || null; return; }
@@ -83,7 +82,7 @@ export function subscribeToLeaveRequests(callback) {
 
 export async function getSalaryAdvances(filters = {}) {
   try {
-    let query = supabase
+    let query = dataClient
       .from('leave_requests')
       .select('*')
       .in('request_type', ['Tạm ứng lương', 'Ứng lương', 'Duyệt tiền mặt']); // only advances
@@ -110,7 +109,7 @@ export async function createLeaveRequest(request) {
     Object.keys(dbData).forEach(key => {
       if (dbData[key] === undefined) delete dbData[key];
     });
-    const { data, error } = await supabase.rpc('submit_leave_request', {
+    const { data, error } = await dataClient.rpc('submit_leave_request', {
       p_employee_code: dbData.employee_code,
       p_request_type: dbData.request_type,
       p_from_date: dbData.from_date,
@@ -124,7 +123,6 @@ export async function createLeaveRequest(request) {
     });
       
     if (error) throw error;
-    requestSheetSync().catch(() => {});
     return mapLeaveToUI(data);
   } catch (error) {
     console.error('[Leave Service] createLeaveRequest error:', error);
@@ -133,13 +131,12 @@ export async function createLeaveRequest(request) {
 }
 
 export async function reviewLeaveRequest(id, decision, reason = '') {
-  const { data, error } = await supabase.rpc('review_leave_request', {
+  const { data, error } = await dataClient.rpc('review_leave_request', {
     p_request_id: id,
     p_decision: decision,
     p_reason: reason || null,
   });
   if (error) throw error;
-  requestSheetSync().catch(() => {});
   return mapLeaveToUI(data);
 }
 
@@ -152,7 +149,7 @@ export async function updateLeaveRequest(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('leave_requests')
       .update(dbData)
       .eq('id', id)
@@ -169,7 +166,7 @@ export async function updateLeaveRequest(id, updates) {
 
 export async function deleteLeaveRequest(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('leave_requests')
       .delete()
       .eq('id', id);

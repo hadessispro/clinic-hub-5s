@@ -155,7 +155,7 @@ async function bootstrap() {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed));
   });
 
-  // Hide the Reset Demo button from index.html (as we are completely moving to Supabase Auth)
+  // Hide the Reset Demo button from index.html (as we are completely moving to xác thực PostgreSQL/VPS)
   const resetDemoBtn = document.getElementById('resetDemoBtn');
   if (resetDemoBtn) {
     resetDemoBtn.style.display = 'none';
@@ -305,7 +305,7 @@ async function bootstrap() {
           marketingSub = null;
         }
 
-        if (!vpsChangeSub && import.meta.env.VITE_DATA_BACKEND === 'vps') {
+        if (!vpsChangeSub) {
           vpsChangeSub = subscribeToVpsChanges((change) => {
             refreshActiveViewFromRealtime({ ...change, source: 'vps-postgresql' });
           });

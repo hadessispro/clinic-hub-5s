@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 /* ── Onboarding Docs Mapping ── */
 export function mapDocToUI(db) {
@@ -50,7 +50,7 @@ export function mapProgressToDB(ui) {
 /* ── Service API ── */
 export async function getOnboardingDocs() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('onboarding_docs')
       .select('*')
       .order('created_at');
@@ -66,7 +66,7 @@ export async function getOnboardingDocs() {
 export async function createOnboardingDoc(doc) {
   try {
     const dbData = mapDocToDB(doc);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('onboarding_docs')
       .insert(dbData)
       .select()
@@ -82,7 +82,7 @@ export async function createOnboardingDoc(doc) {
 
 export async function deleteOnboardingDoc(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('onboarding_docs')
       .delete()
       .eq('id', id);
@@ -97,7 +97,7 @@ export async function deleteOnboardingDoc(id) {
 
 export async function getOnboardingProgress(employeeCode = null) {
   try {
-    let query = supabase.from('onboarding_progress').select('*');
+    let query = dataClient.from('onboarding_progress').select('*');
     if (employeeCode) {
       query = query.eq('employee_code', employeeCode);
     }
@@ -113,7 +113,7 @@ export async function getOnboardingProgress(employeeCode = null) {
 export async function updateOnboardingProgress(employeeCode, docId, status) {
   try {
     const completedAt = status === 'done' ? new Date().toISOString() : null;
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('onboarding_progress')
       .upsert({
         employee_code: employeeCode,

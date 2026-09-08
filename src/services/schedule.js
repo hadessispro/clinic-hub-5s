@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 /* ── Schedule Requests Mapping ── */
 export function mapRequestToUI(db) {
@@ -63,7 +63,7 @@ export function mapAssignmentToDB(ui) {
 /* ── Service API ── */
 export async function getScheduleRequests() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('schedule_requests')
       .select('*')
       .order('submitted_at', { ascending: false });
@@ -79,7 +79,7 @@ export async function getScheduleRequests() {
 export async function createScheduleRequest(request) {
   try {
     const dbData = mapRequestToDB(request);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('schedule_requests')
       .insert(dbData)
       .select()
@@ -100,7 +100,7 @@ export async function updateScheduleRequest(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('schedule_requests')
       .update(dbData)
       .eq('id', id)
@@ -117,7 +117,7 @@ export async function updateScheduleRequest(id, updates) {
 
 export async function getScheduleAssignments(date = null) {
   try {
-    let query = supabase.from('schedule_assignments').select('*');
+    let query = dataClient.from('schedule_assignments').select('*');
     if (date) {
       query = query.eq('work_date', date);
     }
@@ -132,8 +132,8 @@ export async function getScheduleAssignments(date = null) {
 
 export async function getShiftConfiguration() {
   const [shiftResult, allowedResult] = await Promise.all([
-    supabase.from('work_shifts').select('*').eq('active', true).order('start_time'),
-    supabase.from('employee_allowed_shifts').select('employee_code,shift_code'),
+    dataClient.from('work_shifts').select('*').eq('active', true).order('start_time'),
+    dataClient.from('employee_allowed_shifts').select('employee_code,shift_code'),
   ]);
   if (shiftResult.error) throw shiftResult.error;
   if (allowedResult.error) throw allowedResult.error;
@@ -143,46 +143,28 @@ export async function getShiftConfiguration() {
 export async function getEmployeeAllowedShifts(employeeCode) {
   if (!employeeCode) return [];
 
-  // The VPS data adapter intentionally exposes flat JSON records and ignores
-  // PostgREST relationship expressions such as `work_shifts!inner(...)`.
-  // Using that expression against the local PostgreSQL API returned allowed
-  // rows without the nested `work_shifts` object, so every employee silently
-  // fell back to one default shift in the check-in dialog. Load both flat
-  // tables and join them here instead; this keeps the same result shape on
-  // Supabase and PostgreSQL.
-  if (supabase.isLocal) {
-    const configuration = await getShiftConfiguration();
-    const normalizedEmployeeCode = String(employeeCode).toLocaleLowerCase('vi');
-    const allowedCodes = new Set(configuration.allowed
-      .filter((row) => String(row.employee_code || '').toLocaleLowerCase('vi') === normalizedEmployeeCode)
-      .map((row) => String(row.shift_code || ''))
-      .filter(Boolean));
-    return configuration.shifts
-      .filter((shift) => shift.active !== false && allowedCodes.has(String(shift.code || '')))
-      .sort((left, right) => String(left.start_time || '').localeCompare(String(right.start_time || '')));
-  }
-
-  const { data, error } = await supabase
-    .from('employee_allowed_shifts')
-    .select('shift_code, work_shifts!inner(code,name,start_time,end_time,break_minutes,active)')
-    .eq('employee_code', employeeCode)
-    .eq('work_shifts.active', true);
-  if (error) throw error;
-  return (data || [])
-    .map((row) => row.work_shifts)
-    .filter(Boolean)
-    .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
+  // PostgreSQL stores both entities as flat records. Join the employee's
+  // allowed shift codes with the active shift catalog in the client service.
+  const configuration = await getShiftConfiguration();
+  const normalizedEmployeeCode = String(employeeCode).toLocaleLowerCase('vi');
+  const allowedCodes = new Set(configuration.allowed
+    .filter((row) => String(row.employee_code || '').toLocaleLowerCase('vi') === normalizedEmployeeCode)
+    .map((row) => String(row.shift_code || ''))
+    .filter(Boolean));
+  return configuration.shifts
+    .filter((shift) => shift.active !== false && allowedCodes.has(String(shift.code || '')))
+    .sort((left, right) => String(left.start_time || '').localeCompare(String(right.start_time || '')));
 }
 
 export async function createScheduleAssignment(assignment) {
   try {
     const dbData = mapAssignmentToDB(assignment);
-    const { data: existing, error: findError } = await supabase.from('schedule_assignments')
+    const { data: existing, error: findError } = await dataClient.from('schedule_assignments')
       .select('*').eq('employee_code', dbData.employee_code).eq('work_date', dbData.work_date).maybeSingle();
     if (findError) throw findError;
     const query = existing?.id
-      ? supabase.from('schedule_assignments').update(dbData).eq('id', existing.id)
-      : supabase.from('schedule_assignments').insert(dbData);
+      ? dataClient.from('schedule_assignments').update(dbData).eq('id', existing.id)
+      : dataClient.from('schedule_assignments').insert(dbData);
     const { data, error } = await query.select().single();
       
     if (error) throw error;
@@ -200,7 +182,7 @@ export async function updateScheduleAssignment(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('schedule_assignments')
       .update(dbData)
       .eq('id', id)
@@ -217,7 +199,7 @@ export async function updateScheduleAssignment(id, updates) {
 
 export async function deleteScheduleAssignment(id) {
   if (!id) return false;
-  const { error } = await supabase.from('schedule_assignments').delete().eq('id', id);
+  const { error } = await dataClient.from('schedule_assignments').delete().eq('id', id);
   if (error) throw error;
   return true;
 }

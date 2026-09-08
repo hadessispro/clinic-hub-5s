@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { pollingSubscription } from './realtime-fallback.js';
 
 export function conversationChannel(userId, contactId) {
@@ -21,7 +21,7 @@ export function mapMessageToUI(db) {
 }
 
 export async function getMessageContacts() {
-  const { data, error } = await supabase.rpc('list_message_contacts');
+  const { data, error } = await dataClient.rpc('list_message_contacts');
   if (error) throw error;
   return (data || []).map((row) => ({
     userId: row.user_id,
@@ -35,7 +35,7 @@ export async function getMessageContacts() {
 
 export async function getMessages(contactId, userId) {
   const channel = conversationChannel(userId, contactId);
-  const { data, error } = await supabase
+  const { data, error } = await dataClient
     .from('messages')
     .select('*')
     .eq('channel', channel)
@@ -46,7 +46,7 @@ export async function getMessages(contactId, userId) {
 }
 
 export async function getRecentIncomingMessages(userId, since) {
-  let query = supabase
+  let query = dataClient
     .from('messages')
     .select('*')
     .neq('sender_id', userId)
@@ -68,7 +68,7 @@ export async function sendMessage({ contactId, userId, author, text }) {
     author_code: author || null,
     body: text,
   };
-  const { data, error } = await supabase.from('messages').insert(row).select().single();
+  const { data, error } = await dataClient.from('messages').insert(row).select().single();
   if (error) throw error;
   return mapMessageToUI(data);
 }

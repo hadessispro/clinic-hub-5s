@@ -138,7 +138,7 @@ export function renderTopbar(state) {
         <!-- Auth Status Chip (Đồng bộ trực tiếp trạng thái chấm công) -->
         <div class="auth-chip">
           <span class="auth-dot online" style="${isCheckedIn ? 'background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);' : (isCheckedOut ? 'background: #9ca3af;' : '')}"></span>
-          <button class="auth-summary" type="button" data-action="jump-integrations" title="Mở bảo mật và Supabase">
+          <button class="auth-summary" type="button" data-action="jump-integrations" title="Mở bảo mật hệ thống">
             <strong>${escapeHTML(profile.full_name)}</strong>
             <small>${escapeHTML(roleLabel)} · ${isCheckedIn
               ? `<span style="color: #047857; font-weight: 700;">Đã vào ca (${formatTime(state.todayAttendance.checkinTime)})</span>`

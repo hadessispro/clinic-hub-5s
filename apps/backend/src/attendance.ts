@@ -353,7 +353,6 @@ export class AttendanceWorkController {
     try {
       await client.query('begin');
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [`att_work_${employeeCode.toLowerCase()}_${requestedMonth}`]);
-      await client.query(`select set_config('app.suppress_backup_outbox','on',true)`);
       await client.query(
         `update app.records set deleted_at=now(),updated_at=now(),version=version+1
          where entity_type='attendance_work_days' and lower(payload->>'employee_code')=lower($1)

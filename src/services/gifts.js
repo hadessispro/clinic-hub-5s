@@ -1,8 +1,8 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 function request(path, options = {}) {
-  if (!supabase?.isLocal || !supabase?.request) throw new Error('Kho quà tặng chỉ khả dụng trên máy chủ Clinic Hub.');
-  return supabase.request(`/marketing/gifts${path}`, options);
+  if (!dataClient?.isLocal || !dataClient?.request) throw new Error('Kho quà tặng chỉ khả dụng trên máy chủ Clinic Hub.');
+  return dataClient.request(`/marketing/gifts${path}`, options);
 }
 
 export async function getGiftOverview() { return request('/overview'); }

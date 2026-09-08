@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapFeedbackToUI(db) {
   if (!db) return null;
@@ -23,7 +23,7 @@ export function mapFeedbackToDB(ui) {
 
 export async function getPayrollFeedback() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('payroll_feedback')
       .select('*')
       .order('created_at', { ascending: false });
@@ -39,7 +39,7 @@ export async function getPayrollFeedback() {
 export async function createPayrollFeedback(feedback) {
   try {
     const dbData = mapFeedbackToDB(feedback);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('payroll_feedback')
       .insert(dbData)
       .select()
@@ -60,7 +60,7 @@ export async function updatePayrollFeedback(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('payroll_feedback')
       .update(dbData)
       .eq('id', id)

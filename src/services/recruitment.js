@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapRecruitmentToUI(db) {
   if (!db) return null;
@@ -38,7 +38,7 @@ export function mapRecruitmentToDB(ui) {
 
 export async function getRecruitmentList() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('recruitment')
       .select('*')
       .order('created_at', { ascending: false });
@@ -54,7 +54,7 @@ export async function getRecruitmentList() {
 export async function createCandidate(candidate) {
   try {
     const dbData = mapRecruitmentToDB(candidate);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('recruitment')
       .insert(dbData)
       .select()
@@ -75,7 +75,7 @@ export async function updateCandidate(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('recruitment')
       .update(dbData)
       .eq('id', id)
@@ -92,7 +92,7 @@ export async function updateCandidate(id, updates) {
 
 export async function deleteCandidate(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('recruitment')
       .delete()
       .eq('id', id);

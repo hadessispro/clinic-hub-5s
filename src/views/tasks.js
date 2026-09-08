@@ -19,7 +19,7 @@ let editingFeaturedId = null;
 
 const DEFAULT_FEATURED_CARDS = [
   { id: 'f1', title: 'Weekly Team Meeting', time: '🕒 3:00 PM - 4:30 PM · Phòng Họp 5S', badge: '🟢 Realtime Active', badgeColor: '#10b981', actionText: 'Tham gia trao đổi' },
-  { id: 'f2', title: 'Tổng số công việc tuần này', time: 'Đã ghi nhận task trên hệ thống', badge: '📊 Live Database', badgeColor: '#087f7b', actionText: 'Đồng bộ Supabase' },
+  { id: 'f2', title: 'Tổng số công việc tuần này', time: 'Đã ghi nhận task trên hệ thống', badge: '📊 Live Database', badgeColor: '#087f7b', actionText: 'Đồng bộ PostgreSQL/VPS' },
   { id: 'f3', title: 'Thông Báo Realtime', time: 'Khi gán task, nhân viên nhận alert tức thì', badge: '🔔 Tự động', badgeColor: '#3b82f6', actionText: 'Kích hoạt Broadcast' },
 ];
 

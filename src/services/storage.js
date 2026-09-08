@@ -1,48 +1,12 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
-/**
- * Uploads a file to the Supabase Storage bucket 'clinic-files'.
- * @param {File} file - The file object from browser input
- * @param {string} folder - Destination folder name (e.g. 'tasks', 'proposals', 'incidents')
- * @returns {Promise<{url: string, name: string}|null>} Public URL and original filename
- */
+/** Upload a file to the Clinic Hub VPS file service. */
 export async function uploadFile(file, folder = 'attachments') {
   if (!file) return null;
-  if (supabase.isLocal) {
-    const data = await fileToBase64(file);
-    const payload = await supabase.request('/files/upload', { method: 'POST',
-      body: JSON.stringify({ name: file.name, type: file.type, folder, data }), timeout: 60000 });
-    return { url: payload.publicUrl, name: file.name };
-  }
-  
-  try {
-    const fileExt = file.name.split('.').pop();
-    const uniqueId = Math.random().toString(36).substring(2, 7);
-    const filePath = `${folder}/${Date.now()}_${uniqueId}.${fileExt}`;
-
-    const { data, error } = await supabase.storage
-      .from('clinic-files')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('clinic-files')
-      .getPublicUrl(filePath);
-
-    return {
-      url: publicUrl,
-      name: file.name
-    };
-  } catch (error) {
-    console.error('[Storage Service] Upload failed:', error);
-    throw error;
-  }
+  const data = await fileToBase64(file);
+  const payload = await dataClient.request('/files/upload', { method: 'POST',
+    body: JSON.stringify({ name: file.name, type: file.type, folder, data }), timeout: 60000 });
+  return { url: payload.publicUrl, name: file.name };
 }
 
 function fileToBase64(file) {

@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { defaultShiftForDepartment } from '../constants.js';
 
 /**
@@ -56,7 +56,7 @@ export function mapEmployeeToDB(ui) {
 
 export async function getEmployees() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('employees')
       .select('*')
       .order('code');
@@ -71,7 +71,7 @@ export async function getEmployees() {
 
 export async function getEmployeeByCode(code) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('employees')
       .select('*')
       .eq('code', code)
@@ -88,7 +88,7 @@ export async function getEmployeeByCode(code) {
 export async function createEmployee(employee) {
   try {
     const dbData = mapEmployeeToDB(employee);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('employees')
       .insert(dbData)
       .select()
@@ -108,7 +108,7 @@ export async function updateEmployee(code, updates) {
     // Remove code since it is unique and immutable primary identifier in UI logic
     delete dbData.code;
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('employees')
       .update(dbData)
       .eq('code', code)
@@ -125,7 +125,7 @@ export async function updateEmployee(code, updates) {
 
 export async function deleteEmployee(code) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('employees')
       .delete()
       .eq('code', code);

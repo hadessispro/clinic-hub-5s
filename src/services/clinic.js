@@ -1,7 +1,7 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export async function loadClinicLocation(branchId = 'pham-van-chieu') {
-  const { data, error } = await supabase
+  const { data, error } = await dataClient
     .from('clinic_locations')
     .select('*')
     .eq('id', branchId)

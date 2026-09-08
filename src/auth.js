@@ -1,5 +1,5 @@
-import { supabase } from './supabase.js';
-import { BRANCHES, getEffectiveBranchId, loginEmailFor, setActiveBranch } from './branch.js';
+import { dataClient } from './data-client.js';
+import { getEffectiveBranchId, setActiveBranch } from './branch.js';
 
 let currentUser = null;
 let currentProfile = null;
@@ -36,7 +36,7 @@ function canUseOfflineProfile(error) {
 export async function initAuth() {
   return new Promise((resolve) => {
     // 1. Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    dataClient.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         currentUser = session.user;
         await loadProfile(session.user.id);
@@ -49,11 +49,10 @@ export async function initAuth() {
     });
 
     // 2. Listen for auth changes
-    supabase.auth.onAuthStateChange((event, session) => {
+    dataClient.auth.onAuthStateChange((event, session) => {
       console.log('[Auth Event]', event, session?.user?.email);
 
-      // Supabase invokes this callback while its auth lock is held. Deferring
-      // profile queries avoids deadlocking signInWithPassword/getSession.
+      // Defer profile loading until the local auth event has completed.
       setTimeout(async () => {
         if (session?.user) {
           currentUser = session.user;
@@ -74,7 +73,7 @@ async function loadProfile(userId) {
     return;
   }
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -131,65 +130,26 @@ function notifyListeners() {
 
 export async function signIn(identifier, password, branchId = 'pham-van-chieu') {
   const normalized = String(identifier || '').trim().toLowerCase();
-  if (supabase.isLocal) {
-    const { data, error } = await supabase.auth.signInWithIdentifier({ identifier: normalized, password, branchId });
-    if (error) throw error;
-    currentUser = data.user;
-    await loadProfile(data.user.id);
-    if (!currentProfile || currentProfile.active === false) {
-      await supabase.auth.signOut();
-      currentUser = null;
-      currentProfile = null;
-      throw new Error('Tài khoản chưa có hồ sơ hoạt động trên hệ thống VPS.');
-    }
-    const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
-    setActiveBranch(effectiveBranch);
-    localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
-    localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
-    notifyListeners();
-    return data;
-  }
-  let email = normalized.includes('@') ? normalized : null;
-  const branchCandidates = branchId === 'all' ? Object.keys(BRANCHES) : [branchId];
-  for (const candidate of branchCandidates) {
-    const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_login_email', {
-      p_branch_id: candidate,
-      p_identifier: normalized,
-    });
-    if (!resolveError && resolvedEmail) { email = resolvedEmail; break; }
-  }
-  if (!email) email = loginEmailFor(branchCandidates[0], normalized);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await dataClient.auth.signInWithIdentifier({ identifier: normalized, password, branchId });
   if (error) throw error;
   currentUser = data.user;
   await loadProfile(data.user.id);
-  
   if (!currentProfile || currentProfile.active === false) {
-    // If auth succeeds but database profile is missing, clear session and throw error
-    await supabase.auth.signOut();
+    await dataClient.auth.signOut();
     currentUser = null;
     currentProfile = null;
-    notifyListeners();
-    throw new Error(currentProfile?.active === false ? 'Tài khoản đang tạm khóa. Vui lòng liên hệ Nhân sự.' : 'Tài khoản đã đăng ký nhưng chưa có hồ sơ phân quyền trong hệ thống.');
-  }
-  const canUseManagedBranch = ['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing', 'telesale_leader', 'pg_staff'].includes(currentProfile.role);
-  if (branchId !== 'all' && !normalized.includes('@') && !canUseManagedBranch && currentProfile.branch_id && currentProfile.branch_id !== branchId) {
-    await supabase.auth.signOut();
-    currentUser = null;
-    currentProfile = null;
-    throw new Error('Mã nhân viên không thuộc chi nhánh đã chọn.');
+    throw new Error('Tài khoản chưa có hồ sơ hoạt động trên hệ thống VPS.');
   }
   const effectiveBranch = getEffectiveBranchId(currentProfile, branchId);
   setActiveBranch(effectiveBranch);
   localStorage.setItem('5s_clinic_active_branch', effectiveBranch);
   localStorage.setItem('5s_clinic_last_branch', effectiveBranch);
-  
   notifyListeners();
   return data;
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
+  const { error } = await dataClient.auth.signOut();
   if (error) throw error;
   currentUser = null;
   currentProfile = null;

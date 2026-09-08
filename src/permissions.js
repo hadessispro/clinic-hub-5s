@@ -2,7 +2,7 @@
  * RBAC Permission System for 5S Clinic Hub
  *
  * 5 roles: admin, hr, leader, finance, staff
- * Permissions are checked both client-side (UI filtering) and server-side (Supabase RLS).
+ * Permissions are checked both client-side (UI filtering) and server-side (phân quyền API PostgreSQL/VPS).
  */
 
 /* ── Views accessible per role ── */

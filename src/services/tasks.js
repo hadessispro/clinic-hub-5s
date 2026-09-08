@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapTaskToUI(db) {
   if (!db) return null;
@@ -35,7 +35,7 @@ export function mapTaskToDB(ui) {
 export async function getTasks(filters = {}) {
   let dbTasks = [];
   try {
-    let query = supabase.from('tasks').select('*');
+    let query = dataClient.from('tasks').select('*');
     if (filters.department) query = query.eq('department', filters.department);
     if (filters.assignee) query = query.eq('assignee_code', filters.assignee);
     if (filters.status) query = query.eq('status', filters.status);
@@ -45,7 +45,7 @@ export async function getTasks(filters = {}) {
       dbTasks = data.map(mapTaskToUI);
     }
   } catch (error) {
-    console.warn('[Tasks Service] getTasks Supabase fetch warning:', error);
+    console.warn('[Tasks Service] getTasks PostgreSQL/VPS fetch warning:', error);
   }
 
   // Merge with locally created custom tasks
@@ -85,10 +85,10 @@ export async function createTask(task) {
     localStorage.setItem('clinic_custom_tasks', JSON.stringify(localTasks));
   } catch (e) { console.warn('Save local task backup error:', e); }
 
-  // 2. Try inserting to Supabase DB in background
+  // 2. Try inserting to PostgreSQL/VPS DB in background
   try {
     const dbData = mapTaskToDB(newTask);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('tasks')
       .insert(dbData)
       .select()
@@ -98,7 +98,7 @@ export async function createTask(task) {
       return mapTaskToUI(data);
     }
   } catch (error) {
-    console.warn('[Tasks Service] Supabase createTask warning, used local sync:', error);
+    console.warn('[Tasks Service] PostgreSQL/VPS createTask warning, used local sync:', error);
   }
 
   return newTask;
@@ -115,14 +115,14 @@ export async function updateTask(id, updates) {
     }
   } catch (e) { console.warn('Update local task error:', e); }
 
-  // Try updating in Supabase DB
+  // Try updating in PostgreSQL/VPS DB
   try {
     const dbData = mapTaskToDB(updates);
     Object.keys(dbData).forEach(key => {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('tasks')
       .update(dbData)
       .eq('id', id)
@@ -133,7 +133,7 @@ export async function updateTask(id, updates) {
       return mapTaskToUI(data);
     }
   } catch (error) {
-    console.warn(`[Tasks Service] updateTask (${id}) Supabase warning:`, error);
+    console.warn(`[Tasks Service] updateTask (${id}) PostgreSQL/VPS warning:`, error);
   }
 
   return { id, ...updates };
@@ -153,8 +153,8 @@ export async function deleteTask(id) {
     const filtered = localTasks.filter(t => t.id !== id);
     localStorage.setItem('clinic_custom_tasks', JSON.stringify(filtered));
 
-    // 3. Delete from Supabase DB
-    await supabase.from('tasks').delete().eq('id', id);
+    // 3. Delete from PostgreSQL/VPS DB
+    await dataClient.from('tasks').delete().eq('id', id);
   } catch (error) {
     console.warn(`[Tasks Service] deleteTask (${id}) exception caught:`, error);
   }

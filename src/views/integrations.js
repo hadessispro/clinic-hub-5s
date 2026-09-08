@@ -12,8 +12,8 @@ import {
   createProfile,
   updateProfile,
   deleteProfile,
-  createSupabaseUser,
-  provisionLocalUser
+  createSystemUser,
+  provisionSystemUser
 } from '../services/profiles.js';
 
 let cachedEmployees = [];
@@ -35,7 +35,7 @@ export async function renderView(state) {
   cachedEmployees = employees;
 
   const currentEmployee = employees.find(e => e.id === profile?.employee_code);
-  const cloudStatusText = user ? "Supabase đã nối" : "Chưa online";
+  const cloudStatusText = user ? "PostgreSQL/VPS đã kết nối" : "Chưa online";
   const cloudStatusTone = user ? "good" : "warn";
   const activeRoleLabel = ROLE_PROFILES[role]?.label || role || 'Chưa gán';
 
@@ -138,7 +138,7 @@ export async function renderView(state) {
                 </div>
               ` : `
                 <div class="form-field full">
-                  <label for="profileUID">Supabase User UID</label>
+                  <label for="profileUID">Mã tài khoản hệ thống</label>
                   <input id="profileUID" name="uid" type="text" required placeholder="Nhập chuỗi UUID trong Auth > Users" />
                 </div>
               `}
@@ -208,7 +208,7 @@ export async function renderView(state) {
     <div class="view-header">
       <div>
         <p class="eyebrow">Security & integrations</p>
-        <h3>Đăng nhập Supabase Auth, phân luồng tài khoản, đồng bộ Google qua GAS và xuất dữ liệu vận hành.</h3>
+        <h3>Đăng nhập xác thực PostgreSQL/VPS, phân luồng tài khoản, đồng bộ Google qua GAS và xuất dữ liệu vận hành.</h3>
       </div>
       <div class="pill-row">
         ${statusPill(cloudStatusText, cloudStatusTone)}
@@ -219,7 +219,7 @@ export async function renderView(state) {
     <div class="grid cols-2">
       <section class="panel">
         <div class="section-title">
-          <h3>Đăng nhập Supabase</h3>
+          <h3>Đăng nhập hệ thống VPS</h3>
           ${pill("Auth Active")}
         </div>
         ${user ? `
@@ -236,7 +236,7 @@ export async function renderView(state) {
         `}
         <div class="setup-note">
           <strong>SQL setup</strong>
-          <span>Bảo mật hệ thống RLS đã hoạt động dựa trên email tài khoản profiles được map từ Supabase Auth.</span>
+          <span>Bảo mật hệ thống RLS đã hoạt động dựa trên email tài khoản profiles được map từ xác thực PostgreSQL/VPS.</span>
         </div>
       </section>
 
@@ -408,13 +408,13 @@ export function initView() {
           let uid = '';
           let newUser = null;
           if (tempAuthMode === 'create') {
-            showToast("Đang tạo tài khoản Supabase Auth...");
-            newUser = await createSupabaseUser(data.email.trim(), data.password);
+            showToast("Đang tạo tài khoản xác thực PostgreSQL/VPS...");
+            newUser = await createSystemUser(data.email.trim(), data.password);
             uid = newUser.id;
           } else {
             uid = data.uid.trim();
             if (!uid) {
-              showToast("Vui lòng nhập UID tài khoản Supabase Auth.", true);
+              showToast("Vui lòng nhập UID tài khoản xác thực PostgreSQL/VPS.", true);
               return;
             }
           }
@@ -429,7 +429,7 @@ export function initView() {
             active: active
           });
           if (newUser?.local_password) {
-            await provisionLocalUser(uid, data.email.trim(), newUser.local_password);
+            await provisionSystemUser(uid, data.email.trim(), newUser.local_password);
           }
           showToast("Tạo tài khoản người dùng thành công!");
           form.reset();
@@ -468,7 +468,7 @@ export function initView() {
       const deleteBtn = e.target.closest('[data-action="delete-profile"]');
       if (deleteBtn) {
         const profileId = deleteBtn.dataset.profileId;
-        if (await confirmAction("Bạn có chắc chắn muốn xóa hồ sơ phân quyền này? Thao tác này chỉ xóa dữ liệu phân quyền trong Database (Profiles) và giữ nguyên User trong Supabase Auth.", { title: 'Xóa hồ sơ phân quyền', confirmText: 'Xóa hồ sơ', tone: 'danger' })) {
+        if (await confirmAction("Bạn có chắc chắn muốn xóa hồ sơ phân quyền này? Thao tác này chỉ xóa dữ liệu phân quyền trong Database (Profiles) và giữ nguyên User trong xác thực PostgreSQL/VPS.", { title: 'Xóa hồ sơ phân quyền', confirmText: 'Xóa hồ sơ', tone: 'danger' })) {
           try {
             showToast("Đang xóa tài khoản...");
             await deleteProfile(profileId);

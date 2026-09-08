@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 /* ── Performance Metrics Mapping ── */
 export function mapMetricToUI(db) {
@@ -32,7 +32,7 @@ export function mapMetricToDB(ui) {
 /* ── Service API ── */
 export async function getPerformanceMetrics() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('performance_metrics')
       .select('*')
       .order('work_month', { ascending: false });
@@ -48,7 +48,7 @@ export async function getPerformanceMetrics() {
 export async function createPerformanceMetric(metric) {
   try {
     const dbData = mapMetricToDB(metric);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('performance_metrics')
       .insert(dbData)
       .select()
@@ -69,7 +69,7 @@ export async function updatePerformanceMetric(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('performance_metrics')
       .update(dbData)
       .eq('id', id)
@@ -87,7 +87,7 @@ export async function updatePerformanceMetric(id, updates) {
 /* ── Settings Sync ── */
 export async function loadSettings() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('clinic_state_snapshots')
       .select('*')
       .eq('id', 'main')
@@ -106,7 +106,7 @@ export async function loadSettings() {
 
 export async function saveSettings(settings, userId) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('clinic_state_snapshots')
       .upsert({
         id: 'main',

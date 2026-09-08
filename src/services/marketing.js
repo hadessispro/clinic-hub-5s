@@ -1,7 +1,7 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { store } from '../store.js';
 
-const useVps = Boolean(supabase?.isLocal && supabase?.request);
+const useVps = Boolean(dataClient?.isLocal && dataClient?.request);
 
 function mapVpsLead(row) {
   if (!row) return row;
@@ -19,7 +19,7 @@ function mapVpsLead(row) {
   };
 }
 async function vpsRequest(path, options = {}) {
-  return supabase.request(`/marketing${path}`, options);
+  return dataClient.request(`/marketing${path}`, options);
 }
 
 const pendingPgSiteDeletes = new Map();
@@ -82,7 +82,7 @@ export async function getMarketingLeads(filters = {}) {
     return (payload.data || []).map(mapVpsLead);
   }
   try {
-    let query = supabase.from('marketing_leads').select('*').order('created_at', { ascending: false });
+    let query = dataClient.from('marketing_leads').select('*').order('created_at', { ascending: false });
     if (filters.branch_id) query = query.eq('branch_id', filters.branch_id);
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.assigned_telesale_id) query = query.eq('assigned_telesale_id', filters.assigned_telesale_id);
@@ -142,7 +142,7 @@ export async function createMarketingLead(leadData) {
   };
 
   try {
-    const { data, error } = await supabase.from('marketing_leads').insert([newLead]).select().single();
+    const { data, error } = await dataClient.from('marketing_leads').insert([newLead]).select().single();
     notifyDataChange('marketing_leads');
     if (error) throw error;
     return data;
@@ -177,7 +177,7 @@ export async function updateMarketingLead(id, updates) {
     return mapVpsLead(payload.data);
   }
   try {
-    const { data, error } = await supabase.from('marketing_leads').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+    const { data, error } = await dataClient.from('marketing_leads').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
     notifyDataChange('marketing_leads');
     if (error) throw error;
     return data;
@@ -217,7 +217,7 @@ export async function addTelesaleCallLog(logData) {
   };
 
   try {
-    const { data, error } = await supabase.from('telesale_call_logs').insert([newLog]).select().single();
+    const { data, error } = await dataClient.from('telesale_call_logs').insert([newLog]).select().single();
     if (error) throw error;
     
     // Auto update lead status
@@ -249,7 +249,7 @@ export async function getLeadCallLogs(leadId) {
     return payload.data || [];
   }
   try {
-    const { data, error } = await supabase.from('telesale_call_logs').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
+    const { data, error } = await dataClient.from('telesale_call_logs').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
     if (error || !data) throw error;
     return data;
   } catch {
@@ -262,7 +262,7 @@ export async function getLeadCallLogs(leadId) {
 export async function getMarketingCampaigns() {
   if (useVps) return [];
   try {
-    const { data, error } = await supabase.from('marketing_campaigns').select('*').order('created_at', { ascending: false });
+    const { data, error } = await dataClient.from('marketing_campaigns').select('*').order('created_at', { ascending: false });
     if (error || !data || data.length === 0) return getLocalData(CAMPAIGNS_STORAGE_KEY, SEED_CAMPAIGNS);
     return data;
   } catch {
@@ -288,7 +288,7 @@ export async function createMarketingCampaign(campData) {
   };
 
   try {
-    const { data, error } = await supabase.from('marketing_campaigns').insert([newCamp]).select().single();
+    const { data, error } = await dataClient.from('marketing_campaigns').insert([newCamp]).select().single();
     if (error) throw error;
     return data;
   } catch {
@@ -371,8 +371,8 @@ export async function deleteMarketingLead(leadId) {
     return Boolean(payload.data?.deleted);
   }
   try {
-    const { error } = await supabase.from('marketing_leads').delete().eq('id', leadId);
-    if (error) console.warn('[Marketing Service] Supabase delete error:', error);
+    const { error } = await dataClient.from('marketing_leads').delete().eq('id', leadId);
+    if (error) console.warn('[Marketing Service] PostgreSQL/VPS delete error:', error);
   } catch (err) {
     console.warn('[Marketing Service] deleteLead fallback to local:', err);
   }
@@ -708,10 +708,10 @@ export function subscribeToRealtime(callback) {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }
-  const channel = supabase
+  const channel = dataClient
     .channel('public_realtime_leads')
     .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
-      console.log('[Supabase Realtime] Change detected:', payload);
+      console.log('[PostgreSQL/VPS realtime] Change detected:', payload);
       notifyDataChange(payload.table || 'marketing_leads');
       if (callback) callback(payload);
     })
@@ -723,7 +723,7 @@ export function subscribeToRealtime(callback) {
   window.addEventListener('clinic_data_updated', handleUpdate);
 
   return () => {
-    supabase.removeChannel(channel);
+    dataClient.removeChannel(channel);
     window.removeEventListener('clinic_data_updated', handleUpdate);
   };
 }
@@ -732,7 +732,7 @@ export function subscribeToRealtime(callback) {
  *
  * Tính tự động → SUP xác nhận → Admin xác nhận → Chốt → kế toán hạch toán.
  * Chỉ chạy trên VPS: phân hệ này đọc bảng hoa_hong_* và chúng chỉ tồn tại ở
- * database chính, không có bản Supabase tương ứng.
+ * database chính, không có bản PostgreSQL/VPS tương ứng.
  */
 
 const canVps = (viec) => {

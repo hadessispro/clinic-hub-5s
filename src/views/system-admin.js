@@ -172,7 +172,7 @@ function functionalArea(item) {
   if (/lịch làm|schedule|ca làm|shift/.test(text)) return 'schedule';
   if (/tin nhắn|message|chat|notification|thông báo/.test(text)) return 'chat';
   if (/đồng bộ|sync|sheet|integration|api|outbox/.test(text)) return 'sync';
-  if (/database|supabase|rls|permission|phân quyền|data/.test(text)) return 'data';
+  if (/database|postgresql|rls|permission|phân quyền|data/.test(text)) return 'data';
   return 'other';
 }
 

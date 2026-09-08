@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapProposalToUI(db) {
   if (!db) return null;
@@ -33,7 +33,7 @@ export function mapProposalToDB(ui) {
 
 export async function getProposals(filters = {}) {
   try {
-    let query = supabase.from('proposals').select('*');
+    let query = dataClient.from('proposals').select('*');
     if (filters.requester) {
       query = query.eq('requester_code', filters.requester);
     }
@@ -56,7 +56,7 @@ export async function getProposals(filters = {}) {
 export async function createProposal(proposal) {
   try {
     const dbData = mapProposalToDB(proposal);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('proposals')
       .insert(dbData)
       .select()
@@ -79,7 +79,7 @@ export async function updateProposal(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('proposals')
       .update(dbData)
       .eq('id', id)
@@ -96,7 +96,7 @@ export async function updateProposal(id, updates) {
 
 export async function deleteProposal(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('proposals')
       .delete()
       .eq('id', id);

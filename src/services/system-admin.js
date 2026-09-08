@@ -1,8 +1,8 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { pollingSubscription } from './realtime-fallback.js';
 
 export async function getSystemHealth() {
-  const { data, error } = await supabase.rpc('get_system_health');
+  const { data, error } = await dataClient.rpc('get_system_health');
   if (error) throw error;
   const health = data || {};
   return {
@@ -17,7 +17,7 @@ export async function getSystemHealth() {
 }
 
 export async function getBugLogs(filters = {}) {
-  let query = supabase.from('system_bug_logs').select('*').order('updated_at', { ascending: false }).limit(500);
+  let query = dataClient.from('system_bug_logs').select('*').order('updated_at', { ascending: false }).limit(500);
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
   if (filters.severity && filters.severity !== 'all') query = query.eq('severity', filters.severity);
   if (filters.area) query = query.ilike('area', `%${filters.area}%`);
@@ -30,19 +30,19 @@ export async function getBugLogs(filters = {}) {
 }
 
 export async function createBugLog(payload) {
-  const { data, error } = await supabase.from('system_bug_logs').insert(payload).select().single();
+  const { data, error } = await dataClient.from('system_bug_logs').insert(payload).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateBugLog(id, updates) {
-  const { data, error } = await supabase.from('system_bug_logs').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data, error } = await dataClient.from('system_bug_logs').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function publishSystemAnnouncement(payload) {
-  const { data, error } = await supabase.rpc('publish_system_announcement', {
+  const { data, error } = await dataClient.rpc('publish_system_announcement', {
     p_title: payload.title,
     p_body: payload.body,
     p_category: payload.category,
@@ -53,15 +53,15 @@ export async function publishSystemAnnouncement(payload) {
 }
 
 export async function getSystemAnnouncements() {
-  const { data, error } = await supabase.from('system_announcements').select('*').order('created_at', { ascending: false }).limit(50);
+  const { data, error } = await dataClient.from('system_announcements').select('*').order('created_at', { ascending: false }).limit(50);
   if (error) throw error;
   return data || [];
 }
 
 export async function getSystemProfiles() {
   const [{ data, error }, employeeResult] = await Promise.all([
-    supabase.from('profiles').select('*').order('full_name'),
-    supabase.from('employees').select('code,full_name,department,title,phone,email,branch_id'),
+    dataClient.from('profiles').select('*').order('full_name'),
+    dataClient.from('employees').select('code,full_name,department,title,phone,email,branch_id'),
   ]);
   if (error) throw error;
   const employees = new Map((employeeResult.data || []).map((item) => [String(item.code || '').toLowerCase(), item]));
@@ -81,7 +81,7 @@ export async function getSystemProfiles() {
 }
 
 export async function updateUserProfile(profileId, updates) {
-  const { data, error } = await supabase.rpc('system_update_user_profile', {
+  const { data, error } = await dataClient.rpc('system_update_user_profile', {
     p_user_id: profileId,
     p_full_name: updates.fullName,
     p_email: updates.email,
@@ -96,7 +96,7 @@ export async function updateUserProfile(profileId, updates) {
 
 /** Danh mục bảng/cột mà tài khoản truy vấn chỉ đọc được phép nhìn thấy. */
 export async function getDatabaseCatalog() {
-  const { data, error } = await supabase.rpc('system_database_catalog', {});
+  const { data, error } = await dataClient.rpc('system_database_catalog', {});
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
@@ -107,26 +107,26 @@ export async function getDatabaseCatalog() {
  * bao giờ nhận thông tin kết nối database.
  */
 export async function runDatabaseQuery(sql) {
-  const { data, error } = await supabase.rpc('system_database_query', { p_sql: sql });
+  const { data, error } = await dataClient.rpc('system_database_query', { p_sql: sql });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
 }
 
 export async function getAttendanceAdjustments({ month, search = '', page = 1, pageSize = 20 } = {}) {
   const query = new URLSearchParams({ month, search, page: String(page), pageSize: String(pageSize) });
-  return supabase.request(`/attendance-adjustments?${query}`);
+  return dataClient.request(`/attendance-adjustments?${query}`);
 }
 
 export async function createAttendanceAdjustment(payload) {
-  return supabase.request('/attendance-adjustments', { method: 'POST', body: JSON.stringify(payload) });
+  return dataClient.request('/attendance-adjustments', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function updateAttendanceAdjustment(id, payload) {
-  return supabase.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return dataClient.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
 export async function deleteAttendanceAdjustment(id, reason) {
-  return supabase.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
+  return dataClient.request(`/attendance-adjustments/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
 }
 
 /* Trạng thái tài khoản ĐĂNG NHẬP, khác với trạng thái hồ sơ.
@@ -137,13 +137,13 @@ export async function deleteAttendanceAdjustment(id, reason) {
  * hiện vế đầu nên chuyện đó vô hình.
  */
 export async function getAccountStates() {
-  const { data, error } = await supabase.rpc('system_account_state', {});
+  const { data, error } = await dataClient.rpc('system_account_state', {});
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
 export async function updateUserAccess(userId, role, active) {
-  const { data, error } = await supabase.rpc('system_update_user_access', { p_user_id: userId, p_role: role, p_active: active });
+  const { data, error } = await dataClient.rpc('system_update_user_access', { p_user_id: userId, p_role: role, p_active: active });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
 }
@@ -154,7 +154,7 @@ export async function updateUserAccess(userId, role, active) {
 // bằng mật khẩu cũ. Nếu họ quên hẳn mật khẩu thì mở khoá không giúp gì, và
 // đó là lúc cần đặt lại — một việc khác, có người khác biết.
 export async function unlockAccount(employeeCode) {
-  const { data, error } = await supabase.rpc('system_unlock_account', { p_employee_code: employeeCode });
+  const { data, error } = await dataClient.rpc('system_unlock_account', { p_employee_code: employeeCode });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
 }
@@ -167,38 +167,38 @@ export async function unlockAccount(employeeCode) {
  * Đặt lại xong thì tài khoản được mở khoá luôn và mọi phiên đang mở bị huỷ.
  */
 export async function datLaiMatKhau(employeeCode, password) {
-  return supabase.request('/auth/dat-lai-mat-khau', {
+  return dataClient.request('/auth/dat-lai-mat-khau', {
     method: 'POST', body: JSON.stringify({ employeeCode, password }),
   });
 }
 
 export async function getTechnicalAudit() {
-  const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(60);
+  const { data, error } = await dataClient.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(60);
   if (error) throw error;
   return data || [];
 }
 
 export async function getIntegrationFailures() {
-  const { data, error } = await supabase.from('integration_outbox').select('id,entity_type,entity_id,status,attempts,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(60);
+  const { data, error } = await dataClient.from('integration_outbox').select('id,entity_type,entity_id,status,attempts,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(60);
   if (error) throw error;
   return data || [];
 }
 
 export async function getSystemErrorLogs() {
-  const { data, error } = await supabase.from('system_error_logs').select('*').order('created_at', { ascending: false }).limit(500);
+  const { data, error } = await dataClient.from('system_error_logs').select('*').order('created_at', { ascending: false }).limit(500);
   if (error) throw error;
   return data || [];
 }
 
 export async function resolveSystemError(id, resolved) {
-  const { error } = await supabase.rpc('resolve_system_error', { p_error_id: id, p_resolved: resolved });
+  const { error } = await dataClient.rpc('resolve_system_error', { p_error_id: id, p_resolved: resolved });
   if (error) throw error;
 }
 
 export function subscribeToSystemErrors(callback) {
   let newestId = null;
   return pollingSubscription(async () => {
-    const { data } = await supabase.from('system_error_logs').select('id,updated_at')
+    const { data } = await dataClient.from('system_error_logs').select('id,updated_at')
       .order('updated_at', { ascending: false }).limit(1);
     const newest = data?.[0];
     if (!newestId) { newestId = newest?.id || null; return; }

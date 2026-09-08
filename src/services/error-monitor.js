@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 const sent = new Map();
 const TTL = 60_000;
@@ -22,7 +22,7 @@ export async function reportClientError(error, context = {}, level = 'error') {
   if (sent.has(key) && now - sent.get(key) < TTL) return;
   sent.set(key, now);
   try {
-    await supabase.rpc('report_client_error', {
+    await dataClient.rpc('report_client_error', {
       p_level: level,
       p_message: message,
       p_context: {

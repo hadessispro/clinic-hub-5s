@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapIncidentToUI(db) {
   if (!db) return null;
@@ -32,7 +32,7 @@ export function mapIncidentToDB(ui) {
 
 export async function getIncidents() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('incidents')
       .select('*')
       .order('created_at', { ascending: false });
@@ -48,7 +48,7 @@ export async function getIncidents() {
 export async function createIncident(incident) {
   try {
     const dbData = mapIncidentToDB(incident);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('incidents')
       .insert(dbData)
       .select()
@@ -69,7 +69,7 @@ export async function updateIncident(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('incidents')
       .update(dbData)
       .eq('id', id)
@@ -86,7 +86,7 @@ export async function updateIncident(id, updates) {
 
 export async function deleteIncident(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('incidents')
       .delete()
       .eq('id', id);

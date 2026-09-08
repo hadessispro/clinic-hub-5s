@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 export function mapUniformToUI(db) {
   if (!db) return null;
@@ -32,7 +32,7 @@ export function mapUniformToDB(ui) {
 
 export async function getUniformLogs() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('uniform_logs')
       .select('*')
       .order('issued_at', { ascending: false });
@@ -48,7 +48,7 @@ export async function getUniformLogs() {
 export async function createUniformLog(log) {
   try {
     const dbData = mapUniformToDB(log);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('uniform_logs')
       .insert(dbData)
       .select()
@@ -69,7 +69,7 @@ export async function updateUniformLog(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('uniform_logs')
       .update(dbData)
       .eq('id', id)
@@ -86,7 +86,7 @@ export async function updateUniformLog(id, updates) {
 
 export async function deleteUniformLog(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('uniform_logs')
       .delete()
       .eq('id', id);

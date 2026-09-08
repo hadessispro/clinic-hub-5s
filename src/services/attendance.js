@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 const QUEUE_PREFIX = '5s_attendance_queue_v2';
 
@@ -99,37 +99,9 @@ function saveToOfflineQueue(record, userId) {
 }
 
 async function submitToAttendanceApi(record) {
-  if (supabase.isLocal) {
-    const payload = await supabase.request('/attendance-record', { method: 'POST', body: JSON.stringify(record) });
-    if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
-    return payload.data;
-  }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 20000);
-  try {
-    const response = await fetch('/api/attendance-record', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(record),
-      signal: controller.signal,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.message || payload.error || 'Không thể ghi nhận chấm công.');
-    if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
-    return payload.data;
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      const timeoutError = new Error('Kết nối chấm công quá 20 giây. Dữ liệu sẽ được giữ an toàn và tự đồng bộ lại.');
-      timeoutError.status = 0;
-      throw timeoutError;
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
+  const payload = await dataClient.request('/attendance-record', { method: 'POST', body: JSON.stringify(record) });
+  if (!payload.data) throw new Error('Máy chủ không trả về bản ghi chấm công.');
+  return payload.data;
 }
 
 async function submitCheckIn(record) {
@@ -143,16 +115,13 @@ async function submitCheckOut(record) {
 }
 
 export async function getAttendanceWorkSummary(month, employeeCode = '') {
-  if (!supabase.isLocal) {
-    throw new Error('Bảng công chỉ sử dụng dữ liệu của hệ thống mới.');
-  }
   const params = new URLSearchParams();
   const m = String(month || '').trim();
   if (m) params.set('month', m);
   const emp = String(employeeCode || '').trim();
   if (emp) params.set('employeeCode', emp);
   const q = params.toString();
-  return supabase.request(`/attendance-work${q ? '?' + q : ''}`);
+  return dataClient.request(`/attendance-work${q ? '?' + q : ''}`);
 }
 
 async function submitAttendance(record) {
@@ -191,7 +160,7 @@ export async function clockOut(record, userId) {
 }
 
 export async function getAttendance(filters = {}) {
-  let query = supabase.from('attendance_records').select('*');
+  let query = dataClient.from('attendance_records').select('*');
   if (filters.employee) query = query.eq('employee_code', filters.employee);
   if (filters.date) query = query.eq('work_date', filters.date);
 
@@ -210,7 +179,7 @@ export async function checkTodayAttendance(employeeCode, workDate) {
 export async function syncOfflineAttendance(userId) {
   let activeUserId = userId;
   if (!activeUserId) {
-    const { data } = await supabase.auth.getSession();
+    const { data } = await dataClient.auth.getSession();
     activeUserId = data.session?.user?.id;
   }
   const empty = { synced: 0, rejected: 0, pending: 0 };
@@ -275,7 +244,7 @@ export async function adjustAttendanceRecord({
   const fullNote = `[ĐIỀU CHỈNH QUẢN LÝ: ${reason}] ${note || ''}`.trim();
 
   // 1. Tìm bản ghi chấm công hiện có của ngày này
-  const { data: existingRecords, error: fetchErr } = await supabase
+  const { data: existingRecords, error: fetchErr } = await dataClient
     .from('attendance_records')
     .select('*')
     .eq('employee_code', employeeCode)
@@ -293,7 +262,7 @@ export async function adjustAttendanceRecord({
     const timeStr = checkinTime.length === 5 ? `${checkinTime}:00` : checkinTime;
     const recordedAt = `${workDate}T${timeStr}+07:00`;
     if (existingIn?.id) {
-      await supabase.from('attendance_records').update({
+      await dataClient.from('attendance_records').update({
         recorded_at: recordedAt,
         shift_code: shiftCode,
         branch_id: branchId,
@@ -303,7 +272,7 @@ export async function adjustAttendanceRecord({
       }).eq('id', existingIn.id);
     } else {
       const id = globalThis.crypto?.randomUUID?.() || `adj-in-${Date.now()}`;
-      await supabase.from('attendance_records').insert({
+      await dataClient.from('attendance_records').insert({
         id,
         client_event_id: id,
         employee_code: employeeCode,
@@ -321,7 +290,7 @@ export async function adjustAttendanceRecord({
       });
     }
   } else if (existingIn?.id) {
-    await supabase.from('attendance_records').delete().eq('id', existingIn.id);
+    await dataClient.from('attendance_records').delete().eq('id', existingIn.id);
   }
 
   // 3. Xử lý Giờ Ra (checkout)
@@ -329,7 +298,7 @@ export async function adjustAttendanceRecord({
     const timeStr = checkoutTime.length === 5 ? `${checkoutTime}:00` : checkoutTime;
     const recordedAt = `${workDate}T${timeStr}+07:00`;
     if (existingOut?.id) {
-      await supabase.from('attendance_records').update({
+      await dataClient.from('attendance_records').update({
         recorded_at: recordedAt,
         shift_code: shiftCode,
         branch_id: branchId,
@@ -339,7 +308,7 @@ export async function adjustAttendanceRecord({
       }).eq('id', existingOut.id);
     } else {
       const id = globalThis.crypto?.randomUUID?.() || `adj-out-${Date.now()}`;
-      await supabase.from('attendance_records').insert({
+      await dataClient.from('attendance_records').insert({
         id,
         client_event_id: id,
         employee_code: employeeCode,
@@ -357,18 +326,18 @@ export async function adjustAttendanceRecord({
       });
     }
   } else if (existingOut?.id) {
-    await supabase.from('attendance_records').delete().eq('id', existingOut.id);
+    await dataClient.from('attendance_records').delete().eq('id', existingOut.id);
   }
 
   // 4. Đồng bộ ca làm việc vào schedule_assignments nếu có
   try {
-    const { data: assignments } = await supabase
+    const { data: assignments } = await dataClient
       .from('schedule_assignments')
       .select('*')
       .eq('employee_code', employeeCode)
       .eq('work_date', workDate);
     if (assignments && assignments.length > 0) {
-      await supabase.from('schedule_assignments').update({
+      await dataClient.from('schedule_assignments').update({
         shift_code: shiftCode,
         branch_id: branchId,
         updated_at: new Date().toISOString(),
@@ -391,7 +360,7 @@ export async function adjustAttendanceRecord({
  */
 export async function deleteAttendanceDayRecords(employeeCode, workDate) {
   if (!employeeCode || !workDate) return false;
-  const { data: records } = await supabase
+  const { data: records } = await dataClient
     .from('attendance_records')
     .select('id')
     .eq('employee_code', employeeCode)
@@ -399,7 +368,7 @@ export async function deleteAttendanceDayRecords(employeeCode, workDate) {
 
   if (records && records.length) {
     for (const r of records) {
-      await supabase.from('attendance_records').delete().eq('id', r.id);
+      await dataClient.from('attendance_records').delete().eq('id', r.id);
     }
   }
 

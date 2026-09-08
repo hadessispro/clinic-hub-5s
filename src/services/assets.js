@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 /* ── Assets Mapping ── */
 export function mapAssetToUI(db) {
@@ -61,7 +61,7 @@ export function mapAssetAuditToDB(ui) {
 /* ── Service API ── */
 export async function getAssets() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('assets')
       .select('*')
       .order('code');
@@ -77,7 +77,7 @@ export async function getAssets() {
 export async function createAsset(asset) {
   try {
     const dbData = mapAssetToDB(asset);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('assets')
       .insert(dbData)
       .select()
@@ -98,7 +98,7 @@ export async function updateAsset(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('assets')
       .update(dbData)
       .eq('id', id)
@@ -115,7 +115,7 @@ export async function updateAsset(id, updates) {
 
 export async function deleteAsset(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('assets')
       .delete()
       .eq('id', id);
@@ -130,7 +130,7 @@ export async function deleteAsset(id) {
 
 export async function getAssetAudits() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('asset_audits')
       .select('*')
       .order('created_at', { ascending: false });
@@ -146,7 +146,7 @@ export async function getAssetAudits() {
 export async function createAssetAudit(audit) {
   try {
     const dbData = mapAssetAuditToDB(audit);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('asset_audits')
       .insert(dbData)
       .select()
@@ -167,7 +167,7 @@ export async function updateAssetAudit(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('asset_audits')
       .update(dbData)
       .eq('id', id)

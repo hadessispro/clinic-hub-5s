@@ -72,13 +72,9 @@ services:
       BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-}
       POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
       VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
       # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
@@ -128,137 +124,11 @@ services:
     networks:
       - clinic_internal
 
-  shadow-sync:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    restart: unless-stopped
-    profiles: ["migration"]
-    environment:
-      # Chi cap dung nhung bien ma ma nguon thuc su doc, lay tu
-      # grep process.env trong apps/backend/src. Truoc day cho ca .env.vps vao
-      # bang env_file, nghia la container nay cam luon POSTGRES_PASSWORD, tuc
-      # mat khau superuser. Ai chiem duoc backend la doc duoc so ke toan, du
-      # migration 024 da chan tai khoan cua backend. Bit lo do.
-      APP_JWT_SECRET: ${APP_JWT_SECRET}
-      ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
-      BACKEND_PORT: ${BACKEND_PORT:-4000}
-      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-}
-      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
-      VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
-      VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
-      # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
-      # va revoke, nen de backend chay bang superuser thi buc tuong quanh
-      # schema finance khong con y nghia. Xem migration 024.
-      DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-900}
-    command:
-      - sh
-      - -c
-      - >-
-        while true; do
-          node apps/backend/dist/import.js || true;
-          sleep "$${SYNC_INTERVAL_SECONDS}";
-        done
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    # This service is a recurring worker, not an HTTP server. Disable the
-    # backend image healthcheck so Docker does not report a false failure.
-    healthcheck:
-      disable: true
-    networks:
-      - clinic_internal
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  backup-sync:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    restart: unless-stopped
-    environment:
-      # Chi cap dung nhung bien ma ma nguon thuc su doc, lay tu
-      # grep process.env trong apps/backend/src. Truoc day cho ca .env.vps vao
-      # bang env_file, nghia la container nay cam luon POSTGRES_PASSWORD, tuc
-      # mat khau superuser. Ai chiem duoc backend la doc duoc so ke toan, du
-      # migration 024 da chan tai khoan cua backend. Bit lo do.
-      APP_JWT_SECRET: ${APP_JWT_SECRET}
-      ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
-      BACKEND_PORT: ${BACKEND_PORT:-4000}
-      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-50}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-30}
-      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
-      VPS_BOOTSTRAP_ADMIN_IDENTIFIER: ${VPS_BOOTSTRAP_ADMIN_IDENTIFIER:-}
-      VPS_BOOTSTRAP_ADMIN_PASSWORD: ${VPS_BOOTSTRAP_ADMIN_PASSWORD:-}
-      # Tai khoan van hanh KHONG phai superuser. Superuser bo qua moi grant
-      # va revoke, nen de backend chay bang superuser thi buc tuong quanh
-      # schema finance khong con y nghia. Xem migration 024.
-      DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
-    command: ["node", "apps/backend/dist/backup.js"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      disable: true
-    networks:
-      - clinic_internal
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    restart: unless-stopped
-    profiles: ["legacy"]
-    env_file:
-      - .env.vps
-    expose:
-      - "3000"
-    networks:
-      - clinic_internal
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   web:
     build:
       context: .
       dockerfile: Dockerfile.web
       args:
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
-        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
-        VITE_DATA_BACKEND: ${VITE_DATA_BACKEND:-vps}
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}

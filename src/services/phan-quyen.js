@@ -19,7 +19,7 @@
  * với entity_type riêng.
  */
 
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import {
   BANG_VAI_TRO, MOI_VIEW, VIEW_BAT_BUOC, viewsMacDinh,
 } from '../permissions.js';
@@ -42,7 +42,7 @@ const rong = () => ({ bat: [], tat: [] });
 /** Đọc toàn bộ ghi đè. Hỏng thì trả rỗng — mất ghi đè còn hơn khoá cả app. */
 export async function layGhiDe() {
   try {
-    const { data, error } = await supabase.from(BANG).select('*');
+    const { data, error } = await dataClient.from(BANG).select('*');
     if (error) throw error;
     const vaiTro = {}; const nhanSu = {};
     (data || []).forEach((r) => {
@@ -102,7 +102,7 @@ export async function luuGhiDeVaiTro(vaiTro, dangChon, boi) {
     id: khoaVaiTro(vaiTro), loai: 'vai_tro', khoa: vaiTro,
     ...chenh, sua_boi: boi, sua_luc: new Date().toISOString(),
   };
-  const { error } = await supabase.from(BANG).upsert(ban, { onConflict: 'id' });
+  const { error } = await dataClient.from(BANG).upsert(ban, { onConflict: 'id' });
   if (error) throw new Error(`Không lưu được: ${error.message}`);
   return { ...chenh, khong_con_chenh: !chenh.bat.length && !chenh.tat.length };
 }
@@ -122,7 +122,7 @@ export async function luuGhiDeNhanSu(maNhanSu, vaiTro, dangChon, boi, maCuaToi) 
     vai_tro_luc_luu: vaiTro,
     ...chenh, sua_boi: boi, sua_luc: new Date().toISOString(),
   };
-  const { error } = await supabase.from(BANG).upsert(ban, { onConflict: 'id' });
+  const { error } = await dataClient.from(BANG).upsert(ban, { onConflict: 'id' });
   if (error) throw new Error(`Không lưu được: ${error.message}`);
   return { ...chenh, khong_con_chenh: !chenh.bat.length && !chenh.tat.length };
 }
@@ -130,6 +130,6 @@ export async function luuGhiDeNhanSu(maNhanSu, vaiTro, dangChon, boi, maCuaToi) 
 /** Bỏ mọi chỉnh tay, trả về đúng mặc định của mã nguồn. */
 export async function xoaGhiDe(loai, khoa) {
   const id = loai === 'vai_tro' ? khoaVaiTro(khoa) : khoaNhanSu(khoa);
-  const { error } = await supabase.from(BANG).delete().eq('id', id);
+  const { error } = await dataClient.from(BANG).delete().eq('id', id);
   if (error) throw new Error(`Không xoá được: ${error.message}`);
 }

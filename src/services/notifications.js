@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { store } from '../store.js';
 import { pollingSubscription } from './realtime-fallback.js';
 import { dispatchNotificationPush } from './push-notifications.js';
@@ -12,7 +12,7 @@ export async function getNotifications() {
     const { user } = store.getState();
     if (!user) return [];
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
@@ -33,7 +33,7 @@ export async function getNotifications() {
  */
 export async function markAsRead(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('notifications')
       .update({ read: true })
       .eq('id', id);
@@ -55,7 +55,7 @@ export async function markAllAsRead() {
     const { user } = store.getState();
     if (!user) return false;
 
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user.id)
@@ -82,7 +82,7 @@ export async function markAllAsRead() {
 export async function sendNotification(employeeCode, title, body, type = 'general', linkView = '') {
   try {
     // 1. Resolve employee_code to user UUID from profiles table
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await dataClient
       .from('profiles')
       .select('id')
       .eq('employee_code', employeeCode)
@@ -95,7 +95,7 @@ export async function sendNotification(employeeCode, title, body, type = 'genera
     }
 
     // 2. Insert notification row
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('notifications')
       .insert({
         user_id: profile.id,

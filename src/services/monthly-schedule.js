@@ -1,18 +1,5 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 import { idleSubscription } from './realtime-fallback.js';
-
-async function scheduleRequest(path = '', options = {}) {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error('Phiên đăng nhập đã hết hạn.');
-  const response = await fetch(`/api/monthly-schedule${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {}) },
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || 'Không thể xử lý lịch làm việc.');
-  return result;
-}
 
 function parseWorkflow(request) {
   let meta = {};
@@ -40,16 +27,16 @@ function localScheduleAccessMode(profile) {
 
 async function localMonthlySchedule({ month, branch = 'all', department = 'all' }) {
   const [profileResult, employeeResult, shiftResult, allowedResult, assignmentResult, requestResult] = await Promise.all([
-    supabase.auth.getSession(),
-    supabase.from('employees').select('*').eq('status', 'active').order('full_name'),
-    supabase.from('work_shifts').select('*').eq('active', true).order('start_time'),
-    supabase.from('employee_allowed_shifts').select('*'),
-    supabase.from('schedule_assignments').select('*').gte('work_date', `${month}-01`).lte('work_date', `${month}-31`),
-    supabase.from('schedule_requests').select('*').eq('work_month', month).order('submitted_at', { ascending: false }),
+    dataClient.auth.getSession(),
+    dataClient.from('employees').select('*').eq('status', 'active').order('full_name'),
+    dataClient.from('work_shifts').select('*').eq('active', true).order('start_time'),
+    dataClient.from('employee_allowed_shifts').select('*'),
+    dataClient.from('schedule_assignments').select('*').gte('work_date', `${month}-01`).lte('work_date', `${month}-31`),
+    dataClient.from('schedule_requests').select('*').eq('work_month', month).order('submitted_at', { ascending: false }),
   ]);
   for (const result of [employeeResult, shiftResult, allowedResult, assignmentResult, requestResult]) if (result.error) throw result.error;
   const user = profileResult.data.session?.user;
-  const { data: profiles } = await supabase.from('profiles').select('*').eq('id', user?.id || '').maybeSingle();
+  const { data: profiles } = await dataClient.from('profiles').select('*').eq('id', user?.id || '').maybeSingle();
   const profile = profiles || { id: user?.id, role: user?.role, employee_code: user?.user_metadata?.employee_code,
     branch_id: user?.branch_id, department: user?.department };
   const viewMode = localScheduleAccessMode(profile);
@@ -86,57 +73,48 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
 }
 
 export async function getMonthlySchedule({ month, branch = 'all', department = 'all' }) {
-  if (supabase.isLocal) {
-    const { data } = await supabase.auth.getSession();
-    const user = data.session?.user || {};
-    const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(user.role);
-    const doctor = user.role === 'bac_si' || user.department === 'bs';
-    if (!manager && !doctor) {
-      return supabase.request(`/schedule/doctor-roster?${new URLSearchParams({ month, branch })}`);
-    }
-    return localMonthlySchedule({ month, branch, department });
+  const { data } = await dataClient.auth.getSession();
+  const user = data.session?.user || {};
+  const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(user.role);
+  const doctor = user.role === 'bac_si' || user.department === 'bs';
+  if (!manager && !doctor) {
+    return dataClient.request(`/schedule/doctor-roster?${new URLSearchParams({ month, branch })}`);
   }
-  return scheduleRequest(`?${new URLSearchParams({ month, branch, department })}`);
+  return localMonthlySchedule({ month, branch, department });
 }
 
 export async function saveMonthlySchedule(month, changes) {
-  if (supabase.isLocal) {
-    let saved = 0; let removed = 0;
-    for (const item of changes || []) {
-      const { data: existing, error: findError } = await supabase.from('schedule_assignments').select('*')
-        .eq('employee_code', item.employee).eq('work_date', item.date).maybeSingle();
-      if (findError) throw findError;
-      if (!item.shift) {
-        if (existing) {
-          const { error } = await supabase.from('schedule_assignments').delete().eq('id', existing.id);
-          if (error) throw error;
-          removed += 1;
-        }
-      } else if (existing) {
-        const { error } = await supabase.from('schedule_assignments').update({ shift_code: item.shift, status: 'planned',
-          note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' }).eq('id', existing.id);
+  let saved = 0; let removed = 0;
+  for (const item of changes || []) {
+    const { data: existing, error: findError } = await dataClient.from('schedule_assignments').select('*')
+      .eq('employee_code', item.employee).eq('work_date', item.date).maybeSingle();
+    if (findError) throw findError;
+    if (!item.shift) {
+      if (existing) {
+        const { error } = await dataClient.from('schedule_assignments').delete().eq('id', existing.id);
         if (error) throw error;
-        saved += 1;
-      } else {
-        const { error } = await supabase.from('schedule_assignments').insert({ employee_code: item.employee,
-          work_date: item.date, shift_code: item.shift, status: 'planned', overtime_minutes: 0,
-          early_arrival_minutes: 0, early_leave_minutes: 0, note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' });
-        if (error) throw error;
-        saved += 1;
+        removed += 1;
       }
+    } else if (existing) {
+      const { error } = await dataClient.from('schedule_assignments').update({ shift_code: item.shift, status: 'planned',
+        note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' }).eq('id', existing.id);
+      if (error) throw error;
+      saved += 1;
+    } else {
+      const { error } = await dataClient.from('schedule_assignments').insert({ employee_code: item.employee,
+        work_date: item.date, shift_code: item.shift, status: 'planned', overtime_minutes: 0,
+        early_arrival_minutes: 0, early_leave_minutes: 0, note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' });
+      if (error) throw error;
+      saved += 1;
     }
-    return { saved, removed };
   }
-  return scheduleRequest('', { method: 'POST', body: JSON.stringify({ month, changes }) });
+  return { saved, removed };
 }
 
 export async function updateMonthlyScheduleWorkflow({ month, employee, action, note = '' }) {
-  if (supabase.isLocal) {
-    const { data, error } = await supabase.rpc('monthly_schedule_action', { month, employee, action, note });
-    if (error) throw error;
-    return data;
-  }
-  return scheduleRequest('', { method: 'POST', body: JSON.stringify({ month, employee, action, note }) });
+  const { data, error } = await dataClient.rpc('monthly_schedule_action', { month, employee, action, note });
+  if (error) throw error;
+  return data;
 }
 
 export function subscribeMonthlySchedule(callback) {

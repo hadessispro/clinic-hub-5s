@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 const DB_NAME = 'clinic-hub-attendance';
 const DB_VERSION = 1;
@@ -94,31 +94,18 @@ function blobToBase64(blob) {
 }
 
 export async function uploadAttendanceProof({ clientEventId, blob, capturedAt }) {
-  const { data } = await supabase.auth.getSession();
+  const { data } = await dataClient.auth.getSession();
   const accessToken = data.session?.access_token;
   if (!accessToken) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
 
   const imageBase64 = await blobToBase64(blob);
-  if (supabase.isLocal) {
-    const uploaded = await supabase.request('/files/upload', { method: 'POST',
-      body: JSON.stringify({ name: `${clientEventId}.jpg`, type: 'image/jpeg', data: imageBase64 }) });
-    const { error } = await supabase.from('attendance_records')
-      .update({ proof_url: uploaded.publicUrl, proof_captured_at: capturedAt || new Date().toISOString() })
-      .eq('client_event_id', clientEventId);
-    if (error) throw error;
-    return { proofUrl: uploaded.publicUrl };
-  }
-  const response = await fetch('/api/attendance-proof', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ clientEventId, capturedAt, mimeType: 'image/jpeg', imageBase64 }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Không thể lưu ảnh chấm công.');
-  return payload;
+  const uploaded = await dataClient.request('/files/upload', { method: 'POST',
+    body: JSON.stringify({ name: `${clientEventId}.jpg`, type: 'image/jpeg', data: imageBase64 }) });
+  const { error } = await dataClient.from('attendance_records')
+    .update({ proof_url: uploaded.publicUrl, proof_captured_at: capturedAt || new Date().toISOString() })
+    .eq('client_event_id', clientEventId);
+  if (error) throw error;
+  return { proofUrl: uploaded.publicUrl };
 }
 
 export async function syncPendingProofs(userId) {

@@ -1,12 +1,8 @@
-import { supabase } from '../supabase.js';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+import { dataClient } from '../data-client.js';
 
 export async function getProfiles() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
@@ -21,7 +17,7 @@ export async function getProfiles() {
 
 export async function createProfile(profile) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('profiles')
       .insert(profile)
       .select()
@@ -37,7 +33,7 @@ export async function createProfile(profile) {
 
 export async function updateProfile(id, updates) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('profiles')
       .update(updates)
       .eq('id', id)
@@ -54,7 +50,7 @@ export async function updateProfile(id, updates) {
 
 export async function deleteProfile(id) {
   try {
-    const { error } = await supabase
+    const { error } = await dataClient
       .from('profiles')
       .delete()
       .eq('id', id);
@@ -67,36 +63,10 @@ export async function deleteProfile(id) {
   }
 }
 
-/**
- * Creates a new Supabase Auth user without changing the current session.
- * Uses a temp client with persistSession: false.
- */
-export async function createSupabaseUser(email, password) {
-  if (supabase.isLocal) {
-    return { id: crypto.randomUUID(), email, local_password: password };
-  }
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Thiếu cấu hình VITE_SUPABASE_URL hoặc VITE_SUPABASE_ANON_KEY.');
-  }
-
-  const tempClient = createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    }
-  });
-
-  const { data, error } = await tempClient.auth.signUp({
-    email,
-    password
-  });
-
-  if (error) throw error;
-  return data.user;
+export async function createSystemUser(email, password) {
+  return { id: crypto.randomUUID(), email, local_password: password };
 }
 
-export async function provisionLocalUser(profileId, email, password) {
-  if (!supabase.isLocal) return null;
-  return supabase.request('/auth/provision', { method: 'POST', body: JSON.stringify({ profileId, email, password }) });
+export async function provisionSystemUser(profileId, email, password) {
+  return dataClient.request('/auth/provision', { method: 'POST', body: JSON.stringify({ profileId, email, password }) });
 }

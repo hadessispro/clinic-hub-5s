@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js';
+import { dataClient } from '../data-client.js';
 
 /* ── Inventory Items Mapping ── */
 export function mapItemToUI(db) {
@@ -64,7 +64,7 @@ export function mapPurchaseRequestToDB(ui) {
 /* ── Service API ── */
 export async function getInventoryItems() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('inventory_items')
       .select('*')
       .order('name');
@@ -84,7 +84,7 @@ export async function updateInventoryItem(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('inventory_items')
       .update(dbData)
       .eq('id', id)
@@ -102,7 +102,7 @@ export async function updateInventoryItem(id, updates) {
 export async function createInventoryItem(item) {
   try {
     const dbData = mapItemToDB(item);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('inventory_items')
       .insert(dbData)
       .select()
@@ -118,7 +118,7 @@ export async function createInventoryItem(item) {
 
 export async function getPurchaseRequests() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('purchase_requests')
       .select('*')
       .order('created_at', { ascending: false });
@@ -134,7 +134,7 @@ export async function getPurchaseRequests() {
 export async function createPurchaseRequest(request) {
   try {
     const dbData = mapPurchaseRequestToDB(request);
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('purchase_requests')
       .insert(dbData)
       .select()
@@ -155,7 +155,7 @@ export async function updatePurchaseRequest(id, updates) {
       if (dbData[key] === undefined) delete dbData[key];
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await dataClient
       .from('purchase_requests')
       .update(dbData)
       .eq('id', id)

@@ -83,10 +83,12 @@ PHAM_VI=(
   "apps/finance/public/fonts/*|finance"
   "apps/finance/package.json|finance"
   "apps/finance/Dockerfile|finance"
-  "apps/backend/src/*.ts|backend,backup-sync"
-  "apps/backend/package.json|backend,backup-sync"
+  "apps/backend/src/*.ts|backend"
+  "apps/backend/package.json|backend"
   "infra/postgres/migrations/*.sql|migrate"
   "deploy/Caddyfile|web"
+  "Dockerfile.backend|backend"
+  "Dockerfile.web|web"
   "docker-compose.yml|"
   "src/*.js|web"
   "src/**/*.js|web"
@@ -106,9 +108,25 @@ PHAM_VI=(
   "package.json|web"
   "pnpm-lock.yaml|web"
   "pnpm-workspace.yaml|web"
-  # Công cụ nhập dữ liệu chấm công từ app cũ. Không dựng lại dịch vụ; chỉ
-  # được chạy thủ công sau khi dry-run và đối chiếu số dòng với Sheet.
-  "scripts/import-legacy-attendance-sheet.mjs|"
+)
+
+# Cac tep runtime cu phai duoc go bo tren VPS khi ma nguon da xoa chung.
+# Danh sach nay co dinh va cu the; khong dung glob de tranh xoa nham du lieu.
+XOA_KHI_TRIEN_KHAI=(
+  "src/supabase.js"
+  "src/services/sheet-sync.js"
+  "apps/backend/src/backup.ts"
+  "apps/backend/src/import.ts"
+  "api/_lib/push.js"
+  "api/admin-it-setup.js"
+  "api/archive-2months.js"
+  "api/attendance-proof.js"
+  "api/attendance-record.js"
+  "api/monthly-schedule.js"
+  "api/pilot-schedule.js"
+  "api/push-dispatch.js"
+  "api/push-subscription.js"
+  "api/sheet-sync.js"
 )
 
 xanh()  { printf '\033[36m%s\033[0m\n' "$*"; }
@@ -444,6 +462,12 @@ lenh_chay() {
           mkdir -p \".deploy-backups/$MA_LAN/files/\$(dirname \"\$f\")\"
           cp -p \"\$f\" \".deploy-backups/$MA_LAN/files/\$f\"
         done" < "$TAM/doi.txt"
+  printf '%s\n' "${XOA_KHI_TRIEN_KHAI[@]}" \
+    | ssh_ "cd $VPS_DIR && while read -r f; do
+        [ -f \"\$f\" ] || continue
+        mkdir -p \".deploy-backups/$MA_LAN/files/\$(dirname \"\$f\")\"
+        cp -p \"\$f\" \".deploy-backups/$MA_LAN/files/\$f\"
+      done"
   echo "$dv" | ssh_ "cat > $VPS_DIR/.deploy-backups/$MA_LAN/dich-vu.txt"
   echo "  ✓ đã lưu $(wc -l < "$TAM/doi.txt") file vào .deploy-backups/$MA_LAN"
 
@@ -478,6 +502,10 @@ lenh_chay() {
       do_ "Chép thiếu file. Khôi phục."; khoi_phuc "$MA_LAN"; exit 1
     fi
   fi
+
+  printf '%s\n' "${XOA_KHI_TRIEN_KHAI[@]}" \
+    | ssh_ "cd $VPS_DIR && while read -r f; do [ -n \"\$f\" ] && rm -f -- \"\$f\"; done"
+  echo "  ✓ da go cac tep runtime cloud cu tren VPS"
 
   # Xác nhận từng file đã tới nơi đúng như bản cục bộ. Chép xong mà không kiểm
   # thì vẫn là tin vào may mắn.
@@ -555,7 +583,7 @@ lenh_chay() {
   if [ -n "${dv// /}" ]; then
     ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps build $dv < /dev/null 2>&1 | grep -iE 'error|Built' | sed 's/^/    /'" \
       || { do_ "Dựng ảnh hỏng. Khôi phục."; khoi_phuc "$MA_LAN"; exit 1; }
-    ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps up -d --force-recreate $dv < /dev/null 2>&1 | tail -3 | sed 's/^/    /'"
+    ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps up -d --force-recreate --remove-orphans $dv < /dev/null 2>&1 | tail -5 | sed 's/^/    /'"
     # Chờ tới khi container THẬT SỰ khoẻ, không chờ một khoảng cố định.
     #
     # Trước đây là "sleep 18". Con số đó đúng phần lớn thời gian, nhưng lần
