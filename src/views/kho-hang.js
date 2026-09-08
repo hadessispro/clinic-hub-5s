@@ -1152,10 +1152,10 @@ function veXuatVatTuCa() {
         <i class="ri-medicine-bottle-line" style="font-size: 3.5rem; color: #a9cec6; display: block; margin-bottom: 12px;"></i>
         <h4 style="margin: 0 0 8px; color: #14332f; font-size: 1.1rem;">Chưa có ca điều trị nào được chọn</h4>
         <p style="color: #75908b; max-width: 440px; margin: 0 auto 18px; font-size: .9rem; line-height: 1.5;">
-          Danh sách ca điều trị hiện đang trống. Nhấn nút <b>+ Tiếp nhận ca</b> bên dưới hoặc ở cột bên trái để tạo ca điều trị cho khách hàng và thực hiện cấp phát vật tư.
+          Danh sách ca điều trị hiện đang trống. Nhấn nút <b>Tiếp nhận ca</b> bên dưới hoặc ở cột bên trái để tạo ca điều trị cho khách hàng và thực hiện cấp phát vật tư.
         </p>
         <button type="button" class="primary-button" id="btnThemCaDieuTriRong" style="display: inline-flex; margin: 0 auto;">
-          <i class="ri-user-add-line"></i> + Tiếp nhận ca điều trị mới
+          <i class="ri-user-add-line"></i> Tiếp nhận ca điều trị mới
         </button>
       </div>
     `;
@@ -1309,7 +1309,7 @@ function veXuatVatTuCa() {
         </div>
         <div class="kh-header-nut">
           <button type="button" class="primary-button kh-nho" id="btnThemCaDieuTri">
-            <i class="ri-add-line"></i> + Tiếp nhận ca
+            <i class="ri-add-line"></i> Tiếp nhận ca
           </button>
         </div>
       </header>
@@ -1340,7 +1340,7 @@ function veXuatVatTuCa() {
                 <p style="margin: 0 0 6px; color: #14332f; font-weight: 600; font-size: .88rem;">Chưa có ca điều trị</p>
                 <small style="color: #75908b; display: block; margin-bottom: 12px;">Dữ liệu mẫu đã được làm sạch.</small>
                 <button type="button" class="secondary-button kh-nho" id="btnThemCaTrai" style="width: 100%;">
-                  <i class="ri-add-line"></i> + Tiếp nhận ca
+                  <i class="ri-add-line"></i> Tiếp nhận ca
                 </button>
               </div>
             `}
