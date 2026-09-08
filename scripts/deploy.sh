@@ -94,6 +94,10 @@ PHAM_VI=(
   "src/*.js|web"
   "src/**/*.js|web"
   "public/*|web"
+  # public/* không đi xuyên qua thư mục con. Thiếu dòng này từng khiến
+  # /public/images/app-icon-192.png không được chép lên VPS dù source đã đổi
+  # sang logo ngôi sao 5S; production vì thế vẫn hiện ảnh phòng khám cũ.
+  "public/**/*|web"
   "index.html|web"
   "app.css|web"
   "vite.config.js|web"

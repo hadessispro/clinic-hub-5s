@@ -86,6 +86,11 @@ jobs:
         # Giữ một nguồn chính thức và kiểm cả thứ tự nạp stylesheet.
         run: node scripts/kiem-layout-cham-cong.mjs
 
+      - name: Logo 5S và asset lồng thư mục được triển khai
+        # Source từng có đúng logo nhưng deploy bỏ qua public/images, làm VPS
+        # tiếp tục phục vụ ảnh cũ. Kiểm cả nội dung logo lẫn phạm vi deploy.
+        run: node scripts/kiem-thuong-hieu.mjs
+
 
       - name: Miễn chi nhánh phải khớp giữa hai tầng
         # Frontend và backend giữ hai danh sách riêng cho cùng một luật.

@@ -78,3 +78,9 @@ Giữ màn **Chấm công / Bảng công** ổn định khi nhiều công cụ h
 - Sao lưu database: `/opt/backups/pg-20260908-065435.sql.gz`.
 - Health check: `/healthz` 200, PWA 200, API 401 đúng kỳ vọng, Két kế toán 200.
 - Số lượng các bảng được pipeline đối chiếu không thay đổi trước/sau deploy.
+
+## Sửa logo 5S sau khi đối chiếu production
+
+- `public/images/app-icon-192.png` và `apps/finance/public/logo-5s.png` có cùng SHA-256; source đã chứa đúng logo ngôi sao 5S.
+- Production vẫn hiện ảnh phòng khám vì whitelist deploy chỉ có `public/*`, không lấy file trong `public/images/`.
+- Bổ sung `public/**/*|web`, thêm phiên bản cache vào URL logo của sidebar/màn đăng nhập và thêm `scripts/kiem-thuong-hieu.mjs` vào CI.
