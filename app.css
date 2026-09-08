@@ -6351,6 +6351,10 @@ body.dialog-open {
 .monthly-schedule-hero { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 20px; border: 1px solid #a9d6cc; border-radius: 16px; background: linear-gradient(135deg, #e7f6f2 0%, #fbfdfc 72%); }
 .monthly-schedule-hero h3, .monthly-schedule-hero p { margin: 0; }
 .monthly-schedule-hero > div:first-child { display: grid; gap: 5px; }
+.doctor-roster-branch-lock { min-width: 190px; display: grid; gap: 5px; align-content: center; padding: 10px 12px; border: 1px solid #a9d6cc; border-radius: 12px; background: #f6fcfa; }
+.doctor-roster-branch-lock span { color: #5f7671; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.doctor-roster-branch-lock strong { color: #096b61; font-size: .91rem; }
+.doctor-roster-branch-lock i { margin-right: 4px; }
 .schedule-flow { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .schedule-flow span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid #cbded8; border-radius: 999px; background: #fff; color: #536761; font-size: .78rem; font-weight: 700; }
 .schedule-flow span b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #dff2ed; color: var(--teal-dark); }
