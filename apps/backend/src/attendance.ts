@@ -251,13 +251,19 @@ export class AttendanceController {
         `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
          and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 limit 1`, [user.employeeCode, local.date],
       );
+      const allowed = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='employee_allowed_shifts' and deleted_at is null and lower(payload->>'employee_code')=lower($1)`, [user.employeeCode],
+      );
       const assignedShift = String(assignment.rows[0]?.payload.shift_code || '');
       if (assignedShift) {
+        if (shiftCode && shiftCode !== assignedShift) throw new BadRequestException('Ca làm hôm nay phải theo lịch đã được phân công.');
         shiftCode = assignedShift;
       } else {
-        // Không nhận ca do trình duyệt gửi lên. Khi chưa có lịch riêng, dùng
-        // ca mặc định đã gán cho đúng hồ sơ nhân viên.
-        shiftCode = String(employee.shift_code || 'clinic-0800');
+        const allowedCodes = [employee.shift_code, ...allowed.rows.map((row) => row.payload.shift_code)]
+          .map((code) => String(code || ''))
+          .filter(Boolean);
+        if (!shiftCode) shiftCode = String(employee.shift_code || 'clinic-0800');
+        else if (!allowedCodes.includes(shiftCode)) throw new BadRequestException('Ca đã chọn không thuộc nhóm ca hợp lệ của chức danh này.');
       }
     }
     const shift = await this.one('work_shifts', 'code', shiftCode);

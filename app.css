@@ -6188,20 +6188,17 @@ body.dialog-open {
     grid-row: 1;
   }
 }
-.attendance-assigned-shift-note {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin: 0 0 14px;
-  padding: 11px 12px;
-  border: 1px solid #cfe1da;
-  border-radius: 12px;
-  color: #355a52;
-  background: #f4faf7;
-  font-size: .84rem;
-  line-height: 1.45;
-}
-.attendance-assigned-shift-note i { color: #087f78; font-size: 1.05rem; }
+.attendance-shift-picker { margin: 0 0 14px; padding: 13px; border: 1px solid #d8e5e0; border-radius: 13px; background: #f8fbfa; }
+.attendance-shift-picker legend { padding: 0 6px; color: #254b43; font-weight: 800; }
+.attendance-shift-picker > p { margin: 0 0 10px; color: var(--muted, #65736f); font-size: .84rem; }
+.attendance-shift-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
+.attendance-shift-option { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px 11px; border: 1px solid #d6e3de; border-radius: 10px; background: #fff; cursor: pointer; }
+.attendance-shift-option:has(input:checked) { border-color: #168f88; background: #ecf8f5; box-shadow: 0 0 0 2px rgba(22,143,136,.08); }
+.attendance-shift-option.is-disabled { cursor: not-allowed; opacity: .58; background: #f2f5f4; }
+.attendance-shift-option input { width: 17px; height: 17px; margin: 0; accent-color: #087f78; flex: 0 0 auto; }
+.attendance-shift-option span { display: grid; min-width: 0; gap: 2px; }
+.attendance-shift-option strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .84rem; }
+.attendance-shift-option small { color: var(--muted, #65736f); font-size: .76rem; }
 .pilot-schedule-page { display: grid; gap: 14px; }
 .pilot-banner { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 18px 20px; border: 1px solid #8bcfc5; border-radius: 14px; background: linear-gradient(135deg, #e6f7f3, #f8fcfb); }
 .pilot-banner h3, .pilot-banner p { margin: 0; }

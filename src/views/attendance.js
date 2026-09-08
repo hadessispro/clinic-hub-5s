@@ -349,8 +349,13 @@ function renderHistory(records, employees, ops) {
   `;
 }
 
-function renderCheckinDialog(employee, shift, settings) {
-  const assignedShift = shift || { name: 'Ca theo lịch phân công', start: '—', end: '—' };
+function renderCheckinDialog(employee, shift, settings, allowedShifts, assignedShiftId = '') {
+  const shiftChoices = allowedShifts.length ? allowedShifts : [shift].filter(Boolean);
+  const assignmentLocked = Boolean(assignedShiftId);
+  const selectedShift = shiftChoices.find((item) => item.id === assignedShiftId)
+    || shiftChoices.find((item) => item.id === shift?.id)
+    || shiftChoices[0]
+    || { name: 'Chưa có ca', start: '—', end: '—' };
   return `
     <div class="checkin-dialog" id="checkinDialog" hidden>
       <button class="checkin-dialog-backdrop" type="button" data-action="close-checkin" aria-label="Đóng"></button>
@@ -366,7 +371,7 @@ function renderCheckinDialog(employee, shift, settings) {
 
         <div class="checkin-summary-grid">
           <div><span>Nhân viên</span><strong>${escapeHTML(employee.name)}</strong></div>
-          <div><span>Ca làm đã phân</span><strong id="selectedShiftSummary">${escapeHTML(assignedShift.name || 'Ca làm')} · ${escapeHTML(assignedShift.start || '—')}–${escapeHTML(assignedShift.end || '—')}</strong></div>
+          <div><span>Ca làm hôm nay</span><strong id="selectedShiftSummary">${escapeHTML(selectedShift.name || 'Ca làm')} · ${escapeHTML(selectedShift.start || '—')}–${escapeHTML(selectedShift.end || '—')}</strong></div>
           <label class="full attendance-branch-choice">
             <span>Chi nhánh làm việc hôm nay</span>
             <select id="attendanceBranchChoice">
@@ -376,10 +381,18 @@ function renderCheckinDialog(employee, shift, settings) {
           </label>
         </div>
 
-        <div class="attendance-assigned-shift-note">
-          <i class="ri-calendar-check-line" aria-hidden="true"></i>
-          <span>Ca được hệ thống tự lấy từ lịch đã phân theo ngày và chức danh. Nhân viên không chọn hoặc thay đổi ca khi chấm công.</span>
-        </div>
+        <fieldset class="attendance-shift-picker">
+          <legend>Chọn ca làm việc hôm nay</legend>
+          <p>${assignmentLocked ? 'Ca đã được lịch phân công khóa cố định cho hôm nay.' : 'Chỉ hiển thị các ca hợp lệ theo đúng chức danh của bạn.'}</p>
+          <div class="attendance-shift-options">
+            ${shiftChoices.map((item) => `
+              <label class="attendance-shift-option ${assignmentLocked && item.id !== assignedShiftId ? 'is-disabled' : ''}">
+                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${(assignmentLocked ? item.id === assignedShiftId : item.id === selectedShift.id) ? 'checked' : ''} ${assignmentLocked && item.id !== assignedShiftId ? 'disabled' : ''}>
+                <span><strong>${escapeHTML(item.name || 'Ca làm')}</strong><small>${escapeHTML(item.start)}–${escapeHTML(item.end)}</small></span>
+              </label>
+            `).join('')}
+          </div>
+        </fieldset>
 
         <div class="gps-confirm-state is-loading" id="gpsConfirmState" aria-live="polite">
           <div class="gps-radar" aria-hidden="true">
@@ -640,8 +653,8 @@ export async function renderView(state) {
 
   context = {
     state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
-    // Ca không do nhân viên tự chọn: ưu tiên lịch ngày, sau đó là ca mặc định
-    // đúng vị trí trong hồ sơ nhân sự.
+    // Nhân viên chọn trong các ca hợp lệ của vị trí; nếu đã được phân lịch,
+    // danh sách chỉ còn đúng ca đã phân.
     selectedShift: shift || allowedShifts[0] || null,
     selectedBranchId: settings.branchId,
   };
@@ -718,7 +731,7 @@ export async function renderView(state) {
           ${renderHistory(filteredRecords, scopedEmployees, false)}
         </section>
       </div>
-      ${renderCheckinDialog(employee, shift, settings)}
+      ${renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '')}
     `;
   }
 
@@ -820,7 +833,7 @@ export async function renderView(state) {
       `}
     </div>
     ${renderAdjustmentDialog(scopedEmployees, canEditWorkday)}
-    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings) : ''}
+    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
   `;
 }
 
@@ -1610,6 +1623,11 @@ export function initView() {
       captureLocation();
       return;
     }
+    if (event.target.name !== 'attendanceShift') return;
+    context.selectedShift = context.allowedShifts.find((item) => item.id === event.target.value) || null;
+    const summary = document.getElementById('selectedShiftSummary');
+    if (summary && context.selectedShift) summary.textContent = `${context.selectedShift.name} · ${context.selectedShift.start}–${context.selectedShift.end}`;
+    updateConfirmAvailability();
   });
   dialog?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeDialog();
