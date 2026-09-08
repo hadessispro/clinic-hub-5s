@@ -205,6 +205,12 @@ async function bootstrap() {
       // User is authenticated
       hideLogin();
       document.body.dataset.role = role;
+      // Quản trị viên thao tác nhiều bảng dữ liệu: luôn khởi đầu bằng sidebar
+      // đầy đủ trên desktop, không bị kẹt lại ở rail thu gọn của phiên trước.
+      if (['admin', 'hr', 'admin_it', 'superadmin'].includes(role) && window.innerWidth > 760) {
+        setSidebarCollapsed(false);
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+      }
       const activeBranchId = getEffectiveBranchId(authInfo.profile);
       setActiveBranch(activeBranchId);
       store.updateSettings(branchSettings());

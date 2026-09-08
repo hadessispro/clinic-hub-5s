@@ -194,11 +194,11 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
     context.workRows = filtered;
     context.targetEmployee = targetEmployee;
   }
-  return `<section class="attendance-work-panel">
+  return `<section class="attendance-work-panel${canEdit ? ' is-admin-work-summary' : ''}">
     <div class="section-title attendance-work-heading">
       <div><p class="eyebrow">Bảng công việc</p><h3>${employeeTitle}</h3><span class="subtle">Tính từ ca làm và chấm công đã xác nhận</span></div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal" style="font-size:0.85rem;padding:6px 14px;">+ Bổ sung / Sửa công</button>` : ''}
+      <div class="attendance-work-actions">
+        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-edit-2-line"></i> Điều chỉnh công</button>` : ''}
         <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
       </div>
     </div>
@@ -737,12 +737,12 @@ export async function renderView(state) {
 
   // Giao diện Quản trị & Điều chỉnh ngày công dành cho Quản lý / Admin / HR
   return `
-    <div class="attendance-page">
+    <div class="attendance-page attendance-admin-workspace">
       <header class="attendance-page-header">
         <div>
-          <p class="eyebrow">${canEditWorkday ? 'Quản trị hệ thống · Đối chiếu &amp; Sửa công' : 'Theo dõi vận hành · Bảng ngày công'}</p>
-          <h3>Bảng ngày công &amp; Chấm công hệ thống</h3>
-          <p>${canEditWorkday ? 'Kiểm tra dữ liệu vào/ra thực tế, tính toán ngày công tự động và điều chỉnh bổ sung công cho nhân viên.' : 'Theo dõi dữ liệu vào/ra thực tế và chi tiết ngày công của nhân sự.'}</p>
+          <p class="eyebrow">${canEditWorkday ? 'QUẢN TRỊ CHẤM CÔNG' : 'THEO DÕI VẬN HÀNH'}</p>
+          <h3>${canEditWorkday ? 'Quản lý công nhân sự' : 'Bảng công & chấm công'}</h3>
+          <p>${canEditWorkday ? 'Tra cứu, đối chiếu và bổ sung công từ một bảng dữ liệu thống nhất.' : 'Theo dõi dữ liệu vào/ra thực tế và chi tiết ngày công của nhân sự.'}</p>
         </div>
         <div class="attendance-header-actions">
           ${canEditWorkday ? `
@@ -765,9 +765,9 @@ export async function renderView(state) {
         </div>
       ` : ''}
 
-      ${state.employeeCode ? renderTodayCard(todayCheckin, todayCheckout, shift, employee) : ''}
+      ${!canEditWorkday && state.employeeCode ? renderTodayCard(todayCheckin, todayCheckout, shift, employee) : ''}
 
-      <div class="attendance-admin-toolbar">
+      <section class="attendance-admin-toolbar" aria-label="Bộ lọc bảng công">
         <label class="employee-select-box">
           <span>${canEditWorkday ? 'Chọn nhân sự kiểm tra &amp; sửa công:' : 'Chọn nhân sự theo dõi công:'}</span>
           <select id="attendanceSelectedEmployee">
@@ -801,7 +801,7 @@ export async function renderView(state) {
             <option value="attendance_anomaly" ${attendanceWorkStatusFilter === 'attendance_anomaly' ? 'selected' : ''}>Dữ liệu bất thường</option>
           </select>
         </label>
-      </div>
+      </section>
 
       <div class="attendance-nav-tabs">
         <button type="button" class="attendance-tab-btn ${attendanceActiveTab === 'workdays' ? 'is-active' : ''}" data-action="switch-tab" data-tab="workdays">
