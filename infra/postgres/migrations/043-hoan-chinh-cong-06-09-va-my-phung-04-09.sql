@@ -206,6 +206,28 @@ declare
   incomplete_work integer;
   phung_checkin text;
 begin
+  -- Database mới không có bảng chấm công nguồn ngày 06/09 hoặc lượt bù của
+  -- Mỹ Phụng. Khi đó phần insert ở trên là idempotent nhưng không có dữ liệu
+  -- đầu vào để đối chiếu; chỉ chạy chốt kiểm trên database production có
+  -- ít nhất một lượt check-in nguồn. Điều này giúp migration tái tạo được từ
+  -- volume trống mà vẫn giữ kiểm tra nghiêm ngặt trên dữ liệu thực tế.
+  if not exists (
+    select 1 from app.records
+    where entity_type = 'attendance_records'
+      and deleted_at is null
+      and payload->>'work_date' = '2026-09-06'
+      and payload->>'record_type' = 'checkin'
+  ) and not exists (
+    select 1 from app.records
+    where entity_type = 'attendance_records'
+      and deleted_at is null
+      and payload->>'employee_code' = 'PVC013'
+      and payload->>'work_date' = '2026-09-04'
+      and payload->>'record_type' = 'checkin'
+  ) then
+    return;
+  end if;
+
   select count(*)
   into missing_checkout
   from expected_checkout_20260906 e
