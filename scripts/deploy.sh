@@ -113,6 +113,7 @@ PHAM_VI=(
 # Cac tep runtime cu phai duoc go bo tren VPS khi ma nguon da xoa chung.
 # Danh sach nay co dinh va cu the; khong dung glob de tranh xoa nham du lieu.
 XOA_KHI_TRIEN_KHAI=(
+  "public/images/nha-khoa-5s-wall.jpg"
   "src/supabase.js"
   "src/services/sheet-sync.js"
   "apps/backend/src/backup.ts"
