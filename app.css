@@ -6188,22 +6188,20 @@ body.dialog-open {
     grid-row: 1;
   }
 }
-.attendance-shift-picker {
-  margin: 0;
-  padding: 14px;
-  border: 1px solid var(--line, #d6e2de);
-  border-radius: 14px;
-  background: #f8fbfa;
+.attendance-assigned-shift-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 14px;
+  padding: 11px 12px;
+  border: 1px solid #cfe1da;
+  border-radius: 12px;
+  color: #355a52;
+  background: #f4faf7;
+  font-size: .84rem;
+  line-height: 1.45;
 }
-.attendance-shift-picker legend { padding: 0 6px; font-weight: 800; }
-.attendance-shift-picker > p { margin: 0 0 10px; color: var(--muted, #65736f); font-size: .86rem; }
-.attendance-shift-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
-.attendance-shift-option { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid #cfdeda; border-radius: 12px; background: #fff; cursor: pointer; }
-.attendance-shift-option:has(input:checked) { border-color: #168f88; background: #e9f8f5; box-shadow: 0 0 0 2px rgba(22,143,136,.1); }
-.attendance-shift-option.is-disabled { cursor: not-allowed; opacity: .48; background: #f4f7f6; }
-.attendance-shift-option input { width: 18px; height: 18px; accent-color: #087f78; }
-.attendance-shift-option span { display: grid; gap: 2px; }
-.attendance-shift-option small { color: var(--muted, #65736f); }
+.attendance-assigned-shift-note i { color: #087f78; font-size: 1.05rem; }
 .pilot-schedule-page { display: grid; gap: 14px; }
 .pilot-banner { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 18px 20px; border: 1px solid #8bcfc5; border-radius: 14px; background: linear-gradient(135deg, #e6f7f3, #f8fcfb); }
 .pilot-banner h3, .pilot-banner p { margin: 0; }
@@ -14072,6 +14070,91 @@ section.panel {
   .attendance-adjust-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Chấm công Admin IT: form nghiệp vụ gọn, nhất quán, không dùng dãy box màu ── */
+.attendance-adjustment-dashboard { gap: 18px; }
+.attendance-adjustment-metrics {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #dce7e2;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(28, 65, 58, .045);
+}
+.attendance-adjustment-metrics article {
+  position: relative;
+  min-width: 0;
+  padding: 16px 18px 15px 20px;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.attendance-adjustment-metrics article + article { border-left: 1px solid #e4ece8 !important; }
+.attendance-adjustment-metrics article::before {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 0;
+  width: 3px;
+  border-radius: 99px;
+  content: '';
+  background: #167b73;
+}
+.attendance-adjustment-metrics article:first-child::before { background: #2463c7; }
+.attendance-adjustment-metrics article:nth-child(3)::before { background: #7650c8; }
+.attendance-adjustment-metrics article:last-child::before { background: #c17a13; }
+.attendance-adjustment-metrics strong { font-size: 1.72rem; letter-spacing: -.04em; }
+.attendance-adjustment-metrics span { font-weight: 750; }
+.attendance-adjustment-editor,
+.attendance-adjustment-list {
+  padding: 20px;
+  border: 1px solid #dce7e2;
+  border-top: 1px solid #dce7e2;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(28, 65, 58, .045);
+}
+.attendance-adjustment-editor .section-title,
+.attendance-adjustment-list .section-title {
+  margin-bottom: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5ece8;
+}
+.attendance-adjustment-form { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.attendance-adjustment-form label > span,
+.attendance-adjustment-filters label > span { color: #506761; font-size: .74rem; letter-spacing: .035em; text-transform: uppercase; }
+.attendance-adjustment-form input,
+.attendance-adjustment-form select,
+.attendance-adjustment-filters input,
+.attendance-adjustment-filters select { min-height: 42px; border-radius: 9px; background: #fbfcfc; }
+.attendance-adjustment-form .span-2 { grid-column: span 3; }
+.attendance-adjustment-actions { justify-content: flex-end; padding-top: 2px; }
+.attendance-adjustment-filters { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.attendance-adjustment-list .table-wrap { margin-top: 14px; border: 1px solid #e0e9e5; border-radius: 12px; }
+.attendance-adjustment-list table thead { background: #f3f7f5; }
+.attendance-adjustment-list table th { color: #58706a; font-size: .73rem; letter-spacing: .025em; }
+.attendance-adjustment-list table td { vertical-align: middle; }
+.attendance-adjustment-list table tbody tr:hover { background: #f8fbfa; }
+.attendance-adjustment-row-actions { justify-content: flex-end; min-width: 150px; }
+.attendance-adjustment-pagination { justify-content: space-between; border-top: 1px solid #e5ece8; margin-top: 14px; padding-top: 14px; }
+
+/* Trạng thái thu gọn là lựa chọn desktop; không được bóp thanh điều hướng mobile. */
+@media (max-width: 760px) {
+  .app-shell.sidebar-collapsed { display: block !important; grid-template-columns: 1fr !important; }
+  .app-shell.sidebar-collapsed .sidebar { width: auto !important; min-width: 0 !important; max-width: none !important; }
+  .attendance-adjustment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attendance-adjustment-metrics article:nth-child(odd) { border-left: 0 !important; }
+  .attendance-adjustment-metrics article:nth-child(n + 3) { border-top: 1px solid #e4ece8 !important; }
+  .attendance-adjustment-editor,
+  .attendance-adjustment-list { padding: 15px; border-radius: 14px; }
+  .attendance-adjustment-form,
+  .attendance-adjustment-filters { grid-template-columns: minmax(0, 1fr); }
+  .attendance-adjustment-form .span-2 { grid-column: auto; }
+  .attendance-adjustment-actions { display: grid; }
+  .attendance-adjustment-actions button { width: 100%; }
+  .attendance-adjustment-pagination { justify-content: center; }
 }
 
 

@@ -349,9 +349,8 @@ function renderHistory(records, employees, ops) {
   `;
 }
 
-function renderCheckinDialog(employee, shift, settings, allowedShifts) {
-  const shiftChoices = allowedShifts.length ? allowedShifts : [shift].filter(Boolean);
-  const requiresChoice = shiftChoices.length > 1;
+function renderCheckinDialog(employee, shift, settings) {
+  const assignedShift = shift || { name: 'Ca theo lịch phân công', start: '—', end: '—' };
   return `
     <div class="checkin-dialog" id="checkinDialog" hidden>
       <button class="checkin-dialog-backdrop" type="button" data-action="close-checkin" aria-label="Đóng"></button>
@@ -367,7 +366,7 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
 
         <div class="checkin-summary-grid">
           <div><span>Nhân viên</span><strong>${escapeHTML(employee.name)}</strong></div>
-          <div><span>Ca làm</span><strong id="selectedShiftSummary">${requiresChoice ? 'Chọn ca bên dưới' : `${escapeHTML(shiftChoices[0]?.start || '08:00')}–${escapeHTML(shiftChoices[0]?.end || '17:00')}`}</strong></div>
+          <div><span>Ca làm đã phân</span><strong id="selectedShiftSummary">${escapeHTML(assignedShift.name || 'Ca làm')} · ${escapeHTML(assignedShift.start || '—')}–${escapeHTML(assignedShift.end || '—')}</strong></div>
           <label class="full attendance-branch-choice">
             <span>Chi nhánh làm việc hôm nay</span>
             <select id="attendanceBranchChoice">
@@ -377,18 +376,10 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts) {
           </label>
         </div>
 
-        <fieldset class="attendance-shift-picker">
-          <legend>Chọn đúng ca làm việc hôm nay</legend>
-          <p>Ca đã chọn sẽ được database kiểm tra lại trước khi ghi nhận.</p>
-          <div class="attendance-shift-options">
-            ${shiftChoices.map((item, index) => `
-              <label class="attendance-shift-option">
-                <input type="radio" name="attendanceShift" value="${escapeHTML(item.id)}" ${!requiresChoice && index === 0 ? 'checked' : ''}>
-                <span><strong>${escapeHTML(item.name || 'Ca làm')}</strong><small>${escapeHTML(item.start)}–${escapeHTML(item.end)}</small></span>
-              </label>
-            `).join('')}
-          </div>
-        </fieldset>
+        <div class="attendance-assigned-shift-note">
+          <i class="ri-calendar-check-line" aria-hidden="true"></i>
+          <span>Ca được hệ thống tự lấy từ lịch đã phân theo ngày và chức danh. Nhân viên không chọn hoặc thay đổi ca khi chấm công.</span>
+        </div>
 
         <div class="gps-confirm-state is-loading" id="gpsConfirmState" aria-live="polite">
           <div class="gps-radar" aria-hidden="true">
@@ -649,7 +640,9 @@ export async function renderView(state) {
 
   context = {
     state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
-    selectedShift: allowedShifts.length === 1 ? allowedShifts[0] : null,
+    // Ca không do nhân viên tự chọn: ưu tiên lịch ngày, sau đó là ca mặc định
+    // đúng vị trí trong hồ sơ nhân sự.
+    selectedShift: shift || allowedShifts[0] || null,
     selectedBranchId: settings.branchId,
   };
   lastLocation = null;
@@ -725,7 +718,7 @@ export async function renderView(state) {
           ${renderHistory(filteredRecords, scopedEmployees, false)}
         </section>
       </div>
-      ${renderCheckinDialog(employee, shift, settings, allowedShifts)}
+      ${renderCheckinDialog(employee, shift, settings)}
     `;
   }
 
@@ -827,7 +820,7 @@ export async function renderView(state) {
       `}
     </div>
     ${renderAdjustmentDialog(scopedEmployees, canEditWorkday)}
-    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts) : ''}
+    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings) : ''}
   `;
 }
 
@@ -1617,11 +1610,6 @@ export function initView() {
       captureLocation();
       return;
     }
-    if (event.target.name !== 'attendanceShift') return;
-    context.selectedShift = context.allowedShifts.find((item) => item.id === event.target.value) || null;
-    const summary = document.getElementById('selectedShiftSummary');
-    if (summary && context.selectedShift) summary.textContent = `${context.selectedShift.start}–${context.selectedShift.end}`;
-    updateConfirmAvailability();
   });
   dialog?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeDialog();
