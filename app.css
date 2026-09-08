@@ -4986,11 +4986,15 @@ body.dialog-open {
 }
 
 .attendance-work-summary-line b {
-  overflow: hidden;
+  grid-column: 2;
+  min-width: 0;
+  overflow: visible;
   color: var(--metric-text, var(--teal-dark));
   font-size: 1.05rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .attendance-work-summary-line .is-workday { --metric-accent: #2563eb; --metric-soft: #eff6ff; --metric-text: #1d4ed8; }
