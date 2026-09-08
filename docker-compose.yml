@@ -69,8 +69,6 @@ services:
       APP_JWT_SECRET: ${APP_JWT_SECRET}
       ATTENDANCE_GRACE_MINUTES: ${ATTENDANCE_GRACE_MINUTES:-}
       BACKEND_PORT: ${BACKEND_PORT:-4000}
-      BACKUP_BATCH_SIZE: ${BACKUP_BATCH_SIZE:-}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-}
       POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
@@ -82,7 +80,7 @@ services:
       # schema finance khong con y nghia. Xem migration 024.
       DATABASE_URL: postgresql://${BACKEND_DB_USER:-${POSTGRES_USER}}:${BACKEND_DB_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      APP_VERSION: ${APP_VERSION:-shadow}
+      APP_VERSION: ${APP_VERSION:-postgres}
       UPLOAD_DIR: /data/uploads
     depends_on:
       postgres:
