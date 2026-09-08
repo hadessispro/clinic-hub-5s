@@ -282,7 +282,11 @@ jobs:
         # xóa ở bản mới không lấy lại được gì.
         run: |
           cam='[.]env$|[.]env[.]|[.]pem$|[.]key$|id_rsa|id_ed25519|[.]sql[.]gz$|[.]dump$|[.]xlsx?$|[.]xlsm$'
-          giu='[.]env[.]example$'
+          # File BM03 là biểu mẫu xuất trống đã được rà soát và chủ động
+          # phát hành cùng tính năng Kho; đây không phải file nhập/xuất dữ
+          # liệu người dùng. Chỉ miễn đúng một đường dẫn, không miễn cả thư
+          # mục templates hay mọi file Excel.
+          giu='[.]env[.]example$|^public/templates/mau_de_xuat_mua_hang_bm03[.]xlsx$'
           lot=$(git log --all --pretty=format: --name-only --diff-filter=A \
                 | sort -u | grep -E "$cam" | grep -vE "$giu" || true)
           if [ -n "$lot" ]; then

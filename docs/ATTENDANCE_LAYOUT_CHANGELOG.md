@@ -9,6 +9,9 @@ Giữ màn **Chấm công / Bảng công** ổn định khi nhiều công cụ h
 - Commit được báo trước: `105cb21` (`fix(kho-hang): remove redundant plus sign next to add icons`).
 - Phạm vi thực tế của commit này chỉ là `src/views/kho-hang.js`: bỏ ký tự `+` bị lặp bên cạnh icon thêm mới.
 - Commit `105cb21` **không sửa** `app.css`, `src/views/attendance.js`, dữ liệu chấm công hoặc database.
+- Nhánh `main` mới còn có `0401eb9`, là commit đồng bộ VPS đã thêm nhiều CSS và xử lý chấm công vào `app.css`/`src/views/attendance.js`; đây mới là nguồn giao nhau phải giữ khi gộp nhánh.
+- Các commit `bf41952`, `b7653cd`, `813f39e`, `5075669`, `ebc454f` sau đó tập trung vào Kho, deploy và fallback backend; không được nhập nguyên nhánh vào phần chấm công nếu chưa rà lại yêu cầu loại bỏ Supabase.
+- `ebc454f` thêm biểu mẫu cố định `public/templates/mau_de_xuat_mua_hang_bm03.xlsx`. CI chỉ miễn đúng file mẫu này khỏi luật cấm file Excel; các file Excel khác vẫn bị chặn.
 - Lỗi ghi đè layout Chấm công đến từ chính việc có nhiều khối CSS cùng điều khiển một selector trong `app.css`: khối `Workspace quản lý công`, style chung của `attendance-work-summary-line`, và khối `ADMIN ATTENDANCE WORKSPACE V2`.
 
 ## Thay đổi đã thực hiện
