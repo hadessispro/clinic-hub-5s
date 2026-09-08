@@ -31,18 +31,25 @@ type OutboxRow = {
 const databaseUrl = process.env.DATABASE_URL;
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!databaseUrl || !supabaseUrl || !supabaseKey) throw new Error('Missing PostgreSQL or Supabase backup configuration');
 
-const postgres = new Pool({ connectionString: databaseUrl, max: 2 });
-const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
-const intervalMs = Math.max(5_000, Number(process.env.BACKUP_INTERVAL_SECONDS || 30) * 1_000);
-const batchSize = Math.min(200, Math.max(1, Number(process.env.BACKUP_BATCH_SIZE || 50)));
+if (!databaseUrl || !supabaseUrl || !supabaseKey) {
+  console.warn('[backup-sync] Missing databaseUrl or Supabase configuration. Standing by (idle) to avoid restart loop.');
+  setInterval(() => {}, 86400 * 1000);
+} else {
+  runBackupWorker(databaseUrl, supabaseUrl, supabaseKey);
+}
 
-/** Quá số này mà lỗi tạm thời vẫn chưa hết thì coi như vĩnh viễn. */
-const MAX_ATTEMPTS = Math.max(3, Number(process.env.BACKUP_MAX_ATTEMPTS || 12));
+function runBackupWorker(databaseUrl: string, supabaseUrl: string, supabaseKey: string) {
+  const postgres = new Pool({ connectionString: databaseUrl, max: 2 });
+  const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const intervalMs = Math.max(5_000, Number(process.env.BACKUP_INTERVAL_SECONDS || 30) * 1_000);
+  const batchSize = Math.min(200, Math.max(1, Number(process.env.BACKUP_BATCH_SIZE || 50)));
 
-/** Bao nhiêu vòng thì in một lần tóm tắt sức khỏe hàng đợi. */
-const HEALTH_EVERY = Math.max(1, Number(process.env.BACKUP_HEALTH_EVERY || 20));
+  /** Quá số này mà lỗi tạm thời vẫn chưa hết thì coi như vĩnh viễn. */
+  const MAX_ATTEMPTS = Math.max(3, Number(process.env.BACKUP_MAX_ATTEMPTS || 12));
+
+  /** Bao nhiêu vòng thì in một lần tóm tắt sức khỏe hàng đợi. */
+  const HEALTH_EVERY = Math.max(1, Number(process.env.BACKUP_HEALTH_EVERY || 20));
 
 // Chấm công từ tháng 09/2026 trở đi thuộc hoàn toàn về PostgreSQL trên VPS.
 // Các bảng này không được đẩy ngược sang Supabase; migration 040 chặn ngay ở
@@ -203,4 +210,5 @@ async function main() {
   }
 }
 
-main().finally(() => postgres.end());
+  main().finally(() => postgres.end());
+}
