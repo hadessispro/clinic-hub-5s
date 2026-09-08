@@ -263,7 +263,7 @@ kiem_tra_suc_khoe() {
   if [ "$ma" = "200" ]; then luc "  ✓ Két kế toán $ma"; else do_ "  ✗ Két kế toán $ma"; loi=1; fi
 
   local khong_khoe
-  khong_khoe="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps ps --format '{{.Service}} {{.State}} {{.Status}}' | grep -vE 'running' || true")"
+  khong_khoe="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps ps --format '{{.Service}} {{.State}} {{.Status}}' 2>/dev/null | grep -vE 'running|level=warning|Defaulting to a blank string' || true")"
   if [ -z "$khong_khoe" ]; then
     luc "  ✓ mọi container đang chạy"
   else
@@ -360,7 +360,7 @@ lenh_kiem_tra() {
 dem_migration_da_ap() {
     ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
         sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
-        < /dev/null" 2>/dev/null | tr -d '[:space:]'
+        < /dev/null 2>/dev/null" 2>/dev/null | grep -E '^[0-9]+$' | tr -d '[:space:]'
   }
 
 lenh_chay() {
@@ -514,9 +514,7 @@ lenh_chay() {
   # thành công. Cả hai lần đều báo "không có migration nào" rồi đi tiếp.
   local tren_dia da_ap
   tren_dia="$(ls infra/postgres/migrations/*.sql 2>/dev/null | wc -l | tr -d '[:space:]')"
-  da_ap="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
-      sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
-      < /dev/null" 2>/dev/null | tr -d '[:space:]')"
+  da_ap="$(dem_migration_da_ap)"
   echo "    trên đĩa $tren_dia · đã áp ${da_ap:-?}"
 
   if [ -n "$da_ap" ] && [ "$tren_dia" -gt "$da_ap" ]; then
@@ -527,9 +525,7 @@ lenh_chay() {
       || { do_ "Migration hỏng. Database đã sao lưu ở $file_sl."; khoi_phuc "$MA_LAN"; exit 1; }
 
     local sau
-    sau="$(ssh_ "cd $VPS_DIR && docker compose --env-file .env.vps exec -T postgres \
-        sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select count(*) from app.schema_migrations\"' \
-        < /dev/null" 2>/dev/null | tr -d '[:space:]')"
+    sau="$(dem_migration_da_ap)"
     echo "    sau khi chạy: đã áp $sau trên $tren_dia"
     if [ "${sau:-0}" != "$tren_dia" ]; then
       do_ "Vẫn còn migration chưa áp sau khi chạy. Khôi phục."
