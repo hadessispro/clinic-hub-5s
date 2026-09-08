@@ -14512,6 +14512,29 @@ section.panel {
     box-shadow: var(--mobile-shadow);
   }
 
+  .attendance-admin-workspace .attendance-page-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: start !important;
+    gap: 12px !important;
+    padding-inline: 2px !important;
+  }
+  .attendance-admin-workspace .attendance-page-header > div:first-child { width: 100%; }
+  .attendance-admin-workspace .attendance-page-header h3 {
+    font-size: 1.38rem !important;
+    line-height: 1.12;
+  }
+  .attendance-admin-workspace .attendance-header-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px !important;
+    width: 100%;
+  }
+  .attendance-admin-workspace .attendance-header-actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
   .view-stack { gap: 12px !important; }
   .view-header {
     align-items: flex-start;
