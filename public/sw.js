@@ -1,7 +1,7 @@
 // Replaced with a unique value by Vite for every production build. This makes
 // an installed PWA activate the new shell instead of mixing old and new chunks.
 const CACHE_NAME = 'clinic-hub-vps-core-__BUILD_VERSION__';
-const APP_SHELL = ['/', '/manifest.json', '/favicon.png', '/apple-touch-icon.png', '/images/app-icon-192.png', '/images/app-icon-512.png', '/images/nha-khoa-5s-wall.jpg'];
+const APP_SHELL = ['/', '/manifest.json', '/favicon.png', '/apple-touch-icon.png', '/images/app-icon-192.png', '/images/app-icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

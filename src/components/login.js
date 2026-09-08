@@ -25,7 +25,7 @@ export function showLogin() {
     loginContainer.innerHTML = `
       <section class="login-card" aria-labelledby="loginTitle">
         <div class="login-brand">
-          <img src="/images/nha-khoa-5s-wall.jpg" alt="Không gian Nha Khoa 5S" class="login-photo" />
+          <img src="/images/app-icon-192.png" alt="Logo Nha Khoa 5S" class="login-logo" />
           <div class="login-brand-overlay">
             <span class="login-branch-badge">Hai chi nhánh PVC & LVT</span>
             <h1 id="loginTitle">Chấm công 5S</h1>

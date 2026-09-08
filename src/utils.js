@@ -182,8 +182,8 @@ export function downloadText(filename, content, mime = 'text/plain') {
 
 /**
  * Chấm công chỉ còn hai trạng thái, và cả hai đều là xác nhận chứ không phải
- * phán xét. Trễ muộn được đối chiếu ở bước đồng bộ Google Sheet, nơi có đủ
- * lịch làm việc thật để so, chứ không đoán từ ca mặc định.
+ * phán xét. Trễ muộn được đối chiếu trực tiếp với ca làm trong PostgreSQL,
+ * không đoán từ ca mặc định.
  *
  * Vẫn giữ nhãn "Ngoài bán kính" vì đó không phải phán xét mà là sự thật đo
  * được: bản ghi đó bị hệ thống từ chối ngay tại chỗ.

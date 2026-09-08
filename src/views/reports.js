@@ -33,7 +33,7 @@ export async function renderView(state) {
   cachedTasks = tasks;
 
   const attendanceByStatus = countBy(attendance, "status");
-  // Chấm công chỉ còn hai loại. Trễ muộn đối chiếu ở bước Google Sheet.
+  // Chấm công chỉ còn hai loại. Trễ muộn đối chiếu với ca làm trong PostgreSQL.
   const attendanceByType = countBy(attendance, "record_type");
   const taskByDept = DEPARTMENTS.map((dept) => {
     const deptTasks = tasks.filter((task) => task.department === dept.id);

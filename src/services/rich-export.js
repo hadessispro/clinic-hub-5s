@@ -18,7 +18,7 @@ export async function exportRichAnalyticsReport() {
 
   // Calculate Key Metrics
   // Chấm công chỉ còn hai loại: vào ca và ra ca. Việc đối chiếu trễ muộn
-  // chuyển sang bước đồng bộ Google Sheet, nơi có đủ lịch làm việc thật.
+  // dùng ca làm việc thật đang lưu trong PostgreSQL.
   const totalCheckins = attendance.length;
   const soVaoCa = attendance.filter(a => a.record_type !== 'checkout').length;
   const soRaCa = attendance.filter(a => a.record_type === 'checkout').length;

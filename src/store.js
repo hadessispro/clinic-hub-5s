@@ -23,8 +23,6 @@ class Store {
       },
       settings: {
         ...branchSettings(),
-        googleGasUrl: '',
-        gasLastSync: '',
         revenueTarget: 1200000000,
         monthlyPayrollCycle: 'Chốt công ngày 25 hằng tháng, duyệt lương cuối tháng.',
         managerNote: 'Ưu tiên vận hành: chấm công GPS đúng bán kính, task phải có người chịu trách nhiệm, nghỉ phép cần duyệt trước ca, các phòng MKT/NS/KT/DVKH/BS/Phụ tá/Bảo vệ/Lao công đều dùng chung một luồng theo dõi.',

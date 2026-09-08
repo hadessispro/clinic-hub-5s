@@ -1,6 +1,5 @@
 import { signOut } from '../auth.js';
 import { getEmployees } from '../services/employees.js';
-import { saveSettings } from '../services/reports.js';
 import { ROLE_PROFILES } from '../constants.js';
 import { escapeHTML, downloadText, departmentName } from '../utils.js';
 import { pill, statusPill } from '../components/shared.js';
@@ -263,21 +262,20 @@ export async function renderView(state) {
     <div class="grid cols-2" style="margin-top:14px">
       <section class="panel">
         <div class="section-title">
-          <h3>Đồng bộ Google qua GAS</h3>
-          ${pill("Webhook linh hoạt")}
+          <h3>Nguồn dữ liệu vận hành</h3>
+          ${pill("PostgreSQL nội bộ")}
         </div>
-        <form class="form-grid" data-form="gas-settings" id="gasForm">
-          <div class="form-field full">
-            <label for="gasUrl">Google Apps Script Web App URL</label>
-            <input id="gasUrl" name="googleGasUrl" value="${escapeHTML(settings.googleGasUrl || "")}" placeholder="https://script.google.com/macros/s/..." />
-          </div>
-          <div class="form-field full">
-            <button class="primary-button" type="submit"><span>✓</span>Lưu GAS URL</button>
-          </div>
-        </form>
-        <div class="request-actions">
-          <span class="subtle">Dùng để đẩy công, lương, KPI sang Google Sheet khi cấu hình endpoint GAS.</span>
-          <button class="secondary-button" type="button" id="simulateGasBtn"><span>∞</span>Test sync</button>
+        <div class="grid">
+          <article class="mini-card">
+            <strong>Database VPS</strong>
+            <span>Chấm công, lịch làm, đơn từ và bảng công được đọc trực tiếp từ PostgreSQL.</span>
+            ${statusPill("Đang sử dụng", "good")}
+          </article>
+          <article class="mini-card">
+            <strong>Không đồng bộ bảng tính</strong>
+            <span>Không gửi dữ liệu chấm công sang Google Sheet hoặc dịch vụ cloud trung gian.</span>
+            ${statusPill("Đã ngắt", "neutral")}
+          </article>
         </div>
       </section>
 
@@ -288,8 +286,8 @@ export async function renderView(state) {
         </div>
         <div class="grid">
           <article class="mini-card">
-            <strong>Cloud snapshot</strong>
-            <span>Đồng bộ hóa dữ liệu trạng thái snap trên đám mây.</span>
+            <strong>Sao lưu PostgreSQL</strong>
+            <span>Bản sao dữ liệu được lưu trên hạ tầng VPS theo quy trình vận hành.</span>
             ${statusPill("Hoạt động", "good")}
           </article>
           <article class="mini-card">
@@ -317,40 +315,6 @@ export function initView() {
         console.error('[Integrations View] Sign out failed:', err);
         showToast("Lỗi khi đăng xuất.", true);
       }
-    });
-  }
-
-  const gasForm = document.getElementById("gasForm");
-  if (gasForm) {
-    gasForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const formData = new FormData(gasForm);
-      const data = Object.fromEntries(formData.entries());
-      const state = store.getState();
-
-      const newSettings = {
-        ...state.settings,
-        googleGasUrl: data.googleGasUrl.trim()
-      };
-
-      try {
-        await saveSettings(newSettings, state.user?.id);
-        store.updateSettings(newSettings);
-        showToast("Đã lưu Google Apps Script URL.");
-      } catch (err) {
-        console.error('[Integrations View] Save GAS URL failed:', err);
-        showToast("Lỗi khi lưu cấu hình.", true);
-      }
-    });
-  }
-
-  const simulateGasBtn = document.getElementById("simulateGasBtn");
-  if (simulateGasBtn) {
-    simulateGasBtn.addEventListener("click", () => {
-      showToast("Đang kết nối thử nghiệm tới GAS...");
-      setTimeout(() => {
-        showToast("Đồng bộ hoàn thành. Kết nối tới GAS ổn định.");
-      }, 1000);
     });
   }
 

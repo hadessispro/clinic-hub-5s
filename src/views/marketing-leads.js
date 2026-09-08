@@ -293,7 +293,7 @@ export async function renderView(state) {
       <div class="marketing-pipeline-header">
         <div class="marketing-pipeline-heading">
           <h3 style="margin:0; font-size:1.1rem; font-weight:700;">Tổng quan Lead Marketing & Tiến độ Telesale (${leads.length})</h3>
-          <span style="font-size:0.8rem; color:#64748b;">Kéo thả thẻ Kanban hoặc chuyển chế độ Bảng tính Google Sheets</span>
+          <span style="font-size:0.8rem; color:#64748b;">Kéo thả thẻ Kanban hoặc chuyển sang bảng dữ liệu</span>
         </div>
         
         <div class="marketing-pipeline-actions">
@@ -303,7 +303,7 @@ export async function renderView(state) {
               <i class="ri-layout-column-line"></i> Pipeline Kanban
             </button>
             <button type="button" id="viewModeTable" class="view-switch-btn ${activeViewMode === 'table' ? 'active' : ''}" style="padding:5px 12px; font-size:0.8rem; font-weight:600; border:0; border-radius:6px; cursor:pointer; background:${activeViewMode === 'table' ? '#ffffff' : 'transparent'}; color:${activeViewMode === 'table' ? '#0f172a' : '#64748b'}; box-shadow:${activeViewMode === 'table' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'};">
-              <i class="ri-table-line"></i> Google Sheets / Bảng
+              <i class="ri-table-line"></i> Bảng dữ liệu
             </button>
           </div>
 

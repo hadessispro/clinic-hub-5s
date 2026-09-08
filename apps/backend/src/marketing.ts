@@ -1327,8 +1327,8 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (type === 'checkin' && eventTime > seconds(shift.end_time)) throw new BadRequestException('Ca đã quá giờ kết thúc và không còn nhận check-in.');
     // Chấm công PG cũng chỉ còn hai việc: xác nhận vào ca và xác nhận ra ca.
     // Xem giải thích đầy đủ ở đầu hàm classify cũ trong attendance.ts.
-    // Giờ chấm và ca làm vẫn ghi đủ, việc đối chiếu trễ muộn chuyển sang bước
-    // đồng bộ Google Sheet.
+    // Giờ chấm và ca làm vẫn ghi đủ; việc đối chiếu trễ muộn dùng dữ liệu
+    // ca làm đã lưu trong PostgreSQL.
     const status = 'valid';
     const result = await this.infrastructure.postgres.query(
       `insert into marketing.pg_attendance(assignment_id,pg_code,record_type,latitude,longitude,accuracy_m,distance_m,status,recorded_at,captured_at,captured_offline,client_event_id,synced_at)
