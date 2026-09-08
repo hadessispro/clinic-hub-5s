@@ -151,8 +151,12 @@ luc()   { printf '\033[32m%s\033[0m\n' "$*"; }
 thu_lai_() {
   local i ma out
   for i in 1 2 3 4 5; do
-    out=$("$@" 2>&1); ma=$?
-    if [ "$ma" = 0 ]; then printf '%s' "$out"; return 0; fi
+    if out=$("$@" 2>&1); then
+      printf '%s' "$out"
+      return 0
+    else
+      ma=$?
+    fi
     case "$ma:$out" in
       255:*"Connection reset"*|255:*"Connection timed out"*|255:*"Connection closed"*|      255:*"Broken pipe"*|255:*"kex_exchange_identification"*)
         [ "$i" = 5 ] && break
