@@ -27,10 +27,19 @@ let vpsChangeSub = null;
 let marketingSub = null;
 let deferredRealtimeRefresh = false;
 let authTransitionId = 0;
-// Sidebar is permanently open and aligned with Finance Vault (Két Kế Toán) layout
-try {
-  localStorage.removeItem('clinic-hub-sidebar-collapsed');
-} catch {}
+const SIDEBAR_COLLAPSED_KEY = 'clinic-hub-sidebar-collapsed';
+
+function setSidebarCollapsed(collapsed) {
+  const appShell = document.querySelector('.app-shell');
+  const toggle = document.getElementById('sidebarCollapseToggle');
+  if (!appShell) return;
+  appShell.classList.toggle('sidebar-collapsed', collapsed);
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.setAttribute('aria-label', collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng');
+    toggle.title = collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng';
+  }
+}
 
 function hasBlockingInteraction() {
   const active = document.activeElement;
@@ -135,7 +144,16 @@ window.addEventListener('offline', () => {
 async function bootstrap() {
   console.log('[Clinic Hub] Bootstrapping application...');
 
-  document.querySelector('.app-shell')?.classList.remove('sidebar-collapsed');
+  const savedSidebarState = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+  if (savedSidebarState === 'true') {
+    setSidebarCollapsed(true);
+  }
+  document.getElementById('sidebarCollapseToggle')?.addEventListener('click', () => {
+    const appShell = document.querySelector('.app-shell');
+    const isCollapsed = !appShell?.classList.contains('sidebar-collapsed');
+    setSidebarCollapsed(isCollapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed));
+  });
 
   // Hide the Reset Demo button from index.html (as we are completely moving to Supabase Auth)
   const resetDemoBtn = document.getElementById('resetDemoBtn');

@@ -580,7 +580,7 @@ export async function renderView(state) {
       : (scopedEmployees[0]?.id || '');
   }
 
-  const targetEmployeeCode = ops ? attendanceAdminSelectedEmployee : state.employeeCode;
+  const targetEmployeeCode = canEditWorkday ? attendanceAdminSelectedEmployee : state.employeeCode;
   const targetEmployee = scopedEmployees.find((item) => item.id === targetEmployeeCode) || employeeFallback;
 
   const workSummary = (navigator.onLine && targetEmployeeCode)
@@ -624,10 +624,10 @@ export async function renderView(state) {
   }, true);
 
   const scopedEmployeeCodes = new Set(scopedEmployees.map((item) => item.id));
-  const scopedRecords = state.role === 'leader'
-    ? records.filter((record) => scopedEmployeeCodes.has(record.employee))
-    : records;
-  const filteredRecords = ops ? scopedRecords.filter((record) => {
+  const scopedRecords = canEditWorkday
+    ? (state.role === 'leader' ? records.filter((record) => scopedEmployeeCodes.has(record.employee)) : records)
+    : records.filter((record) => record.employee === state.employeeCode);
+  const filteredRecords = canEditWorkday ? scopedRecords.filter((record) => {
     const recordEmployee = scopedEmployees.find((item) => item.id === record.employee);
     if (attendanceDepartmentFilter !== 'all' && recordEmployee?.department !== attendanceDepartmentFilter) return false;
     if (attendanceBranchFilter !== 'all' && record.branchId !== attendanceBranchFilter) return false;
@@ -643,12 +643,12 @@ export async function renderView(state) {
       record.status,
     ].join(' '), attendanceSearch, attendanceSearchMode);
   }) : scopedRecords;
-  const historyTitle = state.role === 'leader'
-    ? `Chấm công bộ phận ${departmentName(state.department)}`
-    : (ops ? 'Chấm công toàn hệ thống' : 'Chấm công của tôi');
+  const historyTitle = canEditWorkday
+    ? 'Chấm công toàn hệ thống'
+    : (state.role === 'leader' ? `Chấm công bộ phận ${departmentName(state.department)}` : 'Chấm công của tôi');
 
   context = {
-    state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops,
+    state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
     selectedShift: allowedShifts.length === 1 ? allowedShifts[0] : null,
     selectedBranchId: settings.branchId,
   };
@@ -656,14 +656,14 @@ export async function renderView(state) {
   capturedPhoto = null;
   currentEventId = null;
 
-  if (!state.employeeCode && !ops) {
+  if (!state.employeeCode && !canEditWorkday) {
     return `<section class="panel attendance-account-error"><h3>Tài khoản chưa liên kết nhân viên</h3><p>Quản trị viên cần gán mã nhân viên cho tài khoản này trước khi chấm công.</p></section>`;
   }
 
   const mapUrl = `https://www.google.com/maps?q=${settings.latitude},${settings.longitude}`;
   const pendingCount = offlineQueue.length + pendingProofs.length;
 
-  if (!ops) {
+  if (!canEditWorkday) {
     return `
       <div class="attendance-page">
         <header class="attendance-page-header">

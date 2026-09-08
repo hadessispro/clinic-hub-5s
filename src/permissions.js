@@ -14,7 +14,7 @@ const ROLE_VIEWS = {
   // mọi phụ tá đều duyệt được đơn nghỉ của nhau.
   phu_ta: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   phu_ta_truong: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave', 'reports', 'integrations', 'pg-workflow', 'pg-attendance', 'hoa-hong', 'luong-pg', 'le-tan', 'so-benh-an'],
+  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
