@@ -23,6 +23,8 @@ import {
   taoDonHang, taoDonTuDeXuat, taoPhieuXuat, tenChiNhanhKho, tenNhaCungCap, tenNguoi,
   themAnhHoaDon, themBangGia, themHoaDon, themNhaCungCap, themVatTu, thongKeKho,
   xoaAnhHoaDon, xuatKho, xuatCsvDeXuat, xuatCsvVatTu,
+  layDanhSachDeXuat, layChiTietDeXuat, taoPhieuDeXuat, capNhatPhieuDeXuat, xoaPhieuDeXuat,
+  goiYHangThieu, soSanhGiaNhaCungCap, taoDonHangTuPhieu, xuatExcelDeXuatBM03,
 } from '../services/kho-hang.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -64,6 +66,17 @@ let dongVatTuCa = [];
 let caBacSiChon = '';
 let caKhoXuatChon = 'pvc_tong_quat';
 let caGhiChuChon = '';
+
+/* Quản lý Đề xuất mua hàng BM03 & Supply Chain */
+let dsPhieuDeXuat = [];
+let phieuDeXuatHienTaiId = null;
+let phieuDeXuatHienTai = null;
+let dxNganhHangFilter = 'all';
+let dxTimKiemVatTu = '';
+let hienDrawerHangThieu = false;
+let dsGoiYHangThieu = [];
+let goiYChonMap = {};
+let modalSoSanhGia = null; // { vat_tu, quotes, dongIndex? }
 
 /* MỘT biến cho ngăn kéo, không phải mỗi loại chi tiết một biến. */
 let nganMo = null;   // { loai: 'vat_tu' | 'don', id, so_sanh?, can? }
@@ -938,93 +951,422 @@ function veFormPhieu() {
   </div>`;
 }
 
-/* ── Tab: Đề xuất mua hàng ────────────────────────────────────────────── */
+/* ── Tab: Đề xuất mua hàng chuẩn BM03 & Quy trình Supply Chain ───────── */
 
 function veDeXuat() {
-  if (!deXuat) return '';
-  if (!deXuat.nhom.length && !deXuat.thieu_gia.length) {
+  const phieu = phieuDeXuatHienTai;
+  if (!phieu) {
     return `<section class="panel">
-      <header class="section-title kh-header"><h3>Đề xuất mua hàng</h3></header>
-      <p class="empty-state">Không có mặt hàng nào dưới định mức. Chưa cần đặt gì.</p>
+      <header class="section-title kh-header">
+        <h3>Đề xuất mua hàng</h3>
+        <button type="button" class="primary-button" id="btnTaoPhieuMoi">
+          <i class="ri-add-line"></i> Tạo phiếu đề xuất mới
+        </button>
+      </header>
+      <p class="empty-state">Chưa có phiếu đề xuất mua hàng nào cho kho này. Nhấn Tạo phiếu mới để bắt đầu.</p>
     </section>`;
   }
 
-  return `<section class="panel">
-    <header class="section-title kh-header">
-      <h3>Đề xuất mua hàng</h3>
-      <span class="pill">${deXuat.so_mat_hang} mặt hàng · ${deXuat.nhom.length} đơn
-        · tổng ${tien(deXuat.tong_tien)}</span>
-      <div class="kh-header-nut">
-        <button type="button" class="ghost-button" id="khXuatDx">
-          <i class="ri-download-2-line"></i> Xuất CSV
-        </button>
-      </div>
-    </header>
+  // Nhóm các dòng theo Ngành hàng
+  const theoNganh = {};
+  (phieu.dong || []).forEach((d, idx) => {
+    const nh = d.nganh_hang || 'VẬT LIỆU - TỔNG QUÁT';
+    (theoNganh[nh] ||= []).push({ ...d, _idx: idx });
+  });
 
-    <div class="kh-canh kh-canh-info">
-      <i class="ri-lightbulb-line"></i>
-      <div>
-        <b>Cách hệ thống chọn nhà cung cấp</b>
-        <span>Lấy mọi vật tư dưới định mức, trừ đi phần đang trên đường về, rồi chọn nhà
-        rẻ nhất theo <b>tiền thật phải trả</b> cho đúng lượng cần — không phải theo đơn giá.
-        Nhà có đơn giá thấp hơn mà bắt lấy tối thiểu nhiều hơn nhu cầu thì hoá đơn đắt hơn,
-        nên bị bỏ qua và ghi rõ lý do ở từng dòng.</span>
-      </div>
-    </div>
+  // Lọc ngành hàng nếu người dùng chọn pill filter
+  const cacNganhCoSan = [
+    { ma: 'all', ten: 'Tất cả ngành hàng' },
+    { ma: 'VẬT LIỆU - TỔNG QUÁT', ten: 'Vật liệu tổng quát' },
+    { ma: 'CHỈNH NHA', ten: 'Chỉnh nha' },
+    { ma: 'IMPLANT', ten: 'Implant' },
+    { ma: 'CÔNG CỤ DỤNG CỤ', ten: 'Công cụ dụng cụ' },
+    { ma: 'TIÊU HAO & VÔ TRÙNG', ten: 'Tiêu hao & Vô trùng' },
+  ];
 
-    ${deXuat.thieu_gia.length ? `<div class="kh-canh kh-canh-warn">
-      <i class="ri-price-tag-3-line"></i>
-      <div><b>${deXuat.thieu_gia.length} mặt hàng chưa có báo giá</b>
-      <span>${deXuat.thieu_gia.map((x) => escapeHTML(x.vat_tu.ten)).join(' · ')}
-      — cần xin báo giá trước khi đặt.</span></div>
-    </div>` : ''}
+  // Tính tổng tiền
+  const tongTien = (phieu.dong || []).reduce((s, d) => s + (Number(d.thanh_tien) || (Number(d.so_luong) * Number(d.don_gia)) || 0), 0);
+  const soMatHang = phieu.dong?.length || 0;
 
-    <div class="kh-dx-luoi">
-      ${deXuat.nhom.map((n, i) => `<article class="kh-dx">
-        <header class="kh-dx-dau">
-          <div>
-            <b>${escapeHTML(n.ten)}</b>
-            <small>${n.dong.length} mặt hàng</small>
-          </div>
-          <div class="kh-dx-tien">
-            <b>${tien(n.tong)}</b>
-            <button type="button" class="primary-button kh-nho" data-tao-don="${i}">
-              <i class="ri-file-add-line"></i> Tạo đơn
+  // Lấy danh sách kết quả tìm kiếm vật tư nếu người dùng đang gõ tìm kiếm
+  let dsTimKiem = [];
+  if (dxTimKiemVatTu.trim()) {
+    const q = dxTimKiemVatTu.trim().toLowerCase();
+    dsTimKiem = dsVatTu.filter((v) =>
+      v.ten.toLowerCase().includes(q) || v.ma.toLowerCase().includes(q)
+    ).slice(0, 10);
+  }
+
+  return `
+    <div class="bm03-workspace">
+      <!-- Toolbar thao tác đỉnh -->
+      <section class="bm03-toolbar">
+        <div class="bm03-tool-left">
+          <label>
+            <span style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 2px;">Phiếu ĐNMH đang chọn:</span>
+            <select class="bm03-phieu-select" id="selPhieuDeXuat">
+              ${dsPhieuDeXuat.map((p) => `<option value="${p.id}" ${p.id === phieu.id ? 'selected' : ''}>${escapeHTML(p.so_phieu || p.id)} · ${escapeHTML(p.tieu_de || '')} (${p.so_mat_hang || (p.dong?.length || 0)} món)</option>`).join('')}
+            </select>
+          </label>
+          <span class="status-pill ${phieu.trang_thai === 'da_tao_don' ? 'good' : phieu.trang_thai === 'da_duyet' ? 'info' : 'warn'}">
+            ${phieu.trang_thai === 'da_tao_don' ? 'Đã tạo đơn PO' : phieu.trang_thai === 'da_duyet' ? 'Đã phê duyệt' : phieu.trang_thai === 'cho_duyet' ? 'Chờ duyệt' : 'Bản nháp'}
+          </span>
+        </div>
+
+        <div class="bm03-tool-right">
+          <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới">
+            <i class="ri-add-line"></i> Phiếu mới
+          </button>
+          <button type="button" class="secondary-button" id="btnMoGoiYHangThieu" style="border-color: #f59e0b; color: #b45309; background: #fffbeb;" title="Xem các mặt hàng tồn dưới định mức để tick chọn bổ sung">
+            <i class="ri-flashlight-line"></i> Gợi ý hàng thiếu (${dsGoiYHangThieu.length})
+          </button>
+          <button type="button" class="secondary-button" id="btnXuatExcelBM03" style="border-color: #0f8b7f; color: #0f8b7f;" title="Tải về file Excel đúng 100% mẫu 5S_QĐ_KT_01/BM03">
+            <i class="ri-file-excel-2-line"></i> Xuất Excel BM03
+          </button>
+          <button type="button" class="primary-button" id="btnTaoDonTuPhieu" style="background: #0f8b7f;" title="Chuyển các mặt hàng trong phiếu thành các đơn đặt hàng theo từng Nhà cung cấp">
+            <i class="ri-shopping-cart-2-line"></i> Tạo đơn PO
+          </button>
+          <button type="button" class="primary-button" id="btnLuuPhieuDeXuat">
+            <i class="ri-save-line"></i> Lưu phiếu
+          </button>
+        </div>
+      </section>
+
+      <!-- Khung Cung Ứng & Tìm kiếm thông minh -->
+      <section class="bm03-supply-box">
+        <div class="bm03-supply-header">
+          <h4><i class="ri-search-eye-line"></i> Tìm kiếm hàng hóa &amp; So sánh nhà cung cấp</h4>
+          <span style="font-size: 0.8rem; color: #64748b;">Gõ tên hoặc mã hàng để tìm, xem bảng giá các NCC rồi thêm vào phiếu</span>
+        </div>
+
+        <div class="bm03-categories">
+          ${cacNganhCoSan.map((c) => `
+            <button type="button" class="bm03-cat-btn ${dxNganhHangFilter === c.ma ? 'is-active' : ''}" data-dx-cat="${c.ma}">
+              ${escapeHTML(c.ten)}
             </button>
+          `).join('')}
+        </div>
+
+        <div class="bm03-search-bar">
+          <i class="ri-search-line"></i>
+          <input type="text" id="dxTimKiem" placeholder="Gõ tên vật tư, mã hàng (VD: Cồn 70 độ, Mắc cài, CIDEX, Khăn giấy, Mũi khoan, Mini vis...)" value="${escapeHTML(dxTimKiemVatTu)}" autocomplete="off">
+          ${dsTimKiem.length ? `
+            <div class="bm03-search-dropdown">
+              ${dsTimKiem.map((v) => `
+                <div class="bm03-search-item" data-chon-tim-vt="${v.id}">
+                  <div>
+                    <strong style="color: #0f4c45;">${escapeHTML(v.ten)}</strong>
+                    <small style="display: block; color: #64748b;">Mã: ${escapeHTML(v.ma)} · ĐVT: ${escapeHTML(v.don_vi)} · Tồn kho hiện tại: <b>${v.so_luong}</b> (Định mức: ${v.dinh_muc_hien})</small>
+                  </div>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <span style="font-size: 0.85rem; font-weight: 700; color: #0f8b7f;">${tien(v.gia_von || 0)}</span>
+                    <button type="button" class="secondary-button" style="padding: 4px 10px; font-size: 0.78rem;" data-so-sanh-them="${v.id}">
+                      <i class="ri-scales-3-line"></i> So sánh giá &amp; Chọn
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </section>
+
+      <!-- Tờ giấy Biểu mẫu chuẩn 5S_QĐ_KT_01/BM03 -->
+      <section class="bm03-paper">
+        <header class="bm03-header-top">
+          <div>
+            <div class="bm03-company-name">CÔNG TY CỔ PHẦN 5S SÀI GÒN</div>
+            <div style="margin-top: 6px; font-size: 0.84rem; color: #475569;">
+              <b>Số phiếu:</b> <input type="text" id="bm03SoPhieu" value="${escapeHTML(phieu.so_phieu || '')}" style="font-weight: 700; width: 130px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 4px;">
+            </div>
+          </div>
+
+          <div class="bm03-main-title">
+            <h2>PHIẾU ĐỀ NGHỊ MUA HÀNG</h2>
+            <span style="font-size: 0.88rem; color: #475569; font-weight: 600;">Kế hoạch: Định kỳ Tháng 09/2026</span>
+          </div>
+
+          <div class="bm03-code-box">
+            <b>Số hiệu: 5S_QĐ_KT_01/BM03</b><br>
+            Ngày hiệu lực: 18/06/2023<br>
+            Lần ban hành: 01 · Lần soát xét: 00
           </div>
         </header>
-        <div class="hh-bang-wrap">
-          <table class="hh-bang">
-            <thead><tr>
-              <th>Vật tư</th><th>Tồn</th><th>Định mức</th><th>Đang về</th>
-              <th>Cần bù</th><th>Đặt</th><th>Thành tiền</th>
-            </tr></thead>
-            <tbody>${n.dong.map((x) => `<tr>
-              <td data-label="Vật tư">
-                <div class="kh-ten">
-                  <b>${escapeHTML(x.vat_tu.ten)}</b>
-                  <small>${escapeHTML(x.vat_tu.ma)}</small>
-                  ${x.vat_tu.co.length ? `<div class="kh-co-hang">${coDacBiet(x.vat_tu.co)}</div>` : ''}
-                  ${x.bo_qua_re_hon ? `<small class="kh-bo-qua">
-                    Bỏ qua ${escapeHTML(x.bo_qua_re_hon.ten)}: đơn giá ${tien(x.bo_qua_re_hon.don_gia)}
-                    rẻ hơn nhưng tối thiểu ${x.bo_qua_re_hon.toi_thieu} →
-                    phải trả ${tien(x.bo_qua_re_hon.thanh_tien)}</small>` : ''}
-                </div>
-              </td>
-              <td data-label="Tồn" class="kh-so">${x.ton}</td>
-              <td data-label="Định mức" class="kh-so kh-mo">${x.dinh_muc}</td>
-              <td data-label="Đang về" class="kh-so">${x.dang_cho_ve || '—'}</td>
-              <td data-label="Cần bù" class="kh-so"><b>${x.can_bu}</b> ${escapeHTML(x.vat_tu.don_vi)}</td>
-              <td data-label="Đặt" class="kh-so kh-nhan-manh">
-                <b>${x.can_mua}</b> ${escapeHTML(x.don_vi_mua)}
-                ${x.du_ra > 0 ? `<small class="kh-mo">dư ${x.du_ra}</small>` : ''}</td>
-              <td data-label="Thành tiền" class="kh-so">${tien(x.thanh_tien)}</td>
-            </tr>`).join('')}</tbody>
+
+        <div class="bm03-meta-grid">
+          <label>
+            <span>Đơn vị lập:</span>
+            <input type="text" id="bm03DonViLap" value="CÔNG TY CỔ PHẦN 5S SÀI GÒN" readonly style="background: #f1f5f9;">
+          </label>
+          <label>
+            <span>Bộ phận đề xuất:</span>
+            <input type="text" id="bm03BoPhan" value="${escapeHTML(phieu.bo_phan || 'Kho vật tư')}">
+          </label>
+          <label>
+            <span>Người tạo:</span>
+            <input type="text" id="bm03NguoiTao" value="${escapeHTML(phieu.nguoi_tao || 'Thủ kho')}">
+          </label>
+          <label>
+            <span>Ngày tạo phiếu:</span>
+            <input type="date" id="bm03NgayTao" value="${escapeHTML(phieu.ngay_tao || '')}">
+          </label>
+          <label>
+            <span>Kho hàng:</span>
+            <input type="text" id="bm03KhoHang" value="${escapeHTML(phieu.kho_hang || 'Kho Lê Văn Thọ')}">
+          </label>
+          <label>
+            <span>Thủ kho phụ trách:</span>
+            <input type="text" id="bm03ThuKho" value="${escapeHTML(phieu.thu_kho || 'Nguyễn Thị Như Huỳnh')}">
+          </label>
+          <label style="grid-column: span 2;">
+            <span>Ghi chú / Mục đích đợt mua:</span>
+            <input type="text" id="bm03GhiChu" value="${escapeHTML(phieu.ghi_chu || '')}" placeholder="VD: Bổ sung định kỳ tháng 9...">
+          </label>
+        </div>
+
+        <!-- Bảng chi tiết phân ngành hàng -->
+        <div class="bm03-table-wrap">
+          <table class="bm03-table">
+            <thead>
+              <tr>
+                <th style="width: 40px;" rowspan="2">STT</th>
+                <th rowspan="2">Mô tả hàng hóa</th>
+                <th style="width: 110px;" rowspan="2">Thông số KT</th>
+                <th style="width: 60px;" rowspan="2">ĐVT</th>
+                <th colspan="2">Số lượng</th>
+                <th colspan="2">Tham khảo (VNĐ)</th>
+                <th style="width: 110px;" rowspan="2">Thời gian cần</th>
+                <th rowspan="2">Mục đích sử dụng</th>
+                <th style="width: 180px;" rowspan="2">Nhà cung cấp</th>
+                <th style="width: 50px;" rowspan="2">Xóa</th>
+              </tr>
+              <tr>
+                <th style="width: 60px;">Tồn</th>
+                <th style="width: 75px;">Đề xuất</th>
+                <th style="width: 105px;">Đơn giá (VAT)</th>
+                <th style="width: 115px;">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(theoNganh).map(([nganhHang, dsDong]) => {
+                if (dxNganhHangFilter !== 'all' && nganhHang !== dxNganhHangFilter) return '';
+                const subTotal = dsDong.reduce((s, x) => s + (Number(x.thanh_tien) || (Number(x.so_luong) * Number(x.don_gia)) || 0), 0);
+                return `
+                  <tr class="bm03-sector-row">
+                    <td colspan="12" class="bm03-sector-header">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span><i class="ri-bookmark-3-line"></i> ${escapeHTML(nganhHang)} (${dsDong.length} mặt hàng)</span>
+                        <span style="font-weight: 700; color: #0e4c45;">Tổng nhóm: ${tien(subTotal)}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  ${dsDong.map((item, rowIdx) => {
+                    const idx = item._idx;
+                    return `
+                      <tr>
+                        <td style="text-align: center; font-weight: 600; color: #64748b;">${rowIdx + 1}</td>
+                        <td>
+                          <div style="font-weight: 700; color: #1e293b;">${escapeHTML(item.ten)}</div>
+                          ${item.vat_tu_id ? `<small style="color: #64748b; font-size: 0.75rem;">Mã: ${escapeHTML(item.vat_tu_id)}</small>` : ''}
+                        </td>
+                        <td>
+                          <input type="text" class="bm03-input-text" data-dx-thong-so="${idx}" value="${escapeHTML(item.thong_so || '')}">
+                        </td>
+                        <td style="text-align: center; font-weight: 600;">${escapeHTML(item.don_vi || 'Cái')}</td>
+                        <td style="text-align: center; color: #64748b; background: #f8fafc; font-weight: 600;">
+                          ${item.ton ?? 0}
+                        </td>
+                        <td>
+                          <input type="number" min="1" class="bm03-input-num" data-dx-sl="${idx}" value="${item.so_luong || 1}">
+                        </td>
+                        <td style="text-align: right; font-weight: 600;">
+                          ${tien(item.don_gia || 0)}
+                        </td>
+                        <td class="col-total">
+                          ${tien(item.thanh_tien || (item.so_luong * item.don_gia) || 0)}
+                        </td>
+                        <td>
+                          <input type="date" class="bm03-input-text" data-dx-ngay="${idx}" value="${escapeHTML(item.thoi_gian || '2026-09-15')}">
+                        </td>
+                        <td>
+                          <input type="text" class="bm03-input-text" data-dx-muc-dich="${idx}" value="${escapeHTML(item.muc_dich || 'Sử dụng điều trị lâm sàng')}">
+                        </td>
+                        <td>
+                          <div style="display: flex; flex-direction: column; gap: 3px;">
+                            <span style="font-weight: 700; color: #0e4c45; font-size: 0.78rem; line-height: 1.2;">
+                              ${escapeHTML(item.ncc_ten || 'Dược & Vật Liệu Nha Khoa LVT')}
+                            </span>
+                            <button type="button" class="bm03-btn-ncc" data-dx-doi-ncc="${idx}">
+                              <i class="ri-scales-3-line"></i> Đổi NCC / So giá
+                            </button>
+                          </div>
+                        </td>
+                        <td style="text-align: center;">
+                          <button type="button" class="icon-button" style="color: #ef4444;" data-dx-xoa-dong="${idx}" title="Xóa mặt hàng khỏi phiếu">
+                            <i class="ri-delete-bin-line"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                `;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="bm03-total-row">
+                <td colspan="7" style="text-align: right; text-transform: uppercase;">
+                  TỔNG CỘNG THÀNH TIỀN (ĐÃ BAO GỒM VAT):
+                </td>
+                <td class="col-total" style="font-size: 1.1rem;">
+                  ${tien(tongTien)}
+                </td>
+                <td colspan="4" style="color: #64748b; font-weight: 600; font-size: 0.82rem;">
+                  Tổng số mặt hàng: <b>${soMatHang}</b> mục
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
-      </article>`).join('')}
+
+        <!-- Khối chữ ký 4 bên chuẩn BM03 -->
+        <div class="bm03-sign-date">
+          Tp. Hồ Chí Minh, ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}
+        </div>
+        <div class="bm03-signatures-grid">
+          <div class="bm03-sign-col">
+            <strong>Trưởng bộ phận</strong>
+            <small>(Ký và ghi rõ họ tên)</small>
+            <div class="bm03-sign-box"></div>
+          </div>
+          <div class="bm03-sign-col">
+            <strong>Kế toán trưởng</strong>
+            <small>(Ký và ghi rõ họ tên)</small>
+            <div class="bm03-sign-box"></div>
+          </div>
+          <div class="bm03-sign-col">
+            <strong>Bộ phận quản lý kho</strong>
+            <small>(Ký và ghi rõ họ tên)</small>
+            <div class="bm03-sign-box"></div>
+            <strong style="font-size: 0.85rem; color: #0f8b7f;">${escapeHTML(phieu.thu_kho || 'Nguyễn Thị Như Huỳnh')}</strong>
+          </div>
+          <div class="bm03-sign-col">
+            <strong>Phê duyệt Ban Giám Đốc</strong>
+            <small>(Ký và ghi rõ họ tên)</small>
+            <div class="bm03-sign-box"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Modal So Sánh Giá Nhà Cung Cấp -->
+      ${modalSoSanhGia ? `
+        <div class="bm03-dialog-overlay" id="modalSoSanhGiaNCC">
+          <div class="bm03-dialog-content">
+            <header class="bm03-dialog-header">
+              <div>
+                <h3 style="margin: 0; color: #0e4c45;"><i class="ri-scales-3-line"></i> So sánh giá Nhà Cung Cấp</h3>
+                <span style="font-size: 0.85rem; color: #64748b;">Vật tư: <b>${escapeHTML(modalSoSanhGia.vat_tu.ten)}</b> (${escapeHTML(modalSoSanhGia.vat_tu.ma || '')})</span>
+              </div>
+              <button type="button" class="icon-button" id="btnDongModalSoSanhGia"><i class="ri-close-line"></i></button>
+            </header>
+            <div class="bm03-dialog-body">
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px 16px; font-size: 0.85rem; color: #166534;">
+                <i class="ri-information-line"></i> Hệ thống hiển thị tất cả các nhà cung cấp có báo giá. Hãy chọn nhà cung cấp có mức giá và điều kiện giao hàng tốt nhất cho phòng khám.
+              </div>
+              <div style="display: grid; gap: 10px;">
+                ${modalSoSanhGia.quotes.map((q, qIdx) => `
+                  <div class="bm03-quote-card ${qIdx === 0 ? 'is-best' : ''}">
+                    <div style="flex: 1;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <strong style="color: #1e293b; font-size: 0.95rem;">${escapeHTML(q.ncc_ten)}</strong>
+                        ${qIdx === 0 ? '<span class="status-pill good"><i class="ri-award-line"></i> Giá rẻ nhất</span>' : ''}
+                      </div>
+                      <div style="font-size: 0.82rem; color: #64748b; margin-top: 4px;">
+                        ĐV mua: <b>${escapeHTML(q.don_vi_mua)}</b> (Quy cách: 1 ${escapeHTML(q.don_vi_mua)} = ${q.quy_cach} ${escapeHTML(modalSoSanhGia.vat_tu.don_vi || 'cái')})
+                        · Đặt tối thiểu: <b>${q.toi_thieu}</b> ${escapeHTML(q.don_vi_mua)}
+                        · Giao hàng: <b>${q.ngay_giao} ngày</b>
+                        · Thanh toán: <b>${escapeHTML(q.thanh_toan || 'CK/TM')}</b>
+                      </div>
+                    </div>
+                    <div style="text-align: right; min-width: 140px;">
+                      <div style="font-size: 1.15rem; font-weight: 800; color: #0f8b7f;">${tien(q.gia)}</div>
+                      <small style="color: #64748b; display: block; margin-bottom: 6px;">Đơn giá quy đổi: ${tien(q.don_gia_quy_doi)} / ${escapeHTML(modalSoSanhGia.vat_tu.don_vi || 'cái')}</small>
+                      <button type="button" class="primary-button" style="padding: 5px 12px; font-size: 0.82rem;" data-chon-ncc-quote="${q.ncc_id}">
+                        <i class="ri-check-line"></i> Chọn nhà này
+                      </button>
+                    </div>
+                  </div>
+                `).join('')}
+                ${!modalSoSanhGia.quotes.length ? `
+                  <p class="empty-state">Chưa có nhà cung cấp nào báo giá cho mặt hàng này. Hệ thống sẽ áp dụng theo giá vốn chuẩn.</p>
+                ` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- Drawer Gợi Ý Hàng Dưới Định Mức -->
+      ${hienDrawerHangThieu ? `
+        <div class="bm03-dialog-overlay" id="drawerHangThieuOverlay">
+          <div class="bm03-dialog-content" style="max-width: 900px;">
+            <header class="bm03-dialog-header">
+              <div>
+                <h3 style="margin: 0; color: #b45309;"><i class="ri-flashlight-line"></i> Gợi ý các mặt hàng đang thiếu tồn kho</h3>
+                <span style="font-size: 0.85rem; color: #64748b;">Tick chọn các mặt hàng bạn muốn đưa vào Phiếu đề xuất mua hàng đợt này</span>
+              </div>
+              <button type="button" class="icon-button" id="btnDongDrawerHangThieu"><i class="ri-close-line"></i></button>
+            </header>
+            <div class="bm03-dialog-body">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-weight: 700; cursor: pointer;">
+                  <input type="checkbox" id="chkChonTatCaHangThieu"> <span>Chọn tất cả (${dsGoiYHangThieu.length} mặt hàng)</span>
+                </label>
+                <button type="button" class="primary-button" id="btnThemHangThieuDaChon">
+                  <i class="ri-add-line"></i> Thêm các mục đã chọn vào phiếu
+                </button>
+              </div>
+              <div style="max-height: 480px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px;">
+                <table class="bm03-table" style="font-size: 0.82rem;">
+                  <thead>
+                    <tr>
+                      <th style="width: 36px;">Chọn</th>
+                      <th>Mã &amp; Tên vật tư</th>
+                      <th style="width: 70px;">Tồn kho</th>
+                      <th style="width: 70px;">Định mức</th>
+                      <th style="width: 80px;">Cần bù</th>
+                      <th style="width: 100px;">Đơn giá rẻ nhất</th>
+                      <th>Nhà cung cấp đề xuất</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${dsGoiYHangThieu.map((g, gIdx) => `
+                      <tr>
+                        <td style="text-align: center;">
+                          <input type="checkbox" data-chk-thieu="${gIdx}" ${goiYChonMap[g.vat_tu.id] ? 'checked' : ''}>
+                        </td>
+                        <td>
+                          <strong>${escapeHTML(g.vat_tu.ten)}</strong>
+                          <small style="display: block; color: #64748b;">${escapeHTML(g.vat_tu.ma)} · ĐVT: ${escapeHTML(g.vat_tu.don_vi)}</small>
+                        </td>
+                        <td style="text-align: center; color: #ef4444; font-weight: 700;">${g.ton}</td>
+                        <td style="text-align: center; color: #64748b;">${g.dinh_muc}</td>
+                        <td style="text-align: center; font-weight: 800; color: #b45309;">+${g.can_bu} ${escapeHTML(g.vat_tu.don_vi)}</td>
+                        <td style="text-align: right; font-weight: 700; color: #0f8b7f;">${tien(g.don_gia)}</td>
+                        <td style="font-size: 0.78rem; font-weight: 600; color: #0e4c45;">${escapeHTML(g.ncc_ten)}</td>
+                      </tr>
+                    `).join('')}
+                    ${!dsGoiYHangThieu.length ? `
+                      <tr><td colspan="7" class="empty-state">Tất cả mặt hàng đều đạt đủ định mức.</td></tr>
+                    ` : ''}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
     </div>
-  </section>`;
+  `;
 }
 
 function veFormNcc() {
@@ -1385,7 +1727,21 @@ export async function renderView() {
     chiTre: dChiTre, chiThieu: dChiThieu });
   dsPhieu = await layPhieuXuat({ tim: pTim || undefined, chiNhanh: chiNhanh || undefined,
     noiNhan: pNoiNhan || undefined, trangThai: pTrangThai || undefined });
-  deXuat = tab === 'de-xuat' ? await deXuatMuaHang(loc) : deXuat;
+  if (tab === 'de-xuat') {
+    deXuat = await deXuatMuaHang(loc);
+    dsPhieuDeXuat = await layDanhSachDeXuat({ chiNhanh: chiNhanh || undefined });
+    if (!phieuDeXuatHienTaiId && dsPhieuDeXuat.length > 0) {
+      phieuDeXuatHienTaiId = dsPhieuDeXuat[0].id;
+    }
+    if (phieuDeXuatHienTaiId) {
+      try {
+        phieuDeXuatHienTai = await layChiTietDeXuat(phieuDeXuatHienTaiId);
+      } catch {
+        phieuDeXuatHienTai = dsPhieuDeXuat[0] || null;
+      }
+    }
+    dsGoiYHangThieu = await goiYHangThieu({ chiNhanh: chiNhanh || undefined });
+  }
   hoaDonCuaDon = nganMo?.loai === 'don' ? await layHoaDon(nganMo.id) : [];
 
   if (tab === 'xuat-ca') {
@@ -1676,12 +2032,321 @@ export function initView() {
     });
   });
 
-  /* Đề xuất mua hàng */
-  document.querySelectorAll('[data-tao-don]').forEach((b) => {
-    b.addEventListener('click', () => {
-      const n = deXuat.nhom[Number(b.dataset.taoDon)];
-      chay(async () => { await taoDonTuDeXuat(n, chiNhanh, maToi); },
-        `Đã dựng đơn cho ${n.ten} ở trạng thái chờ duyệt.`);
+  /* ── Đề xuất mua hàng chuẩn BM03 & Quy trình Supply Chain ── */
+  g('selPhieuDeXuat')?.addEventListener('change', async (e) => {
+    phieuDeXuatHienTaiId = e.target.value;
+    try {
+      phieuDeXuatHienTai = await layChiTietDeXuat(phieuDeXuatHienTaiId);
+    } catch {
+      phieuDeXuatHienTai = dsPhieuDeXuat.find((p) => p.id === phieuDeXuatHienTaiId) || null;
+    }
+    ve();
+  });
+
+  g('btnTaoPhieuMoi')?.addEventListener('click', () => {
+    chay(async () => {
+      const pMoi = await taoPhieuDeXuat({
+        kho_hang: chiNhanh === 'le-van-tho' ? 'Kho Lê Văn Thọ' : 'Kho Phạm Văn Chiêu',
+        bo_phan: 'Kho vật tư',
+        nguoi_tao: toi.name || 'Thủ kho',
+        thu_kho: toi.name || 'Nguyễn Thị Như Huỳnh',
+        ghi_chu: 'Đề xuất mua hàng đợt mới'
+      }, maToi);
+      phieuDeXuatHienTaiId = pMoi.id;
+      phieuDeXuatHienTai = pMoi;
+    }, 'Đã khởi tạo phiếu đề xuất mua hàng mới chuẩn BM03.');
+  });
+
+  g('btnMoGoiYHangThieu')?.addEventListener('click', () => {
+    hienDrawerHangThieu = true;
+    goiYChonMap = {};
+    (dsGoiYHangThieu || []).forEach((item) => {
+      goiYChonMap[item.vat_tu.id] = true;
+    });
+    ve();
+  });
+
+  g('btnDongDrawerHangThieu')?.addEventListener('click', () => {
+    hienDrawerHangThieu = false;
+    ve();
+  });
+
+  g('chkChonTatCaHangThieu')?.addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    (dsGoiYHangThieu || []).forEach((item) => {
+      goiYChonMap[item.vat_tu.id] = checked;
+    });
+    ve();
+  });
+
+  document.querySelectorAll('[data-chk-thieu]').forEach((chk) => {
+    chk.addEventListener('change', (e) => {
+      const idx = Number(chk.dataset.chkThieu);
+      const item = dsGoiYHangThieu[idx];
+      if (item) {
+        goiYChonMap[item.vat_tu.id] = e.target.checked;
+      }
+    });
+  });
+
+  g('btnThemHangThieuDaChon')?.addEventListener('click', () => {
+    const selected = (dsGoiYHangThieu || []).filter((gItem) => goiYChonMap[gItem.vat_tu.id]);
+    if (!selected.length) {
+      showToast('Vui lòng chọn ít nhất 1 mặt hàng để thêm vào phiếu.', true);
+      return;
+    }
+    if (!phieuDeXuatHienTai) return;
+    if (!phieuDeXuatHienTai.dong) phieuDeXuatHienTai.dong = [];
+
+    selected.forEach((gItem) => {
+      const tonTai = phieuDeXuatHienTai.dong.find((d) => d.vat_tu_id === gItem.vat_tu.id);
+      if (tonTai) {
+        tonTai.so_luong += gItem.can_bu;
+        tonTai.thanh_tien = tonTai.so_luong * tonTai.don_gia;
+      } else {
+        phieuDeXuatHienTai.dong.push({
+          nganh_hang: gItem.vat_tu.nhom_ten || 'VẬT LIỆU - TỔNG QUÁT',
+          vat_tu_id: gItem.vat_tu.id,
+          ten: gItem.vat_tu.ten,
+          thong_so: gItem.vat_tu.quy_cach || '',
+          don_vi: gItem.vat_tu.don_vi || 'Cái',
+          ton: gItem.ton,
+          so_luong: gItem.can_bu,
+          don_gia: gItem.don_gia,
+          thanh_tien: gItem.can_bu * gItem.don_gia,
+          thoi_gian: todayISO(),
+          muc_dich: 'Bổ sung bù định mức sử dụng lâm sàng',
+          ncc_id: gItem.ncc_id,
+          ncc_ten: gItem.ncc_ten,
+        });
+      }
+    });
+    hienDrawerHangThieu = false;
+    chay(async () => {
+      await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+    }, `Đã bổ sung ${selected.length} mặt hàng thiếu vào phiếu đề xuất.`);
+  });
+
+  g('btnXuatExcelBM03')?.addEventListener('click', async () => {
+    if (!phieuDeXuatHienTai || !phieuDeXuatHienTai.dong?.length) {
+      showToast('Phiếu đề xuất chưa có mặt hàng nào để xuất file.', true);
+      return;
+    }
+    try {
+      await xuatExcelDeXuatBM03(phieuDeXuatHienTai);
+      showToast('Đã tải xuống file Excel BM03 chuẩn 5S_QĐ_KT_01!');
+    } catch (err) {
+      showToast('Lỗi xuất Excel: ' + err.message, true);
+    }
+  });
+
+  g('btnTaoDonTuPhieu')?.addEventListener('click', async () => {
+    if (!phieuDeXuatHienTai || !phieuDeXuatHienTai.dong?.length) {
+      showToast('Phiếu đề xuất không có mặt hàng nào để tạo đơn.', true);
+      return;
+    }
+    const ok = await confirmAction(
+      `Hệ thống sẽ tách ${phieuDeXuatHienTai.dong.length} mặt hàng theo từng Nhà cung cấp và lập các đơn đặt hàng (PO) ở trạng thái chờ duyệt. Tiếp tục?`,
+      { title: 'Tạo đơn đặt hàng từ phiếu BM03', confirmText: 'Tạo đơn PO' }
+    );
+    if (!ok) return;
+    chay(async () => {
+      await taoDonHangTuPhieu(phieuDeXuatHienTai.id, maToi);
+      tab = 'don-hang';
+    }, 'Đã tự động tạo các đơn đặt hàng PO cho từng nhà cung cấp!');
+  });
+
+  g('btnLuuPhieuDeXuat')?.addEventListener('click', () => {
+    if (!phieuDeXuatHienTai) return;
+    phieuDeXuatHienTai.so_phieu = g('bm03SoPhieu')?.value || phieuDeXuatHienTai.so_phieu;
+    phieuDeXuatHienTai.bo_phan = g('bm03BoPhan')?.value || phieuDeXuatHienTai.bo_phan;
+    phieuDeXuatHienTai.nguoi_tao = g('bm03NguoiTao')?.value || phieuDeXuatHienTai.nguoi_tao;
+    phieuDeXuatHienTai.ngay_tao = g('bm03NgayTao')?.value || phieuDeXuatHienTai.ngay_tao;
+    phieuDeXuatHienTai.kho_hang = g('bm03KhoHang')?.value || phieuDeXuatHienTai.kho_hang;
+    phieuDeXuatHienTai.thu_kho = g('bm03ThuKho')?.value || phieuDeXuatHienTai.thu_kho;
+    phieuDeXuatHienTai.ghi_chu = g('bm03GhiChu')?.value || phieuDeXuatHienTai.ghi_chu;
+
+    chay(async () => {
+      await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+    }, 'Đã lưu thông tin phiếu đề xuất mua hàng BM03.');
+  });
+
+  document.querySelectorAll('[data-dx-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      dxNganhHangFilter = btn.dataset.dxCat;
+      ve();
+    });
+  });
+
+  const dxTim = g('dxTimKiem');
+  if (dxTim) {
+    let henDx;
+    dxTim.addEventListener('input', (e) => {
+      clearTimeout(henDx);
+      const val = e.target.value;
+      henDx = setTimeout(() => {
+        dxTimKiemVatTu = val;
+        ve();
+      }, 250);
+    });
+  }
+
+  document.querySelectorAll('[data-chon-tim-vt]').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-so-sanh-them]')) return;
+      const vtId = row.dataset.chonTimVt;
+      const vt = dsVatTu.find((v) => v.id === vtId);
+      if (!vt || !phieuDeXuatHienTai) return;
+      if (!phieuDeXuatHienTai.dong) phieuDeXuatHienTai.dong = [];
+      const resGia = soSanhGiaNhaCungCap(vtId);
+      const best = resGia.gia_re_nhat || resGia.quotes[0] || { ncc_id: 'NCC-01', ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT', gia: vt.gia_von || 100000 };
+      phieuDeXuatHienTai.dong.push({
+        nganh_hang: vt.nhom_ten || 'VẬT LIỆU - TỔNG QUÁT',
+        vat_tu_id: vt.id,
+        ten: vt.ten,
+        thong_so: vt.quy_cach || '',
+        don_vi: vt.don_vi || 'Cái',
+        ton: vt.so_luong || 0,
+        so_luong: 1,
+        don_gia: best.gia || vt.gia_von || 100000,
+        thanh_tien: best.gia || vt.gia_von || 100000,
+        thoi_gian: todayISO(),
+        muc_dich: 'Sử dụng điều trị lâm sàng',
+        ncc_id: best.ncc_id,
+        ncc_ten: best.ncc_ten,
+      });
+      dxTimKiemVatTu = '';
+      chay(async () => {
+        await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+      }, `Đã thêm "${vt.ten}" vào phiếu đề xuất.`);
+    });
+  });
+
+  document.querySelectorAll('[data-so-sanh-them]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vtId = btn.dataset.soSanhThem;
+      const vt = dsVatTu.find((v) => v.id === vtId);
+      if (!vt) return;
+      const resGia = soSanhGiaNhaCungCap(vtId);
+      modalSoSanhGia = { vat_tu: vt, quotes: resGia.quotes, dongIndex: null };
+      ve();
+    });
+  });
+
+  document.querySelectorAll('[data-dx-sl]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxSl);
+      const val = Math.max(1, Number(e.target.value) || 1);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].so_luong = val;
+        phieuDeXuatHienTai.dong[idx].thanh_tien = val * (phieuDeXuatHienTai.dong[idx].don_gia || 0);
+        chay(async () => {
+          await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-thong-so]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxThongSo);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].thong_so = e.target.value;
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-ngay]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxNgay);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].thoi_gian = e.target.value;
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-muc-dich]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxMucDich);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].muc_dich = e.target.value;
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-doi-ncc]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.dxDoiNcc);
+      const dong = phieuDeXuatHienTai?.dong?.[idx];
+      if (!dong) return;
+      const vt = dsVatTu.find((v) => v.id === dong.vat_tu_id || v.ten === dong.ten) || {
+        id: dong.vat_tu_id || 'VT-CUSTOM',
+        ten: dong.ten,
+        ma: dong.vat_tu_id || 'VT',
+        don_vi: dong.don_vi || 'Cái',
+        gia_von: dong.don_gia || 0,
+      };
+      const resGia = soSanhGiaNhaCungCap(vt.id);
+      modalSoSanhGia = { vat_tu: vt, quotes: resGia.quotes, dongIndex: idx };
+      ve();
+    });
+  });
+
+  document.querySelectorAll('[data-dx-xoa-dong]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.dxXoaDong);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong.splice(idx, 1);
+        chay(async () => {
+          await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+        }, 'Đã xóa mặt hàng khỏi phiếu đề xuất.');
+      }
+    });
+  });
+
+  g('btnDongModalSoSanhGia')?.addEventListener('click', () => {
+    modalSoSanhGia = null;
+    ve();
+  });
+
+  document.querySelectorAll('[data-chon-ncc-quote]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!modalSoSanhGia) return;
+      const nccId = btn.dataset.chonNccQuote;
+      const quote = modalSoSanhGia.quotes.find((q) => q.ncc_id === nccId);
+      if (!quote) return;
+
+      if (modalSoSanhGia.dongIndex != null && phieuDeXuatHienTai?.dong?.[modalSoSanhGia.dongIndex]) {
+        const dong = phieuDeXuatHienTai.dong[modalSoSanhGia.dongIndex];
+        dong.ncc_id = quote.ncc_id;
+        dong.ncc_ten = quote.ncc_ten;
+        dong.don_gia = quote.gia;
+        dong.thanh_tien = (dong.so_luong || 1) * quote.gia;
+      } else if (phieuDeXuatHienTai) {
+        if (!phieuDeXuatHienTai.dong) phieuDeXuatHienTai.dong = [];
+        const vt = modalSoSanhGia.vat_tu;
+        phieuDeXuatHienTai.dong.push({
+          nganh_hang: vt.nhom_ten || 'VẬT LIỆU - TỔNG QUÁT',
+          vat_tu_id: vt.id,
+          ten: vt.ten,
+          thong_so: vt.quy_cach || '',
+          don_vi: vt.don_vi || 'Cái',
+          ton: vt.so_luong || 0,
+          so_luong: 1,
+          don_gia: quote.gia,
+          thanh_tien: quote.gia,
+          thoi_gian: todayISO(),
+          muc_dich: 'Sử dụng điều trị lâm sàng',
+          ncc_id: quote.ncc_id,
+          ncc_ten: quote.ncc_ten,
+        });
+        dxTimKiemVatTu = '';
+      }
+      modalSoSanhGia = null;
+      chay(async () => {
+        await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+      }, `Đã chọn nhà cung cấp ${quote.ncc_ten}.`);
     });
   });
 
