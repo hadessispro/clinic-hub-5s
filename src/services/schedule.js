@@ -142,6 +142,26 @@ export async function getShiftConfiguration() {
 
 export async function getEmployeeAllowedShifts(employeeCode) {
   if (!employeeCode) return [];
+
+  // The VPS data adapter intentionally exposes flat JSON records and ignores
+  // PostgREST relationship expressions such as `work_shifts!inner(...)`.
+  // Using that expression against the local PostgreSQL API returned allowed
+  // rows without the nested `work_shifts` object, so every employee silently
+  // fell back to one default shift in the check-in dialog. Load both flat
+  // tables and join them here instead; this keeps the same result shape on
+  // Supabase and PostgreSQL.
+  if (supabase.isLocal) {
+    const configuration = await getShiftConfiguration();
+    const normalizedEmployeeCode = String(employeeCode).toLocaleLowerCase('vi');
+    const allowedCodes = new Set(configuration.allowed
+      .filter((row) => String(row.employee_code || '').toLocaleLowerCase('vi') === normalizedEmployeeCode)
+      .map((row) => String(row.shift_code || ''))
+      .filter(Boolean));
+    return configuration.shifts
+      .filter((shift) => shift.active !== false && allowedCodes.has(String(shift.code || '')))
+      .sort((left, right) => String(left.start_time || '').localeCompare(String(right.start_time || '')));
+  }
+
   const { data, error } = await supabase
     .from('employee_allowed_shifts')
     .select('shift_code, work_shifts!inner(code,name,start_time,end_time,break_minutes,active)')
