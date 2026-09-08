@@ -28,6 +28,29 @@ let marketingSub = null;
 let deferredRealtimeRefresh = false;
 let authTransitionId = 0;
 const SIDEBAR_COLLAPSED_KEY = 'clinic-hub-sidebar-collapsed';
+// Canary UI is deliberately tied to the dedicated doctor test profile,
+// never to the whole doctor role. Login identifier: BS01.
+const MOBILE_UI_CANARY_CODES = new Set(['BS01']);
+
+function syncMobileUiCanary(profile = null) {
+  const employeeCode = String(profile?.employee_code || '').trim().toUpperCase();
+  const enabled = MOBILE_UI_CANARY_CODES.has(employeeCode);
+  const existing = document.getElementById('mobileUiCanaryStyles');
+
+  if (!enabled) {
+    delete document.body.dataset.mobileUi;
+    existing?.remove();
+    return;
+  }
+
+  document.body.dataset.mobileUi = 'v2-canary';
+  if (existing) return;
+  const stylesheet = document.createElement('link');
+  stylesheet.id = 'mobileUiCanaryStyles';
+  stylesheet.rel = 'stylesheet';
+  stylesheet.href = '/mobile-preview.css';
+  document.head.append(stylesheet);
+}
 
 function setSidebarCollapsed(collapsed) {
   const appShell = document.querySelector('.app-shell');
@@ -203,6 +226,7 @@ async function bootstrap() {
       hasEnteredApp = true;
 
       // User is authenticated
+      syncMobileUiCanary(authInfo.profile);
       hideLogin();
       document.body.dataset.role = role;
       // Quản trị viên thao tác nhiều bảng dữ liệu: luôn khởi đầu bằng sidebar
@@ -320,6 +344,7 @@ async function bootstrap() {
       store.updateUser(authInfo, 'dashboard');
       showLogin();
       hasEnteredApp = false;
+      syncMobileUiCanary();
       delete document.body.dataset.role;
       if (mainNav) mainNav.replaceChildren();
       destroySmartChat();

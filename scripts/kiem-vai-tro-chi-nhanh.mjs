@@ -1,12 +1,11 @@
-/* Hai danh sách vai trò được miễn ràng buộc chi nhánh phải khớp nhau.
+/* Hai danh sách vai trò linh hoạt chi nhánh phải khớp nhau.
  *
- *   src/auth.js              canUseManagedBranch   — frontend, quyết định có
- *                                                    chặn trước khi gửi đi không
+ *   src/branch.js            isManager             — frontend, quyết định có
+ *                                                    được đổi chi nhánh làm việc
  *   apps/backend/src/auth.ts branchFlexible        — backend, quyết định thật
  *
- * Lệch nhau thì hỏng theo cách khó tìm nhất: frontend nói "được miễn" nên
- * không chặn, người dùng bấm đăng nhập, rồi backend lọc theo chi nhánh và từ
- * chối. Không có gì trong giao diện gợi ý rằng ô chi nhánh mới là thứ sai.
+ * PG là ngoại lệ chỉ có ở backend: họ làm tại điểm tạm do Support giao nhưng
+ * không được dùng bộ chuyển chi nhánh quản lý trên frontend.
  *
  * Đã xảy ra thật ngày 28/08/2026: backend thiếu admin_marketing,
  * support_marketing và telesale_leader. Tài khoản Admin Marketing chọn đúng
@@ -31,13 +30,14 @@ function layDanhSach(duongDan, ten, mau) {
   return new Set([...khop[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
 }
 
-const fe = layDanhSach('src/auth.js', 'canUseManagedBranch',
-  /canUseManagedBranch\s*=\s*\[([^\]]*)\]/);
+const fe = layDanhSach('src/branch.js', 'isManager',
+  /isManager\s*=\s*\[([^\]]*)\]/);
 const be = layDanhSach('apps/backend/src/auth.ts', 'branchFlexible',
   /branchFlexible\s*=\s*new Set\(\[([^\]]*)\]/);
+const backendOnly = new Set(['pg_staff']);
 
 const thieuOBe = [...fe].filter((r) => !be.has(r)).sort();
-const thieuOFe = [...be].filter((r) => !fe.has(r)).sort();
+const thieuOFe = [...be].filter((r) => !fe.has(r) && !backendOnly.has(r)).sort();
 
 console.log(`  frontend  ${fe.size} vai trò`);
 console.log(`  backend   ${be.size} vai trò`);
@@ -52,8 +52,8 @@ for (const r of thieuOBe) {
 }
 
 for (const r of thieuOFe) {
-  console.log(`::error file=src/auth.js::"${r}" được miễn ở backend nhưng KHÔNG có trong `
-    + 'canUseManagedBranch. Frontend sẽ chặn trước khi gửi đi, nên phần miễn ở backend vô dụng.');
+  console.log(`::error file=src/branch.js::"${r}" linh hoạt ở backend nhưng KHÔNG có trong `
+    + 'isManager và cũng không phải ngoại lệ backend. Bộ chuyển chi nhánh sẽ xử lý sai vai trò này.');
   loi = 1;
 }
 

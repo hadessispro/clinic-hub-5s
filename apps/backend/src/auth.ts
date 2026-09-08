@@ -106,7 +106,8 @@ export class AuthService {
      * nhánh — cả hai nhóm không gắn với một chi nhánh cố định. Kiểm GPS và ca
      * làm vẫn do luồng chấm công lo, không phải màn đăng nhập.
      *
-     * DANH SÁCH NÀY PHẢI KHỚP với canUseManagedBranch trong src/auth.js.
+     * DANH SÁCH NÀY PHẢI KHỚP với isManager trong src/branch.js, cộng thêm
+     * pg_staff là ngoại lệ chỉ ở backend vì PG không dùng bộ chuyển chi nhánh.
      * Trước đó backend thiếu ba vai trò marketing mà frontend có, nên frontend
      * nói "được miễn" và không chặn, rồi backend lọc theo chi nhánh và từ
      * chối. Người dùng thấy một thông báo trông như sai mật khẩu, gõ lại mật
