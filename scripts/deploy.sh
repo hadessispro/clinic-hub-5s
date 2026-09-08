@@ -88,6 +88,8 @@ PHAM_VI=(
   "infra/postgres/migrations/*.sql|migrate"
   "deploy/Caddyfile|web"
   "docker-compose.yml|"
+  "Dockerfile.web|web"
+  "Dockerfile.backend|backend,backup-sync"
   "src/*.js|web"
   "src/**/*.js|web"
   "public/*|web"

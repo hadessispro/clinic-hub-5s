@@ -305,7 +305,7 @@ async function bootstrap() {
           marketingSub = null;
         }
 
-        if (!vpsChangeSub && import.meta.env.VITE_DATA_BACKEND === 'vps') {
+        if (!vpsChangeSub && (import.meta.env.VITE_DATA_BACKEND || 'vps') === 'vps') {
           vpsChangeSub = subscribeToVpsChanges((change) => {
             refreshActiveViewFromRealtime({ ...change, source: 'vps-postgresql' });
           });

@@ -5,17 +5,23 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
   || import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('[5S Clinic Hub] Missing Supabase URL or publishable key in .env');
+// Mặc định chạy VPS backend trừ khi được chỉ định rõ ràng là dùng Supabase và có đủ khóa
+const hasCloudConfig = Boolean(supabaseUrl && supabaseKey);
+const useVpsBackend = (import.meta.env.VITE_DATA_BACKEND || 'vps') === 'vps' || !hasCloudConfig;
+
+let cloudClient = null;
+if (!useVpsBackend && hasCloudConfig) {
+  try {
+    cloudClient = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+  } catch (err) {
+    console.error('[5S Clinic Hub] Failed to initialize Supabase client:', err);
+  }
 }
 
-const useVpsBackend = import.meta.env.VITE_DATA_BACKEND === 'vps';
-const cloudClient = useVpsBackend ? null : createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
-
-export const supabase = useVpsBackend ? localClient : cloudClient;
+export const supabase = (useVpsBackend || !cloudClient) ? localClient : cloudClient;
