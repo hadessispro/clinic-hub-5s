@@ -30,6 +30,7 @@ export function mapAssignmentToUI(db) {
   return {
     id: db.id,
     employee: db.employee_code,
+    branchId: db.branch_id || '',
     date: db.work_date,
     shift: db.shift_code,
     owner: db.owner_code || '',
@@ -46,6 +47,7 @@ export function mapAssignmentToUI(db) {
 export function mapAssignmentToDB(ui) {
   return {
     employee_code: ui.employee,
+    branch_id: ui.branchId || undefined,
     work_date: ui.date,
     shift_code: ui.shift,
     owner_code: ui.owner || null,
@@ -155,11 +157,13 @@ export async function getEmployeeAllowedShifts(employeeCode) {
 export async function createScheduleAssignment(assignment) {
   try {
     const dbData = mapAssignmentToDB(assignment);
-    const { data, error } = await supabase
-      .from('schedule_assignments')
-      .upsert(dbData, { onConflict: 'employee_code,work_date' })
-      .select()
-      .single();
+    const { data: existing, error: findError } = await supabase.from('schedule_assignments')
+      .select('*').eq('employee_code', dbData.employee_code).eq('work_date', dbData.work_date).maybeSingle();
+    if (findError) throw findError;
+    const query = existing?.id
+      ? supabase.from('schedule_assignments').update(dbData).eq('id', existing.id)
+      : supabase.from('schedule_assignments').insert(dbData);
+    const { data, error } = await query.select().single();
       
     if (error) throw error;
     return mapAssignmentToUI(data);

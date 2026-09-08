@@ -10,7 +10,13 @@ import {
   syncOfflineAttendance
 } from '../services/attendance.js';
 import { getEmployees } from '../services/employees.js';
-import { getEmployeeAllowedShifts, getScheduleAssignments } from '../services/schedule.js';
+import {
+  createScheduleAssignment,
+  deleteScheduleAssignment,
+  getEmployeeAllowedShifts,
+  getScheduleAssignments,
+  getShiftConfiguration,
+} from '../services/schedule.js';
 import {
   acquireCurrentPosition,
   acquirePrecisePosition,
@@ -203,11 +209,11 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
       </div>
     </div>
     <div class="attendance-work-summary-line">
-      <span class="is-workday"><small>Ngày công</small><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b></span>
-      <span class="is-regular"><small>Công thường</small><b>${minuteLabel(totals.regularMinutes)}</b></span>
-      <span class="is-overtime"><small>Tăng ca đã duyệt</small><b>${minuteLabel(totals.overtimeMinutes)}</b></span>
-      <span class="is-payable"><small>Tổng tính công</small><b>${minuteLabel(totals.payableMinutes)}</b></span>
-      <span class="is-review"><small>Cần đối chiếu</small><b>${Number(totals.incompleteDays || 0)} ngày</b></span>
+      <span class="is-workday"><i class="ri-calendar-check-line"></i><small>Ngày công</small><b>${Number(totals.workdays || 0).toFixed(3).replace(/\.?0+$/, '')}</b></span>
+      <span class="is-regular"><i class="ri-time-line"></i><small>Công thường</small><b>${minuteLabel(totals.regularMinutes)}</b></span>
+      <span class="is-overtime"><i class="ri-add-circle-line"></i><small>Tăng ca đã duyệt</small><b>${minuteLabel(totals.overtimeMinutes)}</b></span>
+      <span class="is-payable"><i class="ri-calculator-line"></i><small>Tổng tính công</small><b>${minuteLabel(totals.payableMinutes)}</b></span>
+      <span class="is-review"><i class="ri-error-warning-line"></i><small>Cần đối chiếu</small><b>${Number(totals.incompleteDays || 0)} ngày</b></span>
     </div>
     <div class="table-wrap attendance-work-table"><table>
       <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status">${canEdit ? '<col class="col-actions" style="width:105px;">' : ''}</colgroup>
@@ -459,7 +465,92 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts, assignedS
   `;
 }
 
-function renderAdjustmentDialog(employees, canEdit = false) {
+function employeeBranchName(employee) {
+  return BRANCHES[employee?.branchId]?.shortName || 'Chưa gán chi nhánh';
+}
+
+function employeeInitials(name = '') {
+  return String(name).trim().split(/\s+/).slice(-2).map((part) => part.charAt(0)).join('').toUpperCase() || 'NS';
+}
+
+function configuredShiftsForEmployee(employee, configuration) {
+  const codes = new Set((configuration?.allowed || [])
+    .filter((item) => item.employee_code === employee?.id)
+    .map((item) => item.shift_code));
+  const configured = (configuration?.shifts || [])
+    .filter((item) => item.active !== false && codes.has(item.code))
+    .map((item) => ({ id: item.code, name: item.name, start: String(item.start_time).slice(0, 5), end: String(item.end_time).slice(0, 5) }));
+  if (configured.length) return configured;
+  const fallbackCode = employee?.shift || defaultShiftForDepartment(employee?.department);
+  return SHIFTS.filter((item) => item.id === fallbackCode);
+}
+
+function renderAdminEmployeePicker(employees, selectedEmployee) {
+  const branchOrder = ['le-van-tho', 'pham-van-chieu', 'unknown'];
+  const groups = new Map(branchOrder.map((branch) => [branch, []]));
+  [...employees].sort((left, right) => String(left.name).localeCompare(String(right.name), 'vi'))
+    .forEach((employee) => {
+      const branch = BRANCHES[employee.branchId] ? employee.branchId : 'unknown';
+      groups.get(branch).push(employee);
+    });
+  return `<div class="attendance-employee-combobox" id="attendanceEmployeeCombobox">
+    <span class="attendance-field-label">Nhân sự đang kiểm tra</span>
+    <button class="attendance-employee-trigger" type="button" data-action="toggle-employee-picker" aria-haspopup="listbox" aria-expanded="false">
+      <span class="attendance-employee-avatar">${escapeHTML(employeeInitials(selectedEmployee?.name))}</span>
+      <span class="attendance-employee-trigger-copy"><strong>${escapeHTML(selectedEmployee?.name || 'Chọn nhân sự')}</strong><small>${escapeHTML(selectedEmployee?.id || '—')} · ${escapeHTML(selectedEmployee?.role || departmentName(selectedEmployee?.department))}</small></span>
+      <span class="attendance-employee-trigger-branch">${escapeHTML(employeeBranchName(selectedEmployee))}</span>
+      <i class="ri-arrow-down-s-line" aria-hidden="true"></i>
+    </button>
+    <div class="attendance-employee-popover" id="attendanceEmployeePopover" hidden>
+      <label class="attendance-employee-search"><i class="ri-search-line"></i><input id="attendanceEmployeeSearch" type="search" placeholder="Tìm tên, mã nhân viên hoặc vị trí…" autocomplete="off"></label>
+      <div class="attendance-employee-results" role="listbox">
+        ${branchOrder.map((branch) => {
+          const rows = groups.get(branch);
+          if (!rows.length) return '';
+          const title = branch === 'unknown' ? 'Chưa xác định chi nhánh' : BRANCHES[branch].shortName;
+          return `<section class="attendance-employee-group" data-employee-group><header><span>${escapeHTML(title)}</span><b>${rows.length}</b></header>${rows.map((employee) => `<button type="button" role="option" data-action="select-attendance-employee" data-employee="${escapeHTML(employee.id)}" data-employee-search="${escapeHTML(normalizeText(`${employee.name} ${employee.id} ${employee.role} ${departmentName(employee.department)} ${employeeBranchName(employee)}`))}"><span class="attendance-employee-avatar">${escapeHTML(employeeInitials(employee.name))}</span><span><strong>${escapeHTML(employee.name)}</strong><small>${escapeHTML(employee.id)} · ${escapeHTML(employee.role || departmentName(employee.department))}</small></span><em>${escapeHTML(departmentName(employee.department))}</em></button>`).join('')}</section>`;
+        }).join('')}
+        <p class="attendance-employee-no-result" hidden>Không tìm thấy nhân sự phù hợp.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderSelectedEmployeeProfile(employee, allowedShifts) {
+  return `<section class="attendance-selected-profile">
+    <span class="attendance-profile-avatar">${escapeHTML(employeeInitials(employee?.name))}</span>
+    <div class="attendance-profile-identity"><small>Hồ sơ đang đối chiếu</small><strong>${escapeHTML(employee?.name || 'Chưa chọn nhân sự')}</strong><span>${escapeHTML(employee?.id || '—')}</span></div>
+    <div class="attendance-profile-facts">
+      <span><small>Chi nhánh hồ sơ</small><b><i class="ri-map-pin-2-line"></i>${escapeHTML(employeeBranchName(employee))}</b></span>
+      <span><small>Vị trí làm việc</small><b><i class="ri-briefcase-4-line"></i>${escapeHTML(employee?.role || departmentName(employee?.department))}</b></span>
+      <span><small>Phòng ban</small><b><i class="ri-team-line"></i>${escapeHTML(departmentName(employee?.department))}</b></span>
+    </div>
+    <div class="attendance-profile-shifts"><small>Ca được phép</small><div>${allowedShifts.map((shift) => `<span><b>${escapeHTML(shift.name)}</b>${escapeHTML(shift.start)}–${escapeHTML(shift.end)}</span>`).join('') || '<span>Chưa cấu hình ca</span>'}</div></div>
+    <div class="attendance-profile-actions"><button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-time-line"></i> Bổ sung công</button><button class="secondary-button" type="button" data-action="open-schedule-modal"><i class="ri-calendar-event-line"></i> Xếp / đổi ca</button></div>
+  </section>`;
+}
+
+function renderScheduleAdjustmentDialog(employee, allowedShifts) {
+  return `<div class="attendance-adjust-dialog" id="scheduleAdjustModal" hidden>
+    <button class="attendance-adjust-backdrop" type="button" data-action="close-schedule-modal" aria-label="Đóng"></button>
+    <section class="attendance-adjust-sheet attendance-schedule-sheet" role="dialog" aria-modal="true" aria-labelledby="scheduleDialogTitle">
+      <div class="attendance-adjust-header"><div><p class="eyebrow">Phân ca nhân sự</p><h2 id="scheduleDialogTitle">Xếp hoặc thay đổi ca làm</h2></div><button class="icon-button" type="button" data-action="close-schedule-modal" aria-label="Đóng"><i class="ri-close-line"></i></button></div>
+      <div class="schedule-dialog-person"><span class="attendance-employee-avatar">${escapeHTML(employeeInitials(employee?.name))}</span><div><strong>${escapeHTML(employee?.name || '')}</strong><small>${escapeHTML(employee?.id || '')} · ${escapeHTML(employee?.role || departmentName(employee?.department))}</small></div><em>${escapeHTML(employeeBranchName(employee))}</em></div>
+      <form id="scheduleAdjustForm" data-assignment-id="">
+        <input id="scheduleEmployee" type="hidden" value="${escapeHTML(employee?.id || '')}">
+        <div class="attendance-adjust-grid">
+          <label><span>Ngày làm việc *</span><input type="date" id="scheduleWorkDate" required value="${clinicDateISO()}"></label>
+          <label><span>Chi nhánh làm việc *</span><select id="scheduleBranch" required>${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}" ${employee?.branchId === branch.id ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}</select></label>
+          <fieldset class="schedule-shift-choice full"><legend>Ca làm việc theo đúng vị trí</legend>${allowedShifts.map((shift, index) => `<label><input type="radio" name="scheduleShift" value="${escapeHTML(shift.id)}" ${index === 0 ? 'checked' : ''}><span><b>${escapeHTML(shift.name)}</b><small>${escapeHTML(shift.start)}–${escapeHTML(shift.end)}</small></span></label>`).join('') || '<p>Nhân sự chưa được cấu hình ca hợp lệ.</p>'}</fieldset>
+          <label class="full"><span>Ghi chú sắp xếp</span><textarea id="scheduleNote" rows="3" placeholder="Ví dụ: Đổi ca theo điều phối ngày, hỗ trợ chi nhánh khác…"></textarea></label>
+        </div>
+        <div class="attendance-adjust-actions"><button type="button" class="danger-btn" id="scheduleDeleteBtn" hidden><i class="ri-delete-bin-6-line"></i> Xóa lịch ngày này</button><button class="secondary-button" type="button" data-action="close-schedule-modal">Hủy</button><button class="primary-button" type="submit" id="scheduleSubmitBtn"><i class="ri-save-3-line"></i> Lưu lịch làm</button></div>
+      </form>
+    </section>
+  </div>`;
+}
+
+function renderAdjustmentDialog(employee, allowedShifts, canEdit = false) {
   if (!canEdit) return '';
   return `
     <div class="attendance-adjust-dialog" id="attendanceAdjustModal" hidden>
@@ -470,17 +561,13 @@ function renderAdjustmentDialog(employees, canEdit = false) {
             <p class="eyebrow">Quản trị chấm công</p>
             <h2 id="adjustDialogTitle">Điều chỉnh &amp; Bổ sung ngày công</h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-adjust-modal" aria-label="Đóng">×</button>
+          <button class="icon-button" type="button" data-action="close-adjust-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
         </div>
 
         <form id="attendanceAdjustForm">
           <div class="attendance-adjust-grid">
-            <label class="full">
-              <span>Nhân sự áp dụng *</span>
-              <select id="adjustEmployee" required>
-                ${employees.map((emp) => `<option value="${emp.id}">${escapeHTML(emp.name)} (${emp.id} - ${escapeHTML(departmentName(emp.department))})</option>`).join('')}
-              </select>
-            </label>
+            <div class="schedule-dialog-person full"><span class="attendance-employee-avatar">${escapeHTML(employeeInitials(employee?.name))}</span><div><small>Nhân sự áp dụng</small><strong>${escapeHTML(employee?.name || '')}</strong><span>${escapeHTML(employee?.id || '')} · ${escapeHTML(employee?.role || departmentName(employee?.department))}</span></div><em>${escapeHTML(employeeBranchName(employee))}</em></div>
+            <input id="adjustEmployee" type="hidden" value="${escapeHTML(employee?.id || '')}">
 
             <label>
               <span>Ngày làm việc *</span>
@@ -497,7 +584,7 @@ function renderAdjustmentDialog(employees, canEdit = false) {
             <label class="full">
               <span>Ca làm việc *</span>
               <select id="adjustShift" required>
-                ${SHIFTS.map((s) => `<option value="${s.id}">${escapeHTML(s.name)} (${escapeHTML(s.start)}–${escapeHTML(s.end)})</option>`).join('')}
+                ${allowedShifts.map((shift) => `<option value="${shift.id}">${escapeHTML(shift.name)} (${escapeHTML(shift.start)}–${escapeHTML(shift.end)})</option>`).join('')}
               </select>
             </label>
 
@@ -533,7 +620,7 @@ function renderAdjustmentDialog(employees, canEdit = false) {
 
           <div class="attendance-adjust-actions">
             <button type="button" class="danger-btn" id="adjustDeleteDayBtn" hidden>
-              🗑 Xóa lượt chấm ngày này
+              <i class="ri-delete-bin-6-line"></i> Xóa lượt chấm ngày này
             </button>
             <button class="secondary-button" type="button" data-action="close-adjust-modal">Hủy</button>
             <button class="primary-button" type="submit" id="adjustSubmitBtn">
@@ -564,7 +651,7 @@ export async function renderView(state) {
   const rejectedQueue = getRejectedQueue(state.user?.id);
   const employeeFallback = currentEmployeeFallback(state);
 
-  const [employees, remoteRecords, pendingProofs, allowedShiftRows, todayAssignments] = await Promise.all([
+  const [employees, remoteRecords, pendingProofs, allowedShiftRows, todayAssignments, shiftConfiguration] = await Promise.all([
     navigator.onLine ? getEmployees().catch(() => (state.employeeCode ? [employeeFallback] : [])) : Promise.resolve(state.employeeCode ? [employeeFallback] : []),
     (state.employeeCode || ops) && navigator.onLine
       ? getAttendance({ employee: ops ? undefined : state.employeeCode, limit: ops ? 500 : 500 }).catch(() => [])
@@ -572,6 +659,7 @@ export async function renderView(state) {
     state.user?.id ? listPendingProofs(state.user.id).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getEmployeeAllowedShifts(state.employeeCode).catch(() => []) : Promise.resolve([]),
     navigator.onLine && state.employeeCode ? getScheduleAssignments(workDate).catch(() => []) : Promise.resolve([]),
+    navigator.onLine && canEditWorkday ? getShiftConfiguration().catch(() => ({ shifts: [], allowed: [] })) : Promise.resolve({ shifts: [], allowed: [] }),
   ]);
 
   const scopedEmployees = state.role === 'leader'
@@ -579,13 +667,14 @@ export async function renderView(state) {
     : employees;
 
   if (!attendanceAdminSelectedEmployee || !scopedEmployees.some((e) => e.id === attendanceAdminSelectedEmployee)) {
-    attendanceAdminSelectedEmployee = (state.employeeCode && scopedEmployees.some((e) => e.id === state.employeeCode))
-      ? state.employeeCode
-      : (scopedEmployees[0]?.id || '');
+    attendanceAdminSelectedEmployee = canEditWorkday
+      ? (scopedEmployees.find((item) => item.status === 'active' && item.department !== 'it')?.id || scopedEmployees[0]?.id || '')
+      : state.employeeCode;
   }
 
   const targetEmployeeCode = canEditWorkday ? attendanceAdminSelectedEmployee : state.employeeCode;
   const targetEmployee = scopedEmployees.find((item) => item.id === targetEmployeeCode) || employeeFallback;
+  const targetAllowedShifts = configuredShiftsForEmployee(targetEmployee, shiftConfiguration);
 
   const workSummary = (navigator.onLine && targetEmployeeCode)
     ? await getAttendanceWorkSummary(attendanceWorkMonth, targetEmployeeCode).catch((error) => {
@@ -652,7 +741,7 @@ export async function renderView(state) {
     : (state.role === 'leader' ? `Chấm công bộ phận ${departmentName(state.department)}` : 'Chấm công của tôi');
 
   context = {
-    state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
+    state, settings, employee, employees: scopedEmployees, targetEmployee, targetEmployeeCode, targetAllowedShifts, shiftConfiguration, shift, allowedShifts, records: filteredRecords, workDate, todayCheckin, todayCheckout, ops, canEditWorkday,
     // Nhân viên chọn trong các ca hợp lệ của vị trí; nếu đã được phân lịch,
     // danh sách chỉ còn đúng ca đã phân.
     selectedShift: shift || allowedShifts[0] || null,
@@ -747,7 +836,10 @@ export async function renderView(state) {
         <div class="attendance-header-actions">
           ${canEditWorkday ? `
           <button class="primary-button" type="button" data-action="open-adjust-modal">
-            <span>✎</span> Điều chỉnh / Bổ sung công
+            <i class="ri-time-line"></i> Điều chỉnh công
+          </button>
+          <button class="secondary-button" type="button" data-action="open-schedule-modal">
+            <i class="ri-calendar-event-line"></i> Xếp / đổi ca
           </button>` : ''}
           <button class="secondary-button" type="button" data-action="export-work-excel">
             Xuất Excel bảng công
@@ -768,16 +860,7 @@ export async function renderView(state) {
       ${!canEditWorkday && state.employeeCode ? renderTodayCard(todayCheckin, todayCheckout, shift, employee) : ''}
 
       <section class="attendance-admin-toolbar" aria-label="Bộ lọc bảng công">
-        <label class="employee-select-box">
-          <span>${canEditWorkday ? 'Chọn nhân sự kiểm tra &amp; sửa công:' : 'Chọn nhân sự theo dõi công:'}</span>
-          <select id="attendanceSelectedEmployee">
-            ${scopedEmployees.map((emp) => `
-              <option value="${emp.id}" ${emp.id === targetEmployeeCode ? 'selected' : ''}>
-                ${escapeHTML(emp.name)} (${escapeHTML(emp.id)} - ${escapeHTML(departmentName(emp.department))})
-              </option>
-            `).join('')}
-          </select>
-        </label>
+        ${renderAdminEmployeePicker(scopedEmployees, targetEmployee)}
         <label>
           <span>Tháng tính công:</span>
           <input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(attendanceWorkMonth)}">
@@ -803,12 +886,14 @@ export async function renderView(state) {
         </label>
       </section>
 
+      ${renderSelectedEmployeeProfile(targetEmployee, targetAllowedShifts)}
+
       <div class="attendance-nav-tabs">
         <button type="button" class="attendance-tab-btn ${attendanceActiveTab === 'workdays' ? 'is-active' : ''}" data-action="switch-tab" data-tab="workdays">
-          <span>📅 ${canEditWorkday ? 'Bảng ngày công &amp; Điều chỉnh' : 'Bảng ngày công'}</span>
+          <span><i class="ri-table-line"></i> ${canEditWorkday ? 'Bảng ngày công &amp; Điều chỉnh' : 'Bảng ngày công'}</span>
         </button>
         <button type="button" class="attendance-tab-btn ${attendanceActiveTab === 'history' ? 'is-active' : ''}" data-action="switch-tab" data-tab="history">
-          <span>📍 Nhật ký quét GPS (${filteredRecords.length})</span>
+          <span><i class="ri-map-pin-time-line"></i> Nhật ký quét GPS (${filteredRecords.length})</span>
         </button>
       </div>
 
@@ -832,7 +917,8 @@ export async function renderView(state) {
         </section>
       `}
     </div>
-    ${renderAdjustmentDialog(scopedEmployees, canEditWorkday)}
+    ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
+    ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
     ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
   `;
 }
@@ -1356,7 +1442,7 @@ function openAdjustModal(data = {}) {
   if (delBtn) {
     delBtn.hidden = !(data.checkin || data.checkout);
     delBtn.disabled = false;
-    delBtn.textContent = '🗑 Xóa lượt chấm ngày này';
+    delBtn.innerHTML = '<i class="ri-delete-bin-6-line"></i> Xóa lượt chấm ngày này';
   }
   if (submitBtn) {
     submitBtn.disabled = false;
@@ -1371,6 +1457,41 @@ function closeAdjustModal() {
   if (modal) modal.hidden = true;
 }
 
+async function openScheduleModal(workDate = clinicDateISO()) {
+  const modal = document.getElementById('scheduleAdjustModal');
+  const form = document.getElementById('scheduleAdjustForm');
+  if (!modal || !form || !context?.targetEmployeeCode) return;
+  const dateInput = document.getElementById('scheduleWorkDate');
+  const branchInput = document.getElementById('scheduleBranch');
+  const noteInput = document.getElementById('scheduleNote');
+  const deleteButton = document.getElementById('scheduleDeleteBtn');
+  const submitButton = document.getElementById('scheduleSubmitBtn');
+  if (dateInput) dateInput.value = workDate;
+  modal.hidden = false;
+  form.classList.add('is-loading');
+  if (submitButton) { submitButton.disabled = true; submitButton.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang tải lịch'; }
+  try {
+    const assignments = await getScheduleAssignments(workDate);
+    const existing = assignments.find((item) => item.employee === context.targetEmployeeCode);
+    form.dataset.assignmentId = existing?.id || '';
+    const selectedShift = existing?.shift || context.targetAllowedShifts?.[0]?.id || '';
+    form.querySelectorAll('input[name="scheduleShift"]').forEach((input) => { input.checked = input.value === selectedShift; });
+    if (branchInput) branchInput.value = existing?.branchId || context.targetEmployee?.branchId || BRANCH.id;
+    if (noteInput) noteInput.value = existing?.note || '';
+    if (deleteButton) deleteButton.hidden = !existing?.id;
+  } catch (error) {
+    showToast(error?.message || 'Không tải được lịch hiện tại của nhân sự.', true);
+  } finally {
+    form.classList.remove('is-loading');
+    if (submitButton) { submitButton.disabled = false; submitButton.innerHTML = '<i class="ri-save-3-line"></i> Lưu lịch làm'; }
+  }
+}
+
+function closeScheduleModal() {
+  const modal = document.getElementById('scheduleAdjustModal');
+  if (modal) modal.hidden = true;
+}
+
 export function initView() {
   const state = store.getState();
   if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
@@ -1382,10 +1503,20 @@ export function initView() {
 
   const refreshAttendanceFilters = () => store.notify();
 
-  document.getElementById('attendanceSelectedEmployee')?.addEventListener('change', (event) => {
-    attendanceAdminSelectedEmployee = event.target.value;
-    attendanceWorkPage = 1;
-    navigateTo('attendance');
+  document.getElementById('attendanceEmployeeSearch')?.addEventListener('input', (event) => {
+    const query = normalizeText(event.target.value);
+    let visibleCount = 0;
+    document.querySelectorAll('[data-employee-group]').forEach((group) => {
+      let groupVisible = 0;
+      group.querySelectorAll('[data-employee-search]').forEach((button) => {
+        const visible = !query || button.dataset.employeeSearch.includes(query);
+        button.hidden = !visible;
+        if (visible) { groupVisible += 1; visibleCount += 1; }
+      });
+      group.hidden = groupVisible === 0;
+    });
+    const empty = document.querySelector('.attendance-employee-no-result');
+    if (empty) empty.hidden = visibleCount > 0;
   });
 
   document.getElementById('attendanceWorkMonth')?.addEventListener('change', (event) => {
@@ -1478,6 +1609,21 @@ export function initView() {
         refreshAttendanceFilters();
       }
     }
+    if (action === 'toggle-employee-picker') {
+      const popover = document.getElementById('attendanceEmployeePopover');
+      const trigger = event.target.closest('[data-action="toggle-employee-picker"]');
+      if (popover && trigger) {
+        const willOpen = popover.hidden;
+        popover.hidden = !willOpen;
+        trigger.setAttribute('aria-expanded', String(willOpen));
+        if (willOpen) window.requestAnimationFrame(() => document.getElementById('attendanceEmployeeSearch')?.focus());
+      }
+    }
+    if (action === 'select-attendance-employee') {
+      attendanceAdminSelectedEmployee = event.target.closest('[data-employee]')?.dataset.employee || '';
+      attendanceWorkPage = 1;
+      navigateTo('attendance');
+    }
     if (action === 'open-adjust-modal') {
       if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
         showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền sửa công.', true);
@@ -1486,8 +1632,8 @@ export function initView() {
       openAdjustModal({
         employeeCode: context?.targetEmployeeCode || '',
         workDate: clinicDateISO(),
-        branchId: BRANCH.id,
-        shiftCode: 'clinic-0800',
+        branchId: context?.targetEmployee?.branchId || BRANCH.id,
+        shiftCode: context?.targetAllowedShifts?.[0]?.id || 'clinic-0800',
       });
     }
     if (action === 'adjust-day') {
@@ -1509,6 +1655,14 @@ export function initView() {
     if (action === 'close-adjust-modal') {
       closeAdjustModal();
     }
+    if (action === 'open-schedule-modal') {
+      if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+        showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền xếp lịch.', true);
+        return;
+      }
+      await openScheduleModal();
+    }
+    if (action === 'close-schedule-modal') closeScheduleModal();
     if (action === 'open-checkin') openDialog();
     if (action === 'checkout') confirmCheckout(event.target.closest('button'));
     if (action === 'export-attendance') exportAttendance();
@@ -1577,6 +1731,48 @@ export function initView() {
     }
   });
 
+  document.getElementById('scheduleWorkDate')?.addEventListener('change', (event) => openScheduleModal(event.target.value));
+  const scheduleForm = document.getElementById('scheduleAdjustForm');
+  scheduleForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) return;
+    const submitButton = document.getElementById('scheduleSubmitBtn');
+    const date = document.getElementById('scheduleWorkDate').value;
+    const selectedShift = scheduleForm.querySelector('input[name="scheduleShift"]:checked')?.value;
+    if (!selectedShift) { showToast('Nhân sự chưa có ca hợp lệ để xếp lịch.', true); return; }
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang lưu';
+    try {
+      await createScheduleAssignment({
+        employee: context.targetEmployeeCode,
+        date,
+        branchId: document.getElementById('scheduleBranch').value,
+        shift: selectedShift,
+        status: 'planned',
+        note: document.getElementById('scheduleNote').value || '[ADMIN_IT] Điều chỉnh lịch làm',
+      });
+      showToast(`Đã lưu lịch làm ngày ${date} cho ${context.targetEmployee.name}.`);
+      closeScheduleModal();
+      navigateTo('attendance');
+    } catch (error) {
+      showToast(error?.message || 'Không thể lưu lịch làm.', true);
+      submitButton.disabled = false;
+      submitButton.innerHTML = '<i class="ri-save-3-line"></i> Lưu lịch làm';
+    }
+  });
+
+  document.getElementById('scheduleDeleteBtn')?.addEventListener('click', async () => {
+    const assignmentId = scheduleForm?.dataset.assignmentId;
+    const date = document.getElementById('scheduleWorkDate')?.value;
+    if (!assignmentId || !confirm(`Xóa lịch làm ngày ${date} của ${context.targetEmployee.name}?`)) return;
+    try {
+      await deleteScheduleAssignment(assignmentId);
+      showToast(`Đã xóa lịch làm ngày ${date}.`);
+      closeScheduleModal();
+      navigateTo('attendance');
+    } catch (error) { showToast(error?.message || 'Không thể xóa lịch làm.', true); }
+  });
+
   const deleteDayBtn = document.getElementById('adjustDeleteDayBtn');
   deleteDayBtn?.addEventListener('click', async () => {
     if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
@@ -1597,7 +1793,7 @@ export function initView() {
       console.error('[Attendance] Delete day records failed:', err);
       showToast(err?.message || 'Không thể xóa dữ liệu.', true);
       deleteDayBtn.disabled = false;
-      deleteDayBtn.textContent = '🗑 Xóa lượt chấm ngày này';
+      deleteDayBtn.innerHTML = '<i class="ri-delete-bin-6-line"></i> Xóa lượt chấm ngày này';
     }
   });
 
