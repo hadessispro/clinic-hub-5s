@@ -82,6 +82,8 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       APP_VERSION: ${APP_VERSION:-postgres}
       UPLOAD_DIR: /data/uploads
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSa
 import { promisify } from 'node:util';
 import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Injectable, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { InfrastructureService } from './infrastructure';
+import { TelegramService } from './telegram';
 
 const scrypt = promisify(scryptCallback);
 const accessTtlSeconds = 15 * 60;
@@ -68,9 +69,12 @@ async function passwordMatches(password: string, salt: string, expectedHex: stri
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly infrastructure: InfrastructureService) {}
+  constructor(
+    private readonly infrastructure: InfrastructureService,
+    private readonly telegram: TelegramService,
+  ) {}
 
-  async login(identifierInput: string, password: string, branchIdInput?: string) {
+  async login(identifierInput: string, password: string, branchIdInput?: string, clientIp = 'unknown', userAgent = '') {
     const identifier = String(identifierInput || '').trim().toLowerCase();
     const requestedBranchId = String(branchIdInput || '').trim().toLowerCase();
     // "all" is a neutral login scope. The authenticated profile still keeps
@@ -186,11 +190,50 @@ export class AuthService {
       }
     }
     if (!valid) {
-      await this.infrastructure.postgres.query(
+      const failed = await this.infrastructure.postgres.query<{ failed_attempts: number }>(
         `update app.local_accounts set failed_attempts=failed_attempts+1,
          locked_until=case when failed_attempts>=4 then now()+interval '10 minutes' else locked_until end,
-         updated_at=now() where profile_key=$1`, [candidate.profile_key],
+         updated_at=now() where profile_key=$1
+         returning failed_attempts`, [candidate.profile_key],
       );
+      const attempts = Number(failed.rows[0]?.failed_attempts || 1);
+      const isLocked = attempts >= 4;
+
+      try {
+        await this.infrastructure.postgres.query(
+          `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
+           values ('login_failed', $1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+          [
+            isLocked ? 'critical' : attempts >= 3 ? 'warning' : 'info',
+            profile.employee_code || identifier,
+            profile.full_name || '',
+            profile.role || '',
+            profile.branch_id || branchId,
+            clientIp,
+            userAgent,
+            JSON.stringify({ identifier, attempts, isLocked }),
+          ],
+        );
+
+        if (attempts >= 3) {
+          void this.telegram.sendSecurityAlert({
+            eventType: 'login_failed',
+            severity: isLocked ? 'critical' : 'warning',
+            actorCode: String(profile.employee_code || identifier),
+            actorName: String(profile.full_name || 'Nhân sự'),
+            actorRole: String(profile.role || 'staff'),
+            branchId: String(profile.branch_id || branchId),
+            clientIp,
+            userAgent,
+            details: {
+              canhBao: isLocked ? 'Tài khoản đã bị tạm khóa 10 phút do sai mật khẩu 4 lần' : 'Đăng nhập sai nhiều lần liên tiếp',
+              soLanSai: attempts,
+            },
+          });
+        }
+      } catch {
+        // Safe fail
+      }
       throw new UnauthorizedException('Sai tài khoản, chi nhánh hoặc mật khẩu.');
     }
 
@@ -220,7 +263,52 @@ export class AuthService {
       [candidate.profile_key],
     );
     await this.infrastructure.markActive(user.id, user.role);
+
+    try {
+      await this.infrastructure.postgres.query(
+        `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
+         values ('login_success', 'info', $1, $2, $3, $4, $5, $6, $7::jsonb)`,
+        [user.employeeCode, profile.full_name || '', user.role, user.branchId, clientIp, userAgent, JSON.stringify({ branchRequested: branchId })],
+      );
+
+      if (['admin', 'admin_it', 'superadmin'].includes(user.role)) {
+        void this.telegram.sendSecurityAlert({
+          eventType: 'login_success',
+          severity: 'info',
+          actorCode: user.employeeCode,
+          actorName: String(profile.full_name || 'Quản trị viên'),
+          actorRole: user.role,
+          branchId: user.branchId,
+          clientIp,
+          userAgent,
+          details: { thongBao: 'Quản trị viên đăng nhập vào hệ thống.' },
+        });
+      }
+    } catch {
+      // Safe fail
+    }
+
     return { user, session: { accessToken, refreshToken, expiresIn: accessTtlSeconds } };
+  }
+
+  async logout(user: AuthUser, refreshToken?: string, clientIp = 'unknown', userAgent = '') {
+    if (refreshToken) {
+      const tokenHash = createHmac('sha256', jwtSecret()).update(refreshToken).digest('hex');
+      await this.infrastructure.postgres.query(
+        'update app.refresh_sessions set revoked_at=now() where token_hash=$1',
+        [tokenHash],
+      );
+    }
+    try {
+      await this.infrastructure.postgres.query(
+        `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
+         values ('logout', 'info', $1, $2, $3, $4, $5, $6, '{}'::jsonb)`,
+        [user.employeeCode, (user.profile?.full_name as string) || '', user.role, user.branchId, clientIp, userAgent],
+      );
+    } catch {
+      // Ignored
+    }
+    return { ok: true };
   }
 
   async userFromToken(token: string): Promise<AuthUser> {
@@ -402,8 +490,26 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('/login')
-  login(@Body() body: { identifier?: string; password?: string; branchId?: string }) {
-    return this.auth.login(body.identifier || '', body.password || '', body.branchId);
+  login(@Req() req: any, @Body() body: { identifier?: string; password?: string; branchId?: string }) {
+    const clientIp = req.headers?.['cf-connecting-ip']
+      || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.ip
+      || req.socket?.remoteAddress
+      || 'unknown';
+    const userAgent = String(req.headers?.['user-agent'] || '');
+    return this.auth.login(body.identifier || '', body.password || '', body.branchId, clientIp, userAgent);
+  }
+
+  @Post('/logout')
+  @UseGuards(AuthGuard)
+  logout(@Req() req: { user: AuthUser; headers?: Record<string, string | undefined>; ip?: string; socket?: any }, @Body() body: { refreshToken?: string }) {
+    const clientIp = req.headers?.['cf-connecting-ip']
+      || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+      || req.ip
+      || req.socket?.remoteAddress
+      || 'unknown';
+    const userAgent = String(req.headers?.['user-agent'] || '');
+    return this.auth.logout(req.user, body.refreshToken, clientIp, userAgent);
   }
 
   @Post('/refresh')

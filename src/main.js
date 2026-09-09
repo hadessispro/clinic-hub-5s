@@ -18,6 +18,7 @@ import { initSmartChat, destroySmartChat } from './components/smart-chat.js';
 import { initErrorMonitoring } from './services/error-monitor.js';
 import { initPushNotifications, destroyPushNotifications } from './services/push-notifications.js';
 import { subscribeToVpsChanges } from './local-client.js';
+import { initSecuritySentinel } from './services/security-sentinel.js';
 
 let notifSub = null;
 let leaveSub = null;
@@ -166,6 +167,7 @@ window.addEventListener('offline', () => {
  */
 async function bootstrap() {
   console.log('[Clinic Hub] Bootstrapping application...');
+  initSecuritySentinel();
 
   const savedSidebarState = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
   if (savedSidebarState === 'true') {
