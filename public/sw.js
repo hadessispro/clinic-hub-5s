@@ -68,6 +68,7 @@ self.addEventListener('push', (event) => {
     body: payload.body || 'Bạn có thông tin mới cần kiểm tra.',
     icon: '/images/app-icon-192.png',
     badge: '/images/app-icon-192.png',
+    vibrate: [200, 100, 200],
     tag: payload.id || `clinic-${Date.now()}`,
     renotify: true,
     data: { url: payload.url || '/', view: payload.view || 'dashboard', id: payload.id || '' },

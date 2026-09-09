@@ -17,6 +17,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   ) {}
 
   onApplicationBootstrap() {
+    void this.tick();
     this.timer = setInterval(() => void this.tick(), 60_000);
   }
 
@@ -44,17 +45,20 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
       this.lastResetDate = dateKey;
     }
 
-    // 1. Nhac Check-in & Chuc ngay moi:
-    // Ca 08:00 (HC, S, F): nhac luc 07:35 - 07:45
-    // Ca 10:00 (C): nhac luc 09:35 - 09:45
-    if ((hour === 7 && minute >= 35 && minute <= 45) || (hour === 9 && minute >= 35 && minute <= 45)) {
-      await this.processCheckinReminders(dateKey, hour === 7 ? '08:00' : '10:00');
+    // 1. Nhắc Check-in & Chúc ngày mới:
+    // Ca sáng / hành chính (07:30, 08:00): nhắc lúc 07:15 - 07:45
+    // Ca chiều (09:30, 10:00): nhắc lúc 09:15 - 09:45
+    if (hour === 7 && minute >= 15 && minute <= 45) {
+      await this.processCheckinReminders(dateKey, 'morning');
+    }
+    if (hour === 9 && minute >= 15 && minute <= 45) {
+      await this.processCheckinReminders(dateKey, 'afternoon');
     }
 
-    // 2. Nhac Check-out ra ve:
-    // Ca HC (het luc 17:00): nhac luc 17:05 - 17:15
-    // Ca S (het luc 18:00): nhac luc 18:05 - 18:15
-    // Ca C, F (het luc 20:00): nhac luc 20:05 - 20:15
+    // 2. Nhắc Check-out ra về:
+    // Ca HC (hết lúc 17:00): nhắc lúc 17:05 - 17:15
+    // Ca S (hết lúc 18:00): nhắc lúc 18:05 - 18:15
+    // Ca C, F (hết lúc 20:00): nhắc lúc 20:05 - 20:15
     if (
       (hour === 17 && minute >= 5 && minute <= 15)
       || (hour === 18 && minute >= 5 && minute <= 15)
@@ -64,23 +68,23 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
       await this.processCheckoutReminders(dateKey, targetEndTime);
     }
 
-    // 3. Nghi trua & Nap nang luong (12:00 - 12:15):
+    // 3. Nghỉ trưa & Nạp năng lượng (12:00 - 12:15):
     if (hour === 12 && minute >= 0 && minute <= 15) {
       await this.processLunchBreakCare(dateKey);
     }
 
-    // 4. Tiep nang luong giua gio chieu (15:00 - 15:15):
+    // 4. Tiếp năng lượng giữa giờ chiều (15:00 - 15:15):
     if (hour === 15 && minute >= 0 && minute <= 15) {
       await this.processAfternoonCare(dateKey);
     }
 
-    // 5. Dong vien chang cuoi cua ngay (18:15 - 18:30 cho nhan su lam ca toi den 20:00):
+    // 5. Động viên chặng cuối của ngày (18:15 - 18:30 cho nhân sự làm ca tối đến 20:00):
     if (hour === 18 && minute >= 15 && minute <= 30) {
       await this.processEveningCare(dateKey);
     }
   }
 
-  private async processCheckinReminders(dateKey: string, shiftStartTimePrefix: string) {
+  private async processCheckinReminders(dateKey: string, shiftPeriod: 'morning' | 'afternoon') {
     try {
       const assignmentsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
@@ -113,7 +117,13 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
 
         const shift = shiftByCode.get(String(row.payload.shift_code));
         const startTime = String(shift?.start_time || '08:00').slice(0, 5);
-        if (!startTime.startsWith(shiftStartTimePrefix.slice(0, 2))) continue;
+        const [startH] = startTime.split(':').map(Number);
+
+        if (shiftPeriod === 'morning') {
+          if (startH < 7 || startH > 8) continue;
+        } else {
+          if (startH < 9 || startH > 10) continue;
+        }
 
         const trackerKey = `${dateKey}:checkin:${codeKey}`;
         if (this.sentReminders.has(trackerKey)) continue;
@@ -249,18 +259,30 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
          and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
         [dateKey],
       );
-      if (!assignmentsResult.rows.length) return;
+      const checkinsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and payload->>'work_date'=$1 and payload->>'record_type'='checkin' and coalesce(payload->>'status','valid')='valid'`,
+        [dateKey],
+      );
+
+      const activeEmployeeCodes = new Set<string>();
+      for (const row of assignmentsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        if (c) activeEmployeeCodes.add(c);
+      }
+      for (const row of checkinsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        if (c) activeEmployeeCodes.add(c);
+      }
+      if (!activeEmployeeCodes.size) return;
 
       const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
       );
       const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
 
-      for (const row of assignmentsResult.rows) {
-        const empCode = String(row.payload.employee_code || '').trim();
+      for (const empCode of activeEmployeeCodes) {
         const codeKey = empCode.toLowerCase();
-        if (!empCode) continue;
-
         const trackerKey = `${dateKey}:lunch:${codeKey}`;
         if (this.sentReminders.has(trackerKey)) continue;
         this.sentReminders.add(trackerKey);
@@ -312,18 +334,30 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
          and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
         [dateKey],
       );
-      if (!assignmentsResult.rows.length) return;
+      const checkinsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and payload->>'work_date'=$1 and payload->>'record_type'='checkin' and coalesce(payload->>'status','valid')='valid'`,
+        [dateKey],
+      );
+
+      const activeEmployeeCodes = new Set<string>();
+      for (const row of assignmentsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        if (c) activeEmployeeCodes.add(c);
+      }
+      for (const row of checkinsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        if (c) activeEmployeeCodes.add(c);
+      }
+      if (!activeEmployeeCodes.size) return;
 
       const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
       );
       const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
 
-      for (const row of assignmentsResult.rows) {
-        const empCode = String(row.payload.employee_code || '').trim();
+      for (const empCode of activeEmployeeCodes) {
         const codeKey = empCode.toLowerCase();
-        if (!empCode) continue;
-
         const trackerKey = `${dateKey}:afternoon:${codeKey}`;
         if (this.sentReminders.has(trackerKey)) continue;
         this.sentReminders.add(trackerKey);
@@ -370,32 +404,56 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
 
   private async processEveningCare(dateKey: string) {
     try {
+      const shiftsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='work_shifts' and deleted_at is null`,
+      );
+      const shiftByCode = new Map(shiftsResult.rows.map((r) => [String(r.payload.code), r.payload]));
+
       const assignmentsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
          and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
         [dateKey],
       );
-      if (!assignmentsResult.rows.length) return;
-
-      const shiftsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
-        `select payload from app.records where entity_type='work_shifts' and deleted_at is null`,
+      const checkinsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and payload->>'work_date'=$1 and payload->>'record_type'='checkin' and coalesce(payload->>'status','valid')='valid'`,
+        [dateKey],
       );
-      const shiftByCode = new Map(shiftsResult.rows.map((r) => [String(r.payload.code), r.payload]));
+      const checkoutsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='attendance_records' and deleted_at is null
+         and payload->>'work_date'=$1 and payload->>'record_type'='checkout'`,
+        [dateKey],
+      );
+      const checkedOutCodes = new Set(checkoutsResult.rows.map((r) => String(r.payload.employee_code || '').toLowerCase()));
+
+      const activeEveningCodes = new Set<string>();
+      for (const row of assignmentsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        const shift = shiftByCode.get(String(row.payload.shift_code));
+        const endTime = String(shift?.end_time || '17:00').slice(0, 5);
+        if (c && (endTime.startsWith('19') || endTime.startsWith('20'))) {
+          activeEveningCodes.add(c);
+        }
+      }
+      for (const row of checkinsResult.rows) {
+        const c = String(row.payload.employee_code || '').trim();
+        const shift = shiftByCode.get(String(row.payload.shift_code));
+        const endTime = String(shift?.end_time || '17:00').slice(0, 5);
+        if (c && (endTime.startsWith('19') || endTime.startsWith('20'))) {
+          activeEveningCodes.add(c);
+        }
+      }
+
+      if (!activeEveningCodes.size) return;
 
       const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
         `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
       );
       const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
 
-      for (const row of assignmentsResult.rows) {
-        const empCode = String(row.payload.employee_code || '').trim();
+      for (const empCode of activeEveningCodes) {
         const codeKey = empCode.toLowerCase();
-        if (!empCode) continue;
-
-        // Chỉ gửi cho nhân sự làm ca tối (kết thúc từ 19:30 - 20:00)
-        const shift = shiftByCode.get(String(row.payload.shift_code));
-        const endTime = String(shift?.end_time || '17:00').slice(0, 5);
-        if (!endTime.startsWith('20') && !endTime.startsWith('19')) continue;
+        if (checkedOutCodes.has(codeKey)) continue;
 
         const trackerKey = `${dateKey}:evening:${codeKey}`;
         if (this.sentReminders.has(trackerKey)) continue;
