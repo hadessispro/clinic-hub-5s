@@ -32,6 +32,16 @@ export class PushService {
       return { sent: 0, disabled: true };
     }
 
+    // Giai đoạn thử nghiệm cô lập an toàn trên Production: Chỉ cho phép gửi tới tài khoản admin_it
+    const profileCheck = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+      `select payload from app.records where entity_type='profiles' and deleted_at is null and payload->>'id'=$1 limit 1`,
+      [String(userId)],
+    );
+    const userRole = profileCheck.rows[0]?.payload?.role;
+    if (userRole !== 'admin_it') {
+      return { sent: 0 };
+    }
+
     const subscriptions = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
       `select record_key,payload from app.records where entity_type='push_subscriptions' and deleted_at is null
        and payload->>'user_id'=$1 and coalesce((payload->>'active')::boolean,true)=true`,

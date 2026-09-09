@@ -8,7 +8,7 @@ import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js'
 import { loadClinicLocation } from '../services/clinic.js';
 import { showToast } from './toast.js';
 import { confirmAction } from './app-dialog.js';
-import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification } from '../services/push-notifications.js';
+import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification, isPushAllowedForRole } from '../services/push-notifications.js';
 
 let isDropdownOpen = false;
 
@@ -209,10 +209,14 @@ export function renderTopbar(state) {
       });
     }
 
-    // 4. Push Notification Bar Logic
+    // 4. Push Notification Bar Logic (Chỉ hiển thị cho admin_it trong giai đoạn pilot)
     const renderPushBar = async () => {
       const pushBar = document.getElementById('notifPushBar');
       if (!pushBar) return;
+      if (!isPushAllowedForRole(role)) {
+        pushBar.style.display = 'none';
+        return;
+      }
       try {
         const status = await getPushNotificationStatus();
         if (!status.supported) {

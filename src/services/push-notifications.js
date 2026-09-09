@@ -153,8 +153,19 @@ function renderPermissionPrompt() {
   });
 }
 
+// Chiến lược triển khai an toàn theo yêu cầu: Bật trước cho admin_it để thử nghiệm & cô lập lỗi
+export const PUSH_ALLOWED_ROLES = new Set(['admin_it']);
+
+export function isPushAllowedForRole(role) {
+  return PUSH_ALLOWED_ROLES.has(role);
+}
+
 export async function initPushNotifications(authInfo) {
   if (!authInfo?.user) return;
+  const role = authInfo.profile?.role;
+  // Cô lập lỗi an toàn: Chỉ kích hoạt cho vai trò admin_it trong giai đoạn pilot
+  if (!isPushAllowedForRole(role)) return;
+
   if (!window.isSecureContext || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission === 'granted') {
     ensurePushSubscription().catch((error) => console.warn('[Push] Subscription refresh failed:', error));
