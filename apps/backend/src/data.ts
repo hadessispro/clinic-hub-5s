@@ -40,7 +40,7 @@ const hrWriteTables = new Set([
   'onboarding_docs', 'onboarding_progress', 'recruitment', 'notifications', 'messages',
 ]);
 const staffWriteTables = new Set([
-  'attendance_records', 'leave_requests', 'schedule_requests', 'messages', 'notifications',
+  'attendance_records', 'leave_requests', 'schedule_requests', 'schedule_assignments', 'messages', 'notifications',
   'push_subscriptions', 'payroll_feedback', 'incidents', 'tasks',
 ]);
 

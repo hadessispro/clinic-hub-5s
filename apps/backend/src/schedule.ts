@@ -56,7 +56,8 @@ export class ScheduleService {
       this.records('employee_allowed_shifts'),
     ]);
     let doctors = allEmployees.filter((employee) => employee.status === 'active'
-      && employee.department === 'bs' && employee.branch_id === viewerBranch);
+      && (employee.department === 'bs' || employee.role === 'bac_si' || String(employee.department || '').toLowerCase() === 'chuyên môn')
+      && employee.branch_id === viewerBranch);
     const doctorCodes = new Set(doctors.map((employee) => String(employee.code)));
     const assignments = allAssignments.filter((item) => doctorCodes.has(String(item.employee_code))
       && String(item.work_date) >= `${month}-01` && String(item.work_date) <= end);

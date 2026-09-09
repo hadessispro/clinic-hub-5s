@@ -21,7 +21,8 @@ function isPublishedDoctorSchedule(request) {
 
 function localScheduleAccessMode(profile) {
   if (['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile?.role)) return 'manage_all';
-  if (profile?.role === 'bac_si' || profile?.department === 'bs') return 'doctor_self';
+  if (['leader', 'phu_ta_truong'].includes(profile?.role)) return 'manage_department';
+  if (profile?.role === 'bac_si' || profile?.department === 'bs' || String(profile?.department || '').toLowerCase() === 'chuyên môn') return 'doctor_self';
   return 'doctor_roster';
 }
 
@@ -46,7 +47,7 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
     // Roster viewers coordinate only with doctors at their own location.  A
     // URL/query parameter must not turn this screen into a cross-branch list.
     const rosterBranch = String(profile.branch_id || '').trim();
-    employees = employees.filter((item) => item.department === 'bs' && item.branch_id === rosterBranch);
+    employees = employees.filter((item) => (item.department === 'bs' || item.role === 'bac_si' || String(item.department || '').toLowerCase() === 'chuyên môn') && item.branch_id === rosterBranch);
   }
   if (viewMode === 'manage_department' && profile.department) employees = employees.filter((item) => item.department === profile.department);
   if (branch !== 'all' && viewMode !== 'doctor_roster') employees = employees.filter((item) => item.branch_id === branch);
@@ -75,8 +76,8 @@ async function localMonthlySchedule({ month, branch = 'all', department = 'all' 
 export async function getMonthlySchedule({ month, branch = 'all', department = 'all' }) {
   const { data } = await dataClient.auth.getSession();
   const user = data.session?.user || {};
-  const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(user.role);
-  const doctor = user.role === 'bac_si' || user.department === 'bs';
+  const manager = ['admin', 'hr', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'leader', 'phu_ta_truong'].includes(user.role);
+  const doctor = user.role === 'bac_si' || user.department === 'bs' || String(user.department || '').toLowerCase() === 'chuyên môn';
   if (!manager && !doctor) {
     return dataClient.request(`/schedule/doctor-roster?${new URLSearchParams({ month, branch })}`);
   }
@@ -89,21 +90,30 @@ export async function saveMonthlySchedule(month, changes) {
     const { data: existing, error: findError } = await dataClient.from('schedule_assignments').select('*')
       .eq('employee_code', item.employee).eq('work_date', item.date).maybeSingle();
     if (findError) throw findError;
+    const existingId = existing?.id || existing?.record_key;
     if (!item.shift) {
-      if (existing) {
-        const { error } = await dataClient.from('schedule_assignments').delete().eq('id', existing.id);
+      if (existingId) {
+        const { error } = await dataClient.from('schedule_assignments').delete().eq('id', existingId);
         if (error) throw error;
         removed += 1;
       }
-    } else if (existing) {
+    } else if (existingId) {
       const { error } = await dataClient.from('schedule_assignments').update({ shift_code: item.shift, status: 'planned',
-        note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' }).eq('id', existing.id);
+        note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' }).eq('id', existingId);
       if (error) throw error;
       saved += 1;
     } else {
-      const { error } = await dataClient.from('schedule_assignments').insert({ employee_code: item.employee,
-        work_date: item.date, shift_code: item.shift, status: 'planned', overtime_minutes: 0,
-        early_arrival_minutes: 0, early_leave_minutes: 0, note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng' });
+      const { error } = await dataClient.from('schedule_assignments').insert({
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : undefined,
+        employee_code: item.employee,
+        work_date: item.date,
+        shift_code: item.shift,
+        status: 'planned',
+        overtime_minutes: 0,
+        early_arrival_minutes: 0,
+        early_leave_minutes: 0,
+        note: '[MONTHLY_SCHEDULE] Lịch đăng ký theo tháng'
+      });
       if (error) throw error;
       saved += 1;
     }

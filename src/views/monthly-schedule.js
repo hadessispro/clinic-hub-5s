@@ -101,7 +101,7 @@ function ensureScheduleRealtime() {
 function canEditRow(role, employeeCode, request, profile, viewMode = '') {
   if (role === 'admin_it') return true;
   if (viewMode === 'doctor_self') return employeeCode === profile.employee_code && ['draft', 'returned'].includes(request.stage);
-  if (role === 'staff') return employeeCode === profile.employee_code && ['draft', 'returned'].includes(request.stage);
+  if (role === 'staff' || role === 'bac_si') return employeeCode === profile.employee_code && ['draft', 'returned'].includes(request.stage);
   if (['leader', 'phu_ta_truong'].includes(role)) return ['draft', 'returned', 'leader_review'].includes(request.stage);
   if (['hr', 'admin'].includes(role)) return request.stage === 'hr_review';
   return false;
@@ -209,7 +209,9 @@ export async function renderMonthlySchedule(state) {
   const role = state.role;
   const profile = data.profile;
   const fallbackManage = ['admin', 'hr', 'admin_it', 'admin_marketing', 'telesale_leader'].includes(role);
-  const viewMode = data.view_mode || (fallbackManage ? 'manage_all' : role === 'bac_si' || profile.department === 'bs' ? 'doctor_self' : 'doctor_roster');
+  const isDoctorUser = role === 'bac_si' || profile.department === 'bs' || String(profile.department || '').toLowerCase() === 'chuyên môn';
+  const isLeaderUser = ['leader', 'phu_ta_truong'].includes(role);
+  const viewMode = data.view_mode || (fallbackManage ? 'manage_all' : isLeaderUser ? 'manage_department' : isDoctorUser ? 'doctor_self' : 'doctor_roster');
   const isDoctorRoster = viewMode === 'doctor_roster';
   const canManageSchedule = ['manage_all', 'manage_department'].includes(viewMode);
   const [year, monthNumber] = selectedMonth.split('-').map(Number);
@@ -255,7 +257,11 @@ export async function renderMonthlySchedule(state) {
   const rows = structuredEmployees.map((employee) => {
     const request = requestByEmployee.get(employee.code) || { stage: 'draft' };
     const editable = !isDoctorRoster && (canManageSchedule || canEditRow(role, employee.code, request, profile, viewMode));
-    const allowedCodes = allowedByEmployee.get(employee.code) || [employee.shift_code].filter(Boolean);
+    const isDoctorEmp = employee.department === 'bs' || employee.role === 'bac_si' || String(employee.department || '').toLowerCase() === 'chuyên môn';
+    const defaultDoctorShifts = ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'];
+    const allowedCodes = (allowedByEmployee.get(employee.code) && allowedByEmployee.get(employee.code).length)
+      ? allowedByEmployee.get(employee.code)
+      : (isDoctorEmp ? defaultDoctorShifts : [employee.shift_code].filter(Boolean));
     let total = 0;
     const cells = dates.map((date) => {
       const key = assignmentKey(employee.code, date.key);
@@ -305,6 +311,14 @@ export async function renderMonthlySchedule(state) {
     <button type="button" class="period-nav-btn" data-scroll-day="29">Cuối tháng</button>
   </div>`;
 
+  const canSaveSchedule = !isDoctorRoster && (
+    canManageSchedule
+    || viewMode === 'doctor_self'
+    || role === 'staff'
+    || role === 'bac_si'
+    || structuredEmployees.some((employee) => canEditRow(role, employee.code, requestByEmployee.get(employee.code) || { stage: 'draft' }, profile, viewMode))
+  );
+
   return `<div class="monthly-schedule-page">
     <section class="monthly-schedule-hero${isDoctorRoster ? ' is-doctor-roster' : ''}">
       <div>
@@ -326,7 +340,7 @@ export async function renderMonthlySchedule(state) {
         ${branchControl}
         ${departmentControl}
         ${doctorRosterControls}
-        ${canManageSchedule ? `<button class="primary-button" type="button" id="saveMonthlySchedule" disabled>Lưu các ô phân bổ đã đổi</button>` : ''}
+        ${canSaveSchedule ? `<button class="primary-button" type="button" id="saveMonthlySchedule" disabled>Lưu các ô phân bổ đã đổi</button>` : ''}
       </div>
 
       ${weekNav}
@@ -354,7 +368,7 @@ export async function renderMonthlySchedule(state) {
           </tbody>
         </table>
       </div>
-      <p class="pilot-schedule-note"><b>Quy ước ca làm việc:</b> HC = hành chính, S = sáng, C = chiều, F = full. Ngày Chủ nhật (CN) được tô màu nền riêng; ô trống là ${isDoctorRoster ? 'bác sĩ không có lịch đã công bố' : 'ngày chưa đăng ký/nghỉ'}. ${isDoctorRoster ? 'Nhân viên chỉ xem lịch để phối hợp, không thể chỉnh sửa ca bác sĩ.' : 'Chỉ các cấp quản lý mới có quyền chỉnh sửa & công bố lịch trình phân bổ.'}</p>
+      <p class="pilot-schedule-note"><b>Quy ước ca làm việc:</b> HC = hành chính, S = sáng, C = chiều, F = full. Ngày Chủ nhật (CN) được tô màu nền riêng; ô trống là ${isDoctorRoster ? 'bác sĩ không có lịch đã công bố' : 'ngày chưa đăng ký/nghỉ'}. ${isDoctorRoster ? 'Nhân viên chỉ xem lịch để phối hợp, không thể chỉnh sửa ca bác sĩ.' : 'Bác sĩ và nhân sự tự đăng ký lịch làm việc; cấp quản lý có thẩm quyền rà soát, điều phối và chốt công bố.'}</p>
     </section>
 
     ${isDoctorRoster ? '' : `<section class="panel monthly-workflow-panel">

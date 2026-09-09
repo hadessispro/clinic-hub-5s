@@ -67,9 +67,10 @@ export class RpcService {
       );
       const employee = employeeResult.rows[0]?.payload;
       if (!employee) throw new Error('Không tìm thấy nhân viên.');
+      const isSelf = employeeCode.toLowerCase() === user.employeeCode.toLowerCase();
       const permitted = admins.has(user.role) || user.role === 'hr'
         || (user.role === 'leader' && String(employee.department || '') === user.department)
-        || (user.role === 'staff' && employeeCode.toLowerCase() === user.employeeCode.toLowerCase());
+        || isSelf;
       if (!permitted) throw new ForbiddenException('Nhân viên không thuộc phạm vi quản lý.');
       const requestResult = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
         `select record_key,payload from app.records where entity_type='schedule_requests' and deleted_at is null
@@ -87,7 +88,7 @@ export class RpcService {
         if (Number(assigned.rows[0]?.count || 0) < 1) throw new Error('Nhân viên chưa đăng ký ca làm nào trong tháng.');
       }
       if (action === 'submit') {
-        if (user.role === 'staff' && user.employeeCode.toLowerCase() !== employeeCode.toLowerCase()) throw new ForbiddenException();
+        if (!isSelf && !admins.has(user.role)) throw new ForbiddenException();
         meta = { ...meta, stage: 'leader_review', employeeSubmittedAt: now, employeeNote: note };
       } else if (action === 'leader_forward' && (user.role === 'leader' || admins.has(user.role))) {
         meta = { ...meta, stage: 'hr_review', leaderReviewedAt: now, leaderNote: note };
