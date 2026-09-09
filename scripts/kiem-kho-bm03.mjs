@@ -1,25 +1,15 @@
 import { readFile } from 'node:fs/promises';
 
 import { BM03_TEMPLATE_BASE64 } from '../src/services/bm03-template-base64.js';
-import { BM03_STANDARD_ITEMS } from '../src/services/bm03-standard-items.js';
 import {
   capNhatPhieuDeXuat,
   layDanhSachDeXuat,
   taoDonHangTuPhieu,
+  taoPhieuDeXuat,
+  goiYHangThieu,
 } from '../src/services/kho-hang.js';
 
 const failures = [];
-const requiredItemFields = ['stt', 'ten', 'don_vi', 'so_luong', 'nganh_hang', 'thoi_gian_can', 'muc_dich'];
-
-if (BM03_STANDARD_ITEMS.length !== 51) {
-  failures.push(`Danh mục BM03 phải có đúng 51 mặt hàng, hiện có ${BM03_STANDARD_ITEMS.length}.`);
-}
-
-const invalidItem = BM03_STANDARD_ITEMS.find((item) => (
-  !Number.isInteger(item.stt) || item.stt < 1
-  || requiredItemFields.some((field) => item[field] === undefined || item[field] === '')
-));
-if (invalidItem) failures.push(`Mặt hàng BM03 số ${invalidItem.stt || '?'} thiếu trường bắt buộc hoặc có STT không hợp lệ.`);
 
 const embeddedTemplate = Buffer.from(BM03_TEMPLATE_BASE64, 'base64');
 const publicTemplate = await readFile('public/templates/mau_de_xuat_mua_hang_bm03.xlsx');
@@ -32,27 +22,44 @@ if (!embeddedTemplate.equals(publicTemplate)) {
 
 const proposals = await layDanhSachDeXuat();
 const defaultProposal = proposals.find((proposal) => proposal.ma_code === '5S_QĐ_KT_01/BM03');
-if (!defaultProposal || defaultProposal.dong?.length !== 51) {
-  failures.push('Phiếu BM03 mặc định phải được nạp đủ 51 mặt hàng.');
+if (!defaultProposal) {
+  failures.push('Hệ thống phải có phiếu đề xuất chuẩn mẫu 5S_QĐ_KT_01/BM03.');
 } else {
-  const rows = defaultProposal.dong.slice(0, 2).map((row, index) => ({
-    ...row,
-    so_luong: index + 1,
-    don_gia: (index + 1) * 1000,
-    ncc_id: index === 0 ? 'NCC-01' : 'NCC-02',
-  }));
-  await capNhatPhieuDeXuat(defaultProposal.id, { dong: rows });
-  const purchaseOrders = await taoDonHangTuPhieu(defaultProposal.id, 'CI-BM03');
+  // Kiểm tra khởi tạo phiếu mới theo chuẩn biểu mẫu BM03
+  const pMoi = await taoPhieuDeXuat({
+    chi_nhanh: 'le-van-tho',
+    bo_phan: 'Kho vật tư & Khối lâm sàng',
+    nguoi_tao: 'Thủ kho Kiểm Thử',
+  }, 'TEST_USER');
+
+  if (!pMoi || pMoi.ma_code !== '5S_QĐ_KT_01/BM03') {
+    failures.push('Phiếu mới tạo không đúng mã hiệu chuẩn 5S_QĐ_KT_01/BM03.');
+  }
+
+  // Thêm các mặt hàng vào phiếu và kiểm tra luồng tách đơn PO theo nhà cung cấp
+  const testRows = [
+    { id: 'T1', stt: 1, ten: 'Khăn choàng y tế', don_vi: 'Gói', so_luong: 5, don_gia: 25000, thanh_tien: 125000, ncc_id: 'NCC-01' },
+    { id: 'T2', stt: 2, ten: 'Găng tay cao su', don_vi: 'Hộp', so_luong: 10, don_gia: 85000, thanh_tien: 850000, ncc_id: 'NCC-02' },
+  ];
+  await capNhatPhieuDeXuat(pMoi.id, { dong: testRows });
+  const purchaseOrders = await taoDonHangTuPhieu(pMoi.id, 'CI-BM03');
   if (purchaseOrders.so_don_tao !== 2 || purchaseOrders.phieu.trang_thai !== 'da_tao_don') {
     failures.push('Luồng BM03 không tách đúng đơn đặt hàng theo từng nhà cung cấp.');
   }
+}
+
+// Kiểm tra hàm gợi ý hàng thiếu hoạt động
+const dsThieu = await goiYHangThieu({ chiNhanh: 'le-van-tho' });
+if (!Array.isArray(dsThieu)) {
+  failures.push('Hàm gợi ý hàng thiếu phải trả về mảng danh sách.');
 }
 
 const [view, css] = await Promise.all([
   readFile('src/views/kho-hang.js', 'utf8'),
   readFile('app.css', 'utf8'),
 ]);
-for (const marker of ['btnNapMauBM03', 'btnXuatExcelBM03', 'btnTaoDonTuPhieu', 'btnLuuPhieuDeXuat']) {
+
+for (const marker of ['btnMoGoiYHangThieu', 'btnThemDongMoi', 'btnXuatExcelBM03', 'btnTaoDonTuPhieu', 'btnLuuPhieuDeXuat']) {
   if (!view.includes(marker)) failures.push(`Giao diện Kho thiếu chức năng ${marker}.`);
 }
 if (!css.includes('.bm03-workspace') || !css.includes('.bm03-paper')) {
@@ -64,4 +71,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('OK · BM03 có đủ 51 mặt hàng, mẫu Excel đồng nhất và tách đúng đơn theo nhà cung cấp.');
+console.log('OK · Biểu mẫu đề xuất mua hàng BM03 hợp lệ, tệp Excel chuẩn và tách đúng đơn theo nhà cung cấp.');

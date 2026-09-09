@@ -177,29 +177,42 @@ let KHO_ANH_HD = [];
 const KHO_DE_XUAT_KEY = 'clinic-hub-kho-phieu-de-xuat';
 
 function khoiTaoDeXuatMau() {
-  const dsDongBM03 = BM03_STANDARD_ITEMS.map((it, idx) => ({
-    id: `D${idx + 1}`,
-    stt: it.stt || idx + 1,
-    nganh_hang: it.nganh_hang || 'Vật liệu tổng quát',
-    vat_tu_id: '',
-    ten: it.ten,
-    thong_so: it.thong_so || '',
-    don_vi: it.don_vi || 'Cái',
-    ton: it.ton ?? 0,
-    so_luong: it.so_luong || 1,
-    don_gia: it.don_gia || 0,
-    thanh_tien: (it.so_luong || 1) * (it.don_gia || 0),
-    thoi_gian: it.thoi_gian_can || '2026-09-15',
-    muc_dich: it.muc_dich || 'Sử dụng điều trị lâm sàng',
-    ncc_id: '',
-    ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT',
-  }));
+  // Khởi tạo phiếu đề xuất mua hàng mẫu chuẩn theo biểu mẫu 5S_QĐ_KT_01/BM03
+  // Dữ liệu ban đầu lấy từ các mặt hàng thực tế đang cần bổ sung của kho Lê Văn Thọ
+  const itemsThieu = VAT_TU.filter((v) => {
+    const t = TON_KHO.find((tk) => tk.vat_tu === v.id && tk.chi_nhanh === 'le-van-tho');
+    return t && t.so_luong <= 5;
+  }).slice(0, 8);
+
+  const dsDongKhoiTao = (itemsThieu.length ? itemsThieu : VAT_TU.slice(0, 6)).map((v, idx) => {
+    const t = TON_KHO.find((tk) => tk.vat_tu === v.id && tk.chi_nhanh === 'le-van-tho');
+    const ton = t ? t.so_luong : 0;
+    const slDeXuat = Math.max(1, 10 - ton);
+    const donGia = v.gia_von || 120000;
+    return {
+      id: `D${idx + 1}`,
+      stt: idx + 1,
+      nganh_hang: v.nhom_ten || 'VẬT LIỆU - TỔNG QUÁT',
+      vat_tu_id: v.id,
+      ten: v.ten,
+      thong_so: v.quy_cach || '',
+      don_vi: v.don_vi || 'Cái',
+      ton: ton,
+      so_luong: slDeXuat,
+      don_gia: donGia,
+      thanh_tien: slDeXuat * donGia,
+      thoi_gian: '2026-09-15',
+      muc_dich: 'Sử dụng điều trị lâm sàng',
+      ncc_id: 'NCC-02',
+      ncc_ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ',
+    };
+  });
 
   return [
     {
       id: 'DX-202609-01',
       so_phieu: '2026.09.01',
-      tieu_de: 'Đề xuất mua hàng Tháng 9/2026 - Kho LVT',
+      tieu_de: 'Phiếu đề xuất mua hàng Tháng 09/2026 - Kho Lê Văn Thọ',
       chi_nhanh: 'le-van-tho',
       kho_hang: 'Kho Lê Văn Thọ',
       bo_phan: 'Kho vật tư & Khối lâm sàng',
@@ -208,8 +221,8 @@ function khoiTaoDeXuatMau() {
       thu_kho: 'NGUYỄN THỊ NHƯ HUỲNH',
       ngay_tao: '2026-09-01',
       trang_thai: 'cho_duyet', // nhap | cho_duyet | da_duyet | da_tao_don
-      ghi_chu: 'Đề xuất bổ sung vật tư lâm sàng, chỉnh nha và CCDC định kỳ Tháng 09/2026 (51 mục chuẩn BM03)',
-      dong: dsDongBM03,
+      ghi_chu: 'Đề xuất bổ sung vật tư lâm sàng và CCDC định kỳ theo biểu mẫu chuẩn 5S_QĐ_KT_01/BM03',
+      dong: dsDongKhoiTao,
     },
   ];
 }
@@ -220,11 +233,6 @@ let PHIEU_DE_XUAT = (() => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length) {
-        const p1 = parsed[0];
-        // Tự động nâng cấp mẫu 51 mục BM03 nếu localStorage đang lưu bản mẫu cũ ít dòng
-        if (p1 && p1.id === 'DX-202609-01' && (!p1.dong || p1.dong.length < 50)) {
-          return khoiTaoDeXuatMau();
-        }
         return parsed;
       }
     }

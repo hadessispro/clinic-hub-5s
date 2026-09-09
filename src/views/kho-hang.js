@@ -1015,16 +1015,19 @@ function veDeXuat() {
         </div>
 
         <div class="bm03-tool-right">
-          <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới">
+          <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới chuẩn mẫu BM03">
             <i class="ri-add-line"></i> Phiếu mới
           </button>
-          <button type="button" class="secondary-button" id="btnNapMauBM03" style="border-color: #2563eb; color: #1d4ed8; background: #eff6ff;" title="Nạp 51 mặt hàng vật tư chuẩn từ biểu mẫu 5S_QĐ_KT_01/BM03">
-            <i class="ri-file-list-3-line"></i> Nạp 51 mục chuẩn BM03
+          <button type="button" class="secondary-button" id="btnThemDongMoi" style="border-color: #0f8b7f; color: #0f8b7f;" title="Thêm một dòng mặt hàng mới vào phiếu đề xuất">
+            <i class="ri-add-circle-line"></i> Thêm mặt hàng
           </button>
           <button type="button" class="secondary-button" id="btnMoGoiYHangThieu" style="border-color: #f59e0b; color: #b45309; background: #fffbeb;" title="Xem các mặt hàng tồn dưới định mức để tick chọn bổ sung">
             <i class="ri-flashlight-line"></i> Gợi ý hàng thiếu (${dsGoiYHangThieu.length})
           </button>
-          <button type="button" class="secondary-button" id="btnXuatExcelBM03" style="border-color: #0f8b7f; color: #0f8b7f;" title="Tải về file Excel đúng 100% mẫu 5S_QĐ_KT_01/BM03">
+          <a href="/templates/mau_de_xuat_mua_hang_bm03.xlsx" download="mau_de_xuat_mua_hang_bm03.xlsx" class="secondary-button" style="border-color: #94a3b8; color: #475569; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="Tải tệp biểu mẫu Excel BM03 gốc để tham khảo hoặc in">
+            <i class="ri-download-2-line"></i> File mẫu BM03
+          </a>
+          <button type="button" class="secondary-button" id="btnXuatExcelBM03" style="border-color: #0f8b7f; color: #0f8b7f;" title="Tải về file Excel đúng 100% mẫu 5S_QĐ_KT_01/BM03 cho phiếu hiện tại">
             <i class="ri-file-excel-2-line"></i> Xuất Excel BM03
           </button>
           <button type="button" class="primary-button" id="btnTaoDonTuPhieu" style="background: #0f8b7f;" title="Chuyển các mặt hàng trong phiếu thành các đơn đặt hàng theo từng Nhà cung cấp">
@@ -1155,15 +1158,20 @@ function veDeXuat() {
               ${soMatHang === 0 ? `
                 <tr>
                   <td colspan="12" style="text-align: center; padding: 48px 20px; background: #f8fafc;">
-                    <div style="max-width: 480px; margin: 0 auto;">
-                      <i class="ri-file-excel-2-line" style="font-size: 3rem; color: #0f8b7f; display: inline-block; margin-bottom: 12px;"></i>
-                      <h4 style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-bottom: 6px;">Phiếu chưa có mặt hàng nào</h4>
+                    <div style="max-width: 520px; margin: 0 auto;">
+                      <i class="ri-file-list-3-line" style="font-size: 3rem; color: #0f8b7f; display: inline-block; margin-bottom: 12px;"></i>
+                      <h4 style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-bottom: 6px;">Phiếu đề xuất mua hàng chưa có mặt hàng nào</h4>
                       <p style="font-size: 0.85rem; color: #64748b; line-height: 1.5; margin-bottom: 16px;">
-                        Bạn có thể nhấn <b>Nạp 51 mặt hàng mẫu BM03</b> để tải sẵn toàn bộ danh mục vật tư chuẩn 5S_QĐ_KT_01, sau đó chỉ cần điền số lượng hoặc giá.
+                        Biểu mẫu được định dạng theo chuẩn <b>5S_QĐ_KT_01/BM03</b>. Bạn có thể bấm <b>Gợi ý hàng thiếu</b> để nạp nhanh các vật tư tồn dưới định mức, tìm kiếm vật tư từ kho hàng ở khung phía trên, hoặc bấm <b>Thêm mặt hàng</b> để nhập dòng mới.
                       </p>
-                      <button type="button" class="primary-button" id="btnNapMauBM03Empty" style="background: #0f8b7f; margin: 0 auto;">
-                        <i class="ri-download-2-line"></i> Nạp 51 mặt hàng chuẩn BM03
-                      </button>
+                      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <button type="button" class="primary-button" id="btnGoiYEmpty" style="background: #f59e0b;">
+                          <i class="ri-flashlight-line"></i> Gợi ý hàng thiếu (${dsGoiYHangThieu.length})
+                        </button>
+                        <button type="button" class="secondary-button" id="btnThemDongEmpty" style="border-color: #0f8b7f; color: #0f8b7f;">
+                          <i class="ri-add-line"></i> Thêm mặt hàng mới
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -1186,21 +1194,29 @@ function veDeXuat() {
                       <tr>
                         <td style="text-align: center; font-weight: 600; color: #64748b;">${rowIdx + 1}</td>
                         <td>
-                          <div style="font-weight: 700; color: #1e293b;">${escapeHTML(item.ten)}</div>
-                          ${item.vat_tu_id ? `<small style="color: #64748b; font-size: 0.75rem;">Mã: ${escapeHTML(item.vat_tu_id)}</small>` : ''}
+                          ${item.vat_tu_id ? `
+                            <div style="font-weight: 700; color: #1e293b;">${escapeHTML(item.ten)}</div>
+                            <small style="color: #64748b; font-size: 0.75rem;">Mã: ${escapeHTML(item.vat_tu_id)}</small>
+                          ` : `
+                            <input type="text" class="bm03-input-text" data-dx-ten="${idx}" value="${escapeHTML(item.ten || '')}" placeholder="Nhập tên mặt hàng...">
+                          `}
                         </td>
                         <td>
                           <input type="text" class="bm03-input-text" data-dx-thong-so="${idx}" value="${escapeHTML(item.thong_so || '')}">
                         </td>
-                        <td style="text-align: center; font-weight: 600;">${escapeHTML(item.don_vi || 'Cái')}</td>
+                        <td style="text-align: center; font-weight: 600;">
+                          ${item.vat_tu_id ? escapeHTML(item.don_vi || 'Cái') : `
+                            <input type="text" class="bm03-input-text" data-dx-dvt="${idx}" value="${escapeHTML(item.don_vi || 'Cái')}" style="width: 55px; text-align: center;">
+                          `}
+                        </td>
                         <td style="text-align: center; color: #64748b; background: #f8fafc; font-weight: 600;">
                           ${item.ton ?? 0}
                         </td>
                         <td>
                           <input type="number" min="1" class="bm03-input-num" data-dx-sl="${idx}" value="${item.so_luong || 1}">
                         </td>
-                        <td style="text-align: right; font-weight: 600;">
-                          ${tien(item.don_gia || 0)}
+                        <td style="text-align: right;">
+                          <input type="number" min="0" step="1000" class="bm03-input-num" data-dx-gia="${idx}" value="${item.don_gia || 0}" style="width: 100px; text-align: right;">
                         </td>
                         <td class="col-total">
                           ${tien(item.thanh_tien || (item.so_luong * item.don_gia) || 0)}
@@ -1246,6 +1262,12 @@ function veDeXuat() {
               </tr>
             </tfoot>
           </table>
+          <div style="padding: 10px 16px; background: #f8fafc; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" class="secondary-button" id="btnThemDongDuoiBang" style="font-size: 0.82rem; padding: 5px 12px; border-color: #0f8b7f; color: #0f8b7f;">
+              <i class="ri-add-line"></i> Thêm mặt hàng vào phiếu
+            </button>
+            <span style="font-size: 0.78rem; color: #64748b;">Mẫu biểu chuẩn hành chính: <b>5S_QĐ_KT_01/BM03</b> · Phiếu đề nghị mua hàng</span>
+          </div>
         </div>
 
         <!-- Khối chữ ký 4 bên chuẩn BM03 -->
@@ -2147,46 +2169,43 @@ export function initView() {
     }, `Đã bổ sung ${selected.length} mặt hàng thiếu vào phiếu đề xuất.`);
   });
 
-  const xuLyNapMauBM03 = async () => {
+  const themDongMoiVaoPhieu = () => {
     if (!phieuDeXuatHienTai) return;
-    const coDong = phieuDeXuatHienTai.dong?.length || 0;
-    if (coDong > 0) {
-      const ok = await confirmAction(
-        `Phiếu hiện có ${coDong} mặt hàng. Bạn có chắc muốn nạp 51 mặt hàng mẫu chuẩn BM03 (sẽ ghi đè danh sách hiện tại)?`,
-        { title: 'Nạp danh mục mẫu BM03', confirmText: 'Nạp 51 mặt hàng' }
-      );
-      if (!ok) return;
-    }
-
-    phieuDeXuatHienTai.dong = BM03_STANDARD_ITEMS.map((it, idx) => {
-      const vt = dsVatTu.find((v) => v.ten.toLowerCase().trim() === it.ten.toLowerCase().trim() || it.ten.toLowerCase().includes(v.ten.toLowerCase()));
-      const donGia = vt?.gia_von || it.don_gia || 0;
-      return {
-        id: `D${idx + 1}`,
-        stt: it.stt || idx + 1,
-        nganh_hang: it.nganh_hang || 'Vật liệu tổng quát',
-        vat_tu_id: vt?.id || '',
-        ten: it.ten,
-        thong_so: it.thong_so || (vt?.quy_cach || ''),
-        don_vi: it.don_vi || (vt?.don_vi || 'Cái'),
-        ton: vt ? vt.so_luong : (it.ton ?? 0),
-        so_luong: it.so_luong || 1,
-        don_gia: donGia,
-        thanh_tien: (it.so_luong || 1) * donGia,
-        thoi_gian: it.thoi_gian_can || '2026-09-15',
-        muc_dich: it.muc_dich || 'Sử dụng điều trị lâm sàng',
-        ncc_id: '',
-        ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT',
-      };
+    if (!phieuDeXuatHienTai.dong) phieuDeXuatHienTai.dong = [];
+    const nextStt = phieuDeXuatHienTai.dong.length + 1;
+    phieuDeXuatHienTai.dong.push({
+      id: `D${Date.now()}`,
+      stt: nextStt,
+      nganh_hang: 'VẬT LIỆU - TỔNG QUÁT',
+      vat_tu_id: '',
+      ten: '',
+      thong_so: '',
+      don_vi: 'Cái',
+      ton: 0,
+      so_luong: 1,
+      don_gia: 0,
+      thanh_tien: 0,
+      thoi_gian: todayISO(),
+      muc_dich: 'Sử dụng điều trị lâm sàng',
+      ncc_id: 'NCC-01',
+      ncc_ten: 'Dược & Vật Liệu Nha Khoa LVT',
     });
-
     chay(async () => {
       await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
-    }, 'Đã nạp 51 mặt hàng chuẩn BM03 vào phiếu đề xuất!');
+    }, 'Đã thêm dòng mặt hàng mới vào phiếu đề xuất.');
   };
 
-  g('btnNapMauBM03')?.addEventListener('click', xuLyNapMauBM03);
-  g('btnNapMauBM03Empty')?.addEventListener('click', xuLyNapMauBM03);
+  g('btnThemDongMoi')?.addEventListener('click', themDongMoiVaoPhieu);
+  g('btnThemDongEmpty')?.addEventListener('click', themDongMoiVaoPhieu);
+  g('btnThemDongDuoiBang')?.addEventListener('click', themDongMoiVaoPhieu);
+  g('btnGoiYEmpty')?.addEventListener('click', () => {
+    hienDrawerHangThieu = true;
+    goiYChonMap = {};
+    (dsGoiYHangThieu || []).forEach((item) => {
+      goiYChonMap[item.vat_tu.id] = true;
+    });
+    ve();
+  });
 
   g('btnXuatExcelBM03')?.addEventListener('click', async () => {
     if (!phieuDeXuatHienTai || !phieuDeXuatHienTai.dong?.length) {
@@ -2341,6 +2360,44 @@ export function initView() {
       const idx = Number(inp.dataset.dxMucDich);
       if (phieuDeXuatHienTai?.dong?.[idx]) {
         phieuDeXuatHienTai.dong[idx].muc_dich = e.target.value;
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-ten]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxTen);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].ten = e.target.value.trim();
+        chay(async () => {
+          await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-dvt]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxDvt);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].don_vi = e.target.value.trim();
+        chay(async () => {
+          await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-dx-gia]').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const idx = Number(inp.dataset.dxGia);
+      const val = Math.max(0, Number(e.target.value) || 0);
+      if (phieuDeXuatHienTai?.dong?.[idx]) {
+        phieuDeXuatHienTai.dong[idx].don_gia = val;
+        phieuDeXuatHienTai.dong[idx].thanh_tien = val * (phieuDeXuatHienTai.dong[idx].so_luong || 1);
+        chay(async () => {
+          await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
+        });
       }
     });
   });
