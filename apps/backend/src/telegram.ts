@@ -43,7 +43,14 @@ export class TelegramService {
       );
       for (const row of rows.rows) {
         const val = String(row.config_value || '').trim();
-        if (val) list.add(val);
+        let id = val;
+        try {
+          const parsed = JSON.parse(val);
+          if (parsed?.chatId) id = String(parsed.chatId).trim();
+        } catch {
+          // not JSON
+        }
+        if (id && /^-?\d+$/.test(id)) list.add(id);
       }
     } catch {
       // Table might not be migrated yet or connection issue
