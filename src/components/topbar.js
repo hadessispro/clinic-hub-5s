@@ -34,8 +34,10 @@ function getNotifIcon(type) {
   switch (type) {
     case 'task': return '📋';
     case 'leave': return '📅';
-    case 'attendance': return '⌖';
+    case 'attendance': return '⏰';
     case 'proposal': return '⇧';
+    case 'care': return '💖';
+    case 'schedule': return '🗓️';
     default: return '🔔';
   }
 }

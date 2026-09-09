@@ -1,12 +1,37 @@
 import { createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Injectable, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Injectable, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { InfrastructureService } from './infrastructure';
 import { TelegramService } from './telegram';
 
 const scrypt = promisify(scryptCallback);
 const accessTtlSeconds = 15 * 60;
 const refreshTtlSeconds = 30 * 24 * 60 * 60;
+
+const COOKIE_NAME = 'clinic_refresh_token';
+const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
+
+function parseCookieHeader(header = ''): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!header) return map;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const [name, ...val] = part.split('=');
+    const key = name?.trim();
+    if (key) {
+      map[key] = decodeURIComponent(val.join('=').trim());
+    }
+  }
+  return map;
+}
+
+function buildRefreshCookie(token: string, maxAge = COOKIE_MAX_AGE): string {
+  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
+}
+
+function clearRefreshCookie(): string {
+  return `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`;
+}
 
 type JsonMap = Record<string, unknown>;
 export type AuthUser = {
@@ -490,31 +515,77 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('/login')
-  login(@Req() req: any, @Body() body: { identifier?: string; password?: string; branchId?: string }) {
+  async login(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+    @Body() body: { identifier?: string; password?: string; branchId?: string },
+  ) {
     const clientIp = req.headers?.['cf-connecting-ip']
       || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
       || req.ip
       || req.socket?.remoteAddress
       || 'unknown';
     const userAgent = String(req.headers?.['user-agent'] || '');
-    return this.auth.login(body.identifier || '', body.password || '', body.branchId, clientIp, userAgent);
+    const result = await this.auth.login(body.identifier || '', body.password || '', body.branchId, clientIp, userAgent);
+    if (result.session?.refreshToken) {
+      res.header('Set-Cookie', buildRefreshCookie(result.session.refreshToken));
+    }
+    return result;
+  }
+
+  @Get('/session')
+  async session(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const cookies = parseCookieHeader(req.headers?.cookie);
+    const token = cookies[COOKIE_NAME];
+    if (!token) return { session: null, user: null };
+    try {
+      const result = await this.auth.refresh(token);
+      if (result.session?.refreshToken) {
+        res.header('Set-Cookie', buildRefreshCookie(result.session.refreshToken));
+      }
+      return result;
+    } catch {
+      res.header('Set-Cookie', clearRefreshCookie());
+      return { session: null, user: null };
+    }
   }
 
   @Post('/logout')
   @UseGuards(AuthGuard)
-  logout(@Req() req: { user: AuthUser; headers?: Record<string, string | undefined>; ip?: string; socket?: any }, @Body() body: { refreshToken?: string }) {
+  async logout(
+    @Req() req: { user: AuthUser; headers?: Record<string, string | undefined>; ip?: string; socket?: any },
+    @Res({ passthrough: true }) res: any,
+    @Body() body: { refreshToken?: string },
+  ) {
     const clientIp = req.headers?.['cf-connecting-ip']
       || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
       || req.ip
       || req.socket?.remoteAddress
       || 'unknown';
     const userAgent = String(req.headers?.['user-agent'] || '');
-    return this.auth.logout(req.user, body.refreshToken, clientIp, userAgent);
+    const cookies = parseCookieHeader(req.headers?.cookie);
+    const token = body?.refreshToken || cookies[COOKIE_NAME];
+    const result = await this.auth.logout(req.user, token, clientIp, userAgent);
+    res.header('Set-Cookie', clearRefreshCookie());
+    return result;
   }
 
   @Post('/refresh')
-  refresh(@Body() body: { refreshToken?: string }) {
-    return this.auth.refresh(body.refreshToken || '');
+  async refresh(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+    @Body() body: { refreshToken?: string },
+  ) {
+    const cookies = parseCookieHeader(req.headers?.cookie);
+    const token = body?.refreshToken || cookies[COOKIE_NAME] || '';
+    const result = await this.auth.refresh(token);
+    if (result.session?.refreshToken) {
+      res.header('Set-Cookie', buildRefreshCookie(result.session.refreshToken));
+    }
+    return result;
   }
 
   @Get('/me')

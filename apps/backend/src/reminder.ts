@@ -63,6 +63,21 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
       const targetEndTime = hour === 17 ? '17:00' : (hour === 18 ? '18:00' : '20:00');
       await this.processCheckoutReminders(dateKey, targetEndTime);
     }
+
+    // 3. Nghi trua & Nap nang luong (12:00 - 12:15):
+    if (hour === 12 && minute >= 0 && minute <= 15) {
+      await this.processLunchBreakCare(dateKey);
+    }
+
+    // 4. Tiep nang luong giua gio chieu (15:00 - 15:15):
+    if (hour === 15 && minute >= 0 && minute <= 15) {
+      await this.processAfternoonCare(dateKey);
+    }
+
+    // 5. Dong vien chang cuoi cua ngay (18:15 - 18:30 cho nhan su lam ca toi den 20:00):
+    if (hour === 18 && minute >= 15 && minute <= 30) {
+      await this.processEveningCare(dateKey);
+    }
   }
 
   private async processCheckinReminders(dateKey: string, shiftStartTimePrefix: string) {
@@ -224,6 +239,205 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
       }
     } catch (error) {
       console.error('[ReminderService] checkout reminder error:', error);
+    }
+  }
+
+  private async processLunchBreakCare(dateKey: string) {
+    try {
+      const assignmentsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
+         and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
+        [dateKey],
+      );
+      if (!assignmentsResult.rows.length) return;
+
+      const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
+      );
+      const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
+
+      for (const row of assignmentsResult.rows) {
+        const empCode = String(row.payload.employee_code || '').trim();
+        const codeKey = empCode.toLowerCase();
+        if (!empCode) continue;
+
+        const trackerKey = `${dateKey}:lunch:${codeKey}`;
+        if (this.sentReminders.has(trackerKey)) continue;
+        this.sentReminders.add(trackerKey);
+
+        const emp = employeeByCode.get(codeKey);
+        const empName = emp?.full_name || empCode;
+
+        const profileResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=$1 limit 1`,
+          [codeKey],
+        );
+        const profile = profileResult.rows[0]?.payload;
+        const title = '🍱 Giờ nghỉ trưa nạp năng lượng · 5S Care 💖';
+        const body = `Chào ${empName}, giờ nghỉ trưa đã đến rồi! Hãy gác lại công việc, thưởng thức bữa trưa ngon miệng và chợp mắt một chút để nạp lại 100% năng lượng nhé! 🍵✨`;
+
+        if (profile?.id) {
+          const notifId = randomUUID();
+          await this.infrastructure.postgres.query(
+            `insert into app.records(entity_type,record_key,payload,origin) values ('notifications',$1,$2::jsonb,'vps')`,
+            [notifId, JSON.stringify({
+              id: notifId,
+              user_id: profile.id,
+              title,
+              body,
+              type: 'care',
+              link_view: 'dashboard',
+              read: false,
+              created_at: new Date().toISOString(),
+            })],
+          );
+        }
+
+        await this.push.sendToEmployee(empCode, {
+          title,
+          body,
+          view: 'dashboard',
+          url: '/',
+        });
+      }
+    } catch (error) {
+      console.error('[ReminderService] lunch care error:', error);
+    }
+  }
+
+  private async processAfternoonCare(dateKey: string) {
+    try {
+      const assignmentsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
+         and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
+        [dateKey],
+      );
+      if (!assignmentsResult.rows.length) return;
+
+      const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
+      );
+      const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
+
+      for (const row of assignmentsResult.rows) {
+        const empCode = String(row.payload.employee_code || '').trim();
+        const codeKey = empCode.toLowerCase();
+        if (!empCode) continue;
+
+        const trackerKey = `${dateKey}:afternoon:${codeKey}`;
+        if (this.sentReminders.has(trackerKey)) continue;
+        this.sentReminders.add(trackerKey);
+
+        const emp = employeeByCode.get(codeKey);
+        const empName = emp?.full_name || empCode;
+
+        const profileResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=$1 limit 1`,
+          [codeKey],
+        );
+        const profile = profileResult.rows[0]?.payload;
+        const title = '☕ Thư giãn & tiếp năng lượng chiều · 5S Clinic 🌸';
+        const body = `Vươn vai, uống một ngụm nước và thư giãn mắt nào ${empName}! Bạn đã làm việc rất chăm chỉ suốt buổi sáng. Cố gắng thêm một chút nữa nhé, buổi chiều tuyệt vời! 💪🌈✨`;
+
+        if (profile?.id) {
+          const notifId = randomUUID();
+          await this.infrastructure.postgres.query(
+            `insert into app.records(entity_type,record_key,payload,origin) values ('notifications',$1,$2::jsonb,'vps')`,
+            [notifId, JSON.stringify({
+              id: notifId,
+              user_id: profile.id,
+              title,
+              body,
+              type: 'care',
+              link_view: 'dashboard',
+              read: false,
+              created_at: new Date().toISOString(),
+            })],
+          );
+        }
+
+        await this.push.sendToEmployee(empCode, {
+          title,
+          body,
+          view: 'dashboard',
+          url: '/',
+        });
+      }
+    } catch (error) {
+      console.error('[ReminderService] afternoon care error:', error);
+    }
+  }
+
+  private async processEveningCare(dateKey: string) {
+    try {
+      const assignmentsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='schedule_assignments' and deleted_at is null
+         and payload->>'work_date'=$1 and coalesce(payload->>'status','planned') in ('planned','confirmed')`,
+        [dateKey],
+      );
+      if (!assignmentsResult.rows.length) return;
+
+      const shiftsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='work_shifts' and deleted_at is null`,
+      );
+      const shiftByCode = new Map(shiftsResult.rows.map((r) => [String(r.payload.code), r.payload]));
+
+      const employeesResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='employees' and deleted_at is null and coalesce(payload->>'status','active')='active'`,
+      );
+      const employeeByCode = new Map(employeesResult.rows.map((r) => [String(r.payload.code).toLowerCase(), r.payload]));
+
+      for (const row of assignmentsResult.rows) {
+        const empCode = String(row.payload.employee_code || '').trim();
+        const codeKey = empCode.toLowerCase();
+        if (!empCode) continue;
+
+        // Chỉ gửi cho nhân sự làm ca tối (kết thúc từ 19:30 - 20:00)
+        const shift = shiftByCode.get(String(row.payload.shift_code));
+        const endTime = String(shift?.end_time || '17:00').slice(0, 5);
+        if (!endTime.startsWith('20') && !endTime.startsWith('19')) continue;
+
+        const trackerKey = `${dateKey}:evening:${codeKey}`;
+        if (this.sentReminders.has(trackerKey)) continue;
+        this.sentReminders.add(trackerKey);
+
+        const emp = employeeByCode.get(codeKey);
+        const empName = emp?.full_name || empCode;
+
+        const profileResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=$1 limit 1`,
+          [codeKey],
+        );
+        const profile = profileResult.rows[0]?.payload;
+        const title = '🌙 Chặng cuối của ngày rồi, cố lên bạn nhé · 5S Care 🎯';
+        const body = `Cảm ơn ${empName} vì sự tận tâm và nụ cười rạng rỡ mang đến cho khách hàng hôm nay. Ca làm việc sắp hoàn thành rồi, chuẩn bị về nghỉ ngơi ấm áp bên gia đình nhé! ✨🛋️`;
+
+        if (profile?.id) {
+          const notifId = randomUUID();
+          await this.infrastructure.postgres.query(
+            `insert into app.records(entity_type,record_key,payload,origin) values ('notifications',$1,$2::jsonb,'vps')`,
+            [notifId, JSON.stringify({
+              id: notifId,
+              user_id: profile.id,
+              title,
+              body,
+              type: 'care',
+              link_view: 'dashboard',
+              read: false,
+              created_at: new Date().toISOString(),
+            })],
+          );
+        }
+
+        await this.push.sendToEmployee(empCode, {
+          title,
+          body,
+          view: 'dashboard',
+          url: '/',
+        });
+      }
+    } catch (error) {
+      console.error('[ReminderService] evening care error:', error);
     }
   }
 }

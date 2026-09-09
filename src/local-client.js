@@ -18,6 +18,7 @@ async function refreshSession(refreshToken) {
     try {
       const response = await fetch('/api/v2/auth/refresh', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
         signal: controller.signal,
@@ -47,6 +48,7 @@ async function api(path, options = {}) {
   try {
     const response = await fetch(`/api/v2${path}`, {
       ...options,
+      credentials: 'same-origin',
       cache: options.cache || 'no-store',
       signal: controller.signal,
       headers: {
@@ -149,8 +151,31 @@ export const localClient = {
   auth: {
     async getSession() {
       const stored = readSession();
-      if (!stored?.accessToken) return { data: { session: null }, error: null };
-      return { data: { session: { access_token: stored.accessToken, refresh_token: stored.refreshToken, user: stored.user } }, error: null };
+      if (stored?.accessToken) {
+        return { data: { session: { access_token: stored.accessToken, refresh_token: stored.refreshToken, user: stored.user } }, error: null };
+      }
+      // Khôi phục phiên làm việc tự động qua HttpOnly Cookie nếu localStorage bị rỗng
+      try {
+        const response = await fetch('/api/v2/auth/session', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.session?.accessToken) {
+            const user = authUser(payload);
+            const newStored = { ...payload.session, user };
+            writeSession(newStored);
+            const session = { access_token: newStored.accessToken, refresh_token: newStored.refreshToken, user };
+            emitAuth('SIGNED_IN', session);
+            return { data: { session }, error: null };
+          }
+        }
+      } catch (err) {
+        console.warn('[Auth] Khôi phục phiên qua Cookie không thành công:', err);
+      }
+      return { data: { session: null }, error: null };
     },
     async signInWithIdentifier({ identifier, password, branchId }) {
       try {
@@ -163,7 +188,20 @@ export const localClient = {
         return { data: { user, session }, error: null };
       } catch (error) { return { data: { user: null, session: null }, error }; }
     },
-    async signOut() { writeSession(null); emitAuth('SIGNED_OUT', null); return { error: null }; },
+    async signOut() {
+      try {
+        const stored = readSession();
+        await api('/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ refreshToken: stored?.refreshToken }),
+        });
+      } catch (err) {
+        console.warn('[Auth] Logout API error:', err);
+      }
+      writeSession(null);
+      emitAuth('SIGNED_OUT', null);
+      return { error: null };
+    },
     onAuthStateChange(listener) {
       authListeners.add(listener);
       return { data: { subscription: { unsubscribe: () => authListeners.delete(listener) } } };
