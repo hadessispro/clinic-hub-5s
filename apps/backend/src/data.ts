@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
+import { PushService } from './push';
 
 type JsonMap = Record<string, unknown>;
 type Filter = { field: string; op: 'eq' | 'neq' | 'in' | 'gte' | 'lte' | 'gt' | 'lt' | 'is' | 'ilike'; value: unknown };
@@ -81,7 +82,10 @@ function rowKey(row: JsonMap) {
 
 @Injectable()
 export class DataService {
-  constructor(private readonly infrastructure: InfrastructureService) {}
+  constructor(
+    private readonly infrastructure: InfrastructureService,
+    private readonly push: PushService,
+  ) {}
 
   private canWrite(user: AuthUser, table: string) {
     if (user.role === 'pg_staff') return false;
@@ -199,6 +203,50 @@ export class DataService {
         throw error;
       } finally { client.release(); }
       await this.infrastructure.markDataChanged([table], user.id, user.role);
+
+      // Web Push dispatch for inserted/upserted items
+      if (table === 'messages') {
+        for (const item of output) {
+          const recipientId = String(item.recipient_id || '');
+          if (recipientId && recipientId !== user.id) {
+            const authorName = String(user.profile?.full_name || user.employeeCode || 'Một đồng nghiệp');
+            const snippet = String(item.body || '').slice(0, 100);
+            void this.push.sendToUser(recipientId, {
+              title: `💬 Tin nhắn từ ${authorName}`,
+              body: snippet,
+              view: 'messages',
+              url: '/',
+            }).catch((e) => console.error('[DataService] push message error:', e));
+          }
+        }
+      } else if (table === 'tasks') {
+        for (const item of output) {
+          const assigneeCode = String(item.assignee_code || '');
+          if (assigneeCode && assigneeCode.toLowerCase() !== user.employeeCode.toLowerCase()) {
+            const taskTitle = String(item.title || 'Công việc mới');
+            void this.push.sendToEmployee(assigneeCode, {
+              title: '📋 Bạn được giao việc mới',
+              body: `${user.profile?.full_name || user.employeeCode} đã giao việc: "${taskTitle}"`,
+              view: 'tasks',
+              url: '/',
+            }).catch((e) => console.error('[DataService] push task error:', e));
+          }
+        }
+      } else if (table === 'notifications') {
+        for (const item of output) {
+          const targetUserId = String(item.user_id || '');
+          if (targetUserId && targetUserId !== user.id) {
+            void this.push.sendToUser(targetUserId, {
+              title: String(item.title || '5S Clinic Hub'),
+              body: String(item.body || ''),
+              id: String(item.id || ''),
+              view: String(item.link_view || 'dashboard'),
+              url: '/',
+            }).catch((e) => console.error('[DataService] push notification error:', e));
+          }
+        }
+      }
+
       return { data: Array.isArray(request.values) ? output : output[0] };
     }
 
@@ -221,7 +269,24 @@ export class DataService {
         output.push(next);
       }
     }
-    if (selected.length) await this.infrastructure.markDataChanged([table], user.id, user.role);
+    if (selected.length) {
+      await this.infrastructure.markDataChanged([table], user.id, user.role);
+      if (table === 'tasks') {
+        for (const item of output) {
+          const assigneeCode = String(item.assignee_code || '');
+          if (assigneeCode && assigneeCode.toLowerCase() !== user.employeeCode.toLowerCase()) {
+            const taskTitle = String(item.title || 'Công việc');
+            const status = String(item.status || '');
+            void this.push.sendToEmployee(assigneeCode, {
+              title: '📋 Cập nhật công việc',
+              body: `Công việc "${taskTitle}" đã được cập nhật (trạng thái: ${status})`,
+              view: 'tasks',
+              url: '/',
+            }).catch((e) => console.error('[DataService] push task update error:', e));
+          }
+        }
+      }
+    }
     return { data: output };
   }
 }

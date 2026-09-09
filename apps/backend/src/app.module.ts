@@ -5,13 +5,14 @@ import { DataController, DataService } from './data';
 import { AttendanceAdjustmentController, AttendanceController, AttendanceWorkController } from './attendance';
 import { RpcController, RpcService } from './rpc';
 import { FilesController } from './files';
-import { PushController } from './push';
+import { PushController, PushService } from './push';
 import { MarketingController, MarketingService } from './marketing';
 import { PgRegistrationController, PgRegistrationService } from './pg-registration';
 import { GiftsController, GiftsService } from './gifts';
 import { ScheduleController, ScheduleService } from './schedule';
 import { TelegramController, TelegramService } from './telegram';
 import { SecurityController, SecurityService } from './security';
+import { ReminderService } from './reminder';
 
 @Controller()
 class HealthController {
@@ -94,6 +95,8 @@ export class DailyReportScheduler implements OnApplicationBootstrap, OnApplicati
     ScheduleService,
     TelegramService,
     SecurityService,
+    PushService,
+    ReminderService,
     DailyReportScheduler,
   ],
 })

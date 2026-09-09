@@ -8,6 +8,7 @@ import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js'
 import { loadClinicLocation } from '../services/clinic.js';
 import { showToast } from './toast.js';
 import { confirmAction } from './app-dialog.js';
+import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification } from '../services/push-notifications.js';
 
 let isDropdownOpen = false;
 
@@ -118,6 +119,9 @@ export function renderTopbar(state) {
               <strong style="font-size: 13px; color: var(--teal-dark);">Thông báo</strong>
               ${unreadCount > 0 ? `<button class="link-button" id="notifMarkAllBtn" style="font-size: 11px; background: none; border: none; color: var(--teal); cursor: pointer; font-weight: 600;">Đọc tất cả</button>` : ''}
             </div>
+            <div class="notif-push-bar" id="notifPushBar" style="padding: 8px 12px; background: #f0fdfa; border-bottom: 1px solid rgba(8, 127, 123, 0.12); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: #134e4a;">
+              <span style="display: flex; align-items: center; gap: 5px;">📱 Đang kiểm tra thông báo…</span>
+            </div>
             <div class="notif-dropdown-list" style="max-height: 280px; overflow-y: auto;">
               ${listNotifs.length === 0 ? `
                 <div class="notif-empty" style="padding: 24px; text-align: center; font-size: 12px; color: #66736d;">Không có thông báo mới</div>
@@ -205,7 +209,88 @@ export function renderTopbar(state) {
       });
     }
 
-    // 4. Bind Dropdown Toggle
+    // 4. Push Notification Bar Logic
+    const renderPushBar = async () => {
+      const pushBar = document.getElementById('notifPushBar');
+      if (!pushBar) return;
+      try {
+        const status = await getPushNotificationStatus();
+        if (!status.supported) {
+          pushBar.innerHTML = `<span style="color: #66736d; font-size: 10.5px;">📱 Thiết bị không hỗ trợ Web Push</span>`;
+          return;
+        }
+        if (status.permission === 'granted') {
+          pushBar.innerHTML = `
+            <span style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0f766e;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);"></span>
+              Thông báo đẩy: Đã kích hoạt
+            </span>
+            <button type="button" id="notifPushTestBtn" style="background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+              🔔 Thử chuông
+            </button>
+          `;
+          const testBtn = document.getElementById('notifPushTestBtn');
+          testBtn?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            testBtn.disabled = true;
+            testBtn.textContent = 'Đang rung…';
+            try {
+              const res = await sendTestPushNotification();
+              if (res && res.sent > 0) {
+                showToast(`🔔 Đã gửi chuông thử nghiệm tới ${res.sent} thiết bị của bạn!`);
+              } else {
+                showToast('🔔 Tín hiệu đã gửi! Hãy kiểm tra thông báo trên điện thoại.');
+              }
+            } catch (err) {
+              showToast('Chưa gửi được: ' + (err.message || 'Lỗi mạng'), true);
+            } finally {
+              testBtn.disabled = false;
+              testBtn.textContent = '🔔 Thử chuông';
+            }
+          });
+        } else if (status.permission === 'denied') {
+          pushBar.innerHTML = `
+            <span style="display: flex; align-items: center; gap: 6px; color: #b91c1c; font-weight: 600;">
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span>
+              Thông báo: Bị chặn
+            </span>
+            <span style="font-size: 10px; color: #991b1b;">Mở trong Cài đặt</span>
+          `;
+        } else {
+          pushBar.innerHTML = `
+            <span style="display: flex; align-items: center; gap: 6px; color: #475569;">
+              📱 Thông báo máy: Chưa bật
+            </span>
+            <button type="button" id="notifPushEnableBtn" style="background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+              Bật ngay
+            </button>
+          `;
+          const enableBtn = document.getElementById('notifPushEnableBtn');
+          enableBtn?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            enableBtn.disabled = true;
+            enableBtn.textContent = 'Đang bật…';
+            try {
+              await requestPushPermissionAndSubscribe();
+              showToast('🔔 Đã bật thông báo trên điện thoại thành công!');
+              await renderPushBar();
+            } catch (err) {
+              showToast(err.message || 'Không thể bật thông báo.', true);
+              enableBtn.disabled = false;
+              enableBtn.textContent = 'Bật ngay';
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('[Topbar] renderPushBar error:', e);
+      }
+    };
+
+    renderPushBar().catch(() => {});
+
+    // 5. Bind Dropdown Toggle
     const bellBtn = document.getElementById('notifBellBtn');
     if (bellBtn && dropdown) {
       if (isDropdownOpen) {
@@ -215,7 +300,10 @@ export function renderTopbar(state) {
         e.preventDefault();
         e.stopPropagation();
         isDropdownOpen = !isDropdownOpen;
-        if (isDropdownOpen) positionMobileNotification(dropdown, bellBtn);
+        if (isDropdownOpen) {
+          positionMobileNotification(dropdown, bellBtn);
+          renderPushBar().catch(() => {});
+        }
         dropdown.style.display = isDropdownOpen ? 'block' : 'none';
       });
     }

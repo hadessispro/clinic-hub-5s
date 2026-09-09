@@ -2,13 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, Body, Controller, ForbiddenException, Injectable, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
+import { PushService } from './push';
 
 type JsonMap = Record<string, unknown>;
 const admins = new Set(['admin', 'admin_it', 'superadmin']);
 
 @Injectable()
 export class RpcService {
-  constructor(private readonly infrastructure: InfrastructureService) {}
+  constructor(
+    private readonly infrastructure: InfrastructureService,
+    private readonly push: PushService,
+  ) {}
 
   private async put(table: string, value: JsonMap, key = String(value.id || randomUUID())) {
     if (!value.id) value.id = key;
@@ -108,10 +112,51 @@ export class RpcService {
         const profiles = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
           `select payload from app.records where entity_type='profiles' and deleted_at is null and payload->>'role'=any($1::text[])`, [targetRoles],
         );
-        for (const profile of profiles.rows) await this.put('notifications', { id: randomUUID(), user_id: profile.payload.id,
-          title: 'Lịch làm việc chờ duyệt', body: `${employee.full_name || employeeCode} đã gửi lịch tháng ${month}.`,
-          type: 'schedule', link_view: 'schedule', read: false });
+        for (const profile of profiles.rows) {
+          await this.put('notifications', { id: randomUUID(), user_id: profile.payload.id,
+            title: 'Lịch làm việc chờ duyệt', body: `${employee.full_name || employeeCode} đã gửi lịch tháng ${month}.`,
+            type: 'schedule', link_view: 'schedule', read: false });
+          void this.push.sendToUser(String(profile.payload.id), {
+            title: '📋 Lịch làm việc chờ duyệt',
+            body: `${employee.full_name || employeeCode} đã gửi lịch tháng ${month}.`,
+            view: 'schedule',
+            url: '/',
+          }).catch((e) => console.error('[RpcService] push hr schedule error:', e));
+        }
       }
+
+      if (meta.stage === 'returned') {
+        const returnMsg = `${user.profile?.full_name || user.employeeCode} đã trả lại lịch tháng ${month}: ${note || 'Vui lòng kiểm tra và gửi lại.'}`;
+        void this.push.sendToEmployee(employeeCode, {
+          title: '↩️ Yêu cầu chỉnh sửa lịch làm việc',
+          body: returnMsg,
+          view: 'schedule',
+          url: '/',
+        }).catch((e) => console.error('[RpcService] push schedule return error:', e));
+        const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`, [employeeCode],
+        );
+        if (empProfile.rows[0]?.payload.id) {
+          await this.put('notifications', { id: randomUUID(), user_id: empProfile.rows[0].payload.id,
+            title: '↩️ Lịch làm việc được trả lại', body: returnMsg, type: 'schedule', link_view: 'schedule', read: false });
+        }
+      } else if (meta.stage === 'approved') {
+        const approveMsg = `Lịch làm việc tháng ${month} của bạn đã được phê duyệt chính thức.`;
+        void this.push.sendToEmployee(employeeCode, {
+          title: `✅ Lịch làm việc tháng ${month} đã duyệt`,
+          body: approveMsg,
+          view: 'schedule',
+          url: '/',
+        }).catch((e) => console.error('[RpcService] push schedule approve error:', e));
+        const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`, [employeeCode],
+        );
+        if (empProfile.rows[0]?.payload.id) {
+          await this.put('notifications', { id: randomUUID(), user_id: empProfile.rows[0].payload.id,
+            title: `✅ Lịch tháng ${month} đã duyệt`, body: approveMsg, type: 'schedule', link_view: 'schedule', read: false });
+        }
+      }
+
       return { stage: meta.stage };
     }
     if (name === 'list_message_contacts') {
@@ -131,12 +176,52 @@ export class RpcService {
     }
     if (name === 'submit_leave_request') {
       const employeeCode = ['staff'].includes(user.role) ? user.employeeCode : String(args.p_employee_code || user.employeeCode);
-      return this.put('leave_requests', { id: randomUUID(), employee_code: employeeCode, request_type: args.p_request_type,
+      const leaveId = randomUUID();
+      const saved = await this.put('leave_requests', { id: leaveId, employee_code: employeeCode, request_type: args.p_request_type,
         from_date: args.p_from_date, to_date: args.p_to_date || args.p_from_date, reason: args.p_reason,
         amount: Number(args.p_amount || 0), bank_account: args.p_bank_account || null,
         request_start_time: args.p_start_time || null, request_end_time: args.p_end_time || null,
         overtime_minutes: Number(args.p_overtime_minutes || 0), status: 'pending', leader_status: 'pending',
         operations_status: 'pending', routed_to: 'leader' });
+
+      // Notify department leader / HR
+      try {
+        const empResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='employees' and deleted_at is null and lower(payload->>'code')=lower($1) limit 1`,
+          [employeeCode],
+        );
+        const emp = empResult.rows[0]?.payload;
+        const dept = String(emp?.department || user.department || '');
+        const senderName = String(emp?.full_name || user.profile?.full_name || employeeCode);
+        const reqType = String(args.p_request_type || 'đơn mới');
+
+        const leaders = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null
+           and (payload->>'role' in ('leader','phu_ta_truong') and lower(payload->>'department')=lower($1) or payload->>'role' in ('hr','admin'))`,
+          [dept],
+        );
+        for (const leader of leaders.rows) {
+          if (String(leader.payload.id) === user.id) continue;
+          await this.put('notifications', {
+            id: randomUUID(),
+            user_id: leader.payload.id,
+            title: `📋 Đơn mới chờ duyệt (${reqType})`,
+            body: `${senderName} vừa gửi đơn ${reqType}. Vui lòng kiểm tra và phê duyệt.`,
+            type: 'leave',
+            link_view: 'leave',
+            read: false,
+          });
+          void this.push.sendToUser(String(leader.payload.id), {
+            title: `📋 Đơn mới chờ duyệt (${reqType})`,
+            body: `${senderName} vừa gửi đơn ${reqType}. Vui lòng kiểm tra và phê duyệt.`,
+            view: 'leave',
+            url: '/',
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[RpcService] notify leader leave request error:', err);
+      }
+      return saved;
     }
     if (name === 'review_leave_request') {
       const current = await this.byId('leave_requests', String(args.p_request_id || ''));
@@ -150,7 +235,29 @@ export class RpcService {
         next.operations_status = approved ? 'approved' : 'rejected'; next.operations_reviewed_at = new Date().toISOString();
         next.status = approved ? 'approved' : 'rejected'; next.routed_to = 'completed';
       } else throw new ForbiddenException('Tài khoản không có quyền duyệt đơn.');
-      return this.put('leave_requests', next, current.record_key);
+      const saved = await this.put('leave_requests', next, current.record_key);
+
+      const empCode = String(current.payload.employee_code || '');
+      if (empCode && empCode.toLowerCase() !== user.employeeCode.toLowerCase()) {
+        const reqType = String(current.payload.request_type || 'đơn từ');
+        const decisionText = approved ? 'đã được phê duyệt' : 'bị từ chối';
+        const notifBody = `Đơn (${reqType}) của bạn ${decisionText} bởi ${user.profile?.full_name || user.employeeCode}.${args.p_reason ? ` Lý do: ${args.p_reason}` : ''}`;
+        void this.push.sendToEmployee(empCode, {
+          title: `📋 Kết quả duyệt đơn (${reqType})`,
+          body: notifBody,
+          view: 'leave',
+          url: '/',
+        }).catch((e) => console.error('[RpcService] push leave review error:', e));
+
+        const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`, [empCode],
+        );
+        if (empProfile.rows[0]?.payload.id) {
+          await this.put('notifications', { id: randomUUID(), user_id: empProfile.rows[0].payload.id,
+            title: `📋 Kết quả duyệt đơn (${reqType})`, body: notifBody, type: 'leave', link_view: 'leave', read: false });
+        }
+      }
+      return saved;
     }
     if (name === 'report_client_error') {
       return this.put('system_error_logs', { id: randomUUID(), level: args.p_level || 'error', message: args.p_message,
