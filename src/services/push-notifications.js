@@ -75,8 +75,11 @@ export async function requestPushPermissionAndSubscribe() {
   return ensurePushSubscription();
 }
 
-export async function sendTestPushNotification() {
-  return apiRequest('/api/push-test', { method: 'POST' });
+export async function sendTestPushNotification(bellType = 'default') {
+  return apiRequest('/api/push-test', {
+    method: 'POST',
+    body: JSON.stringify({ bellType }),
+  });
 }
 
 export async function unsubscribePushNotification() {
@@ -153,18 +156,15 @@ function renderPermissionPrompt() {
   });
 }
 
-// Chiến lược triển khai an toàn theo yêu cầu: Bật trước cho admin_it để thử nghiệm & cô lập lỗi
-export const PUSH_ALLOWED_ROLES = new Set(['admin_it']);
+// Quyền thử nghiệm các loại chuông trước ca làm việc (Admin / IT)
+export const ADMIN_BELL_TEST_ROLES = new Set(['admin', 'admin_it', 'superadmin']);
 
-export function isPushAllowedForRole(role) {
-  return PUSH_ALLOWED_ROLES.has(role);
+export function canTestPushBells(role) {
+  return ADMIN_BELL_TEST_ROLES.has(role);
 }
 
 export async function initPushNotifications(authInfo) {
   if (!authInfo?.user) return;
-  const role = authInfo.profile?.role;
-  // Cô lập lỗi an toàn: Chỉ kích hoạt cho vai trò admin_it trong giai đoạn pilot
-  if (!isPushAllowedForRole(role)) return;
 
   if (!window.isSecureContext || !('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
   if (Notification.permission === 'granted') {

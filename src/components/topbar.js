@@ -8,7 +8,7 @@ import { BRANCH, BRANCHES, branchSettings, setActiveBranch } from '../branch.js'
 import { loadClinicLocation } from '../services/clinic.js';
 import { showToast } from './toast.js';
 import { confirmAction } from './app-dialog.js';
-import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification, isPushAllowedForRole } from '../services/push-notifications.js';
+import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification, canTestPushBells } from '../services/push-notifications.js';
 
 let isDropdownOpen = false;
 
@@ -211,50 +211,77 @@ export function renderTopbar(state) {
       });
     }
 
-    // 4. Push Notification Bar Logic (Chỉ hiển thị cho admin_it trong giai đoạn pilot)
+    // 4. Push Notification Bar Logic: Hiển thị trạng thái cho toàn bộ nhân viên; Admin & Admin-IT có bộ thử các loại chuông
     const renderPushBar = async () => {
       const pushBar = document.getElementById('notifPushBar');
       if (!pushBar) return;
-      if (!isPushAllowedForRole(role)) {
-        pushBar.style.display = 'none';
-        return;
-      }
       try {
         const status = await getPushNotificationStatus();
         if (!status.supported) {
           pushBar.innerHTML = `<span style="color: #66736d; font-size: 10.5px;">📱 Thiết bị không hỗ trợ Web Push</span>`;
           return;
         }
+        const hasBellTestPermission = canTestPushBells(role);
+
         if (status.permission === 'granted') {
-          pushBar.innerHTML = `
-            <span style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0f766e;">
-              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);"></span>
-              Thông báo đẩy: Đã kích hoạt
-            </span>
-            <button type="button" id="notifPushTestBtn" style="background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;">
-              🔔 Thử chuông
-            </button>
-          `;
-          const testBtn = document.getElementById('notifPushTestBtn');
-          testBtn?.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            testBtn.disabled = true;
-            testBtn.textContent = 'Đang rung…';
-            try {
-              const res = await sendTestPushNotification();
-              if (res && res.sent > 0) {
-                showToast(`🔔 Đã gửi chuông thử nghiệm tới ${res.sent} thiết bị của bạn!`);
-              } else {
-                showToast('🔔 Tín hiệu đã gửi! Hãy kiểm tra thông báo trên điện thoại.');
+          if (hasBellTestPermission) {
+            pushBar.innerHTML = `
+              <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                  <span style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0f766e; font-size: 11px;">
+                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);"></span>
+                    Thông báo đẩy: Đã kích hoạt
+                  </span>
+                  <button type="button" id="notifPushTestBtn" style="background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 4px 9px; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;">
+                    🔔 Bắn chuông
+                  </button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: 10px; color: #64748b; white-space: nowrap;">Loại chuông thử:</span>
+                  <select id="adminBellTypeSelect" style="font-size: 10.5px; padding: 3px 6px; border-radius: 4px; border: 1px solid #cbd5e1; background: #fff; color: #1e293b; flex: 1; outline: none;">
+                    <option value="checkin">⏰ Nhắc Check-in ca làm việc</option>
+                    <option value="lunch">🍱 Nghỉ trưa & nạp năng lượng (12:00)</option>
+                    <option value="afternoon">☕ Tiếp sức & động viên chiều (15:00)</option>
+                    <option value="checkout">🏁 Nhắc Check-out hết ca làm</option>
+                    <option value="evening">🌙 Động viên ca tối (18:15)</option>
+                    <option value="message">💬 Tin nhắn / Thông báo khẩn</option>
+                    <option value="default">🔔 Chuông thử nghiệm chung</option>
+                  </select>
+                </div>
+              </div>
+            `;
+            const testBtn = document.getElementById('notifPushTestBtn');
+            const bellSelect = document.getElementById('adminBellTypeSelect');
+            testBtn?.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const selectedBell = bellSelect?.value || 'default';
+              const bellText = bellSelect?.options[bellSelect.selectedIndex]?.text || selectedBell;
+              testBtn.disabled = true;
+              testBtn.textContent = 'Đang bắn…';
+              try {
+                const res = await sendTestPushNotification(selectedBell);
+                if (res && res.sent > 0) {
+                  showToast(`🔔 Đã bắn chuông [${bellText}] tới ${res.sent} thiết bị của bạn!`);
+                } else {
+                  showToast('🔔 Tín hiệu đã gửi! Hãy kiểm tra thông báo trên điện thoại.');
+                }
+              } catch (err) {
+                showToast('Chưa gửi được: ' + (err.message || 'Lỗi mạng'), true);
+              } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '🔔 Bắn chuông';
               }
-            } catch (err) {
-              showToast('Chưa gửi được: ' + (err.message || 'Lỗi mạng'), true);
-            } finally {
-              testBtn.disabled = false;
-              testBtn.textContent = '🔔 Thử chuông';
-            }
-          });
+            });
+          } else {
+            pushBar.innerHTML = `
+              <span style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #0f766e;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);"></span>
+                Thông báo đẩy: Đã kích hoạt
+              </span>
+              <span style="font-size: 10px; color: #0d9488;">🟢 Sẵn sàng nhận tin</span>
+            `;
+          }
         } else if (status.permission === 'denied') {
           pushBar.innerHTML = `
             <span style="display: flex; align-items: center; gap: 6px; color: #b91c1c; font-weight: 600;">

@@ -32,16 +32,6 @@ export class PushService {
       return { sent: 0, disabled: true };
     }
 
-    // Giai đoạn thử nghiệm cô lập an toàn trên Production: Chỉ cho phép gửi tới tài khoản admin_it
-    const profileCheck = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
-      `select payload from app.records where entity_type='profiles' and deleted_at is null and payload->>'id'=$1 limit 1`,
-      [String(userId)],
-    );
-    const userRole = profileCheck.rows[0]?.payload?.role;
-    if (userRole !== 'admin_it') {
-      return { sent: 0 };
-    }
-
     const subscriptions = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
       `select record_key,payload from app.records where entity_type='push_subscriptions' and deleted_at is null
        and payload->>'user_id'=$1 and coalesce((payload->>'active')::boolean,true)=true`,
@@ -158,13 +148,53 @@ export class PushController {
   }
 
   @Post('/push-test')
-  async testPush(@Req() request: { user: AuthUser }) {
+  async testPush(@Req() request: { user: AuthUser }, @Body() body: { bellType?: string }) {
+    const bellType = String(body?.bellType || 'default');
+    const name = String(request.user.profile?.full_name || request.user.employeeCode || 'bạn');
+
+    let title = '🔔 Thử nghiệm chuông thông báo · 5S Clinic';
+    let bodyText = 'Thiết bị của bạn đã kết nối thành công với hệ thống thông báo đẩy! Bạn sẽ nhận được chuông nhắc việc ngay cả khi PWA đang đóng.';
+    let view = 'dashboard';
+
+    switch (bellType) {
+      case 'checkin':
+        title = '⏰ Nhắc nhở chấm công · Nha Khoa 5S';
+        bodyText = `Chào ${name}, bạn có ca làm việc hôm nay. Đừng quên check-in đúng giờ nhé! Chúc bạn ngày mới năng lượng! 🌟`;
+        view = 'attendance';
+        break;
+      case 'lunch':
+        title = '🍱 Giờ nghỉ trưa nạp năng lượng · 5S Care 💖';
+        bodyText = `Chào ${name}, giờ nghỉ trưa đã đến rồi! Hãy gác lại công việc, thưởng thức bữa trưa ngon miệng và chợp mắt một chút để nạp lại 100% năng lượng nhé! 🍵✨`;
+        view = 'dashboard';
+        break;
+      case 'afternoon':
+        title = '☕ Thư giãn & tiếp năng lượng chiều · 5S Clinic 🌸';
+        bodyText = `Vươn vai, uống một ngụm nước và thư giãn mắt nào ${name}! Bạn đã làm việc rất chăm chỉ suốt buổi sáng. Cố gắng thêm một chút nữa nhé, buổi chiều tuyệt vời! 💪🌈✨`;
+        view = 'dashboard';
+        break;
+      case 'checkout':
+        title = '🏁 Nhắc nhở check-out · Nha Khoa 5S';
+        bodyText = `Ca làm việc của ${name} đã kết thúc. Hãy nhớ checkout và bàn giao công việc trước khi ra về nhé! 🛋️✨`;
+        view = 'attendance';
+        break;
+      case 'evening':
+        title = '🌙 Chặng cuối của ngày rồi, cố lên bạn nhé · 5S Care 🎯';
+        bodyText = `Cảm ơn ${name} vì sự tận tâm và nụ cười rạng rỡ mang đến cho khách hàng hôm nay. Ca làm việc sắp hoàn thành rồi, chuẩn bị về nghỉ ngơi ấm áp bên gia đình nhé! ✨🛋️`;
+        view = 'dashboard';
+        break;
+      case 'message':
+        title = '💬 Tin nhắn mới từ Trưởng bộ phận';
+        bodyText = `Chào ${name}, vui lòng kiểm tra báo cáo công việc và cập nhật danh sách hồ sơ điều trị hôm nay nhé!`;
+        view = 'messages';
+        break;
+    }
+
     const result = await this.pushService.sendToUser(request.user.id, {
-      title: '🔔 Thử nghiệm chuông thông báo · 5S Clinic',
-      body: 'Thiết bị của bạn đã kết nối thành công với hệ thống thông báo đẩy! Bạn sẽ nhận được nhắc chấm công, nhắc checkout và tin nhắn ngay cả khi PWA đang đóng.',
-      view: 'dashboard',
+      title,
+      body: bodyText,
+      view,
       url: '/',
     });
-    return { ok: true, sent: result.sent };
+    return { ok: true, sent: result.sent, bellType, title };
   }
 }
