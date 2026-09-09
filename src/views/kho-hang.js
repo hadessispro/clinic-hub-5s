@@ -1004,7 +1004,7 @@ function veDeXuat() {
       <section class="bm03-toolbar">
         <div class="bm03-tool-left">
           <label>
-            <span style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 2px;">Phiếu ĐNMH đang chọn:</span>
+            <span style="font-size: 0.78rem; font-weight: 700; color: #475569; display: block; margin-bottom: 2px;">Phiếu đề xuất mua hàng:</span>
             <select class="bm03-phieu-select" id="selPhieuDeXuat">
               ${dsPhieuDeXuat.map((p) => `<option value="${p.id}" ${p.id === phieu.id ? 'selected' : ''}>${escapeHTML(p.so_phieu || p.id)} · ${escapeHTML(p.tieu_de || '')} (${p.so_mat_hang || (p.dong?.length || 0)} món)</option>`).join('')}
             </select>
@@ -1015,7 +1015,7 @@ function veDeXuat() {
         </div>
 
         <div class="bm03-tool-right">
-          <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới chuẩn mẫu BM03">
+          <button type="button" class="secondary-button" id="btnTaoPhieuMoi" title="Lập một phiếu đề xuất mua hàng mới">
             <i class="ri-add-line"></i> Phiếu mới
           </button>
           <button type="button" class="secondary-button" id="btnThemDongMoi" style="border-color: #0f8b7f; color: #0f8b7f;" title="Thêm một dòng mặt hàng mới vào phiếu đề xuất">
@@ -1024,11 +1024,8 @@ function veDeXuat() {
           <button type="button" class="secondary-button" id="btnMoGoiYHangThieu" style="border-color: #f59e0b; color: #b45309; background: #fffbeb;" title="Xem các mặt hàng tồn dưới định mức để tick chọn bổ sung">
             <i class="ri-flashlight-line"></i> Gợi ý hàng thiếu (${dsGoiYHangThieu.length})
           </button>
-          <a href="/templates/mau_de_xuat_mua_hang_bm03.xlsx" download="mau_de_xuat_mua_hang_bm03.xlsx" class="secondary-button" style="border-color: #94a3b8; color: #475569; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="Tải tệp biểu mẫu Excel BM03 gốc để tham khảo hoặc in">
-            <i class="ri-download-2-line"></i> File mẫu BM03
-          </a>
-          <button type="button" class="secondary-button" id="btnXuatExcelBM03" style="border-color: #0f8b7f; color: #0f8b7f;" title="Tải về file Excel đúng 100% mẫu 5S_QĐ_KT_01/BM03 cho phiếu hiện tại">
-            <i class="ri-file-excel-2-line"></i> Xuất Excel BM03
+          <button type="button" class="secondary-button" id="btnXuatExcelBM03" style="border-color: #0f8b7f; color: #0f8b7f;" title="Tải về file Excel phiếu đề xuất mua hàng">
+            <i class="ri-file-excel-2-line"></i> Xuất Excel
           </button>
           <button type="button" class="primary-button" id="btnTaoDonTuPhieu" style="background: #0f8b7f;" title="Chuyển các mặt hàng trong phiếu thành các đơn đặt hàng theo từng Nhà cung cấp">
             <i class="ri-shopping-cart-2-line"></i> Tạo đơn PO
@@ -1078,7 +1075,7 @@ function veDeXuat() {
         </div>
       </section>
 
-      <!-- Tờ giấy Biểu mẫu chuẩn 5S_QĐ_KT_01/BM03 -->
+      <!-- Tờ giấy Phiếu đề xuất mua hàng -->
       <section class="bm03-paper">
         <header class="bm03-header-top">
           <div>
@@ -1089,14 +1086,14 @@ function veDeXuat() {
           </div>
 
           <div class="bm03-main-title">
-            <h2>PHIẾU ĐỀ NGHỊ MUA HÀNG</h2>
-            <span style="font-size: 0.88rem; color: #475569; font-weight: 600;">Kế hoạch: Định kỳ Tháng 09/2026</span>
+            <h2>PHIẾU ĐỀ XUẤT MUA HÀNG</h2>
+            <span style="font-size: 0.88rem; color: #475569; font-weight: 600;">Kế hoạch: Bổ sung định kỳ kho phòng khám</span>
           </div>
 
-          <div class="bm03-code-box">
-            <b>Số hiệu: 5S_QĐ_KT_01/BM03</b><br>
-            Ngày hiệu lực: 18/06/2023<br>
-            Lần ban hành: 01 · Lần soát xét: 00
+          <div class="bm03-code-box" style="text-align: right; font-size: 0.8rem; color: #64748b;">
+            <b>HỆ THỐNG NHA KHOA 5S</b><br>
+            Phiếu đề xuất mua hàng<br>
+            Lưu hành nội bộ
           </div>
         </header>
 
@@ -1162,7 +1159,7 @@ function veDeXuat() {
                       <i class="ri-file-list-3-line" style="font-size: 3rem; color: #0f8b7f; display: inline-block; margin-bottom: 12px;"></i>
                       <h4 style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-bottom: 6px;">Phiếu đề xuất mua hàng chưa có mặt hàng nào</h4>
                       <p style="font-size: 0.85rem; color: #64748b; line-height: 1.5; margin-bottom: 16px;">
-                        Biểu mẫu được định dạng theo chuẩn <b>5S_QĐ_KT_01/BM03</b>. Bạn có thể bấm <b>Gợi ý hàng thiếu</b> để nạp nhanh các vật tư tồn dưới định mức, tìm kiếm vật tư từ kho hàng ở khung phía trên, hoặc bấm <b>Thêm mặt hàng</b> để nhập dòng mới.
+                        Bạn có thể bấm <b>Gợi ý hàng thiếu</b> để nạp nhanh các vật tư tồn dưới định mức trong kho, tìm kiếm vật tư từ kho hàng ở khung phía trên, hoặc bấm <b>Thêm mặt hàng</b> để nhập dòng mới.
                       </p>
                       <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                         <button type="button" class="primary-button" id="btnGoiYEmpty" style="background: #f59e0b;">
@@ -1266,7 +1263,7 @@ function veDeXuat() {
             <button type="button" class="secondary-button" id="btnThemDongDuoiBang" style="font-size: 0.82rem; padding: 5px 12px; border-color: #0f8b7f; color: #0f8b7f;">
               <i class="ri-add-line"></i> Thêm mặt hàng vào phiếu
             </button>
-            <span style="font-size: 0.78rem; color: #64748b;">Mẫu biểu chuẩn hành chính: <b>5S_QĐ_KT_01/BM03</b> · Phiếu đề nghị mua hàng</span>
+            <span style="font-size: 0.78rem; color: #64748b;">Phiếu đề xuất mua hàng · Hệ thống Nha khoa 5S</span>
           </div>
         </div>
 
@@ -2096,7 +2093,7 @@ export function initView() {
       }, maToi);
       phieuDeXuatHienTaiId = pMoi.id;
       phieuDeXuatHienTai = pMoi;
-    }, 'Đã khởi tạo phiếu đề xuất mua hàng mới chuẩn BM03.');
+    }, 'Đã khởi tạo phiếu đề xuất mua hàng mới.');
   });
 
   g('btnMoGoiYHangThieu')?.addEventListener('click', () => {
@@ -2223,7 +2220,7 @@ export function initView() {
 
     try {
       await xuatExcelDeXuatBM03(phieuDeXuatHienTai);
-      showToast('Đã tải xuống file Excel BM03 chuẩn 5S_QĐ_KT_01!');
+      showToast('Đã tải xuống file Excel phiếu đề xuất mua hàng!');
     } catch (err) {
       showToast('Lỗi xuất Excel: ' + err.message, true);
     }
@@ -2236,7 +2233,7 @@ export function initView() {
     }
     const ok = await confirmAction(
       `Hệ thống sẽ tách ${phieuDeXuatHienTai.dong.length} mặt hàng theo từng Nhà cung cấp và lập các đơn đặt hàng (PO) ở trạng thái chờ duyệt. Tiếp tục?`,
-      { title: 'Tạo đơn đặt hàng từ phiếu BM03', confirmText: 'Tạo đơn PO' }
+      { title: 'Tạo đơn đặt hàng từ phiếu đề xuất', confirmText: 'Tạo đơn PO' }
     );
     if (!ok) return;
     chay(async () => {
@@ -2257,7 +2254,7 @@ export function initView() {
 
     chay(async () => {
       await capNhatPhieuDeXuat(phieuDeXuatHienTai.id, phieuDeXuatHienTai);
-    }, 'Đã lưu thông tin phiếu đề xuất mua hàng BM03.');
+    }, 'Đã lưu phiếu đề xuất mua hàng.');
   });
 
   document.querySelectorAll('[data-dx-cat]').forEach((btn) => {

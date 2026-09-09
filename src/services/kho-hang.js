@@ -1173,7 +1173,7 @@ export async function xuatExcelDeXuatBM03(phieu) {
 
   wb.Sheets[sheetName] = newWs;
 
-  const tenFile = `5S_BM03_DE_XUAT_MUA_HANG_${(phieu.so_phieu || 'BM03').replace(/[^a-zA-Z0-9._-]/g, '_')}.xlsx`;
+  const tenFile = `PHIEU_DE_XUAT_MUA_HANG_${(phieu.so_phieu || '5S').replace(/[^a-zA-Z0-9._-]/g, '_')}.xlsx`;
   XLSX.writeFile(wb, tenFile);
   return tenFile;
 }
