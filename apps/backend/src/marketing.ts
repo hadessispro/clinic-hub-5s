@@ -227,8 +227,15 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
                 ) processed_by_owner
          from marketing.leads l cross join bounds b
          where l.assigned_telesale_code is not null
-           and (b.started_at is null or coalesce(l.assigned_at,l.created_at)>=b.started_at)
-           and (b.ended_at is null or coalesce(l.assigned_at,l.created_at)<b.ended_at)
+           and (
+              b.started_at is null
+              or (
+                (b.started_at is null or l.created_at >= b.started_at) and (b.ended_at is null or l.created_at < b.ended_at)
+              )
+              or (
+                l.assigned_at is not null and (b.started_at is null or l.assigned_at >= b.started_at) and (b.ended_at is null or l.assigned_at < b.ended_at)
+              )
+            )
        ), owned as (
          select assigned_telesale_code employee_code,
                 count(*)::int total_data,
@@ -470,7 +477,10 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException();
     }
     for (const [field, column] of [['dataClass', 'data_class'], ['netLevel', 'net_level'], ['status', 'status'], ['assignedTo', 'assigned_telesale_code'], ['commissionStatus', 'pg_commission_status']] as const) {
-      if (query[field]) { params.push(query[field]); where.push(`l.${column}=$${params.length}`); }
+      if (query[field]) {
+        if (field === 'assignedTo' && user.role === 'telesale_staff') continue;
+        params.push(query[field]); where.push(`l.${column}=$${params.length}`);
+      }
     }
     const serviceGroup = String(query.serviceGroup || '').trim().toLowerCase();
     if (serviceGroup === 'raw') {
@@ -536,11 +546,34 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         )
       )`);
     }
-    // The workspace calls this filter "Ngày được giao". Use the assignment
-    // timestamp consistently with its KPI query; legacy rows without an
-    // assignment timestamp fall back to their creation timestamp.
-    if (query.dateFrom) { params.push(`${String(query.dateFrom)}T00:00:00+07:00`); where.push(`coalesce(l.assigned_at,l.created_at) >= $${params.length}::timestamptz`); }
-    if (query.dateTo) { params.push(`${String(query.dateTo)}T23:59:59.999+07:00`); where.push(`coalesce(l.assigned_at,l.created_at) <= $${params.length}::timestamptz`); }
+    const dateType = String(query.dateType || query.date_type || '').trim().toLowerCase();
+    if (query.dateFrom || query.dateTo) {
+      const fromParam = query.dateFrom ? `$${params.length + 1}::timestamptz` : null;
+      if (query.dateFrom) params.push(`${String(query.dateFrom)}T00:00:00+07:00`);
+      const toParam = query.dateTo ? `$${params.length + 1}::timestamptz` : null;
+      if (query.dateTo) params.push(`${String(query.dateTo)}T23:59:59.999+07:00`);
+
+      if (dateType === 'created') {
+        if (fromParam) where.push(`l.created_at >= ${fromParam}`);
+        if (toParam) where.push(`l.created_at <= ${toParam}`);
+      } else if (dateType === 'assigned') {
+        where.push('l.assigned_at is not null');
+        if (fromParam) where.push(`l.assigned_at >= ${fromParam}`);
+        if (toParam) where.push(`l.assigned_at <= ${toParam}`);
+      } else {
+        const createdConds: string[] = [];
+        const assignedConds: string[] = ['l.assigned_at is not null'];
+        if (fromParam) {
+          createdConds.push(`l.created_at >= ${fromParam}`);
+          assignedConds.push(`l.assigned_at >= ${fromParam}`);
+        }
+        if (toParam) {
+          createdConds.push(`l.created_at <= ${toParam}`);
+          assignedConds.push(`l.assigned_at <= ${toParam}`);
+        }
+        where.push(`((${createdConds.join(' and ')}) or (${assignedConds.join(' and ')}))`);
+      }
+    }
     if (String(query.pgUnassignedOnly || '').toLowerCase() === 'true') {
       where.push(`l.assigned_telesale_code is null and exists (
         select 1 from app.records pg_creator

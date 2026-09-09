@@ -107,7 +107,7 @@ export async function renderView() {
   [suggestions, requests, assignments, accounts, sites, leadResult] = await Promise.all([
     getPgLocationSuggestions(), getPgSupportRequests(), (isPg || isSupport) ? getPgAssignments(isSupport ? supportDate : today()) : Promise.resolve([]),
     canSeePgData ? getPgAccounts() : Promise.resolve([]), isSupport ? getPgSites() : Promise.resolve([]),
-    canSeePgData ? getMarketingLeadPage({ page: leadPage, page_size: 25, pg_only: true, search: leadSearch || undefined, pg_code: leadPg || undefined, data_class: leadClass || undefined, status: leadStatus || undefined, commission_status: leadCommission || undefined, date_from: leadFrom || undefined, date_to: leadTo || undefined }) : Promise.resolve({ data: [], meta: { page: 1, pageSize: 25, total: 0 } }),
+    canSeePgData ? getMarketingLeadPage({ page: leadPage, page_size: 25, pg_only: true, search: leadSearch || undefined, pg_code: leadPg || undefined, data_class: leadClass || undefined, status: leadStatus || undefined, commission_status: leadCommission || undefined, date_from: leadFrom || undefined, date_to: leadTo || undefined, date_type: 'created' }) : Promise.resolve({ data: [], meta: { page: 1, pageSize: 25, total: 0 } }),
   ]);
   return `${isSupport ? renderSupportOperations() : `<div class="view-header"><div><p class="eyebrow">ĐIỀU PHỐI PG</p><h3>${isPg ? 'Ca làm & hỗ trợ của tôi' : 'Phê duyệt vận hành PG'}</h3></div></div>`}
   ${canSeePgData ? renderSupportLeadData() : ''}

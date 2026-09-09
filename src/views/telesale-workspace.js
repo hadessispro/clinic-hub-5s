@@ -13,6 +13,7 @@ let telesalePageSize = 12;
 let telesaleViewMode = 'cards';
 let telesaleDateFrom = '';
 let telesaleDateTo = '';
+let telesaleDateType = 'all';
 let telesaleDataClass = '';
 let telesaleServiceGroup = '';
 let telesaleServiceType = '';
@@ -29,13 +30,14 @@ const ADVANCED_SERVICES = ['Implant', 'Răng sứ', 'Niềng răng'];
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  const isLeaderOrAdmin = ['admin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
+  const isLeaderOrAdmin = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
   
   // Filter leads assigned to current telesale staff, or all leads if leader/admin
   const filters = {
     ...(isLeaderOrAdmin ? {} : { assigned_telesale_id: profile.employee_code || profile.id }),
     date_from: telesaleDateFrom || undefined,
     date_to: telesaleDateTo || undefined,
+    date_type: telesaleDateType !== 'all' ? telesaleDateType : undefined,
     data_class: telesaleDataClass || undefined,
     service_group: telesaleServiceGroup || undefined,
     service_type: telesaleServiceType || undefined,
@@ -166,9 +168,16 @@ export async function renderView(state) {
         </div>
         <div class="telesale-filter-advanced">
           <div class="telesale-filter-period">
-            <span class="telesale-filter-caption">Ngày được giao</span>
+            <span class="telesale-filter-caption">Lọc theo ngày</span>
             <label class="telesale-filter-field"><span>Từ ngày</span><input id="filterTelesaleDateFrom" type="date" value="${escapeHTML(telesaleDateFrom)}"></label>
             <label class="telesale-filter-field"><span>Đến ngày</span><input id="filterTelesaleDateTo" type="date" value="${escapeHTML(telesaleDateTo)}"></label>
+            <label class="telesale-filter-field"><span>Loại mốc ngày</span>
+              <select id="filterTelesaleDateType">
+                <option value="all"${telesaleDateType === 'all' ? ' selected' : ''}>Tất cả (Tiếp nhận hoặc Giao)</option>
+                <option value="created"${telesaleDateType === 'created' ? ' selected' : ''}>Ngày tiếp nhận (PG nhập)</option>
+                <option value="assigned"${telesaleDateType === 'assigned' ? ' selected' : ''}>Ngày được giao (phân bổ)</option>
+              </select>
+            </label>
           </div>
           <label class="telesale-filter-field"><span>Nhóm dịch vụ</span><select id="filterTelesaleServiceGroup"><option value="">Tất cả dịch vụ</option><option value="raw"${telesaleServiceGroup === 'raw' ? ' selected' : ''}>Data thô</option><option value="basic"${telesaleServiceGroup === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${telesaleServiceGroup === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
           <label class="telesale-filter-field"><span>Dịch vụ cụ thể</span><select id="filterTelesaleServiceType"${['basic', 'advanced'].includes(telesaleServiceGroup) ? '' : ' disabled'}><option value="">${telesaleServiceGroup === 'raw' ? 'Không áp dụng cho Data thô' : 'Tất cả trong nhóm'}</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, telesaleServiceType === serviceName)).join('')}</select></label>
@@ -327,6 +336,8 @@ export function initView() {
   branchSelect?.addEventListener('change', () => { telesaleBranch = branchSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dateFromInput?.addEventListener('change', () => { telesaleDateFrom = dateFromInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dateToInput?.addEventListener('change', () => { telesaleDateTo = dateToInput.value; telesalePage = 1; navigateTo('telesale-workspace'); });
+  const dateTypeSelect = document.getElementById('filterTelesaleDateType');
+  dateTypeSelect?.addEventListener('change', () => { telesaleDateType = dateTypeSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
   dataClassSelect?.addEventListener('change', () => {
     telesaleDataClass = dataClassSelect.value;
     if (telesaleDataClass === 'raw' && telesaleServiceGroup === 'advanced') { telesaleServiceGroup = ''; telesaleServiceType = ''; }
@@ -343,7 +354,7 @@ export function initView() {
     navigateTo('telesale-workspace');
   });
   serviceTypeSelect?.addEventListener('change', () => { telesaleServiceType = serviceTypeSelect.value; telesalePage = 1; navigateTo('telesale-workspace'); });
-  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleSearch = ''; telesaleStatus = ''; telesaleBranch = ''; telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
+  document.getElementById('resetTelesaleAdvancedFilters')?.addEventListener('click', () => { telesaleSearch = ''; telesaleStatus = ''; telesaleBranch = ''; telesaleDateFrom = ''; telesaleDateTo = ''; telesaleDateType = 'all'; telesaleDataClass = ''; telesaleServiceGroup = ''; telesaleServiceType = ''; telesalePage = 1; navigateTo('telesale-workspace'); });
   document.querySelectorAll('[data-workspace-view]').forEach((button) => button.addEventListener('click', () => {
     telesaleViewMode = button.dataset.workspaceView === 'sheet' ? 'sheet' : 'cards';
     document.getElementById('telesaleCardView').hidden = telesaleViewMode === 'sheet';

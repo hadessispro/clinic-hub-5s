@@ -29,7 +29,7 @@ export async function renderView(state) {
   const isSupportMkt = profile.role === 'support_marketing';
   const isTelesaleLeader = profile.role === 'telesale_leader';
   const showIntakeForm = isPgStaff || isTelesaleLeader;
-  const isLeadManager = ['admin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
+  const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
   const allowExport = canExportData(profile.role);
 
   const [leads, employees, telesaleAccounts] = await Promise.all([

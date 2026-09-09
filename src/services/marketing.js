@@ -76,6 +76,7 @@ export async function getMarketingLeads(filters = {}) {
     if (filters.pg_only) query.set('pgOnly', 'true');
     if (filters.date_from) query.set('dateFrom', filters.date_from);
     if (filters.date_to) query.set('dateTo', filters.date_to);
+    if (filters.date_type) query.set('dateType', filters.date_type);
     if (filters.service_group) query.set('serviceGroup', filters.service_group);
     if (filters.service_type) query.set('serviceType', filters.service_type);
     const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
@@ -445,7 +446,7 @@ export async function getMarketingLeadPage(filters = {}) {
       status: 'status', assigned_telesale_id: 'assignedTo', data_class: 'dataClass',
       net_level: 'netLevel', pg_unhandled_only: 'pgUnassignedOnly', branch_id: 'branchId',
       pg_code: 'pgCode', search: 'search', assignment: 'assignment', pg_only: 'pgOnly',
-      date_from: 'dateFrom', date_to: 'dateTo', service_group: 'serviceGroup',
+      date_from: 'dateFrom', date_to: 'dateTo', date_type: 'dateType', service_group: 'serviceGroup',
       service_type: 'serviceType', commission_status: 'commissionStatus',
     };
     Object.entries(mappings).forEach(([key, target]) => {
@@ -470,12 +471,19 @@ export async function getMarketingLeadPage(filters = {}) {
   });
   const from = filters.date_from ? new Date(`${filters.date_from}T00:00:00+07:00`) : null;
   const to = filters.date_to ? new Date(`${filters.date_to}T23:59:59.999+07:00`) : null;
+  const dateType = String(filters.date_type || '').trim().toLowerCase();
   const filtered = leads.filter((lead) => {
     if (filters.pg_unhandled_only && !(lead.created_by_role === 'pg_staff' && !lead.assigned_telesale_id)) return false;
     if (!from && !to) return true;
     const created = new Date(lead.created_at || 0);
-    if (Number.isNaN(created.getTime())) return false;
-    return (!from || created >= from) && (!to || created <= to);
+    const assigned = lead.assigned_at ? new Date(lead.assigned_at) : null;
+    const createdValid = !Number.isNaN(created.getTime());
+    const assignedValid = assigned && !Number.isNaN(assigned.getTime());
+    const createdMatches = createdValid && (!from || created >= from) && (!to || created <= to);
+    const assignedMatches = assignedValid && (!from || assigned >= from) && (!to || assigned <= to);
+    if (dateType === 'created') return createdMatches;
+    if (dateType === 'assigned') return assignedMatches;
+    return createdMatches || assignedMatches;
   });
   const page = Math.max(1, Number(filters.page || 1));
   const pageSize = Math.max(1, Math.min(100, Number(filters.page_size || 50)));

@@ -61,6 +61,7 @@ export async function renderView() {
     assignment: pgLeadAssignment || undefined,
     commission_status: pgLeadCommissionStatus || undefined,
     date_from: pgLeadDateFrom || undefined, date_to: pgLeadDateTo || undefined,
+    date_type: 'created',
   });
   const loaded = await Promise.all([
     getPgAccounts(),

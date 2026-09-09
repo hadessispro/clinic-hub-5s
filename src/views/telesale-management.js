@@ -11,6 +11,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Mi
 let selectedTelesale = '';
 let dateFrom = '';
 let dateTo = '';
+let dateType = 'all';
 let reportDate = '';
 let statusFilter = '';
 let dataClassFilter = '';
@@ -33,7 +34,7 @@ function rerender() {
 
 export async function renderView() {
   const profile = store.getState().profile || {};
-  if (!['telesale_leader', 'admin_marketing', 'admin', 'superadmin'].includes(profile.role)) {
+  if (!['telesale_leader', 'admin_marketing', 'admin', 'admin_it', 'superadmin'].includes(profile.role)) {
     return '<div class="empty-state error"><strong>Không có quyền truy cập</strong><span>Khu vực này chỉ dành cho Quản lý Telesale.</span></div>';
   }
 
@@ -46,6 +47,7 @@ export async function renderView() {
       assigned_telesale_id: selectedTelesale || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      date_type: dateType !== 'all' ? dateType : undefined,
       status: statusFilter || undefined,
       data_class: dataClassFilter || undefined,
       service_group: serviceGroupFilter || undefined,
@@ -158,6 +160,11 @@ export async function renderView() {
         <label><span>Telesale phụ trách</span><select id="tsmMemberFilter"><option value="">Toàn đội Telesale</option>${telesales.map((member) => option(member.employee_code, `${member.name} · ${member.employee_code}`, selectedTelesale === member.employee_code)).join('')}</select></label>
         <label><span>Từ ngày</span><input type="date" id="tsmDateFrom" value="${escapeHTML(dateFrom)}"></label>
         <label><span>Đến ngày</span><input type="date" id="tsmDateTo" value="${escapeHTML(dateTo)}"></label>
+        <label><span>Mốc thời gian</span><select id="tsmDateType">
+          <option value="all"${dateType === 'all' ? ' selected' : ''}>Tất cả (Tiếp nhận hoặc Giao)</option>
+          <option value="created"${dateType === 'created' ? ' selected' : ''}>Ngày tiếp nhận (PG nhập)</option>
+          <option value="assigned"${dateType === 'assigned' ? ' selected' : ''}>Ngày được giao (phân bổ)</option>
+        </select></label>
         <label><span>Phân loại data</span><select id="tsmDataClassFilter"><option value="">Tất cả data</option><option value="raw"${dataClassFilter === 'raw' ? ' selected' : ''}>Data thô</option><option value="net"${dataClassFilter === 'net' ? ' selected' : ''}>Data net</option></select></label>
         <label><span>Nhóm dịch vụ</span><select id="tsmServiceGroupFilter"><option value="">Tất cả dịch vụ</option><option value="raw"${serviceGroupFilter === 'raw' ? ' selected' : ''}>Data thô</option><option value="basic"${serviceGroupFilter === 'basic' ? ' selected' : ''}>Dịch vụ cơ bản</option><option value="advanced"${serviceGroupFilter === 'advanced' ? ' selected' : ''}>Dịch vụ chuyên sâu · Data net</option></select></label>
         <label><span>Dịch vụ cụ thể</span><select id="tsmServiceTypeFilter"${['basic', 'advanced'].includes(serviceGroupFilter) ? '' : ' disabled'}><option value="">${serviceGroupFilter === 'raw' ? 'Không áp dụng cho Data thô' : 'Tất cả trong nhóm'}</option>${serviceOptions.map((serviceName) => option(serviceName, serviceName, serviceTypeFilter === serviceName)).join('')}</select></label>
@@ -260,6 +267,7 @@ export function initView() {
   document.getElementById('tsmMemberFilter')?.addEventListener('change', (event) => { selectedTelesale = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateFrom')?.addEventListener('change', (event) => { dateFrom = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDateTo')?.addEventListener('change', (event) => { dateTo = event.target.value; currentPage = 1; rerender(); });
+  document.getElementById('tsmDateType')?.addEventListener('change', (event) => { dateType = event.target.value; currentPage = 1; rerender(); });
   document.getElementById('tsmDataClassFilter')?.addEventListener('change', (event) => {
     dataClassFilter = event.target.value;
     if (dataClassFilter === 'raw' && serviceGroupFilter === 'advanced') { serviceGroupFilter = ''; serviceTypeFilter = ''; }
@@ -353,7 +361,7 @@ export function initView() {
   visibleLeadChecks.forEach((input) => input.closest('tr')?.classList.toggle('is-selected', input.checked));
   updateSelectionUi();
   document.getElementById('tsmClearMember')?.addEventListener('click', () => { selectedTelesale = ''; currentPage = 1; rerender(); });
-  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { customerSearch = ''; selectedTelesale = ''; dateFrom = ''; dateTo = ''; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
+  document.getElementById('tsmResetFilters')?.addEventListener('click', () => { customerSearch = ''; selectedTelesale = ''; dateFrom = ''; dateTo = ''; dateType = 'all'; dataClassFilter = ''; serviceGroupFilter = ''; serviceTypeFilter = ''; statusFilter = ''; pgUnhandledOnly = false; currentPage = 1; rerender(); });
   document.getElementById('tsmPrev')?.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); rerender(); });
   document.getElementById('tsmNext')?.addEventListener('click', () => { currentPage += 1; rerender(); });
   document.querySelectorAll('[data-team-member]').forEach((button) => button.addEventListener('click', () => { selectedTelesale = button.dataset.teamMember || ''; currentPage = 1; rerender(); }));
