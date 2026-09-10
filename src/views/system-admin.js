@@ -141,11 +141,11 @@ function renderReminderControlPanel(config) {
         <span class="subtle">Gửi thông báo đẩy và phát chuông âm thanh ngay lập tức</span>
       </div>
 
-      <form id="reminderImmediateForm" class="system-form" style="margin-top: 14px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
-          <label>
+      <form id="reminderImmediateForm" style="margin-top: 16px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: end;">
+          <label style="display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--ink);">
             <span>Người nhận thông báo</span>
-            <select name="target" id="immTarget">
+            <select name="target" id="immTarget" style="width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #cfddd5; border-radius: 8px; background: #fff; font-size: 0.9rem; outline: none;">
               <option value="all">Toàn thể phòng khám (Bác sĩ & Nhân viên)</option>
               <option value="doctors">Chỉ riêng Bác sĩ điều trị</option>
               <option value="staff">Chỉ riêng Nhân viên / Phụ tá / Lễ tân</option>
@@ -153,21 +153,21 @@ function renderReminderControlPanel(config) {
             </select>
           </label>
 
-          <label>
+          <label style="display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--ink);">
             <span>Âm thanh chuông</span>
-            <div style="display: flex; gap: 8px;">
-              <select name="chime" id="immChime" style="flex: 1;">
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <select name="chime" id="immChime" style="flex: 1; min-width: 0; min-height: 42px; padding: 8px 12px; border: 1px solid #cfddd5; border-radius: 8px; background: #fff; font-size: 0.9rem; outline: none;">
                 ${chimeOptionsHtml('crystal')}
               </select>
-              <button type="button" class="secondary-button" id="immTestChimeBtn" title="Nghe thử âm thanh này">
+              <button type="button" class="secondary-button" id="immTestChimeBtn" style="min-height: 42px; padding: 0 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;" title="Nghe thử âm thanh này">
                 🔊 Thử âm
               </button>
             </div>
           </label>
 
-          <label>
+          <label style="display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--ink);">
             <span>Màn hình chuyển đến khi bấm</span>
-            <select name="view" id="immView">
+            <select name="view" id="immView" style="width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #cfddd5; border-radius: 8px; background: #fff; font-size: 0.9rem; outline: none;">
               <option value="dashboard">Trang chủ (Dashboard)</option>
               <option value="attendance">Chấm công (Attendance)</option>
               <option value="messages">Tin nhắn nội bộ (Chat)</option>
@@ -176,23 +176,26 @@ function renderReminderControlPanel(config) {
           </label>
         </div>
 
-        <div style="margin-top: 12px; display: grid; gap: 12px;">
-          <label>
-            <span>Tiêu đề thông báo</span>
-            <input type="text" name="title" id="immTitle" required maxlength="180"
-              placeholder="VD: 💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S"
-              value="💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S">
-          </label>
+        <label style="display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--ink);">
+          <span>Tiêu đề thông báo</span>
+          <input type="text" name="title" id="immTitle" required maxlength="180"
+            style="width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #cfddd5; border-radius: 8px; background: #fff; font-size: 0.9rem; outline: none;"
+            placeholder="VD: 💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S"
+            value="💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S">
+        </label>
 
-          <label>
-            <span>Nội dung lời chúc / nhắc nhở (hỗ trợ {ten}, {ma})</span>
-            <textarea name="body" id="immBody" required rows="3" maxlength="1000"
-              placeholder="Nhập nội dung gửi đến nhân sự. Dùng {ten} để tự động gắn tên người nhận...">Chúc {ten} một ngày làm việc thật nhiều năng lượng, hạnh phúc và luôn giữ nụ cười rạng rỡ cùng đại gia đình 5S nhé! ✨🌸</textarea>
-          </label>
-        </div>
+        <label style="display: grid; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--ink);">
+          <span>Nội dung lời chúc / nhắc nhở (hỗ trợ {ten}, {ma})</span>
+          <textarea name="body" id="immBody" required rows="3" maxlength="1000"
+            style="width: 100%; min-height: 75px; padding: 10px 12px; border: 1px solid #cfddd5; border-radius: 8px; background: #fff; font-size: 0.9rem; font-family: inherit; line-height: 1.5; resize: vertical; outline: none;"
+            placeholder="Nhập nội dung gửi đến nhân sự. Dùng {ten} để tự động gắn tên người nhận...">Chúc {ten} một ngày làm việc thật nhiều năng lượng, hạnh phúc và luôn giữ nụ cười rạng rỡ cùng đại gia đình 5S nhé! ✨🌸</textarea>
+        </label>
 
-        <div style="margin-top: 14px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
-          <button type="submit" class="primary-button" id="immSubmitBtn" style="min-width: 180px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 4px;">
+          <span style="font-size: 0.84rem; color: var(--muted);">
+            💡 Hỗ trợ biến số: <code>{ten}</code> (Họ tên người nhận), <code>{ma}</code> (Mã nhân sự)
+          </span>
+          <button type="submit" class="primary-button" id="immSubmitBtn" style="min-width: 220px; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.92rem; font-weight: 700;">
             🔔 Phát chuông & Gửi ngay
           </button>
         </div>
