@@ -5,7 +5,9 @@ import {
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
   getDatabaseCatalog, runDatabaseQuery,
   getAttendanceAdjustments, createAttendanceAdjustment, updateAttendanceAdjustment, deleteAttendanceAdjustment,
+  getReminderConfig, saveReminderConfig, sendImmediateReminder,
 } from '../services/system-admin.js';
+import { playChime, CHIME_OPTIONS } from '../services/audio-chime.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
@@ -43,15 +45,355 @@ let ccSearch = '';
 let ccPage = 1;
 let ccPageSize = 20;
 let ccData = null;
+let reminderConfigData = null;
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
+  'chuong-bao': 'Chuông báo & Lời chúc 5S Care',
   'cham-cong': 'Điều chỉnh chấm công',
   database: 'Truy vấn cơ sở dữ liệu',
   bug: 'Bug và thông báo',
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
 };
+
+function renderReminderControlPanel(config) {
+  const cfg = config || {};
+  const scenarios = [
+    {
+      key: 'checkin_morning',
+      label: 'Nhắc Check-in ca sáng (07:15 – 07:45)',
+      badge: 'Đầu ngày',
+      icon: 'ri-sun-cloudy-line',
+      desc: 'Tự động nhắc nhân sự và bác sĩ có lịch trực sáng chưa chấm công vào ca.',
+    },
+    {
+      key: 'checkin_afternoon',
+      label: 'Nhắc Check-in ca chiều (09:15 – 09:45)',
+      badge: 'Ca chiều',
+      icon: 'ri-sun-fill',
+      desc: 'Nhắc nhở chấm công cho các ca làm việc bắt đầu vào buổi trưa / chiều.',
+    },
+    {
+      key: 'lunch_break',
+      label: 'Nghỉ trưa & nạp năng lượng 5S Care (12:00 – 12:15)',
+      badge: 'Nghỉ trưa',
+      icon: 'ri-cup-line',
+      desc: 'Gửi lời chúc ấm áp, nhắc gác lại công việc thưởng thức bữa trưa và chợp mắt nạp năng lượng.',
+    },
+    {
+      key: 'afternoon_care',
+      label: 'Tiếp năng lượng giữa giờ chiều (15:00 – 15:15)',
+      badge: 'Giữa chiều',
+      icon: 'ri-heart-pulse-line',
+      desc: 'Động viên uống nước, thư giãn mắt và tiếp thêm năng lượng tích cực cho toàn thể phòng khám.',
+    },
+    {
+      key: 'checkout',
+      label: 'Nhắc Check-out hết ca làm việc (17:05, 18:05, 20:05)',
+      badge: 'Tan ca',
+      icon: 'ri-flag-line',
+      desc: 'Nhắc nhở chấm công về và bàn giao công việc khi ca làm kết thúc.',
+    },
+    {
+      key: 'evening_care',
+      label: 'Động viên chặng cuối của ngày (18:15 – 18:30)',
+      badge: 'Ca tối',
+      icon: 'ri-moon-clear-line',
+      desc: 'Lời tri ân và động viên các Bác sĩ & Nhân sự trực ca tối hoàn thành ca an toàn.',
+    },
+  ];
+
+  const chimeOptionsHtml = (selected) => CHIME_OPTIONS.map((opt) =>
+    `<option value="${opt.id}"${opt.id === selected ? ' selected' : ''}>${escapeHTML(opt.name)}</option>`
+  ).join('');
+
+  return `<div class="attendance-adjustment-dashboard">
+    <section class="attendance-adjustment-metrics">
+      <article>
+        <span>Công nghệ chuông</span>
+        <strong>Web Audio & Push</strong>
+        <small>Âm thanh pha lê & thông báo đẩy</small>
+      </article>
+      <article>
+        <span>Kịch bản tự động</span>
+        <strong>6 Kịch bản 5S</strong>
+        <small>Tách biệt Bác sĩ & Nhân viên</small>
+      </article>
+      <article>
+        <span>Biến số cá nhân hoá</span>
+        <strong>{ten}, {ma}, {ca}, {gio}</strong>
+        <small>Tự động ghép tên từng người</small>
+      </article>
+      <article>
+        <span>Lưu trữ cấu hình</span>
+        <strong>PostgreSQL Record</strong>
+        <small>Đồng bộ tức thì, không mất dữ liệu</small>
+      </article>
+    </section>
+
+    <section class="panel attendance-adjustment-editor" style="border-top: 4px solid #0f8b7f;">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">PHÁT CHUÔNG TRỰC TIẾP</p>
+          <h3>Gửi lời chúc & bắn chuông tức thì đến phòng khám</h3>
+        </div>
+        <span class="subtle">Gửi thông báo đẩy và phát chuông âm thanh ngay lập tức</span>
+      </div>
+
+      <form id="reminderImmediateForm" class="system-form" style="margin-top: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+          <label>
+            <span>Người nhận thông báo</span>
+            <select name="target" id="immTarget">
+              <option value="all">Toàn thể phòng khám (Bác sĩ & Nhân viên)</option>
+              <option value="doctors">Chỉ riêng Bác sĩ điều trị</option>
+              <option value="staff">Chỉ riêng Nhân viên / Phụ tá / Lễ tân</option>
+              <option value="me">🔔 Bắn thử nghiệm cho chính tôi (Admin)</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Âm thanh chuông</span>
+            <div style="display: flex; gap: 8px;">
+              <select name="chime" id="immChime" style="flex: 1;">
+                ${chimeOptionsHtml('crystal')}
+              </select>
+              <button type="button" class="secondary-button" id="immTestChimeBtn" title="Nghe thử âm thanh này">
+                🔊 Thử âm
+              </button>
+            </div>
+          </label>
+
+          <label>
+            <span>Màn hình chuyển đến khi bấm</span>
+            <select name="view" id="immView">
+              <option value="dashboard">Trang chủ (Dashboard)</option>
+              <option value="attendance">Chấm công (Attendance)</option>
+              <option value="messages">Tin nhắn nội bộ (Chat)</option>
+              <option value="tasks">Nhiệm vụ (Tasks)</option>
+            </select>
+          </label>
+        </div>
+
+        <div style="margin-top: 12px; display: grid; gap: 12px;">
+          <label>
+            <span>Tiêu đề thông báo</span>
+            <input type="text" name="title" id="immTitle" required maxlength="180"
+              placeholder="VD: 💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S"
+              value="💖 Lời chúc ngọt ngào từ Ban Giám Đốc Nha Khoa 5S">
+          </label>
+
+          <label>
+            <span>Nội dung lời chúc / nhắc nhở (hỗ trợ {ten}, {ma})</span>
+            <textarea name="body" id="immBody" required rows="3" maxlength="1000"
+              placeholder="Nhập nội dung gửi đến nhân sự. Dùng {ten} để tự động gắn tên người nhận...">Chúc {ten} một ngày làm việc thật nhiều năng lượng, hạnh phúc và luôn giữ nụ cười rạng rỡ cùng đại gia đình 5S nhé! ✨🌸</textarea>
+          </label>
+        </div>
+
+        <div style="margin-top: 14px; display: flex; align-items: center; justify-content: flex-end; gap: 12px;">
+          <button type="submit" class="primary-button" id="immSubmitBtn" style="min-width: 180px;">
+            🔔 Phát chuông & Gửi ngay
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel attendance-adjustment-list" style="border-top: 4px solid #2563eb;">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">CẤU HÌNH KỊCH BẢN & LỜI CHÚC CÁ NHÂN HOÁ</p>
+          <h3>Tuỳ chỉnh chuông báo & lời chúc cho Bác sĩ và Nhân sự</h3>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="secondary-button" id="reminderResetDefaultBtn">↺ Trả về mặc định</button>
+          <button type="button" class="primary-button" id="reminderSaveConfigBtn">💾 Lưu cấu hình chuông báo</button>
+        </div>
+      </div>
+      <p style="color: var(--muted); font-size: 0.88rem; margin: 8px 0 16px;">
+        💡 <b>Quy tắc cá nhân hoá:</b> Bạn có thể dùng <code>{ten}</code> (Họ tên), <code>{ma}</code> (Mã nhân sự), <code>{ca}</code> (Tên ca), <code>{gio}</code> (Giờ ca). Hệ thống sẽ tự động ghép tên của từng Bác sĩ và Nhân viên khi gửi chuông nhắc việc!
+      </p>
+
+      <div class="reminder-scenarios-container" style="display: grid; gap: 18px;">
+        ${scenarios.map((sc) => {
+          const item = cfg[sc.key] || {};
+          const isEnabled = item.enabled !== false;
+          return `
+          <div class="reminder-scenario-card" data-scenario="${sc.key}" style="border: 1px solid #d7e4df; border-radius: 12px; padding: 18px; background: #fafdfc;">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; border-bottom: 1px dashed #cfddd5; padding-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.3rem; color: var(--teal);"><i class="${sc.icon}"></i></span>
+                <div>
+                  <h4 style="margin: 0; font-size: 1.05rem; color: var(--ink); font-weight: 700;">${sc.label}</h4>
+                  <small style="color: var(--muted);">${sc.desc}</small>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+                  <input type="checkbox" class="sc-enabled" ${isEnabled ? 'checked' : ''}>
+                  <span>${isEnabled ? 'Đang bật' : 'Đang tắt'}</span>
+                </label>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <select class="sc-chime" style="padding: 6px 10px; border-radius: 8px; border: 1px solid #cfddd5; font-size: 0.85rem;">
+                    ${chimeOptionsHtml(item.chime || 'crystal')}
+                  </select>
+                  <button type="button" class="secondary-button compact-button sc-test-chime" title="Nghe thử chuông này">🔊</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <span style="font-weight: 700; color: #15803d; font-size: 0.9rem;">🩺 Lời chúc & Tiêu đề cho BÁC SĨ</span>
+                  <span class="badge" style="background: #dcfce7; color: #166534; font-size: 11px;">Bác sĩ điều trị</span>
+                </div>
+                <div style="display: grid; gap: 8px;">
+                  <label style="font-size: 0.82rem; font-weight: 600; color: #166534;">
+                    Tiêu đề thông báo
+                    <input type="text" class="sc-doctor-title" style="width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 6px; border: 1px solid #86efac; background: #fff;"
+                      value="${escapeHTML(item.doctor_title || '')}">
+                  </label>
+                  <label style="font-size: 0.82rem; font-weight: 600; color: #166534;">
+                    Nội dung lời chúc & nhắc việc
+                    <textarea class="sc-doctor-body" rows="3" style="width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 6px; border: 1px solid #86efac; background: #fff; font-family: inherit;">${escapeHTML(item.doctor_body || '')}</textarea>
+                  </label>
+                </div>
+              </div>
+
+              <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <span style="font-weight: 700; color: #1d4ed8; font-size: 0.9rem;">🌟 Lời chúc & Tiêu đề cho NHÂN VIÊN</span>
+                  <span class="badge" style="background: #dbeafe; color: #1e40af; font-size: 11px;">Phụ tá / Lễ tân / CSKH</span>
+                </div>
+                <div style="display: grid; gap: 8px;">
+                  <label style="font-size: 0.82rem; font-weight: 600; color: #1e40af;">
+                    Tiêu đề thông báo
+                    <input type="text" class="sc-staff-title" style="width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 6px; border: 1px solid #93c5fd; background: #fff;"
+                      value="${escapeHTML(item.staff_title || '')}">
+                  </label>
+                  <label style="font-size: 0.82rem; font-weight: 600; color: #1e40af;">
+                    Nội dung lời chúc & nhắc việc
+                    <textarea class="sc-staff-body" rows="3" style="width: 100%; margin-top: 4px; padding: 7px 10px; border-radius: 6px; border: 1px solid #93c5fd; background: #fff; font-family: inherit;">${escapeHTML(item.staff_body || '')}</textarea>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" class="primary-button" id="reminderSaveConfigBtnBottom">💾 Lưu cấu hình chuông báo & Lời chúc</button>
+      </div>
+    </section>
+  </div>`;
+}
+
+function bindReminderActions() {
+  document.getElementById('immTestChimeBtn')?.addEventListener('click', () => {
+    const chime = document.getElementById('immChime')?.value || 'crystal';
+    playChime(chime);
+  });
+
+  document.querySelectorAll('.sc-test-chime').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.reminder-scenario-card');
+      const chime = card?.querySelector('.sc-chime')?.value || 'crystal';
+      playChime(chime);
+    });
+  });
+
+  document.querySelectorAll('.sc-enabled').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const label = chk.closest('label')?.querySelector('span');
+      if (label) label.textContent = chk.checked ? 'Đang bật' : 'Đang tắt';
+    });
+  });
+
+  document.getElementById('reminderImmediateForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('immSubmitBtn');
+    const target = document.getElementById('immTarget')?.value || 'all';
+    const chime = document.getElementById('immChime')?.value || 'crystal';
+    const view = document.getElementById('immView')?.value || 'dashboard';
+    const title = document.getElementById('immTitle')?.value || '';
+    const body = document.getElementById('immBody')?.value || '';
+
+    if (!title.trim() || !body.trim()) {
+      showToast('Vui lòng nhập đầy đủ tiêu đề và nội dung thông báo.', true);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Đang phát chuông…';
+    try {
+      playChime(chime);
+      const res = await sendImmediateReminder({ target, chime, view, title, body });
+      showToast(`🔔 Đã phát chuông thành công! (${res?.sentNotifications || 0} thông báo in-app, ${res?.sentPush || 0} push)`);
+    } catch (err) {
+      showToast('Lỗi phát chuông: ' + (err.message || 'Không thể kết nối'), true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔔 Phát chuông & Gửi ngay';
+    }
+  });
+
+  const handleSaveConfig = async (btn) => {
+    const cards = document.querySelectorAll('.reminder-scenario-card');
+    if (!cards.length) return;
+
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = 'Đang lưu…';
+
+    try {
+      const newConfig = {};
+      cards.forEach((card) => {
+        const key = card.dataset.scenario;
+        if (!key) return;
+        newConfig[key] = {
+          enabled: card.querySelector('.sc-enabled')?.checked ?? true,
+          chime: card.querySelector('.sc-chime')?.value || 'crystal',
+          doctor_title: card.querySelector('.sc-doctor-title')?.value || '',
+          doctor_body: card.querySelector('.sc-doctor-body')?.value || '',
+          staff_title: card.querySelector('.sc-staff-title')?.value || '',
+          staff_body: card.querySelector('.sc-staff-body')?.value || '',
+        };
+      });
+
+      await saveReminderConfig(newConfig);
+      showToast('💾 Đã lưu cấu hình chuông báo & lời chúc 5S Care thành công!');
+      reminderConfigData = newConfig;
+    } catch (err) {
+      showToast('Lỗi lưu cấu hình: ' + (err.message || 'Không thể lưu'), true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  };
+
+  document.getElementById('reminderSaveConfigBtn')?.addEventListener('click', (e) => handleSaveConfig(e.currentTarget));
+  document.getElementById('reminderSaveConfigBtnBottom')?.addEventListener('click', (e) => handleSaveConfig(e.currentTarget));
+
+  document.getElementById('reminderResetDefaultBtn')?.addEventListener('click', async () => {
+    const ok = await confirmAction(
+      'Khôi phục toàn bộ 6 kịch bản chuông báo và lời chúc về mặc định chuẩn của hệ thống?',
+      { title: 'Khôi phục mặc định', confirmText: 'Khôi phục' }
+    );
+    if (!ok) return;
+
+    try {
+      await saveReminderConfig({});
+      showToast('Đã khôi phục cài đặt mặc định.');
+      const res = await getReminderConfig().catch(() => ({ config: null }));
+      reminderConfigData = res?.config || null;
+      store.notify();
+    } catch (err) {
+      showToast('Lỗi khôi phục: ' + (err.message || 'Thao tác thất bại'), true);
+    }
+  });
+}
 
 function attendanceClock(value) {
   if (!value) return '—';
@@ -364,6 +706,10 @@ export async function renderView(state) {
     ccData = await getAttendanceAdjustments({ month: ccMonth, search: ccSearch, page: ccPage, pageSize: ccPageSize })
       .catch((error) => ({ rows: [], employees: [], shifts: [], total: 0, stats: {}, error: error.message }));
   }
+  if (theDangMo === 'chuong-bao') {
+    const res = await getReminderConfig().catch(() => ({ config: null }));
+    reminderConfigData = res?.config || null;
+  }
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   tkProfiles = profiles;
   tkAccountStates = tkTrangThaiMap;
@@ -409,6 +755,7 @@ export async function renderView(state) {
         : `<div class="table-wrap"><table><thead><tr><th>Tài khoản</th><th>Bộ phận</th><th>Chi nhánh</th><th>Vai trò</th><th>Hồ sơ</th><th>Đăng nhập</th><th></th></tr></thead><tbody>${profileRows(daLoc, state.user.id, tkTrangThaiMap)}</tbody></table></div>`}
     </section>`,
     'phan-quyen': veThePhanQuyen(profiles),
+    'chuong-bao': renderReminderControlPanel(reminderConfigData),
     'cham-cong': ccData?.error
       ? `<section class="panel"><div class="db-query-error"><strong>Không tải được dữ liệu chấm công</strong><span>${escapeHTML(ccData.error)}</span></div></section>`
       : attendanceAdjustmentPanel(ccData),
@@ -488,6 +835,7 @@ export function initView() {
   document.getElementById('announcementForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang phát hành…'; try { await publishSystemAnnouncement(data); showToast('Đã phát hành thông báo đến người dùng.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '🔔 Phát hành thông báo realtime'; showToast(error.message || 'Không thể phát hành thông báo.', true); } });
   document.getElementById('bugForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang lưu bug…'; try { await createBugLog(data); showToast('Đã thêm bug log.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '+ Thêm bug log'; showToast(error.message || 'Không thể thêm bug log.', true); } });
   bindLiveFilters(); bindBugActions(); bindLogActions();
+  bindReminderActions();
   document.querySelectorAll('[data-the]').forEach((b) => b.addEventListener('click', () => {
     theDangMo = b.dataset.the;
     store.notify();

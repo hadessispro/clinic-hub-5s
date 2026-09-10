@@ -205,3 +205,21 @@ export function subscribeToSystemErrors(callback) {
     if (newest?.id && newest.id !== newestId) { newestId = newest.id; callback({ new: newest }); }
   }, 7000);
 }
+
+export async function getReminderConfig() {
+  return dataClient.request('/reminder-config');
+}
+
+export async function saveReminderConfig(config) {
+  return dataClient.request('/reminder-config', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function sendImmediateReminder(payload) {
+  return dataClient.request('/reminders/send-immediate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

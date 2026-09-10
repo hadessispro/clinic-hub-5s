@@ -18,6 +18,7 @@ import { initSmartChat, destroySmartChat } from './components/smart-chat.js';
 import { initErrorMonitoring } from './services/error-monitor.js';
 import { initPushNotifications, destroyPushNotifications } from './services/push-notifications.js';
 import { subscribeToVpsChanges } from './local-client.js';
+import { playChime } from './services/audio-chime.js';
 import { initSecuritySentinel } from './services/security-sentinel.js';
 
 let notifSub = null;
@@ -298,6 +299,7 @@ async function bootstrap() {
         if (notifSub) notifSub.unsubscribe();
         notifSub = subscribeToNotifications(authInfo.user.id, (newNotif) => {
           store.addNotification(newNotif);
+          playChime(newNotif.sound || 'crystal');
           showToast(`🔔 ${newNotif.title}: ${newNotif.body}`);
         });
 

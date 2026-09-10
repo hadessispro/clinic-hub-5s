@@ -9,6 +9,7 @@ import { loadClinicLocation } from '../services/clinic.js';
 import { showToast } from './toast.js';
 import { confirmAction } from './app-dialog.js';
 import { getPushNotificationStatus, requestPushPermissionAndSubscribe, sendTestPushNotification, canTestPushBells } from '../services/push-notifications.js';
+import { playChime } from '../services/audio-chime.js';
 
 let isDropdownOpen = false;
 
@@ -257,6 +258,7 @@ export function renderTopbar(state) {
               e.stopPropagation();
               const selectedBell = bellSelect?.value || 'default';
               const bellText = bellSelect?.options[bellSelect.selectedIndex]?.text || selectedBell;
+              playChime(selectedBell);
               testBtn.disabled = true;
               testBtn.textContent = 'Đang bắn…';
               try {
