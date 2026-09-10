@@ -1,4 +1,5 @@
-import { Injectable, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Injectable, OnApplicationBootstrap, OnApplicationShutdown, Post, Req, UseGuards } from '@nestjs/common';
+import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 import { PushService } from './push';
 import { randomUUID } from 'node:crypto';
@@ -749,3 +750,41 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     return { sentNotifications, sentPush };
   }
 }
+
+@Controller('/api/v2')
+@UseGuards(AuthGuard)
+export class ReminderController {
+  constructor(private readonly reminderService: ReminderService) {}
+
+  @Get('/reminder-config')
+  async getReminderConfig() {
+    const config = await this.reminderService.getConfig();
+    return { ok: true, config };
+  }
+
+  @Post('/reminder-config')
+  async saveReminderConfig(@Req() request: { user: AuthUser }, @Body() body: SystemReminderConfig) {
+    if (!['admin', 'admin_it', 'superadmin', 'giam_doc'].includes(request.user.role)) {
+      throw new BadRequestException('Chỉ quản trị viên mới có quyền cấu hình chuông báo & lời chúc.');
+    }
+    const saved = await this.reminderService.saveConfig(body);
+    return { ok: true, config: saved };
+  }
+
+  @Post('/reminders/send-immediate')
+  async sendImmediateReminder(@Req() request: { user: AuthUser }, @Body() body: any) {
+    if (!['admin', 'admin_it', 'superadmin', 'giam_doc'].includes(request.user.role)) {
+      throw new BadRequestException('Chỉ quản trị viên mới có quyền phát chuông báo / gửi lời chúc.');
+    }
+    const result = await this.reminderService.sendImmediateReminder({
+      target: body?.target || 'all',
+      title: body?.title || 'Thông báo từ Ban Quản Trị · 5S Clinic',
+      body: body?.body || '',
+      chime: body?.chime || body?.sound || 'crystal',
+      view: body?.view || 'dashboard',
+      currentUserId: request.user.id,
+    });
+    return { ok: true, ...result };
+  }
+}
+

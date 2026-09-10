@@ -12,7 +12,7 @@ import { GiftsController, GiftsService } from './gifts';
 import { ScheduleController, ScheduleService } from './schedule';
 import { TelegramController, TelegramService } from './telegram';
 import { SecurityController, SecurityService } from './security';
-import { ReminderService } from './reminder';
+import { ReminderController, ReminderService } from './reminder';
 
 @Controller()
 class HealthController {
@@ -82,6 +82,7 @@ export class DailyReportScheduler implements OnApplicationBootstrap, OnApplicati
     ScheduleController,
     TelegramController,
     SecurityController,
+    ReminderController,
   ],
   providers: [
     InfrastructureService,
