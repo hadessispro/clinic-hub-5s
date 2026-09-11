@@ -359,6 +359,7 @@ app.get(`${BASE}/api/nhat-ky`, guard, doc('xem_nhat_ky_chung', (req) => q.journa
   from: req.query.tu_ngay, to: req.query.den_ngay, q: req.query.tim,
   deductible: req.query.hop_ly === undefined ? undefined : req.query.hop_ly === 'true',
   costItem: req.query.khoan_muc,
+  branch: req.query.chi_nhanh || req.query.branch,
   sort: req.query.sap_xep, dir: req.query.chieu,
   limit: req.query.so_dong, offset: req.query.bo_qua,
 })));
@@ -370,10 +371,15 @@ app.get(`${BASE}/api/chung-tu/:id`, guard, doc('xem_chung_tu', async (req, reply
 }));
 
 app.get(`${BASE}/api/can-doi`, guard, doc('xem_bang_can_doi',
-  (req) => q.trialBalance(req.query.ky)));
+  (req) => q.trialBalance(req.query.ky, req.query.chi_nhanh || req.query.branch)));
 
 app.get(`${BASE}/api/ton-kho`, guard, doc('xem_tong_hop_ton_kho',
-  (req) => q.inventorySummary({ period: req.query.ky, warehouse: req.query.kho, q: req.query.tim })));
+  (req) => q.inventorySummary({
+    period: req.query.ky,
+    warehouse: req.query.kho,
+    branch: req.query.chi_nhanh || req.query.branch,
+    q: req.query.tim,
+  })));
 
 app.get(`${BASE}/api/so-du-dau-ky`, guard, doc('xem_so_du_dau_ky',
   (req) => q.openingBalances(req.query.ky)));
@@ -396,7 +402,7 @@ app.get(`${BASE}/api/bieu-do`, guard, doc('xem_bieu_do',
 app.get(`${BASE}/api/van-hanh`, guard, doc('xem_so_lieu_van_hanh',
   (req) => q.opsSummary({ canSeeIndividualPay: req.user.role !== 'viewer' })));
 
-// Kế toán quan sát hoa hồng PG/SUP. Chỉ đọc: két không có đường ghi nào sang
+// Kế toán quan sát hoa hồng PG/SUP. Chỉ đọc: kết không có đường ghi nào sang
 // marketing, và quy trình duyệt cũng không cần kế toán ký.
 app.get(`${BASE}/api/hoa-hong`, guard, doc('xem_hoa_hong_pg', () => q.hoaHong()));
 app.get(`${BASE}/api/luong-pg`, guard, doc('xem_luong_pg', () => q.luongPg()));
@@ -409,7 +415,7 @@ app.get(`${BASE}/api/tai-khoan`, guard, async (req) => q.accounts(req.query.tim)
 // đặt, ghi ở TK 331. Trộn chung một danh sách 6.662 dòng thì tìm nhà cung cấp
 // nào cũng phải lội qua sáu nghìn cái tên bệnh nhân.
 app.get(`${BASE}/api/doi-tac`, guard, async (req) =>
-  q.partners(req.query.tim, req.query.loai, req.query.nhom));
+  q.partners(req.query.tim, req.query.loai, req.query.nhom, req.query.chi_nhanh || req.query.branch));
 app.get(`${BASE}/api/khoan-muc`, guard, async () => q.costItems());
 app.get(`${BASE}/api/ky`, guard, async () => q.periods());
 app.get(`${BASE}/api/lo-nhap`, guard, async () => q.batches());
@@ -705,7 +711,7 @@ app.get(`${BASE}/api/bc/so-ngan-hang`, guard, doc('xem_so_ngan_hang', (req) =>
                   gioiHan: req.query.so_dong, boQua: req.query.bo_qua })));
 
 app.get(`${BASE}/api/bc/tong-hop-cong-no`, guard, doc('xem_tong_hop_cong_no', (req) =>
-  bc.tongHopCongNo({ loai: req.query.loai, period: req.query.ky })));
+  bc.tongHopCongNo({ loai: req.query.loai, period: req.query.ky, branch: req.query.chi_nhanh || req.query.branch })));
 
 app.get(`${BASE}/api/bc/chi-tiet-cong-no`, guard, doc('xem_chi_tiet_cong_no', (req) =>
   bc.chiTietCongNo({ loai: req.query.loai, partner: req.query.doi_tac, period: req.query.ky })));
@@ -730,9 +736,68 @@ app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoa
 }));
 
 app.get(`${BASE}/api/bc/chi-phi-khoan-muc`, guard, doc('xem_chi_phi_theo_khoan_muc', (req) =>
-  bc.chiPhiTheoKhoanMuc({ period: req.query.ky })));
+  bc.chiPhiTheoKhoanMuc({ period: req.query.ky, branch: req.query.chi_nhanh || req.query.branch })));
 
 app.get(`${BASE}/api/bc/dau-ky`, guard, async () => bc.trangThaiDauKy());
+
+app.get(`${BASE}/api/chi-nhanh`, guard, doc('xem_danh_muc_chi_nhanh', async () => {
+  const [demDoiTac, demKhoanMuc] = await Promise.all([
+    db.query(`
+      select case
+               when code like 'PVC%' or branch_hint = 'PVC' then 'PVC'
+               when code like 'LVT%' or code like 'APC%' or branch_hint = 'LVT' then 'LVT'
+               else 'CHUNG'
+             end as cn,
+             count(*)::int as so_luong
+      from finance.partners
+      group by 1
+    `),
+    db.query(`
+      select coalesce(branch_code, 'CHUNG') as cn, count(*)::int as so_luong
+      from finance.cost_items
+      group by 1
+    `),
+  ]);
+
+  const mapDt = new Map(demDoiTac.rows.map((r) => [r.cn, r.so_luong]));
+  const mapKm = new Map(demKhoanMuc.rows.map((r) => [r.cn, r.so_luong]));
+
+  return [
+    {
+      code: 'PVC',
+      name: '5S Phạm Văn Chiêu',
+      role: 'Cơ sở chính · Phòng khám chuyên khoa Răng Hàm Mặt',
+      address: 'Phạm Văn Chiêu, P.14, Q. Gò Vấp, TP.HCM',
+      partner_prefix: 'PVC (ví dụ PVC0001)',
+      cost_item_suffix: '.PVC (ví dụ DN.PVC)',
+      partner_count: mapDt.get('PVC') || 0,
+      cost_item_count: mapKm.get('PVC') || 0,
+      is_active: true,
+    },
+    {
+      code: 'LVT',
+      name: '5S Lê Văn Thọ',
+      role: 'Cơ sở 2 · Phòng khám chuyên khoa Răng Hàm Mặt',
+      address: '60 Lê Văn Thọ, P.11, Q. Gò Vấp, TP.HCM',
+      partner_prefix: 'LVT, APC (ví dụ APC0001, LVT0001)',
+      cost_item_suffix: '.LVT (ví dụ DN.LVT)',
+      partner_count: mapDt.get('LVT') || 0,
+      cost_item_count: mapKm.get('LVT') || 0,
+      is_active: true,
+    },
+    {
+      code: 'CHUNG',
+      name: 'Toàn hệ thống · Trụ sở dùng chung',
+      role: 'Quản lý dùng chung, nhà cung cấp, chi phí hành chính hội sở',
+      address: 'Gò Vấp, TP.HCM',
+      partner_prefix: 'NCC, NV, CTY, BS',
+      cost_item_suffix: 'DN, KT, MK',
+      partner_count: mapDt.get('CHUNG') || 0,
+      cost_item_count: mapKm.get('CHUNG') || 0,
+      is_active: true,
+    },
+  ];
+}));
 
 /* ── Giao diện ─────────────────────────────────────────────────────────── */
 

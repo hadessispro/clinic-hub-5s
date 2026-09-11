@@ -157,7 +157,7 @@ async function soNganHang({ account, period, from, to, gioiHan, boQua }) {
 
 const TK_CONG_NO = { phai_thu: '131', phai_tra: '331' };
 
-async function tongHopCongNo({ loai, period }) {
+async function tongHopCongNo({ loai, period, branch }) {
   const tk = TK_CONG_NO[loai] || '131';
   return rows(
     `with ps as (
@@ -186,11 +186,14 @@ async function tongHopCongNo({ loai, period }) {
      from ps
      join finance.partners p on p.code = ps.partner_code
      left join truoc t on t.partner_code = ps.partner_code
-     where coalesce(ps.ps_no, 0) <> 0 or coalesce(ps.ps_co, 0) <> 0
-        or coalesce(t.du, 0) <> 0
+     where (coalesce(ps.ps_no, 0) <> 0 or coalesce(ps.ps_co, 0) <> 0 or coalesce(t.du, 0) <> 0)
+       and ($3::text is null
+            or ($3 = 'PVC' and (p.branch_hint = 'PVC' or p.code like 'PVC%'))
+            or ($3 = 'LVT' and (p.branch_hint = 'LVT' or p.code like 'LVT%' or p.code like 'APC%'))
+            or ($3 = 'CHUNG' and (p.branch_hint is null or p.branch_hint = 'CHUNG') and p.code not like 'PVC%' and p.code not like 'LVT%' and p.code not like 'APC%'))
      order by abs(coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0)) desc
      limit 500`,
-    [tk, period || null],
+    [tk, period || null, branch || null],
   );
 }
 
@@ -330,7 +333,7 @@ async function dongTien({ period }) {
    Mã khoản mục gắn trên tài khoản công nợ hay tài khoản tiền là để truy vết
    dòng tiền, cộng vào là tính một khoản chi hai lần. */
 
-async function chiPhiTheoKhoanMuc({ period }) {
+async function chiPhiTheoKhoanMuc({ period, branch }) {
   const [tongHop, ganThieu, theoThang] = await Promise.all([
     rows(
       `select cost_item_code as ma, max(cost_item_name) as ten, max(branch_code) as chi_nhanh,
@@ -340,9 +343,10 @@ async function chiPhiTheoKhoanMuc({ period }) {
               sum(so_dong_chi_phi)::int        as so_dong_chi_phi
        from finance.v_chi_phi_theo_khoan_muc
        where ($1::text is null or period_code = $1)
+         and ($2::text is null or branch_code = $2)
        group by cost_item_code
        order by coalesce(sum(chi_phi), 0) desc, cost_item_code`,
-      [period || null],
+      [period || null, branch || null],
     ),
     rows(
       `select cost_item_code as ma, cost_item_name as ten, so_dong::int,
@@ -351,7 +355,10 @@ async function chiPhiTheoKhoanMuc({ period }) {
     ),
     rows(
       `select period_code as ky, coalesce(sum(chi_phi), 0)::text as chi_phi
-       from finance.v_chi_phi_theo_khoan_muc group by 1 order by 1`,
+       from finance.v_chi_phi_theo_khoan_muc
+       where ($1::text is null or branch_code = $1)
+       group by 1 order by 1`,
+      [branch || null],
     ),
   ]);
   // Lũy kế từ đầu năm, đúng cột thứ ba của file gốc.

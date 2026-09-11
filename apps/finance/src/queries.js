@@ -74,7 +74,14 @@ const JOURNAL_WHERE = `
       and ($6::text is null or v.voucher_no ilike '%' || $6 || '%'
                             or l.description ilike '%' || $6 || '%')
       and ($7::boolean is null or l.is_deductible = $7)
-      and ($8::text is null or l.cost_item_code = $8)`;
+      and ($8::text is null or l.cost_item_code = $8)
+      and ($9::text is null
+           or ci.branch_code = $9
+           or p.branch_hint = $9
+           or p.code like $9 || '%'
+           or ($9 = 'LVT' and p.code like 'APC%')
+           or v.voucher_no ilike '%' || $9 || '%'
+           or l.description ilike '%' || $9 || '%')`;
 
 async function journal(f = {}) {
   const limit = Math.min(Math.max(Number(f.limit) || 50, 1), 500);
@@ -86,6 +93,7 @@ async function journal(f = {}) {
     f.from || null, f.to || null, f.q || null,
     f.deductible === undefined ? null : f.deductible,
     f.costItem || null,
+    f.branch || null,
   ];
 
   const [data, total] = await Promise.all([
@@ -155,7 +163,7 @@ async function voucher(id) {
 
 /* ── Bảng cân đối tài khoản chuẩn 8 cột kèm phân cấp ────────────────────── */
 
-async function trialBalance(periodCode) {
+async function trialBalance(periodCode, branch) {
   const [dsAccounts, dsOpening, dsJournal] = await Promise.all([
     rows(`select code, name, nature, depth, parent_code from finance.accounts where is_active = true order by code`),
     rows(
@@ -169,9 +177,20 @@ async function trialBalance(periodCode) {
       `select l.account_code, sum(l.debit) as ps_debit, sum(l.credit) as ps_credit
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
+       left join finance.cost_items ci on ci.code = l.cost_item_code
+       left join finance.partners p on p.code = l.partner_code
        where ($1::text is null or v.period_code = $1)
+         and (
+           $2::text is null
+           or case
+                when $2 = 'PVC' then ci.branch_code = 'PVC' or p.branch_hint = 'PVC' or p.code like 'PVC%' or v.voucher_no like '%PVC%' or l.description ilike '%PVC%' or l.description ilike '%Phạm Văn Chiêu%'
+                when $2 = 'LVT' then ci.branch_code = 'LVT' or p.branch_hint = 'LVT' or p.code like 'LVT%' or p.code like 'APC%' or v.voucher_no like '%LVT%' or l.description ilike '%LVT%' or l.description ilike '%Lê Văn Thọ%'
+                when $2 = 'CHUNG' then (ci.branch_code is null or ci.branch_code = 'CHUNG') and (p.branch_hint is null or p.branch_hint = 'CHUNG') and p.code not like 'PVC%' and p.code not like 'LVT%' and p.code not like 'APC%'
+                else true
+              end
+         )
        group by l.account_code`,
-      [periodCode || null],
+      [periodCode || null, branch || null],
     ),
   ]);
 
@@ -606,7 +625,7 @@ async function accounts(q) {
  * Kèm số dư và số dòng bút toán, vì câu hỏi đầu tiên với một đối tượng bao
  * giờ cũng là "còn nợ bao nhiêu", không phải "mã số thuế là gì".
  */
-async function partners(q, kind, nhom) {
+async function partners(q, kind, nhom, branch) {
   const loc = nhom === 'khach_hang' ? ['customer']
     : nhom === 'doi_tac' ? ['supplier', 'employee', 'other']
       : null;
@@ -623,9 +642,18 @@ async function partners(q, kind, nhom) {
      where ($1::text is null or p.code ilike '%' || $1 || '%' or p.name ilike '%' || $1 || '%')
        and ($2::text is null or p.kind = $2)
        and ($3::text[] is null or p.kind = any($3))
+       and (
+         $4::text is null
+         or case
+              when $4 = 'PVC' then (p.branch_hint = 'PVC' or p.code like 'PVC%')
+              when $4 = 'LVT' then (p.branch_hint = 'LVT' or p.code like 'LVT%' or p.code like 'APC%')
+              when $4 = 'CHUNG' then ((p.branch_hint is null or p.branch_hint = 'CHUNG') and p.code not like 'PVC%' and p.code not like 'LVT%' and p.code not like 'APC%')
+              else true
+            end
+       )
      order by coalesce(t.so_dong, 0) desc, p.code
      limit 400`,
-    [q || null, kind || null, loc],
+    [q || null, kind || null, loc, branch || null],
   );
 }
 
@@ -694,6 +722,18 @@ async function inventorySummary(filters = {}) {
   if (filters.warehouse) {
     params.push(filters.warehouse);
     conds.push(`warehouse_name = $${params.length}`);
+  }
+  if (filters.branch) {
+    params.push(filters.branch);
+    const pIdx = `$${params.length}`;
+    conds.push(`(
+      case
+        when ${pIdx} = 'PVC' then (warehouse_name ilike '%PVC%' or warehouse_name ilike '%Phạm Văn Chiêu%')
+        when ${pIdx} = 'LVT' then (warehouse_name ilike '%LVT%' or warehouse_name ilike '%Lê Văn Thọ%' or warehouse_name ilike '%APC%')
+        when ${pIdx} = 'CHUNG' then (warehouse_name ilike '%Tổng%' or warehouse_name ilike '%Chung%')
+        else true
+      end
+    )`);
   }
   if (filters.q) {
     params.push(`%${filters.q.toLowerCase()}%`);
