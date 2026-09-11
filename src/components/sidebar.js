@@ -94,7 +94,7 @@ export function renderSidebar(role) {
   );
   const preferredByRole = {
     admin_it: ['system-admin', 'attendance', 'schedule', 'reports'],
-    telesale_leader: ['telesale-management', 'dashboard', 'marketing-analytics', 'chat'],
+    telesale_leader: ['telesale-management', 'attendance', 'dashboard', 'marketing-analytics'],
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
     pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],
     admin_marketing: ['telesale-management', 'hoa-hong', 'marketing-leads', 'pg-management'],

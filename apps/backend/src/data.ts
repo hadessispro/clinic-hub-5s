@@ -80,6 +80,46 @@ function rowKey(row: JsonMap) {
   return String(row.id || row.code || row.client_event_id || randomUUID());
 }
 
+function defaultRoleForEmployee(department?: unknown, title?: unknown): string {
+  const dept = String(department || '').toLowerCase();
+  const t = String(title || '').toLowerCase();
+  if (dept === 'bs' || t.includes('bác sĩ')) return 'bac_si';
+  if (t.includes('phụ tá trưởng')) return 'phu_ta_truong';
+  if (dept === 'phuta' || t.includes('phụ tá')) return 'phu_ta';
+  if (t.includes('lễ tân')) return 'le_tan';
+  if (dept === 'dvkh' || t.includes('cskh') || t.includes('khách hàng')) return 'le_tan';
+  if (dept === 'ns' || t.includes('nhân sự') || t.includes('hr')) return 'hr';
+  if (dept === 'mkt' || t.includes('marketing')) {
+    if (t.includes('lead') || t.includes('quản lý')) return 'admin_marketing';
+    return 'support_marketing';
+  }
+  if (t.includes('telesale') || t.includes('tele')) {
+    if (t.includes('trưởng') || t.includes('lead')) return 'telesale_leader';
+    return 'telesale_staff';
+  }
+  if (t.includes('pg') || t.includes('thị trường')) return 'pg_staff';
+  if (dept === 'it' || t.includes('it')) return 'admin_it';
+  return 'staff';
+}
+
+function defaultAllowedShiftsForEmployee(department?: unknown, title?: unknown): string[] {
+  const dept = String(department || '').toLowerCase();
+  const t = String(title || '').toLowerCase();
+  if (dept === 'phuta' || dept === 'dvkh' || t.includes('phụ tá') || t.includes('lễ tân')) {
+    return ['front-office', 'front-morning', 'front-afternoon', 'front-full'];
+  }
+  if (dept === 'bs' || t.includes('bác sĩ')) {
+    return ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'];
+  }
+  if (dept === 'baove' || t.includes('bảo vệ')) {
+    return ['security-weekday', 'security-sunday'];
+  }
+  if (dept === 'laocong' || t.includes('tạp vụ')) {
+    return ['cleaning-weekday', 'cleaning-sunday'];
+  }
+  return [];
+}
+
 @Injectable()
 export class DataService {
   constructor(
@@ -181,6 +221,7 @@ export class DataService {
     if (operation === 'insert' || operation === 'upsert') {
       const inputs = (Array.isArray(request.values) ? request.values : [request.values || {}]).map((value) => this.protectWrite(user, table, { ...value }));
       const output: JsonMap[] = [];
+      const tablesToNotify = new Set([table]);
       const client = await this.infrastructure.postgres.connect();
       try {
         await client.query('begin');
@@ -197,12 +238,99 @@ export class DataService {
           );
           output.push(result.rows[0].payload);
         }
+
+        if (table === 'employees') {
+          for (const rawItem of output) {
+            const item: any = rawItem;
+            const empCode = String(item.code || item.id || '').trim();
+            if (!empCode) continue;
+            const existing = await client.query<{ record_key: string; payload: JsonMap }>(
+              `select record_key, payload from app.records
+               where entity_type='profiles' and deleted_at is null
+                 and (lower(payload->>'employee_code')=lower($1) or lower(payload->>'id')=lower($1) or lower(record_key)=lower($1))
+               limit 1`, [empCode],
+            );
+            const nowIso = new Date().toISOString();
+            if (existing.rows[0]) {
+              const prev = existing.rows[0].payload;
+              const updated = {
+                ...prev,
+                full_name: item.full_name || prev.full_name,
+                phone: item.phone !== undefined ? (item.phone || null) : prev.phone,
+                email: item.email !== undefined ? (item.email || null) : prev.email,
+                department: item.department || prev.department,
+                title: item.title !== undefined ? (item.title || null) : prev.title,
+                branch_id: item.branch_id || prev.branch_id || 'pham-van-chieu',
+                active: item.status ? item.status !== 'inactive' : prev.active,
+                updated_at: nowIso,
+              };
+              await client.query(
+                `update app.records set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+                 where entity_type='profiles' and record_key=$1`,
+                [existing.rows[0].record_key, JSON.stringify(updated)],
+              );
+            } else {
+              const profileKey = `staff-profile-${empCode.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+              const newProfile = {
+                id: profileKey,
+                employee_code: empCode,
+                employee_number: item.employee_number || empCode,
+                full_name: item.full_name || empCode,
+                phone: item.phone || null,
+                email: item.email || null,
+                department: item.department || '',
+                title: item.title || null,
+                branch_id: item.branch_id || 'pham-van-chieu',
+                role: defaultRoleForEmployee(item.department, item.title),
+                active: item.status ? item.status !== 'inactive' : true,
+                created_at: nowIso,
+                updated_at: nowIso,
+              };
+              await client.query(
+                `insert into app.records(entity_type, record_key, payload, origin)
+                 values ('profiles', $1, $2::jsonb, 'vps')
+                 on conflict (entity_type, record_key) do update
+                 set payload=excluded.payload, origin='vps', version=app.records.version+1, updated_at=now(), deleted_at=null`,
+                [profileKey, JSON.stringify(newProfile)],
+              );
+            }
+            tablesToNotify.add('profiles');
+
+            // Auto-provision default allowed shifts for new employee
+            const defaultShifts = defaultAllowedShiftsForEmployee(item.department, item.title);
+            for (const shiftCode of defaultShifts) {
+              const existingShift = await client.query(
+                `select record_key from app.records
+                 where entity_type='employee_allowed_shifts' and deleted_at is null
+                   and (lower(payload->>'employee_code')=lower($1) or lower(payload->>'employee_code')=lower($2))
+                   and payload->>'shift_code'=$3 limit 1`,
+                [empCode, String(item.id || ''), shiftCode],
+              );
+              if (!existingShift.rows[0]) {
+                const shiftKey = randomUUID();
+                await client.query(
+                  `insert into app.records(entity_type, record_key, payload, origin)
+                   values ('employee_allowed_shifts', $1, $2::jsonb, 'vps')`,
+                  [shiftKey, JSON.stringify({
+                    id: shiftKey,
+                    employee_code: empCode,
+                    shift_code: shiftCode,
+                    created_at: nowIso,
+                    updated_at: nowIso,
+                  })],
+                );
+                tablesToNotify.add('employee_allowed_shifts');
+              }
+            }
+          }
+        }
+
         await client.query('commit');
       } catch (error) {
         await client.query('rollback');
         throw error;
       } finally { client.release(); }
-      await this.infrastructure.markDataChanged([table], user.id, user.role);
+      await this.infrastructure.markDataChanged(Array.from(tablesToNotify), user.id, user.role);
 
       // Web Push dispatch for inserted/upserted items
       if (table === 'messages') {
@@ -251,6 +379,7 @@ export class DataService {
     }
 
     const output: JsonMap[] = [];
+    const tablesToNotify = new Set([table]);
     for (const current of selected) {
       if (!this.owns(user, table, current.payload, managedCodes)) throw new ForbiddenException();
       if (operation === 'delete') {
@@ -259,18 +388,90 @@ export class DataService {
           [table, current.record_key],
         );
         output.push(current.payload);
+        if (table === 'employees') {
+          const empCode = String(current.payload.code || current.payload.id || '').trim();
+          if (empCode) {
+            await this.infrastructure.postgres.query(
+              `update app.records
+               set payload = jsonb_set(payload, '{active}', 'false'::jsonb),
+                   origin='vps', version=version+1, updated_at=now()
+               where entity_type='profiles' and deleted_at is null
+                 and (lower(payload->>'employee_code')=lower($1) or lower(payload->>'id')=lower($1))`,
+              [empCode],
+            );
+            tablesToNotify.add('profiles');
+          }
+        }
       } else if (operation === 'update') {
         const patch = this.protectWrite(user, table, { ...(request.values as JsonMap || {}) });
-        const next = { ...current.payload, ...patch, updated_at: new Date().toISOString() };
+        const next: any = { ...current.payload, ...patch, updated_at: new Date().toISOString() };
         await this.infrastructure.postgres.query(
           `update app.records set payload=$3::jsonb,origin='vps',version=version+1,updated_at=now() where entity_type=$1 and record_key=$2`,
           [table, current.record_key, JSON.stringify(next)],
         );
         output.push(next);
+        if (table === 'employees') {
+          const empCode = String(next.code || next.id || '').trim();
+          if (empCode) {
+            const existing = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+              `select record_key, payload from app.records
+               where entity_type='profiles' and deleted_at is null
+                 and (lower(payload->>'employee_code')=lower($1) or lower(payload->>'id')=lower($1) or lower(record_key)=lower($1))
+               limit 1`, [empCode],
+            );
+            if (existing.rows[0]) {
+              const prev = existing.rows[0].payload;
+              const updated = {
+                ...prev,
+                full_name: next.full_name || prev.full_name,
+                phone: next.phone !== undefined ? (next.phone || null) : prev.phone,
+                email: next.email !== undefined ? (next.email || null) : prev.email,
+                department: next.department || prev.department,
+                title: next.title !== undefined ? (next.title || null) : prev.title,
+                branch_id: next.branch_id || prev.branch_id || 'pham-van-chieu',
+                active: next.status ? next.status !== 'inactive' : prev.active,
+                updated_at: new Date().toISOString(),
+              };
+              await this.infrastructure.postgres.query(
+                `update app.records set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+                 where entity_type='profiles' and record_key=$1`,
+                [existing.rows[0].record_key, JSON.stringify(updated)],
+              );
+            }
+            tablesToNotify.add('profiles');
+
+            // Auto-provision default allowed shifts for updated employee if missing
+            const defaultShifts = defaultAllowedShiftsForEmployee(next.department, next.title);
+            for (const shiftCode of defaultShifts) {
+              const existingShift = await this.infrastructure.postgres.query(
+                `select record_key from app.records
+                 where entity_type='employee_allowed_shifts' and deleted_at is null
+                   and (lower(payload->>'employee_code')=lower($1) or lower(payload->>'employee_code')=lower($2))
+                   and payload->>'shift_code'=$3 limit 1`,
+                [empCode, String(next.id || ''), shiftCode],
+              );
+              if (!existingShift.rows[0]) {
+                const shiftKey = randomUUID();
+                await this.infrastructure.postgres.query(
+                  `insert into app.records(entity_type, record_key, payload, origin)
+                   values ('employee_allowed_shifts', $1, $2::jsonb, 'vps')`,
+                  [shiftKey, JSON.stringify({
+                    id: shiftKey,
+                    employee_code: empCode,
+                    shift_code: shiftCode,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  })],
+                );
+                tablesToNotify.add('employee_allowed_shifts');
+              }
+            }
+          }
+        }
       }
     }
     if (selected.length) {
-      await this.infrastructure.markDataChanged([table], user.id, user.role);
+      await this.infrastructure.markDataChanged(Array.from(tablesToNotify), user.id, user.role);
       if (table === 'tasks') {
         for (const item of output) {
           const assigneeCode = String(item.assignee_code || '');

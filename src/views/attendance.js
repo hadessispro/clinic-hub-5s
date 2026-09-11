@@ -474,13 +474,35 @@ function employeeInitials(name = '') {
 }
 
 function configuredShiftsForEmployee(employee, configuration) {
+  const empId = String(employee?.id || '').toLowerCase();
+  const empCode = String(employee?.code || '').toLowerCase();
+  const empNumber = String(employee?.employeeNumber || '').toLowerCase();
   const codes = new Set((configuration?.allowed || [])
-    .filter((item) => item.employee_code === employee?.id)
+    .filter((item) => {
+      const c = String(item.employee_code || '').toLowerCase();
+      return (empId && c === empId) || (empCode && c === empCode) || (empNumber && c === empNumber);
+    })
     .map((item) => item.shift_code));
   const configured = (configuration?.shifts || [])
     .filter((item) => item.active !== false && codes.has(item.code))
     .map((item) => ({ id: item.code, name: item.name, start: String(item.start_time).slice(0, 5), end: String(item.end_time).slice(0, 5) }));
   if (configured.length) return configured;
+
+  const dept = String(employee?.department || '').toLowerCase();
+  const role = String(employee?.role || '').toLowerCase();
+  const title = String(employee?.title || '').toLowerCase();
+  if (dept === 'phuta' || dept === 'dvkh' || role.includes('phụ tá') || role.includes('lễ tân') || title.includes('phụ tá') || title.includes('lễ tân') || role.includes('phu_ta') || role.includes('le_tan')) {
+    return SHIFTS.filter((item) => ['front-office', 'front-morning', 'front-afternoon', 'front-full'].includes(item.id));
+  }
+  if (dept === 'bs' || role.includes('bác sĩ') || title.includes('bác sĩ') || role === 'bac_si') {
+    return SHIFTS.filter((item) => ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'].includes(item.id));
+  }
+  if (dept === 'baove' || title.includes('bảo vệ')) {
+    return SHIFTS.filter((item) => ['security-weekday', 'security-sunday'].includes(item.id));
+  }
+  if (dept === 'laocong' || title.includes('tạp vụ')) {
+    return SHIFTS.filter((item) => ['cleaning-weekday', 'cleaning-sunday'].includes(item.id));
+  }
   const fallbackCode = employee?.shift || defaultShiftForDepartment(employee?.department);
   return SHIFTS.filter((item) => item.id === fallbackCode);
 }
@@ -694,11 +716,19 @@ export async function renderView(state) {
   const shift = SHIFTS.find((item) => item.id === shiftId)
     || SHIFTS.find((item) => item.id === defaultShiftForDepartment(employee.department));
   const configuredAllowedShifts = allowedShiftRows
-    .map((row) => SHIFTS.find((item) => item.id === row.code))
+    .map((row) => SHIFTS.find((item) => item.id === (row.code || row.shift_code)))
     .filter(Boolean);
+  const empDept = String(employee?.department || '').toLowerCase();
+  const empRole = String(employee?.role || '').toLowerCase();
+  const empTitle = String(employee?.title || '').toLowerCase();
+  const groupFallbackShifts = (empDept === 'phuta' || empDept === 'dvkh' || empRole.includes('phụ tá') || empRole.includes('lễ tân') || empTitle.includes('phụ tá') || empTitle.includes('lễ tân') || empRole.includes('phu_ta') || empRole.includes('le_tan'))
+    ? SHIFTS.filter((item) => ['front-office', 'front-morning', 'front-afternoon', 'front-full'].includes(item.id))
+    : ((empDept === 'bs' || empRole.includes('bác sĩ') || empTitle.includes('bác sĩ') || empRole === 'bac_si')
+      ? SHIFTS.filter((item) => ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'].includes(item.id))
+      : [shift].filter(Boolean));
   const allowedShifts = todayAssignment
     ? [shift].filter(Boolean)
-    : (configuredAllowedShifts.length ? configuredAllowedShifts : [shift].filter(Boolean));
+    : (configuredAllowedShifts.length ? configuredAllowedShifts : groupFallbackShifts);
   const records = mergeRecords(offlineQueue, remoteRecords);
   const todayRecords = mergeRecords(
     offlineQueue.filter((item) => item.employee === state.employeeCode && item.date === workDate),
@@ -819,8 +849,8 @@ export async function renderView(state) {
           </div>
           ${renderHistory(filteredRecords, scopedEmployees, false)}
         </section>
+        ${renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '')}
       </div>
-      ${renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '')}
     `;
   }
 
@@ -916,10 +946,10 @@ export async function renderView(state) {
           ${renderHistory(filteredRecords, scopedEmployees, true)}
         </section>
       `}
+      ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
+      ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
+      ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
     </div>
-    ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
-    ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
-    ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
   `;
 }
 
@@ -1125,23 +1155,31 @@ async function captureLocation() {
     if (requestId !== locationRequestId) return;
 
     lastLocation = evaluateLocation(reading);
-    if (!lastLocation.accurate) {
+    const userRole = context?.state?.profile?.role || context?.state?.role;
+    const isTelesale = ['telesale_staff', 'telesale_leader'].includes(userRole)
+      || context?.employee?.department === 'mkt' || context?.employee?.department === 'marketing';
+
+    if (!lastLocation.accurate && !isTelesale) {
       updateGpsState('is-warning', 'GPS chưa đủ chính xác', `Sai số hiện tại ±${lastLocation.accuracy} m; yêu cầu tối đa ${context.settings.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
       setLocationActionState('Thử lấy GPS chính xác hơn');
       return;
     }
     if (!lastLocation.inside) {
-      updateGpsState('is-error', 'Bạn đang ngoài khu vực chấm công', `Vị trí cách phòng khám ${lastLocation.distance} m; bán kính cho phép ${context.settings.allowedRadius} m.`);
-      setLocationActionState('Lấy lại vị trí');
-      return;
+      if (isTelesale) {
+        updateGpsState('is-success', 'Tọa độ GPS Telesale hợp lệ', `Đã ghi nhận GPS · Cách phòng khám ${lastLocation.distance} m · Sai số ±${lastLocation.accuracy} m (Chế độ Telesale linh hoạt)`);
+      } else {
+        updateGpsState('is-error', 'Bạn đang ngoài khu vực chấm công', `Vị trí cách phòng khám ${lastLocation.distance} m; bán kính cho phép ${context.settings.allowedRadius} m.`);
+        setLocationActionState('Lấy lại vị trí');
+        return;
+      }
+    } else {
+      updateGpsState('is-success', 'Vị trí hợp lệ', `Cách phòng khám ${lastLocation.distance} m · GPS ±${lastLocation.accuracy} m.`);
     }
     if (!lastLocation.fresh) {
       updateGpsState('is-warning', 'Vị trí đã cũ', 'Vui lòng lấy lại vị trí trước khi xác nhận.');
       setLocationActionState('Lấy lại vị trí');
       return;
     }
-
-    updateGpsState('is-success', 'Vị trí hợp lệ', `Cách phòng khám ${lastLocation.distance} m · GPS ±${lastLocation.accuracy} m.`);
     setLocationActionState('Làm mới vị trí');
     if (REQUIRE_CHECKIN_PHOTO) await startCameraFlow();
     updateConfirmAvailability();
@@ -1197,7 +1235,11 @@ function closeDialog() {
 async function confirmCheckin(button) {
   if (!lastLocation || (REQUIRE_CHECKIN_PHOTO && !capturedPhoto?.blob) || !currentEventId) return;
   lastLocation = evaluateLocation(lastLocation);
-  if (!lastLocation.accurate || !lastLocation.inside || !lastLocation.fresh) {
+  const userRole = context?.state?.profile?.role || context?.state?.role;
+  const isTelesale = ['telesale_staff', 'telesale_leader'].includes(userRole)
+    || context?.employee?.department === 'mkt' || context?.employee?.department === 'marketing';
+
+  if ((!lastLocation.accurate && !isTelesale) || (!lastLocation.inside && !isTelesale) || !lastLocation.fresh) {
     showToast('Vị trí không còn hợp lệ. Vui lòng lấy lại GPS.', true);
     captureLocation();
     return;
@@ -1295,10 +1337,14 @@ async function confirmCheckout(button) {
     if (requestId !== locationRequestId) return;
 
     const location = evaluateLocation(reading);
-    if (!location.accurate) {
+    const userRole = context?.state?.profile?.role || context?.state?.role;
+    const isTelesale = ['telesale_staff', 'telesale_leader'].includes(userRole)
+      || context?.employee?.department === 'mkt' || context?.employee?.department === 'marketing';
+
+    if (!location.accurate && !isTelesale) {
       throw new Error(`Sai số GPS ±${location.accuracy} m vượt mức cho phép ${context.settings.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
     }
-    if (!location.inside) {
+    if (!location.inside && !isTelesale) {
       throw new Error(`Bạn đang cách phòng khám ${location.distance} m; chỉ được check-out trong bán kính ${context.settings.allowedRadius} m.`);
     }
     if (!location.fresh) {
@@ -1449,12 +1495,16 @@ function openAdjustModal(data = {}) {
     submitBtn.textContent = 'Lưu & Cập nhật ngày công';
   }
 
+  modal.removeAttribute('hidden');
   modal.hidden = false;
 }
 
 function closeAdjustModal() {
   const modal = document.getElementById('attendanceAdjustModal');
-  if (modal) modal.hidden = true;
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('hidden', '');
+  }
 }
 
 async function openScheduleModal(workDate = clinicDateISO()) {
@@ -1467,6 +1517,7 @@ async function openScheduleModal(workDate = clinicDateISO()) {
   const deleteButton = document.getElementById('scheduleDeleteBtn');
   const submitButton = document.getElementById('scheduleSubmitBtn');
   if (dateInput) dateInput.value = workDate;
+  modal.removeAttribute('hidden');
   modal.hidden = false;
   form.classList.add('is-loading');
   if (submitButton) { submitButton.disabled = true; submitButton.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang tải lịch'; }
@@ -1489,7 +1540,10 @@ async function openScheduleModal(workDate = clinicDateISO()) {
 
 function closeScheduleModal() {
   const modal = document.getElementById('scheduleAdjustModal');
-  if (modal) modal.hidden = true;
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('hidden', '');
+  }
 }
 
 export function initView() {
@@ -1828,6 +1882,34 @@ export function initView() {
   dialog?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeDialog();
   });
+
+  const adjustModal = document.getElementById('attendanceAdjustModal');
+  adjustModal?.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'close-adjust-modal') {
+      event.preventDefault();
+      closeAdjustModal();
+    }
+  });
+
+  const schedModal = document.getElementById('scheduleAdjustModal');
+  schedModal?.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'close-schedule-modal') {
+      event.preventDefault();
+      closeScheduleModal();
+    }
+  });
+
+  const handleEscapeKey = (event) => {
+    if (event.key === 'Escape') {
+      closeAdjustModal();
+      closeScheduleModal();
+      closeDialog();
+    }
+  };
+  document.removeEventListener('keydown', handleEscapeKey);
+  document.addEventListener('keydown', handleEscapeKey);
 
   // once:true khien badge chi doi dung mot lan roi ket o trang thai sai. Dung
   // mot handler co dinh va go truoc khi gan lai de khong ro listener qua moi

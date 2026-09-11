@@ -222,9 +222,15 @@ export class AttendanceController {
       dayCheckin = result.rows[0]?.payload || null;
       if (!dayCheckin) throw new BadRequestException('Bạn cần check-in trước khi kết ca.');
     }
-    const branchId = type === 'checkout' ? (attendanceBranch(dayCheckin) || requestedBranch) : requestedBranch;
-    if (!fallbackBranches[branchId]) throw new BadRequestException('Vui lòng chọn chi nhánh đang làm việc trước khi chấm công.');
-    if (type === 'checkout' && requestedBranch && requestedBranch !== branchId) {
+    let branchId = type === 'checkout' ? (attendanceBranch(dayCheckin) || requestedBranch) : requestedBranch;
+    if (!fallbackBranches[branchId]) {
+      if (fallbackBranches[user.branchId]) {
+        branchId = user.branchId;
+      } else {
+        branchId = 'pham-van-chieu';
+      }
+    }
+    if (type === 'checkout' && requestedBranch && requestedBranch !== branchId && fallbackBranches[requestedBranch]) {
       throw new BadRequestException('Bạn cần check-out tại đúng chi nhánh đã xác nhận lúc vào ca.');
     }
     const branch = await this.one('clinic_locations', 'id', branchId) || fallbackBranches[branchId];
@@ -233,7 +239,9 @@ export class AttendanceController {
     if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > maxAccuracy) throw new BadRequestException(`Sai số GPS ±${accuracy || 0} m vượt mức cho phép ${maxAccuracy} m.`);
     const distance = distanceMeters(lat, lng, Number(branch.latitude), Number(branch.longitude));
     const policy = locationResult(distance, accuracy, radius, maxAccuracy);
-    if (!policy.inside) throw new BadRequestException(`Vị trí cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${policy.effectiveRadius} m.`);
+    const isTelesale = ['telesale_staff', 'telesale_leader'].includes(user.role)
+      || employee?.department === 'mkt' || employee?.department === 'marketing';
+    if (!policy.inside && !isTelesale) throw new BadRequestException(`Vị trí cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${policy.effectiveRadius} m.`);
 
     const duplicate = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
       `select payload from app.records where entity_type='attendance_records' and deleted_at is null and
@@ -259,22 +267,32 @@ export class AttendanceController {
         if (shiftCode && shiftCode !== assignedShift) throw new BadRequestException('Ca làm hôm nay phải theo lịch đã được phân công.');
         shiftCode = assignedShift;
       } else {
-        const allowedCodes = [employee.shift_code, ...allowed.rows.map((row) => row.payload.shift_code)]
+        let allowedCodes = [employee.shift_code, ...allowed.rows.map((row) => row.payload.shift_code)]
           .map((code) => String(code || ''))
           .filter(Boolean);
-        if (!shiftCode) shiftCode = String(employee.shift_code || 'clinic-0800');
-        else if (!allowedCodes.includes(shiftCode)) throw new BadRequestException('Ca đã chọn không thuộc nhóm ca hợp lệ của chức danh này.');
+        const dept = String(employee.department || '').toLowerCase();
+        const title = String(employee.title || '').toLowerCase();
+        if (allowedCodes.length <= 1) {
+          if (dept === 'phuta' || dept === 'dvkh' || title.includes('phụ tá') || title.includes('lễ tân')) {
+            allowedCodes = ['front-office', 'front-morning', 'front-afternoon', 'front-full'];
+          } else if (dept === 'bs' || title.includes('bác sĩ')) {
+            allowedCodes = ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'];
+          }
+        }
+        if (!shiftCode) shiftCode = String(employee.shift_code || (allowedCodes[0] || 'clinic-0800'));
+        else if (allowedCodes.length > 0 && !allowedCodes.includes(shiftCode)) throw new BadRequestException('Ca đã chọn không thuộc nhóm ca hợp lệ của chức danh này.');
       }
     }
     const shift = await this.one('work_shifts', 'code', shiftCode);
     if (!shift || shift.active === false) throw new BadRequestException('Ca làm chưa được cấu hình trong hệ thống.');
+    const telesaleTag = isTelesale ? (policy.inside ? '[TELESALE_CLINIC_GPS]' : '[TELESALE_REMOTE_GPS]') : '';
     const payload: JsonMap = {
       id: randomUUID(), client_event_id: eventId, employee_code: user.employeeCode, shift_code: shiftCode,
       record_type: type, work_date: local.date, recorded_at: effectiveAt.toISOString(), lat, lng,
       branch_id: branchId,
       distance_m: distance, accuracy_m: accuracy, status: DA_GHI_NHAN, created_by: user.id,
       device_id: String(body.deviceId || '').slice(0, 120) || null, captured_offline: Boolean(body.capturedOffline),
-      synced_at: now.toISOString(), note: `[BRANCH:${branchId}]`, created_at: now.toISOString(), updated_at: now.toISOString(),
+      synced_at: now.toISOString(), note: `[BRANCH:${branchId}]${telesaleTag}`, created_at: now.toISOString(), updated_at: now.toISOString(),
     };
     await this.infrastructure.postgres.query(
       `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'vps')`,

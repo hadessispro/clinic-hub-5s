@@ -413,13 +413,57 @@ export class AuthService {
     if (!ma) throw new BadRequestException('Thiếu mã nhân sự.');
     if (matKhau.length < 8) throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự.');
 
-    // Không đặt lại cho người có quyền bằng hoặc cao hơn mình.
-    const hoSo = await this.infrastructure.postgres.query<{ role: string }>(
-      `select payload->>'role' role from app.records
+    // Tìm hồ sơ hoặc nhân sự để kiểm tra quyền và thông tin tài khoản
+    const hoSo = await this.infrastructure.postgres.query<{ record_key: string; role: string; employee_code: string; email: string; branch_id: string }>(
+      `select record_key, payload->>'role' role, coalesce(payload->>'employee_code', payload->>'id') employee_code,
+              payload->>'email' email, payload->>'branch_id' branch_id from app.records
         where entity_type='profiles' and deleted_at is null
-          and lower(payload->>'employee_code') = lower($1) limit 1`, [ma],
+          and (lower(payload->>'employee_code') = lower($1) or lower(payload->>'id') = lower($1) or lower(record_key) = lower($1)) limit 1`, [ma],
     );
-    const vaiTroDich = hoSo.rows[0]?.role || 'staff';
+    let profileRecord = hoSo.rows[0];
+    if (!profileRecord) {
+      const empRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key, payload from app.records
+         where entity_type='employees' and deleted_at is null
+           and (lower(payload->>'code') = lower($1) or lower(payload->>'id') = lower($1) or lower(record_key) = lower($1)) limit 1`, [ma],
+      );
+      if (empRes.rows[0]) {
+        const emp = empRes.rows[0].payload;
+        const code = String(emp.code || emp.id || ma);
+        const profileKey = `staff-profile-${code.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+        const now = new Date().toISOString();
+        const newProfile = {
+          id: profileKey,
+          employee_code: code,
+          employee_number: emp.employee_number || code,
+          full_name: emp.full_name || code,
+          phone: emp.phone || null,
+          email: emp.email || null,
+          department: emp.department || '',
+          title: emp.title || null,
+          branch_id: emp.branch_id || 'pham-van-chieu',
+          role: 'staff',
+          active: emp.status ? emp.status !== 'inactive' : true,
+          created_at: now,
+          updated_at: now,
+        };
+        await this.infrastructure.postgres.query(
+          `insert into app.records (entity_type, record_key, payload, origin) values ('profiles', $1, $2::jsonb, 'vps')
+           on conflict (entity_type, record_key) do update set payload=excluded.payload, origin='vps', version=app.records.version+1, updated_at=now(), deleted_at=null`,
+          [profileKey, JSON.stringify(newProfile)],
+        );
+        await this.infrastructure.markDataChanged(['profiles']);
+        profileRecord = {
+          record_key: profileKey,
+          role: newProfile.role,
+          employee_code: code,
+          email: String(emp.email || ''),
+          branch_id: String(newProfile.branch_id),
+        };
+      }
+    }
+
+    const vaiTroDich = profileRecord?.role || 'staff';
     if (this.bacQuyen(vaiTroDich) >= this.bacQuyen(actor.role)
         && actor.employeeCode?.toLowerCase() !== ma.toLowerCase()) {
       throw new ForbiddenException(
@@ -435,7 +479,29 @@ export class AuthService {
         where lower(trim(employee_code)) = lower($1)
       returning employee_code, email`, [ma, salt, hash],
     );
-    if (!kq.rowCount) throw new BadRequestException(`Không tìm thấy tài khoản đăng nhập của ${ma}.`);
+
+    let userRow: { employee_code: string; email: string | null };
+    if (!kq.rowCount) {
+      if (!profileRecord) {
+        throw new BadRequestException(`Không tìm thấy hồ sơ hoặc nhân sự ${ma} để cấp mật khẩu.`);
+      }
+      const localAccountUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(profileRecord.record_key)
+        ? profileRecord.record_key
+        : randomUUID();
+      const inserted = await this.infrastructure.postgres.query<{ employee_code: string; email: string }>(
+        `insert into app.local_accounts(user_id,profile_key,email,employee_code,branch_id,password_salt,password_hash,active,failed_attempts,locked_until)
+         values ($1,$2,$3,$4,$5,$6,$7,true,0,null)
+         on conflict (profile_key) do update set email=excluded.email, employee_code=excluded.employee_code,
+           branch_id=excluded.branch_id, password_salt=excluded.password_salt, password_hash=excluded.password_hash,
+           active=true, failed_attempts=0, locked_until=null, updated_at=now()
+         returning employee_code, email`,
+        [localAccountUserId, profileRecord.record_key, profileRecord.email || null, profileRecord.employee_code || ma,
+         profileRecord.branch_id || null, salt, hash],
+      );
+      userRow = inserted.rows[0];
+    } else {
+      userRow = kq.rows[0];
+    }
 
     // Mọi phiên đang mở phải chết theo. Đặt lại mật khẩu vì nghi lộ mà phiên
     // cũ vẫn dùng được thì việc đặt lại chẳng ngăn được ai.
@@ -443,9 +509,9 @@ export class AuthService {
       `delete from app.refresh_sessions where user_id in (
          select user_id from app.local_accounts where lower(trim(employee_code)) = lower($1))`, [ma],
     );
-    await this.ghiNhatKy('dat_lai_mat_khau', actor, kq.rows[0].employee_code, vaiTroDich,
-      { email: kq.rows[0].email, da_mo_khoa: true, da_huy_phien: true });
-    return { employee_code: kq.rows[0].employee_code, email: kq.rows[0].email, reset: true };
+    await this.ghiNhatKy('dat_lai_mat_khau', actor, userRow.employee_code || ma, vaiTroDich,
+      { email: userRow.email, da_mo_khoa: true, da_huy_phien: true, khoi_tao_moi: !kq.rowCount });
+    return { employee_code: userRow.employee_code || ma, email: userRow.email, reset: true };
   }
 
   async provision(actor: AuthUser, input: { profileId?: string; email?: string; password?: string }) {

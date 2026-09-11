@@ -61,12 +61,15 @@ export async function getSystemAnnouncements() {
 export async function getSystemProfiles() {
   const [{ data, error }, employeeResult] = await Promise.all([
     dataClient.from('profiles').select('*').order('full_name'),
-    dataClient.from('employees').select('code,full_name,department,title,phone,email,branch_id'),
+    dataClient.from('employees').select('code,full_name,department,title,phone,email,branch_id,status'),
   ]);
   if (error) throw error;
   const employees = new Map((employeeResult.data || []).map((item) => [String(item.code || '').toLowerCase(), item]));
-  return (data || []).map((profile) => {
-    const employee = employees.get(String(profile.employee_code || '').toLowerCase()) || {};
+  const seenCodes = new Set();
+  const profiles = (data || []).map((profile) => {
+    const empCode = String(profile.employee_code || '').toLowerCase();
+    if (empCode) seenCodes.add(empCode);
+    const employee = employees.get(empCode) || {};
     return {
       ...employee,
       ...profile,
@@ -78,6 +81,27 @@ export async function getSystemProfiles() {
       email: profile.email || employee.email || '',
     };
   });
+
+  // Bao gồm cả những nhân sự vừa thêm ở HR mà chưa kịp tạo dòng profile
+  for (const emp of (employeeResult.data || [])) {
+    const code = String(emp.code || '').toLowerCase();
+    if (!code || seenCodes.has(code)) continue;
+    seenCodes.add(code);
+    profiles.push({
+      id: emp.code,
+      employee_code: emp.code,
+      full_name: emp.full_name || '',
+      department: emp.department || '',
+      branch_id: emp.branch_id || 'pham-van-chieu',
+      title: emp.title || '',
+      phone: emp.phone || '',
+      email: emp.email || '',
+      role: 'staff',
+      active: emp.status !== 'inactive',
+    });
+  }
+
+  return profiles;
 }
 
 export async function updateUserProfile(profileId, updates) {

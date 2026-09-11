@@ -225,8 +225,14 @@ export async function renderMonthlySchedule(state) {
   const shiftByCode = new Map(data.shifts.map((shift) => [shift.code, shift]));
   const allowedByEmployee = new Map();
   data.allowed.forEach((item) => {
-    if (!allowedByEmployee.has(item.employee_code)) allowedByEmployee.set(item.employee_code, []);
-    allowedByEmployee.get(item.employee_code).push(item.shift_code);
+    const raw = String(item.employee_code || '').trim();
+    const lower = raw.toLowerCase();
+    if (!allowedByEmployee.has(raw)) allowedByEmployee.set(raw, []);
+    allowedByEmployee.get(raw).push(item.shift_code);
+    if (lower !== raw) {
+      if (!allowedByEmployee.has(lower)) allowedByEmployee.set(lower, []);
+      allowedByEmployee.get(lower).push(item.shift_code);
+    }
   });
   const assignmentByKey = new Map(data.assignments.map((item) => [`${item.employee_code}:${item.work_date}`, item]));
   const employeesWithAssignments = new Set(data.assignments.map((item) => item.employee_code));
@@ -257,11 +263,15 @@ export async function renderMonthlySchedule(state) {
   const rows = structuredEmployees.map((employee) => {
     const request = requestByEmployee.get(employee.code) || { stage: 'draft' };
     const editable = !isDoctorRoster && (canManageSchedule || canEditRow(role, employee.code, request, profile, viewMode));
+    const empCode = String(employee.code || '').trim();
     const isDoctorEmp = employee.department === 'bs' || employee.role === 'bac_si' || String(employee.department || '').toLowerCase() === 'chuyên môn';
+    const isFrontEmp = employee.department === 'phuta' || employee.department === 'dvkh' || employee.role === 'phu_ta' || employee.role === 'le_tan' || String(employee.title || '').toLowerCase().includes('phụ tá') || String(employee.title || '').toLowerCase().includes('lễ tân');
     const defaultDoctorShifts = ['doctor-office', 'doctor-morning', 'doctor-afternoon', 'doctor-full'];
-    const allowedCodes = (allowedByEmployee.get(employee.code) && allowedByEmployee.get(employee.code).length)
-      ? allowedByEmployee.get(employee.code)
-      : (isDoctorEmp ? defaultDoctorShifts : [employee.shift_code].filter(Boolean));
+    const defaultFrontShifts = ['front-office', 'front-morning', 'front-afternoon', 'front-full'];
+    const empAllowed = allowedByEmployee.get(empCode) || allowedByEmployee.get(empCode.toLowerCase()) || [];
+    const allowedCodes = empAllowed.length
+      ? empAllowed
+      : (isDoctorEmp ? defaultDoctorShifts : (isFrontEmp ? defaultFrontShifts : [employee.shift_code].filter(Boolean)));
     let total = 0;
     const cells = dates.map((date) => {
       const key = assignmentKey(employee.code, date.key);

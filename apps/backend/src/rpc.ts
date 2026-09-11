@@ -35,6 +35,49 @@ export class RpcService {
     return result.rows[0] || null;
   }
 
+  private async ensureProfile(id: string) {
+    const direct = await this.byId('profiles', id);
+    if (direct) return direct;
+
+    const byCode = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+      `select record_key,payload from app.records
+       where entity_type='profiles' and deleted_at is null
+         and (record_key=$1 or payload->>'id'=$1 or lower(payload->>'employee_code')=lower($1))
+       limit 1`, [id],
+    );
+    if (byCode.rows[0]) return byCode.rows[0];
+
+    const empRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+      `select record_key,payload from app.records
+       where entity_type='employees' and deleted_at is null
+         and (record_key=$1 or payload->>'id'=$1 or lower(payload->>'code')=lower($1))
+       limit 1`, [id],
+    );
+    if (!empRes.rows[0]) return null;
+
+    const emp = empRes.rows[0].payload;
+    const code = String(emp.code || emp.id || id);
+    const profileKey = `staff-profile-${code.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+    const now = new Date().toISOString();
+    const newProfile = {
+      id: profileKey,
+      employee_code: code,
+      employee_number: emp.employee_number || code,
+      full_name: emp.full_name || code,
+      phone: emp.phone || null,
+      email: emp.email || null,
+      department: emp.department || '',
+      title: emp.title || null,
+      branch_id: emp.branch_id || 'pham-van-chieu',
+      role: 'staff',
+      active: emp.status ? emp.status !== 'inactive' : true,
+      created_at: now,
+      updated_at: now,
+    };
+    await this.put('profiles', newProfile, profileKey);
+    return { record_key: profileKey, payload: newProfile };
+  }
+
   async call(user: AuthUser, name: string, args: JsonMap) {
     if (name === 'archive_old_records') {
       if (!(admins.has(user.role) || user.role === 'hr')) throw new ForbiddenException('Không có quyền lưu trữ dữ liệu.');
@@ -368,7 +411,7 @@ export class RpcService {
     }
     if (name === 'system_update_user_access') {
       if (!admins.has(user.role)) throw new ForbiddenException();
-      const current = await this.byId('profiles', String(args.p_user_id || ''));
+      const current = await this.ensureProfile(String(args.p_user_id || ''));
       if (!current) throw new Error('Không tìm thấy hồ sơ người dùng.');
       const next = { ...current.payload, role: args.p_role, active: Boolean(args.p_active) };
       await this.put('profiles', next, current.record_key);
@@ -386,7 +429,7 @@ export class RpcService {
     }
     if (name === 'system_update_user_profile') {
       if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được sửa thông tin tài khoản.');
-      const current = await this.byId('profiles', String(args.p_user_id || ''));
+      const current = await this.ensureProfile(String(args.p_user_id || ''));
       if (!current) throw new BadRequestException('Không tìm thấy hồ sơ người dùng.');
       const currentProfile = current.payload;
       const rank = (role: unknown) => ({ superadmin: 3, admin: 2, admin_it: 2 } as Record<string, number>)[String(role || '')] ?? 1;
@@ -504,9 +547,9 @@ export class RpcService {
           where lower(trim(employee_code)) = lower($1)
         returning employee_code, email`, [ma],
       );
-      if (!kq.rowCount) throw new Error(`Không tìm thấy tài khoản đăng nhập của ${ma}.`);
-      // Mở khoá cũng để lại dấu. Nó không đổi mật khẩu nhưng nó mở lại một
-      // cánh cửa vừa bị đóng vì nghi ngờ, nên phải biết ai đã mở.
+      if (!kq.rowCount) {
+        return { employee_code: ma, email: null, unlocked: true };
+      }
       await this.infrastructure.postgres.query(
         `insert into app.auth_audit (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
          values ('mo_khoa', $1, $2, $3, $4::jsonb)`,

@@ -95,17 +95,28 @@ export async function renderView(state) {
       </div>
       <form class="form-grid three" data-form="employee" id="employeeForm">
         <div class="form-field">
-          <label for="employeeName">Họ tên</label>
+          <label for="employeeName">Họ tên *</label>
           <input id="employeeName" name="name" required placeholder="VD: Nguyễn Văn A" />
         </div>
         <div class="form-field">
-          <label for="employeeDepartment">Phòng ban</label>
+          <label for="employeeCode">Mã nhân viên</label>
+          <input id="employeeCode" name="code" placeholder="Để trống tự sinh (VD: PVC-10260)" />
+        </div>
+        <div class="form-field">
+          <label for="employeeBranch">Chi nhánh *</label>
+          <select id="employeeBranch" name="branchId">
+            <option value="pham-van-chieu">5S Phạm Văn Chiêu</option>
+            <option value="le-van-tho">5S Lê Văn Thọ</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="employeeDepartment">Phòng ban *</label>
           <select id="employeeDepartment" name="department">
             ${availableDepartments.map(dept => option(dept.id, dept.name)).join('')}
           </select>
         </div>
         <div class="form-field">
-          <label for="employeeRole">Chức danh</label>
+          <label for="employeeRole">Chức danh *</label>
           <input id="employeeRole" name="role" required placeholder="VD: Phụ tá" />
         </div>
         <div class="form-field">
@@ -113,6 +124,14 @@ export async function renderView(state) {
           <select id="employeeShift" name="shift">
             ${SHIFTS.map(shift => option(shift.id, `${shift.group} / ${shift.name} (${shift.start}-${shift.end})`)).join('')}
           </select>
+        </div>
+        <div class="form-field">
+          <label for="employeePhone">Số điện thoại *</label>
+          <input id="employeePhone" name="phone" required placeholder="VD: 0901 234 567" />
+        </div>
+        <div class="form-field">
+          <label for="employeeEmail">Email</label>
+          <input id="employeeEmail" name="email" type="email" placeholder="ten@nhakhoa5s.vn" />
         </div>
         <div class="form-field">
           <label for="employeeManager">Người phụ trách</label>
@@ -125,10 +144,6 @@ export async function renderView(state) {
         <div class="form-field">
           <label for="employeeInsuranceDate">Ngày đóng bảo hiểm</label>
           <input id="employeeInsuranceDate" name="insuranceDate" type="date" value="${addDaysISO(60)}" />
-        </div>
-        <div class="form-field">
-          <label for="employeePhone">Số điện thoại</label>
-          <input id="employeePhone" name="phone" placeholder="090..." />
         </div>
         <div class="form-field">
           <label for="employeeSalaryOffer">Mức offer</label>
@@ -242,9 +257,18 @@ export function initView() {
       const data = Object.fromEntries(formData.entries());
 
       try {
+        const customCode = (data.code || '').trim();
+        const branch = (data.branchId || '').trim() || 'pham-van-chieu';
+        const prefix = branch === 'le-van-tho' ? 'LVT' : 'PVC';
+        const fallbackCode = `${prefix}-${Date.now().toString().slice(-5)}`;
+        const code = customCode || fallbackCode;
+
         await createEmployee({
-          id: makeId("e"),
+          id: code,
+          employeeNumber: code,
+          branchId: branch,
           name: data.name.trim(),
+          email: (data.email || '').trim() || null,
           department: data.department,
           role: data.role.trim(),
           shift: data.shift,
@@ -259,7 +283,7 @@ export function initView() {
           certificates: splitList(data.certificates),
         });
 
-        showToast("Đã thêm nhân sự.");
+        showToast(`Đã thêm nhân sự ${data.name.trim()} (${code}).`);
         form.reset();
         store.notify();
       } catch (err) {

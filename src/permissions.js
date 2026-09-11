@@ -18,7 +18,7 @@ const ROLE_VIEWS = {
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
-  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'schedule', 'chat', 'tasks', 'hoa-hong', 'luong-pg'],
+  telesale_leader: ['dashboard', 'telesale-management', 'marketing-analytics', 'people', 'schedule', 'chat', 'tasks', 'attendance', 'hoa-hong', 'luong-pg'],
   telesale_staff: ['dashboard', 'telesale-workspace', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   // Backend xep superadmin vao adminRoles va cho toan quyen. De rong o day
   // nghia la tai khoan dang nhap duoc nhung menu trong va khong mo duoc man nao.
@@ -38,7 +38,7 @@ const ROLE_ACTIONS = {
   admin_marketing: ['marketing.*', 'telesale.*', 'analytics.marketing', 'data.export', 'employee.read_all', 'message.send', 'task.create'],
   support_marketing: ['marketing.leads.create', 'marketing.leads.import', 'telesale.assign', 'message.send', 'task.create'],
   pg_staff: ['marketing.leads.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send'],
-  telesale_leader: ['telesale.team.manage', 'telesale.leads.assign', 'telesale.analytics', 'telesale.calls.create', 'data.export', 'message.send', 'task.create'],
+  telesale_leader: ['telesale.team.manage', 'telesale.leads.assign', 'telesale.analytics', 'telesale.calls.create', 'attendance.self', 'data.export', 'message.send', 'task.create'],
   telesale_staff: ['telesale.leads.view_own', 'telesale.calls.create', 'telesale.appointment.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send', 'task.create'],
   superadmin: ['*'],
   bac_si: [
@@ -253,7 +253,7 @@ export function canPerform(role, action) {
 export const VAI_TRO_KHONG_CHAM_CONG = [
   'admin', 'admin_it', 'superadmin',
   'admin_marketing', 'support_marketing',
-  'leader', 'telesale_leader', 'hr', 'finance',
+  'leader', 'hr', 'finance',
 ];
 
 export function khongPhaiChamCong(role) {
