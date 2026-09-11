@@ -71,22 +71,112 @@ function laDongTong(stt, ma, ten) {
   return false;
 }
 
-/** Tìm dòng tiêu đề trong 12 dòng đầu, và loại file khớp với nó. */
+const ALIASES = {
+  nhat_ky: {
+    bat_buoc: ['Ngày hạch toán', 'Tài khoản', 'Phát sinh Nợ', 'Phát sinh Có'],
+    cot: {
+      'Ngày hạch toán': ['ngày hạch toán', 'ngày ghi sổ', 'ngày ht', 'ngày h.toán'],
+      'Ngày chứng từ': ['ngày chứng từ', 'ngày ct'],
+      'Số chứng từ': ['số chứng từ', 'số ct', 'số hiệu ct'],
+      'Số hóa đơn': ['số hóa đơn', 'số hđ'],
+      'Diễn giải': ['diễn giải', 'nội dung', 'lý do'],
+      'Tài khoản': ['tài khoản', 'số hiệu tk', 'số tk', 'tk', 'tk nợ/có'],
+      'TK đối ứng': ['tk đối ứng', 'tài khoản đối ứng', 'tkdu'],
+      'Phát sinh Nợ': ['phát sinh nợ', 'số phát sinh nợ', 'ps nợ', 'nợ'],
+      'Phát sinh Có': ['phát sinh có', 'số phát sinh có', 'ps có', 'có'],
+      'Mã đối tượng': ['mã đối tượng', 'mã đt', 'mã kh', 'mã ncc'],
+      'Tên đối tượng': ['tên đối tượng', 'tên đt', 'tên kh', 'tên ncc'],
+      'Ngày hóa đơn': ['ngày hóa đơn', 'ngày hđ'],
+      'Mã KMCP': ['mã kmcp', 'mã khoản mục chi phí', 'mã km'],
+      'Tên KMCP': ['tên kmcp', 'tên khoản mục chi phí', 'tên km'],
+      'Hợp đồng mua': ['hợp đồng mua', 'hđ mua'],
+      'Hợp đồng bán': ['hợp đồng bán', 'hđ bán'],
+      'CP hợp lý/không hợp lý': ['cp hợp lý/không hợp lý', 'chi phí hợp lý/không hợp lý', 'tính chất cp', 'hợp lý'],
+    },
+  },
+  tai_khoan: {
+    bat_buoc: ['Số tài khoản', 'Tên tài khoản', 'Tính chất'],
+    cot: {
+      'Số tài khoản': ['số tài khoản', 'số tk', 'mã tài khoản', 'mã tk', 'tài khoản'],
+      'Tên tài khoản': ['tên tài khoản', 'tên tk'],
+      'Tính chất': ['tính chất', 'loại tk', 'tính chất tk'],
+      'Tên tiếng Anh': ['tên tiếng anh', 'tên en'],
+      'Trạng thái': ['trạng thái', 'tình trạng'],
+    },
+  },
+  khoan_muc: {
+    bat_buoc: ['Mã khoản mục chi phí', 'Tên khoản mục chi phí'],
+    cot: {
+      'Mã khoản mục chi phí': ['mã khoản mục chi phí', 'mã kmcp', 'mã khoản mục', 'mã km'],
+      'Tên khoản mục chi phí': ['tên khoản mục chi phí', 'tên kmcp', 'tên khoản mục', 'tên km'],
+      'Trạng thái': ['trạng thái', 'tình trạng'],
+    },
+  },
+  nha_cung_cap: {
+    bat_buoc: ['Mã nhà cung cấp', 'Tên nhà cung cấp'],
+    cot: {
+      'Mã nhà cung cấp': ['mã nhà cung cấp', 'mã ncc', 'mã đối tượng', 'mã đt'],
+      'Tên nhà cung cấp': ['tên nhà cung cấp', 'tên ncc', 'tên đối tượng', 'tên đt'],
+      'Địa chỉ': ['địa chỉ'],
+      'Mã số thuế/CCCD chủ hộ': ['mã số thuế/cccd chủ hộ', 'mã số thuế', 'mst'],
+      'Điện thoại': ['điện thoại', 'sđt', 'phone'],
+    },
+  },
+  can_doi: {
+    bat_buoc: ['Số tài khoản', 'Tên tài khoản', 'Đầu kỳ'],
+    cot: {
+      'Số tài khoản': ['số tài khoản', 'số tk', 'mã tài khoản', 'mã tk'],
+      'Tên tài khoản': ['tên tài khoản', 'tên tk'],
+      'Đầu kỳ': ['đầu kỳ', 'số dư đầu kỳ', 'dư đầu kỳ'],
+      'Phát sinh': ['phát sinh', 'số phát sinh'],
+      'Cuối kỳ': ['cuối kỳ', 'số dư cuối kỳ', 'dư cuối kỳ'],
+    },
+  },
+};
+
+/** Tìm dòng tiêu đề trong 25 dòng đầu, và loại file khớp với nó. */
 function nhanDien(sheet) {
-  for (let i = 1; i <= Math.min(12, sheet.rowCount); i += 1) {
+  // 1. Thử khớp chính xác theo mẫu gốc
+  for (let i = 1; i <= Math.min(25, sheet.rowCount); i += 1) {
     const o = sheet.getRow(i).values.map(CHUAN);
     for (const [ma, def] of Object.entries(LOAI)) {
       if (def.dau.every((d) => o.includes(d))) {
-        // Giữ chỉ số ĐẦU TIÊN, không phải cuối cùng. Ô tiêu đề gộp như
-        // "Phát sinh" trải trên hai cột Nợ và Có, và ExcelJS điền cùng một
-        // chữ vào cả hai. Giữ chỉ số cuối là trỏ vào cột Có rồi gọi nó là
-        // cột Nợ: con số đọc ra vẫn trông hợp lý nên không ai nhận ra.
         const cot = {};
         o.forEach((ten, idx) => { if (ten && cot[ten] === undefined) cot[ten] = idx; });
         return { loai: ma, dongTieuDe: i, cot };
       }
     }
   }
+
+  // 2. Khớp thông minh: linh hoạt từ khóa, không phân biệt hoa thường, hỗ trợ tiêu đề 2 dòng
+  const maxRows = Math.min(25, sheet.rowCount);
+  for (let r = 1; r <= maxRows; r += 1) {
+    const row = sheet.getRow(r);
+    const nextRow = r < sheet.rowCount ? sheet.getRow(r + 1) : null;
+    const maxCols = Math.max(row.cellCount, nextRow ? nextRow.cellCount : 0);
+
+    for (const [ma, def] of Object.entries(ALIASES)) {
+      const cotMap = {};
+      for (let c = 1; c <= maxCols; c += 1) {
+        const v1 = CHUAN(row.getCell(c).value).toLowerCase();
+        const v2 = nextRow ? CHUAN(nextRow.getCell(c).value).toLowerCase() : '';
+        const combined = `${v1} ${v2}`.trim();
+
+        for (const [chuan, aliasList] of Object.entries(def.cot)) {
+          if (aliasList.some((a) => a === v1 || a === v2 || a === combined || combined.includes(a))) {
+            if (cotMap[chuan] === undefined) {
+              cotMap[chuan] = c;
+            }
+          }
+        }
+      }
+
+      if (def.bat_buoc.every((k) => cotMap[k] !== undefined)) {
+        return { loai: ma, dongTieuDe: nextRow ? r + 1 : r, cot: cotMap };
+      }
+    }
+  }
+
   return null;
 }
 
@@ -149,7 +239,7 @@ async function docFile(buffer, tenFile) {
 }
 
 function docSheet(sheet, nd, kq) {
-  const c = (r, ten) => r.getCell(nd.cot[ten] ?? 0).value;
+  const c = (r, ten) => (nd.cot[ten] ? r.getCell(nd.cot[ten]).value : null);
   for (let i = nd.dongTieuDe + 1; i <= sheet.rowCount; i += 1) {
     const r = sheet.getRow(i);
     if (!r.hasValues) continue;
