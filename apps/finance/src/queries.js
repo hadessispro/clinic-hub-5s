@@ -128,6 +128,8 @@ async function journal(f = {}) {
               coalesce(sum(l.credit), 0)::text as tong_co
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
        ${JOURNAL_WHERE}`,
       args,
     ),
