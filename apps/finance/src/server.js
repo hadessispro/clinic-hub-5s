@@ -372,6 +372,12 @@ app.get(`${BASE}/api/chung-tu/:id`, guard, doc('xem_chung_tu', async (req, reply
 app.get(`${BASE}/api/can-doi`, guard, doc('xem_bang_can_doi',
   (req) => q.trialBalance(req.query.ky)));
 
+app.get(`${BASE}/api/ton-kho`, guard, doc('xem_tong_hop_ton_kho',
+  (req) => q.inventorySummary({ period: req.query.ky, warehouse: req.query.kho, q: req.query.tim })));
+
+app.get(`${BASE}/api/so-du-dau-ky`, guard, doc('xem_so_du_dau_ky',
+  (req) => q.openingBalances(req.query.ky)));
+
 app.get(`${BASE}/api/so-cai/:code`, guard, doc('xem_so_chi_tiet',
   (req) => q.ledger(req.params.code, req.query.ky)));
 
@@ -573,6 +579,42 @@ function danhMuc(duong, luu, xoa, ten) {
 danhMuc('tai-khoan', crud.luuTaiKhoan, crud.xoaTaiKhoan, 'tai_khoan');
 danhMuc('doi-tac',   crud.luuDoiTac,   crud.xoaDoiTac,   'doi_tac');
 danhMuc('khoan-muc', crud.luuKhoanMuc, crud.xoaKhoanMuc, 'khoan_muc');
+
+app.post(`${BASE}/api/so-du-dau-ky`, guardWrite, async (req) => {
+  const r = await crud.luuSoDuDauKy(req.body || {}, req.user.username);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'luu_so_du_dau_ky',
+    target: r.account_code, ip: clientIp(req),
+  });
+  return r;
+});
+
+app.delete(`${BASE}/api/so-du-dau-ky/:code`, guardWrite, async (req) => {
+  const r = await crud.xoaSoDuDauKy(req.params.code, req.query.ky);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'xoa_so_du_dau_ky',
+    target: req.params.code, ip: clientIp(req),
+  });
+  return { xong: true, code: req.params.code };
+});
+
+app.post(`${BASE}/api/ton-kho`, guardWrite, async (req) => {
+  const r = await crud.luuTonKho(req.body || {});
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'luu_ton_kho',
+    target: r.item_code, ip: clientIp(req),
+  });
+  return r;
+});
+
+app.delete(`${BASE}/api/ton-kho/:id`, guardWrite, async (req) => {
+  const id = await crud.xoaTonKho(req.params.id);
+  await db.audit({
+    actor: req.user.username, actorRole: req.user.role, action: 'xoa_ton_kho',
+    target: id, ip: clientIp(req),
+  });
+  return { xong: true, id };
+});
 
 /* ── Nhập liệu từ Excel ────────────────────────────────────────────────── */
 

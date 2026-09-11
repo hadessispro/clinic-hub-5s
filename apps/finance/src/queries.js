@@ -153,19 +153,142 @@ async function voucher(id) {
   return head;
 }
 
-/* ── Bảng cân đối tài khoản ────────────────────────────────────────────── */
+/* ── Bảng cân đối tài khoản chuẩn 8 cột kèm phân cấp ────────────────────── */
 
 async function trialBalance(periodCode) {
-  return rows(
-    `select t.account_code, t.account_name, a.nature, a.depth,
-            t.ps_debit::text, t.ps_credit::text,
-            (t.ps_debit - t.ps_credit)::text as chenh_lech
-     from finance.v_trial_balance t
-     join finance.accounts a on a.code = t.account_code
-     where ($1::text is null or t.period_code = $1)
-     order by t.account_code`,
-    [periodCode || null],
+  const [dsAccounts, dsOpening, dsJournal] = await Promise.all([
+    rows(`select code, name, nature, depth, parent_code from finance.accounts where is_active = true order by code`),
+    rows(
+      `select account_code, sum(debit) as dk_debit, sum(credit) as dk_credit
+       from finance.opening_balances
+       where ($1::text is null or period_code = $1)
+       group by account_code`,
+      [periodCode || null],
+    ),
+    rows(
+      `select l.account_code, sum(l.debit) as ps_debit, sum(l.credit) as ps_credit
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       where ($1::text is null or v.period_code = $1)
+       group by l.account_code`,
+      [periodCode || null],
+    ),
+  ]);
+
+  const accMap = new Map();
+  dsAccounts.forEach((a) => {
+    accMap.set(a.code, {
+      account_code: a.code,
+      account_name: a.name,
+      nature: a.nature,
+      depth: a.depth || Math.max(a.code.length - 2, 1),
+      parent_code: a.parent_code,
+      dk_debit: 0,
+      dk_credit: 0,
+      ps_debit: 0,
+      ps_credit: 0,
+      ck_debit: 0,
+      ck_credit: 0,
+      is_parent: false,
+      has_children: false,
+    });
+  });
+
+  const directData = new Map();
+  dsAccounts.forEach((a) => {
+    directData.set(a.code, { dk_no: 0, dk_co: 0, ps_no: 0, ps_co: 0 });
+  });
+  dsOpening.forEach((o) => {
+    const d = directData.get(o.account_code);
+    if (d) {
+      d.dk_no += Number(o.dk_debit || 0);
+      d.dk_co += Number(o.dk_credit || 0);
+    }
+  });
+  dsJournal.forEach((j) => {
+    const d = directData.get(j.account_code);
+    if (d) {
+      d.ps_no += Number(j.ps_debit || 0);
+      d.ps_co += Number(j.ps_credit || 0);
+    }
+  });
+
+  const allCodes = Array.from(accMap.keys());
+  for (const c of allCodes) {
+    const hasChildren = allCodes.some((k) => k !== c && k.startsWith(c));
+    if (hasChildren) {
+      accMap.get(c).is_parent = true;
+      accMap.get(c).has_children = true;
+    }
+  }
+
+  for (const [code, item] of accMap.entries()) {
+    if (item.has_children) {
+      let dk_no = directData.get(code)?.dk_no || 0;
+      let dk_co = directData.get(code)?.dk_co || 0;
+      let ps_no = directData.get(code)?.ps_no || 0;
+      let ps_co = directData.get(code)?.ps_co || 0;
+
+      for (const [otherCode, otherItem] of accMap.entries()) {
+        if (otherCode !== code && otherCode.startsWith(code) && !otherItem.has_children) {
+          const od = directData.get(otherCode);
+          if (od) {
+            dk_no += od.dk_no;
+            dk_co += od.dk_co;
+            ps_no += od.ps_no;
+            ps_co += od.ps_co;
+          }
+        }
+      }
+      item.dk_debit = Math.round(dk_no);
+      item.dk_credit = Math.round(dk_co);
+      item.ps_debit = Math.round(ps_no);
+      item.ps_credit = Math.round(ps_co);
+    } else {
+      const d = directData.get(code) || { dk_no: 0, dk_co: 0, ps_no: 0, ps_co: 0 };
+      item.dk_debit = Math.round(d.dk_no);
+      item.dk_credit = Math.round(d.dk_co);
+      item.ps_debit = Math.round(d.ps_no);
+      item.ps_credit = Math.round(d.ps_co);
+    }
+
+    if (item.nature === 'debit') {
+      const bal = (item.dk_debit - item.dk_credit) + (item.ps_debit - item.ps_credit);
+      item.ck_debit = bal > 0 ? bal : 0;
+      item.ck_credit = bal < 0 ? -bal : 0;
+    } else if (item.nature === 'credit') {
+      const bal = (item.dk_credit - item.dk_debit) + (item.ps_credit - item.ps_debit);
+      item.ck_credit = bal > 0 ? bal : 0;
+      item.ck_debit = bal < 0 ? -bal : 0;
+    } else {
+      const bal = (item.dk_debit - item.dk_credit) + (item.ps_debit - item.ps_credit);
+      if (bal >= 0) {
+        item.ck_debit = bal;
+        item.ck_credit = 0;
+      } else {
+        item.ck_debit = 0;
+        item.ck_credit = -bal;
+      }
+    }
+  }
+
+  const result = Array.from(accMap.values()).filter((r) =>
+    r.dk_debit !== 0 || r.dk_credit !== 0 || r.ps_debit !== 0 || r.ps_credit !== 0 || r.ck_debit !== 0 || r.ck_credit !== 0
   );
+
+  const topLevel = result.filter((r) => r.depth === 1 || (r.account_code.length === 3 && !r.parent_code));
+  const accountsToSum = topLevel.length > 0 ? topLevel : result.filter((r) => !r.has_children);
+
+  const totals = {
+    dk_debit: accountsToSum.reduce((s, r) => s + r.dk_debit, 0),
+    dk_credit: accountsToSum.reduce((s, r) => s + r.dk_credit, 0),
+    ps_debit: accountsToSum.reduce((s, r) => s + r.ps_debit, 0),
+    ps_credit: accountsToSum.reduce((s, r) => s + r.ps_credit, 0),
+    ck_debit: accountsToSum.reduce((s, r) => s + r.ck_debit, 0),
+    ck_credit: accountsToSum.reduce((s, r) => s + r.ck_credit, 0),
+  };
+
+  return { dong: result, tong: totals };
 }
 
 /* ── Sổ chi tiết một tài khoản, kèm số dư lũy kế ───────────────────────── */
@@ -545,8 +668,73 @@ async function batches() {
   );
 }
 
+/* ── Quản lý số dư đầu kỳ ──────────────────────────────────────────────── */
+
+async function openingBalances(periodCode) {
+  return rows(
+    `select o.account_code, a.name as account_name, a.nature, a.depth,
+            o.period_code, o.debit::text, o.credit::text, o.source_file, o.created_at, o.updated_at
+     from finance.opening_balances o
+     join finance.accounts a on a.code = o.account_code
+     where ($1::text is null or o.period_code = $1)
+     order by o.account_code`,
+    [periodCode || null],
+  );
+}
+
+/* ── Tổng hợp tồn kho ─────────────────────────────────────────────────── */
+
+async function inventorySummary(filters = {}) {
+  const params = [];
+  const conds = [];
+  if (filters.period) {
+    params.push(filters.period);
+    conds.push(`period_code = $${params.length}`);
+  }
+  if (filters.warehouse) {
+    params.push(filters.warehouse);
+    conds.push(`warehouse_name = $${params.length}`);
+  }
+  if (filters.q) {
+    params.push(`%${filters.q.toLowerCase()}%`);
+    conds.push(`(lower(item_code) like $${params.length} or lower(item_name) like $${params.length})`);
+  }
+
+  const where = conds.length ? `where ${conds.join(' and ')}` : '';
+  const dong = await rows(
+    `select id::text, period_code, warehouse_name, item_code, item_name, unit,
+            opening_qty::text, opening_val::text,
+            in_qty::text, in_val::text,
+            out_qty::text, out_val::text,
+            closing_qty::text, closing_val::text,
+            note, updated_at
+     from finance.inventory_summary
+     ${where}
+     order by warehouse_name, item_code
+     limit 2000`,
+    params,
+  );
+
+  const kho = await rows(
+    `select distinct warehouse_name from finance.inventory_summary order by 1`,
+  );
+
+  const tong = {
+    opening_qty: dong.reduce((s, r) => s + Number(r.opening_qty || 0), 0),
+    opening_val: dong.reduce((s, r) => s + Number(r.opening_val || 0), 0),
+    in_qty: dong.reduce((s, r) => s + Number(r.in_qty || 0), 0),
+    in_val: dong.reduce((s, r) => s + Number(r.in_val || 0), 0),
+    out_qty: dong.reduce((s, r) => s + Number(r.out_qty || 0), 0),
+    out_val: dong.reduce((s, r) => s + Number(r.out_val || 0), 0),
+    closing_qty: dong.reduce((s, r) => s + Number(r.closing_qty || 0), 0),
+    closing_val: dong.reduce((s, r) => s + Number(r.closing_val || 0), 0),
+  };
+
+  return { dong, tong, kho: kho.map((k) => k.warehouse_name) };
+}
+
 module.exports = {
   overview, journal, voucher, trialBalance, ledger, partnerBalances,
   nondeductible, issues, opsSummary, hoaHong, luongPg, accounts, partners, periods,
-  costItems, batches, charts,
+  costItems, batches, charts, openingBalances, inventorySummary,
 };

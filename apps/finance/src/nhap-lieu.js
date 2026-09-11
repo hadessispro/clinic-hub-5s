@@ -58,6 +58,10 @@ const LOAI = {
     ten: 'Bảng cân đối tài khoản',
     dau: ['Số tài khoản', 'Tên tài khoản', 'Đầu kỳ'],
   },
+  ton_kho: {
+    ten: 'Tổng hợp tồn kho',
+    dau: ['Tên kho', 'Mã hàng', 'Tên hàng', 'ĐVT'],
+  },
 };
 
 const CHUAN = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -130,6 +134,19 @@ const ALIASES = {
       'Đầu kỳ': ['đầu kỳ', 'số dư đầu kỳ', 'dư đầu kỳ'],
       'Phát sinh': ['phát sinh', 'số phát sinh'],
       'Cuối kỳ': ['cuối kỳ', 'số dư cuối kỳ', 'dư cuối kỳ'],
+    },
+  },
+  ton_kho: {
+    bat_buoc: ['Tên kho', 'Mã hàng', 'Tên hàng', 'ĐVT'],
+    cot: {
+      'Tên kho': ['tên kho', 'kho', 'mã kho'],
+      'Mã hàng': ['mã hàng', 'mã vật tư', 'mã ccdc', 'mã sp'],
+      'Tên hàng': ['tên hàng', 'tên vật tư', 'tên ccdc', 'tên sản phẩm'],
+      'ĐVT': ['đvt', 'đơn vị tính', 'đơn vị'],
+      'Đầu kỳ': ['đầu kỳ', 'tồn đầu'],
+      'Nhập kho': ['nhập kho', 'nhập', 'số nhập'],
+      'Xuất kho': ['xuất kho', 'xuất', 'số xuất'],
+      'Cuối kỳ': ['cuối kỳ', 'tồn cuối'],
     },
   },
 };
@@ -305,6 +322,37 @@ function docSheet(sheet, nd, kq) {
                      dk_no: dk === undefined ? 0 : (v[dk] || 0),
                      dk_co: dk === undefined ? 0 : (v[dk + 1] || 0),
                      ps_no: v[b] || 0, ps_co: v[b + 1] || 0 });
+    } else if (kq.loai === 'ton_kho') {
+      const kho = chu(c(r, 'Tên kho'));
+      const ma = chu(c(r, 'Mã hàng'));
+      const ten = chu(c(r, 'Tên hàng'));
+      const dvt = chu(c(r, 'ĐVT')) || null;
+      if (!kho || !ma) continue;
+      if (kho.toLowerCase().includes('tổng') || ma.toLowerCase().includes('tổng') || laDongTong(chu(r.getCell(1).value), ma, ten)) {
+        kq.bo_qua.push(`dòng ${i}: dòng tổng`);
+        continue;
+      }
+      const v = r.values.map(so);
+      const dk = nd.cot['Đầu kỳ'];
+      const nhap = nd.cot['Nhập kho'];
+      const xuat = nd.cot['Xuất kho'];
+      const ck = nd.cot['Cuối kỳ'];
+
+      kq.dong.push({
+        dong: i,
+        warehouse_name: kho,
+        item_code: ma,
+        item_name: ten,
+        unit: dvt,
+        opening_qty: dk !== undefined ? (v[dk] || 0) : 0,
+        opening_val: dk !== undefined ? (v[dk + 1] || 0) : 0,
+        in_qty: nhap !== undefined ? (v[nhap] || 0) : 0,
+        in_val: nhap !== undefined ? (v[nhap + 1] || 0) : 0,
+        out_qty: xuat !== undefined ? (v[xuat] || 0) : 0,
+        out_val: xuat !== undefined ? (v[xuat + 1] || 0) : 0,
+        closing_qty: ck !== undefined ? (v[ck] || 0) : 0,
+        closing_val: ck !== undefined ? (v[ck + 1] || 0) : 0,
+      });
     }
   }
 }
@@ -373,6 +421,49 @@ async function kiemTra(doc) {
              tom_tat: { loai: doc.loai, so_dong: doc.dong.length,
                         so_khop: khop.length, so_lech: lech.length, lech,
                         xem_thu: doc.dong.slice(0, 60) } };
+  }
+
+  if (doc.loai === 'ton_kho') {
+    const thieuKho = doc.dong.filter((d) => !d.warehouse_name);
+    const thieuMa = doc.dong.filter((d) => !d.item_code);
+    if (thieuKho.length || thieuMa.length) {
+      hong('Nội dung', `${thieuKho.length + thieuMa.length} dòng thiếu tên kho hoặc mã hàng.`);
+    } else {
+      dat('Nội dung', 'Mọi dòng đều có tên kho và mã hàng.');
+    }
+    const danhSachKho = [...new Set(doc.dong.map((d) => d.warehouse_name))];
+    dat('Phân loại kho', `Có ${danhSachKho.length} kho: ${danhSachKho.slice(0, 5).join(', ')}...`);
+
+    const tongDK_SL = doc.dong.reduce((s, d) => s + (d.opening_qty || 0), 0);
+    const tongDK_GT = doc.dong.reduce((s, d) => s + (d.opening_val || 0), 0);
+    const tongNhap_SL = doc.dong.reduce((s, d) => s + (d.in_qty || 0), 0);
+    const tongNhap_GT = doc.dong.reduce((s, d) => s + (d.in_val || 0), 0);
+    const tongXuat_SL = doc.dong.reduce((s, d) => s + (d.out_qty || 0), 0);
+    const tongXuat_GT = doc.dong.reduce((s, d) => s + (d.out_val || 0), 0);
+    const tongCK_SL = doc.dong.reduce((s, d) => s + (d.closing_qty || 0), 0);
+    const tongCK_GT = doc.dong.reduce((s, d) => s + (d.closing_val || 0), 0);
+
+    dat('Tổng số liệu', `Đầu kỳ: ${tongDK_SL.toLocaleString('vi-VN')} (${tongDK_GT.toLocaleString('vi-VN')} đ) · `
+      + `Nhập: ${tongNhap_SL.toLocaleString('vi-VN')} (${tongNhap_GT.toLocaleString('vi-VN')} đ) · `
+      + `Xuất: ${tongXuat_SL.toLocaleString('vi-VN')} (${tongXuat_GT.toLocaleString('vi-VN')} đ) · `
+      + `Cuối kỳ: ${tongCK_SL.toLocaleString('vi-VN')} (${tongCK_GT.toLocaleString('vi-VN')} đ)`);
+
+    return {
+      tang, loi, canh,
+      tom_tat: {
+        loai: doc.loai,
+        so_dong: doc.dong.length,
+        so_kho: danhSachKho.length,
+        kho: danhSachKho,
+        tong: {
+          dk_sl: tongDK_SL, dk_gt: tongDK_GT,
+          nhap_sl: tongNhap_SL, nhap_gt: tongNhap_GT,
+          xuat_sl: tongXuat_SL, xuat_gt: tongXuat_GT,
+          ck_sl: tongCK_SL, ck_gt: tongCK_GT,
+        },
+        xem_thu: doc.dong.slice(0, 50),
+      },
+    };
   }
 
   if (doc.loai !== 'nhat_ky') {
@@ -553,6 +644,7 @@ async function ghiSo(batchId, nguoi) {
   return db.tx(async (c) => {
     let ghi = 0;
     if (loai === 'can_doi') ghi = await ghiSoDuDauKy(c, batchId, dong, nguoi, lo.source_file);
+    else if (loai === 'ton_kho') ghi = await ghiTonKho(c, batchId, dong, nguoi, lo.source_file);
     else if (loai === 'nhat_ky') ghi = await ghiNhatKy(c, batchId, dong);
     else if (loai === 'tai_khoan') ghi = await ghiTaiKhoan(c, dong);
     else if (loai === 'khoan_muc') ghi = await ghiKhoanMuc(c, dong);
@@ -743,6 +835,26 @@ async function ghiSoDuDauKy(c, batchId, dong, nguoi, tenFile) {
              source_file = excluded.source_file, batch_id = excluded.batch_id,
              updated_at = now()`,
       [d.ma, kyDau, no, cog, tenFile, batchId, nguoi],
+    );
+    ghi += 1;
+  }
+  return ghi;
+}
+
+async function ghiTonKho(c, batchId, dong, nguoi, tenFile) {
+  const ky = await c.query('select min(code) as k from finance.periods');
+  const kyHienTai = ky.rows[0]?.k || '2026-08';
+  let ghi = 0;
+  for (const d of dong) {
+    await c.query(
+      `insert into finance.inventory_summary
+         (period_code, warehouse_name, item_code, item_name, unit,
+          opening_qty, opening_val, in_qty, in_val, out_qty, out_val, closing_qty, closing_val,
+          source_file, batch_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::uuid)`,
+      [kyHienTai, d.warehouse_name, d.item_code, d.item_name, d.unit,
+       d.opening_qty, d.opening_val, d.in_qty, d.in_val, d.out_qty, d.out_val, d.closing_qty, d.closing_val,
+       tenFile, batchId],
     );
     ghi += 1;
   }

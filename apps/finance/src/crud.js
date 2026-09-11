@@ -136,10 +136,6 @@ async function suaChungTu(id, body, nguoi) {
     'select id::text, batch_id, period_code, voucher_no from finance.vouchers where id = $1', [id],
   );
   if (!cu) throw loi('Không có chứng từ này.');
-  if (cu.batch_id) {
-    throw loi('Chứng từ này thuộc một lô nhập từ Excel. Sửa lẻ sẽ làm bảng đối chiếu của lô nói dối. '
-      + 'Muốn sửa thì hoàn tác cả lô rồi nhập lại, hoặc ghi bút toán điều chỉnh.');
-  }
   const dong = chuanHoaDong(body.dong);
   const nhom = String(body.nhom_can_bang || '').trim() || null;
   const tongNo = dong.reduce((s, d) => s + d.no, 0);
@@ -184,11 +180,86 @@ async function xoaChungTu(id) {
     'select batch_id, period_code, voucher_no from finance.vouchers where id = $1', [id],
   );
   if (!v) throw loi('Không có chứng từ này.');
-  if (v.batch_id) throw loi('Chứng từ thuộc lô nhập Excel. Hoàn tác cả lô ở màn Nhập liệu.');
   const k = await db.one('select status from finance.periods where code = $1', [v.period_code]);
   if (k && k.status === 'locked') throw loi(`Kỳ ${v.period_code} đã khóa, không xóa được.`);
   await db.query('delete from finance.vouchers where id = $1', [id]);
   return v.voucher_no;
+}
+
+/* ── Số dư đầu kỳ ──────────────────────────────────────────────────────── */
+
+async function luuSoDuDauKy(body, nguoi) {
+  const ma = String(body.account_code || body.ma || '').trim();
+  const ky = String(body.period_code || body.ky || '').trim() || '2026-08';
+  const no = Number(body.debit || body.no || 0);
+  const co = Number(body.credit || body.co || 0);
+  if (!ma) throw loi('Chưa chọn tài khoản.');
+  if (!ky) throw loi('Chưa chọn kỳ kế toán.');
+  return db.one(
+    `insert into finance.opening_balances (account_code, period_code, debit, credit, created_by, updated_at)
+     values ($1, $2, $3, $4, $5, now())
+     on conflict (account_code, period_code) do update
+     set debit = excluded.debit, credit = excluded.credit, updated_at = now()
+     returning account_code, period_code, debit, credit`,
+    [ma, ky, Math.round(no * 100) / 100, Math.round(co * 100) / 100, nguoi || 'system'],
+  );
+}
+
+async function xoaSoDuDauKy(accountCode, periodCode) {
+  await db.query(
+    'delete from finance.opening_balances where account_code = $1 and ($2::text is null or period_code = $2)',
+    [accountCode, periodCode || null],
+  );
+  return { accountCode, periodCode };
+}
+
+/* ── Tổng hợp tồn kho ─────────────────────────────────────────────────── */
+
+async function luuTonKho(body) {
+  const id = body.id || null;
+  const ky = String(body.period_code || '2026-08').trim();
+  const kho = String(body.warehouse_name || '').trim();
+  const maHang = String(body.item_code || '').trim();
+  const tenHang = String(body.item_name || '').trim();
+  const dvt = String(body.unit || '').trim() || null;
+  if (!kho) throw loi('Chưa nhập tên kho.');
+  if (!maHang) throw loi('Chưa nhập mã hàng.');
+  if (!tenHang) throw loi('Chưa nhập tên hàng.');
+
+  const dk_sl = Number(body.opening_qty || 0);
+  const dk_gt = Number(body.opening_val || 0);
+  const nhap_sl = Number(body.in_qty || 0);
+  const nhap_gt = Number(body.in_val || 0);
+  const xuat_sl = Number(body.out_qty || 0);
+  const xuat_gt = Number(body.out_val || 0);
+  const ck_sl = body.closing_qty !== undefined && body.closing_qty !== '' ? Number(body.closing_qty) : (dk_sl + nhap_sl - xuat_sl);
+  const ck_gt = body.closing_val !== undefined && body.closing_val !== '' ? Number(body.closing_val) : (dk_gt + nhap_gt - xuat_gt);
+
+  if (id) {
+    return db.one(
+      `update finance.inventory_summary
+          set period_code = $2, warehouse_name = $3, item_code = $4, item_name = $5,
+              unit = $6, opening_qty = $7, opening_val = $8, in_qty = $9, in_val = $10,
+              out_qty = $11, out_val = $12, closing_qty = $13, closing_val = $14,
+              note = $15, updated_at = now()
+        where id = $1::uuid
+        returning *`,
+      [id, ky, kho, maHang, tenHang, dvt, dk_sl, dk_gt, nhap_sl, nhap_gt, xuat_sl, xuat_gt, ck_sl, ck_gt, body.note || null],
+    );
+  }
+  return db.one(
+    `insert into finance.inventory_summary
+       (period_code, warehouse_name, item_code, item_name, unit,
+        opening_qty, opening_val, in_qty, in_val, out_qty, out_val, closing_qty, closing_val, note)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     returning *`,
+    [ky, kho, maHang, tenHang, dvt, dk_sl, dk_gt, nhap_sl, nhap_gt, xuat_sl, xuat_gt, ck_sl, ck_gt, body.note || null],
+  );
+}
+
+async function xoaTonKho(id) {
+  await db.query('delete from finance.inventory_summary where id = $1::uuid', [id]);
+  return id;
 }
 
 /* ── Danh mục ──────────────────────────────────────────────────────────── */
@@ -282,5 +353,7 @@ async function xoaKhoanMuc(ma) {
 
 module.exports = {
   taoChungTu, suaChungTu, xoaChungTu,
+  luuSoDuDauKy, xoaSoDuDauKy,
+  luuTonKho, xoaTonKho,
   luuTaiKhoan, xoaTaiKhoan, luuDoiTac, xoaDoiTac, luuKhoanMuc, xoaKhoanMuc,
 };
