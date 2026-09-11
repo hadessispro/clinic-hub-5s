@@ -295,7 +295,7 @@ async function trialBalance(periodCode) {
 
 async function ledger(accountCode, periodCode) {
   return rows(
-    `select v.posting_date, v.voucher_no, l.description,
+    `select v.id::text as voucher_id, v.posting_date, v.voucher_no, l.description,
             l.contra_account_code, l.debit::text, l.credit::text,
             sum(l.debit - l.credit) over (order by v.posting_date, l.id)::text as luy_ke
      from finance.journal_lines l

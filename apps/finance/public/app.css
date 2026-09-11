@@ -438,9 +438,105 @@ tfoot td {
   background: var(--chim); position: sticky; bottom: 0;
 }
 
-th.giua { text-align: center; border-left: 1px solid var(--vien); border-right: 1px solid var(--vien); }
-th.vien-trai, td.vien-trai { border-left: 1px solid var(--vien); }
-th.vien-phai, td.vien-phai { border-right: 1px solid var(--vien); }
+th.giua { text-align: center; }
+th.vien-trai, td.vien-trai { border-left: 1px solid var(--vien-dam); }
+th.vien-phai, td.vien-phai { border-right: 1px solid var(--vien-dam); }
+
+/* ── Bảng kẽ ô chuẩn Excel (Grid Table) ───────────────────────────────── */
+table.ke-o {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  border-top: 1px solid var(--vien-dam);
+  border-left: 1px solid var(--vien-dam);
+  background: var(--the);
+}
+
+table.ke-o th,
+table.ke-o td {
+  border-right: 1px solid var(--vien-dam);
+  border-bottom: 1px solid var(--vien-dam);
+  padding: 7px 9px;
+  vertical-align: middle;
+}
+
+table.ke-o thead th {
+  background: var(--chim);
+  color: var(--muc);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+table.ke-o thead tr:first-child th {
+  top: 0;
+  z-index: 4;
+}
+table.ke-o thead tr:nth-child(2) th {
+  top: 33px;
+  z-index: 3;
+  background: var(--the);
+}
+
+table.ke-o thead th.trai, table.ke-o th.trai { text-align: left; }
+table.ke-o thead th.giua, table.ke-o th.giua { text-align: center; }
+
+table.ke-o tbody td {
+  border-right: 1px solid var(--vien-dam);
+  border-bottom: 1px solid var(--vien);
+  background: var(--the);
+}
+
+table.ke-o tbody tr:hover td {
+  background: var(--xanh-nhat);
+}
+
+table.ke-o tbody tr.dong-cha td {
+  font-weight: 700;
+  background: var(--chim);
+  border-top: 1.5px solid var(--vien-dam);
+  border-bottom: 1.5px solid var(--vien-dam);
+}
+
+table.ke-o tbody tr.dong-cha td.ma {
+  color: var(--xanh);
+  font-weight: 800;
+}
+
+table.ke-o tfoot td {
+  font-weight: 750;
+  background: var(--chim);
+  border-top: 2px solid var(--vien-dam);
+  border-bottom: 2px solid var(--vien-dam);
+  border-right: 1px solid var(--vien-dam);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+table.ke-o .tien {
+  text-align: right;
+  font-family: var(--so);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.ke-o .ma {
+  font-family: var(--so);
+  font-size: 12.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+
+table.ke-o .giua { text-align: center; }
+table.ke-o .trai { text-align: left; }
 
 tr.dong-cha td { font-weight: 700; background: var(--chim); }
 tr.dong-cha td.ma { font-weight: 800; color: var(--xanh); }

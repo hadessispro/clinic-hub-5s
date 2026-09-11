@@ -480,9 +480,9 @@ function dauTrang(tieuDe, mo, ...phai) {
 function bang(cot, dong, chan, thap) {
   if (!dong.length) return el('div', { class: 'the' }, el('div', { class: 'trong' }, 'Không có dòng nào khớp.'));
   return el('div', { class: 'the' }, el('div', { class: thap ? 'cuon thap' : 'cuon' },
-    el('table', {},
+    el('table', { class: 'ke-o' },
       el('thead', {}, el('tr', {}, ...cot.map((c) =>
-        el('th', { class: c.tien ? 'tien' : null }, c.ten)))),
+        el('th', { class: `${c.tien ? 'tien' : ''} ${c.giua ? 'giua' : ''} ${c.trai ? 'trai' : ''}`.trim() || null }, c.ten)))),
       el('tbody', {}, ...dong),
       chan ? el('tfoot', {}, chan) : null,
     ),
@@ -724,40 +724,40 @@ const NK = {
 // Thứ tự và tên đúng như file Excel. hien: có bật sẵn hay không.
 const COT_NK = [
   { ma: 'ngay_hach_toan', ten: 'Ngày hạch toán', hien: true,  sort: 'ngay',
-    ve: (r) => el('td', { class: 'ma' }, ngay(r.posting_date)) },
+    ve: (r) => el('td', { class: 'ma giua' }, ngay(r.posting_date)) },
   { ma: 'ngay_chung_tu',  ten: 'Ngày chứng từ',  hien: false, sort: 'ngay_chung_tu',
-    ve: (r) => el('td', { class: 'ma mo' }, ngay(r.voucher_date)) },
+    ve: (r) => el('td', { class: 'ma mo giua' }, ngay(r.voucher_date)) },
   { ma: 'so_chung_tu',    ten: 'Số chứng từ',    hien: true,  sort: 'so_chung_tu',
-    ve: (r) => el('td', { class: 'ma' }, r.voucher_no) },
+    ve: (r) => el('td', { class: 'ma giua' }, r.voucher_no) },
   { ma: 'ngay_hoa_don',   ten: 'Ngày hóa đơn',   hien: false, sort: 'ngay_hoa_don',
-    ve: (r) => el('td', { class: 'ma mo' }, r.invoice_date ? ngay(r.invoice_date) : '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.invoice_date ? ngay(r.invoice_date) : '—') },
   { ma: 'so_hoa_don',     ten: 'Số hóa đơn',     hien: true,  sort: 'so_hoa_don',
-    ve: (r) => el('td', { class: 'ma mo' }, r.invoice_no || '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.invoice_no || '—') },
   { ma: 'dien_giai',      ten: 'Diễn giải',      hien: true,
-    ve: (r) => el('td', { class: 'nk-dien-giai' }, r.description || '—') },
+    ve: (r) => el('td', { class: 'trai nk-dien-giai' }, r.description || '—') },
   { ma: 'tai_khoan',      ten: 'Tài khoản',      hien: true,  sort: 'tai_khoan',
-    ve: (r) => el('td', { class: 'ma' }, r.account_code,
+    ve: (r) => el('td', { class: 'ma giua' }, r.account_code,
       r.account_name ? el('div', { class: 'mo ten-tai-khoan' }, r.account_name) : null) },
   { ma: 'tk_doi_ung',     ten: 'TK đối ứng',     hien: true,  sort: 'doi_ung',
-    ve: (r) => el('td', { class: 'ma mo' }, r.contra_account_code || '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.contra_account_code || '—') },
   { ma: 'phat_sinh_no',   ten: 'Phát sinh Nợ',   hien: true,  tien: true, sort: 'no',
     ve: (r) => el('td', { class: 'tien' }, Number(r.debit) ? tien(r.debit) : '—') },
   { ma: 'phat_sinh_co',   ten: 'Phát sinh Có',   hien: true,  tien: true, sort: 'co',
     ve: (r) => el('td', { class: 'tien' }, Number(r.credit) ? tien(r.credit) : '—') },
   { ma: 'ma_doi_tuong',   ten: 'Mã đối tượng',   hien: true,  sort: 'doi_tac',
-    ve: (r) => el('td', { class: 'ma mo' }, r.partner_code || '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.partner_code || '—') },
   { ma: 'ten_doi_tuong',  ten: 'Tên đối tượng',  hien: true,
-    ve: (r) => el('td', { class: 'mo' }, r.partner_name || '—') },
+    ve: (r) => el('td', { class: 'trai mo' }, r.partner_name || '—') },
   { ma: 'ma_kmcp',        ten: 'Mã KMCP',        hien: true,  sort: 'khoan_muc',
-    ve: (r) => el('td', { class: 'ma' }, r.cost_item_code || '—') },
+    ve: (r) => el('td', { class: 'ma giua' }, r.cost_item_code || '—') },
   { ma: 'ten_kmcp',       ten: 'Tên KMCP',       hien: false,
-    ve: (r) => el('td', { class: 'mo' }, r.cost_item_name || '—') },
+    ve: (r) => el('td', { class: 'trai mo' }, r.cost_item_name || '—') },
   { ma: 'hop_dong_mua',   ten: 'Hợp đồng mua',   hien: false,
-    ve: (r) => el('td', { class: 'ma mo' }, r.contract_buy || '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.contract_buy || '—') },
   { ma: 'hop_dong_ban',   ten: 'Hợp đồng bán',   hien: false,
-    ve: (r) => el('td', { class: 'ma mo' }, r.contract_sell || '—') },
+    ve: (r) => el('td', { class: 'ma mo giua' }, r.contract_sell || '—') },
   { ma: 'cp_hop_ly',      ten: 'CP hợp lý/không hợp lý', hien: true,
-    ve: (r) => el('td', {}, r.is_deductible === false
+    ve: (r) => el('td', { class: 'giua' }, r.is_deductible === false
       ? el('span', { class: 'the-nhan am' }, 'Không hợp lý')
       : el('span', { class: 'mo' }, 'Hợp lý')) },
 ];
@@ -854,7 +854,7 @@ VE['nhat-ky'] = async (than) => {
       + ` · đang hiện ${cotHien.length}/${COT_NK.length} cột`),
 
     d.dong.length
-      ? el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'nk-bang' },
+      ? el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o nk-bang' },
           el('thead', {}, el('tr', {}, ...cotHien.map((c) => el('th', {
             class: `${c.tien ? 'tien' : ''}${c.sort ? ' co-the-sap' : ''}`,
             onclick: c.sort ? () => sapTheo(c.sort) : null,
@@ -1127,8 +1127,8 @@ VE['can-doi'] = async (than) => {
       el('label', { class: 'o' }, el('span', {}, 'Tìm kiếm'), oTim),
       el('label', { class: 'o' }, el('span', {}, 'Cấp tài khoản'), oCap),
       el('button', { class: 'nut', onclick: () => { CD.tim = oTim.value; ve(); } }, 'Lọc'),
-      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: () => moFormChungTu(null) }, '+ Thêm chứng từ') : null,
-      ghiSoDuoc() ? el('button', { class: 'nut', onclick: () => moFormSoDuDauKy(null, ve) }, 'Điều chỉnh số dư đầu kỳ') : null,
+      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: () => moFormSoDuDauKy(null, ve) }, '+ Nhập số dư đầu kỳ') : null,
+      el('button', { class: 'nut', onclick: () => { S.man = 'nhap-excel'; ve(); } }, 'Nhập từ Excel'),
     ),
 
     el('div', { class: `bao ${canBangTatCa ? 'duong' : 'cho'} cach-duoi` },
@@ -1139,36 +1139,36 @@ VE['can-doi'] = async (than) => {
           + `Cuối kỳ (Nợ ${tien(tong.ck_debit)} / Có ${tien(tong.ck_credit)}).`
     ),
 
-    el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', {},
+    el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
       el('thead', {},
         el('tr', {},
-          el('th', { rowspan: '2' }, 'Số tài khoản'),
-          el('th', { rowspan: '2' }, 'Tên tài khoản'),
-          el('th', { colspan: '2', class: 'giua vien-trai vien-phai' }, 'Đầu kỳ'),
-          el('th', { colspan: '2', class: 'giua vien-phai' }, 'Phát sinh'),
-          el('th', { colspan: '2', class: 'giua vien-phai' }, 'Cuối kỳ'),
-          el('th', { rowspan: '2' }, 'Thao tác'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Số tài khoản'),
+          el('th', { rowspan: '2', class: 'trai' }, 'Tên tài khoản'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số dư đầu kỳ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số phát sinh trong kỳ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số dư cuối kỳ'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Thao tác'),
         ),
         el('tr', {},
-          el('th', { class: 'tien vien-trai' }, 'Nợ'),
-          el('th', { class: 'tien vien-phai' }, 'Có'),
-          el('th', { class: 'tien' }, 'Nợ'),
-          el('th', { class: 'tien vien-phai' }, 'Có'),
-          el('th', { class: 'tien' }, 'Nợ'),
-          el('th', { class: 'tien vien-phai' }, 'Có'),
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
         ),
       ),
       el('tbody', {},
         ...d.map((r) => el('tr', { class: r.has_children ? 'dong-cha' : null },
-          el('td', { class: 'ma' }, r.account_code),
-          el('td', { class: r.depth === 1 ? '' : r.depth === 2 ? 'thut-1' : 'thut-2' }, r.account_name),
-          el('td', { class: 'tien vien-trai' }, r.dk_debit ? tien(r.dk_debit) : ''),
-          el('td', { class: 'tien vien-phai' }, r.dk_credit ? tien(r.dk_credit) : ''),
+          el('td', { class: 'ma giua' }, r.account_code),
+          el('td', { class: r.depth === 1 ? 'trai' : r.depth === 2 ? 'trai thut-1' : 'trai thut-2' }, r.account_name),
+          el('td', { class: 'tien' }, r.dk_debit ? tien(r.dk_debit) : ''),
+          el('td', { class: 'tien' }, r.dk_credit ? tien(r.dk_credit) : ''),
           el('td', { class: 'tien' }, r.ps_debit ? tien(r.ps_debit) : ''),
-          el('td', { class: 'tien vien-phai' }, r.ps_credit ? tien(r.ps_credit) : ''),
+          el('td', { class: 'tien' }, r.ps_credit ? tien(r.ps_credit) : ''),
           el('td', { class: 'tien' }, r.ck_debit ? tien(r.ck_debit) : ''),
-          el('td', { class: 'tien vien-phai' }, r.ck_credit ? tien(r.ck_credit) : ''),
-          el('td', {}, el('div', { class: 'dong-thanh' },
+          el('td', { class: 'tien' }, r.ck_credit ? tien(r.ck_credit) : ''),
+          el('td', { class: 'giua' }, el('div', { class: 'dong-thanh' },
             el('button', {
               class: 'nut nho', onclick: () => moSoChiTiet(r.account_code, r.account_name),
             }, 'Sổ chi tiết'),
@@ -1183,13 +1183,13 @@ VE['can-doi'] = async (than) => {
       ),
       el('tfoot', {},
         el('tr', {},
-          el('td', { colspan: '2' }, `Tổng cộng (${dinhDangSo.format(d.length)} tài khoản)`),
-          el('td', { class: 'tien vien-trai' }, tien(tong.dk_debit)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.dk_credit)),
+          el('td', { colspan: '2', class: 'trai' }, `Tổng cộng (${dinhDangSo.format(d.length)} tài khoản)`),
+          el('td', { class: 'tien' }, tien(tong.dk_debit)),
+          el('td', { class: 'tien' }, tien(tong.dk_credit)),
           el('td', { class: 'tien' }, tien(tong.ps_debit)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.ps_credit)),
+          el('td', { class: 'tien' }, tien(tong.ps_credit)),
           el('td', { class: 'tien' }, tien(tong.ck_debit)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.ck_credit)),
+          el('td', { class: 'tien' }, tien(tong.ck_credit)),
           el('td', {}, ''),
         ),
       ),
@@ -1290,16 +1290,24 @@ async function moSoChiTiet(code, ten) {
             ten: 'Số dư lũy kế', cao: 170,
           })
         : null,
-      el('div', { class: 'cuon' }, el('table', {},
+      el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
         el('thead', {}, el('tr', {},
-          el('th', {}, 'Ngày'), el('th', {}, 'Chứng từ'), el('th', {}, 'Diễn giải'),
-          el('th', {}, 'Đối ứng'), el('th', { class: 'tien' }, 'Nợ'),
-          el('th', { class: 'tien' }, 'Có'), el('th', { class: 'tien' }, 'Lũy kế'))),
-        el('tbody', {}, ...d.map((r) => el('tr', {},
-          el('td', { class: 'ma' }, ngay(r.posting_date)),
-          el('td', { class: 'ma' }, r.voucher_no),
-          el('td', {}, r.description || '—'),
-          el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+          el('th', { class: 'giua' }, 'Ngày'),
+          el('th', { class: 'giua' }, 'Chứng từ'),
+          el('th', { class: 'trai' }, 'Diễn giải'),
+          el('th', { class: 'giua' }, 'Đối ứng'),
+          el('th', { class: 'tien' }, 'Nợ'),
+          el('th', { class: 'tien' }, 'Có'),
+          el('th', { class: 'tien' }, 'Lũy kế'))),
+        el('tbody', {}, ...d.map((r) => el('tr', {
+          class: r.voucher_id ? 'bam-duoc' : null,
+          onclick: r.voucher_id ? () => moChungTu(r.voucher_id) : null,
+          title: r.voucher_id ? 'Bấm để mở và điều chỉnh chứng từ này' : '',
+        },
+          el('td', { class: 'ma giua' }, ngay(r.posting_date)),
+          el('td', { class: 'ma giua' }, r.voucher_no),
+          el('td', { class: 'trai' }, r.description || '—'),
+          el('td', { class: 'ma mo giua' }, r.contra_account_code || '—'),
           el('td', { class: 'tien' }, Number(r.debit) ? tien(r.debit) : '—'),
           el('td', { class: 'tien' }, Number(r.credit) ? tien(r.credit) : '—'),
           el('td', { class: 'tien mo' }, tien(r.luy_ke)),
@@ -3163,45 +3171,45 @@ VE['bc-ton-kho'] = async (than) => {
       + `Tồn cuối: ${dinhDangSo.format(tong.closing_qty || 0)} (${tien(tong.closing_val || 0)} đ)`
     ),
 
-    el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', {},
+    el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
       el('thead', {},
         el('tr', {},
-          el('th', { rowspan: '2' }, 'Tên kho'),
-          el('th', { rowspan: '2' }, 'Mã hàng'),
-          el('th', { rowspan: '2' }, 'Tên hàng'),
-          el('th', { rowspan: '2' }, 'ĐVT'),
-          el('th', { colspan: '2', class: 'giua vien-trai vien-phai' }, 'Đầu kỳ'),
-          el('th', { colspan: '2', class: 'giua vien-phai' }, 'Nhập kho'),
-          el('th', { colspan: '2', class: 'giua vien-phai' }, 'Xuất kho'),
-          el('th', { colspan: '2', class: 'giua vien-phai' }, 'Cuối kỳ'),
-          el('th', { rowspan: '2' }, 'Thao tác'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Tên kho'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Mã hàng'),
+          el('th', { rowspan: '2', class: 'trai' }, 'Tên hàng'),
+          el('th', { rowspan: '2', class: 'giua' }, 'ĐVT'),
+          el('th', { colspan: '2', class: 'giua' }, 'Đầu kỳ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Nhập kho'),
+          el('th', { colspan: '2', class: 'giua' }, 'Xuất kho'),
+          el('th', { colspan: '2', class: 'giua' }, 'Cuối kỳ'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Thao tác'),
         ),
         el('tr', {},
-          el('th', { class: 'tien vien-trai' }, 'Số lượng'),
-          el('th', { class: 'tien vien-phai' }, 'Giá trị'),
-          el('th', { class: 'tien' }, 'Số lượng'),
-          el('th', { class: 'tien vien-phai' }, 'Giá trị'),
-          el('th', { class: 'tien' }, 'Số lượng'),
-          el('th', { class: 'tien vien-phai' }, 'Giá trị'),
-          el('th', { class: 'tien' }, 'Số lượng'),
-          el('th', { class: 'tien vien-phai' }, 'Giá trị'),
+          el('th', { class: 'tien giua' }, 'Số lượng'),
+          el('th', { class: 'tien giua' }, 'Giá trị'),
+          el('th', { class: 'tien giua' }, 'Số lượng'),
+          el('th', { class: 'tien giua' }, 'Giá trị'),
+          el('th', { class: 'tien giua' }, 'Số lượng'),
+          el('th', { class: 'tien giua' }, 'Giá trị'),
+          el('th', { class: 'tien giua' }, 'Số lượng'),
+          el('th', { class: 'tien giua' }, 'Giá trị'),
         ),
       ),
       el('tbody', {},
         ...d.map((r) => el('tr', {},
-          el('td', { class: 'mo' }, r.warehouse_name),
-          el('td', { class: 'ma' }, r.item_code),
-          el('td', {}, r.item_name),
-          el('td', { class: 'mo' }, r.unit || '—'),
-          el('td', { class: 'tien vien-trai' }, Number(r.opening_qty) ? dinhDangSo.format(r.opening_qty) : ''),
-          el('td', { class: 'tien vien-phai' }, Number(r.opening_val) ? tien(r.opening_val) : ''),
+          el('td', { class: 'trai mo' }, r.warehouse_name),
+          el('td', { class: 'ma giua' }, r.item_code),
+          el('td', { class: 'trai' }, r.item_name),
+          el('td', { class: 'giua mo' }, r.unit || '—'),
+          el('td', { class: 'tien' }, Number(r.opening_qty) ? dinhDangSo.format(r.opening_qty) : ''),
+          el('td', { class: 'tien' }, Number(r.opening_val) ? tien(r.opening_val) : ''),
           el('td', { class: 'tien' }, Number(r.in_qty) ? dinhDangSo.format(r.in_qty) : ''),
-          el('td', { class: 'tien vien-phai' }, Number(r.in_val) ? tien(r.in_val) : ''),
+          el('td', { class: 'tien' }, Number(r.in_val) ? tien(r.in_val) : ''),
           el('td', { class: 'tien' }, Number(r.out_qty) ? dinhDangSo.format(r.out_qty) : ''),
-          el('td', { class: 'tien vien-phai' }, Number(r.out_val) ? tien(r.out_val) : ''),
+          el('td', { class: 'tien' }, Number(r.out_val) ? tien(r.out_val) : ''),
           el('td', { class: 'tien' }, Number(r.closing_qty) ? dinhDangSo.format(r.closing_qty) : ''),
-          el('td', { class: 'tien vien-phai' }, Number(r.closing_val) ? tien(r.closing_val) : ''),
-          el('td', {}, el('div', { class: 'dong-thanh' },
+          el('td', { class: 'tien' }, Number(r.closing_val) ? tien(r.closing_val) : ''),
+          el('td', { class: 'giua' }, el('div', { class: 'dong-thanh' },
             ghiSoDuoc() ? el('button', {
               class: 'nut nho', onclick: () => moFormTonKho(r, ve),
             }, 'Sửa') : null,
@@ -3220,15 +3228,15 @@ VE['bc-ton-kho'] = async (than) => {
       ),
       el('tfoot', {},
         el('tr', {},
-          el('td', { colspan: '4' }, `Tổng cộng (${dinhDangSo.format(d.length)} mặt hàng)`),
-          el('td', { class: 'tien vien-trai' }, dinhDangSo.format(tong.opening_qty || 0)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.opening_val || 0)),
+          el('td', { colspan: '4', class: 'trai' }, `Tổng cộng (${dinhDangSo.format(d.length)} mặt hàng)`),
+          el('td', { class: 'tien' }, dinhDangSo.format(tong.opening_qty || 0)),
+          el('td', { class: 'tien' }, tien(tong.opening_val || 0)),
           el('td', { class: 'tien' }, dinhDangSo.format(tong.in_qty || 0)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.in_val || 0)),
+          el('td', { class: 'tien' }, tien(tong.in_val || 0)),
           el('td', { class: 'tien' }, dinhDangSo.format(tong.out_qty || 0)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.out_val || 0)),
+          el('td', { class: 'tien' }, tien(tong.out_val || 0)),
           el('td', { class: 'tien' }, dinhDangSo.format(tong.closing_qty || 0)),
-          el('td', { class: 'tien vien-phai' }, tien(tong.closing_val || 0)),
+          el('td', { class: 'tien' }, tien(tong.closing_val || 0)),
           el('td', {}, ''),
         ),
       ),
@@ -3237,11 +3245,21 @@ VE['bc-ton-kho'] = async (than) => {
 };
 
 async function moFormTonKho(r, lamMoi) {
+  const listKho = el('datalist', { id: 'ds-kho-goi-y' },
+    ...['Kho công cụ dụng cụ', 'Kho Dược', 'Kho Vật tư tiêu hao', 'Kho Labo', 'Kho Hàng hóa', ...(TK_LOC.kho ? [TK_LOC.kho] : [])]
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map((k) => el('option', { value: k }))
+  );
+  const listDvt = el('datalist', { id: 'ds-dvt-goi-y' },
+    ...['Cái', 'Hộp', 'Cuộn', 'Cây', 'Bộ', 'Lọ', 'Gói', 'Tuýp', 'Viên', 'Ống', 'Miếng', 'Kg', 'Chai', 'Bình', 'Vỉ']
+      .map((u) => el('option', { value: u }))
+  );
+
   const bao = el('div', { class: 'an' });
-  const oKho = el('input', { value: r?.warehouse_name || '', placeholder: 'ví dụ Kho công cụ dụng cụ' });
+  const oKho = el('input', { list: 'ds-kho-goi-y', value: r?.warehouse_name || TK_LOC.kho || '', placeholder: 'ví dụ Kho công cụ dụng cụ' });
   const oMa = el('input', { value: r?.item_code || '', placeholder: '01QT0317', class: 'ma' });
   const oTen = el('input', { value: r?.item_name || '', placeholder: 'Tên mặt hàng/vật tư' });
-  const oDvt = el('input', { value: r?.unit || '', placeholder: 'Cái / Hộp / Cuộn' });
+  const oDvt = el('input', { list: 'ds-dvt-goi-y', value: r?.unit || '', placeholder: 'Cái / Hộp / Cuộn' });
 
   const oDkSl = el('input', { type: 'number', step: '0.001', value: r?.opening_qty || 0 });
   const oDkGt = el('input', { type: 'number', step: '1', value: r?.opening_val || 0 });
@@ -3266,7 +3284,7 @@ async function moFormTonKho(r, lamMoi) {
   });
 
   const than = el('div', {},
-    bao,
+    listKho, listDvt, bao,
     el('div', { class: 'luoi luoi-2 cach-duoi' },
       el('label', { class: 'o' }, el('span', {}, 'Tên kho'), oKho),
       el('label', { class: 'o' }, el('span', {}, 'Đơn vị tính (ĐVT)'), oDvt),
@@ -3299,11 +3317,23 @@ async function moFormTonKho(r, lamMoi) {
   );
 
   const nutLuu = el('button', { class: 'nut chinh' }, r ? 'Lưu thay đổi' : 'Thêm vào kho');
+  const nutXoa = r?.id ? el('button', {
+    class: 'nut nguy',
+    onclick: async () => {
+      if (!confirm(`Xóa mặt hàng ${r.item_code} - ${r.item_name} khỏi kho ${r.warehouse_name}?`)) return;
+      try {
+        await goi(`/ton-kho/${r.id}`, { method: 'DELETE' });
+        dong();
+        await lamMoi();
+      } catch (err) { alert(err.message); }
+    },
+  }, 'Xóa mặt hàng') : null;
+
   const dong = moNgan({
     tieuDe: r ? `Sửa mặt hàng ${r.item_code}` : 'Thêm mặt hàng vào kho',
     phuDe: 'Quản lý số lượng và giá trị tồn kho theo từng mặt hàng và kho bãi.',
     than,
-    chan: () => [nutLuu],
+    chan: () => [nutXoa, nutLuu].filter(Boolean),
   });
 
   nutLuu.addEventListener('click', async () => {
