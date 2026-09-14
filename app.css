@@ -14075,6 +14075,7 @@ section.panel {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
   transition: all .15s ease;
 }
 
@@ -14083,9 +14084,79 @@ section.panel {
   color: #ffffff;
 }
 
+.attendance-adjust-actions .primary-button,
+.attendance-adjust-actions .secondary-button {
+  white-space: nowrap;
+}
+
 @media (max-width: 600px) {
+  .attendance-adjust-dialog {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .attendance-adjust-sheet {
+    width: 100%;
+    max-width: 100%;
+    max-height: 92dvh;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-radius: 20px 20px 0 0;
+  }
+
   .attendance-adjust-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .attendance-adjust-grid input,
+  .attendance-adjust-grid select,
+  .attendance-adjust-grid textarea {
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
+  .attendance-adjust-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .attendance-adjust-actions .secondary-button {
+    flex: 1 1 80px;
+    min-width: 80px;
+    min-height: 44px;
+    order: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .attendance-adjust-actions .primary-button {
+    flex: 2 1 180px;
+    min-width: 140px;
+    min-height: 44px;
+    order: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .attendance-adjust-actions .danger-btn {
+    width: 100%;
+    flex: 1 1 100%;
+    margin-right: 0;
+    margin-top: 4px;
+    order: 3;
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
   }
 }
 

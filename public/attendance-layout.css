@@ -338,6 +338,10 @@
 .schedule-shift-choice input:checked + span { border-color: #168979; background: #eff9f6; box-shadow: 0 0 0 2px rgba(15, 128, 113, .08); }
 .schedule-shift-choice input:checked + span b { color: #087267; }
 .attendance-schedule-sheet form.is-loading { opacity: .72; pointer-events: none; }
+.attendance-adjust-actions button { white-space: nowrap; }
+.attendance-adjust-actions .danger-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.attendance-adjust-actions .secondary-button,
+.attendance-adjust-actions .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
 
 @media (max-width: 1280px) {
   .attendance-selected-profile { grid-template-columns: 48px minmax(180px, 1fr) minmax(340px, 1.7fr) auto; }
@@ -385,6 +389,22 @@
   .attendance-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .attendance-profile-actions button { width: 100%; }
   .schedule-shift-choice { grid-template-columns: minmax(0, 1fr); }
+  /* Attendance adjustment sheets & actions on mobile */
+  .attendance-adjust-dialog { align-items: flex-end; padding: 0; }
+  .attendance-adjust-sheet { width: 100%; max-width: 100%; max-height: 92dvh; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.25); }
+  .attendance-adjust-header { margin-bottom: 14px; padding-bottom: 10px; }
+  .attendance-adjust-header h2 { font-size: 1.12rem; }
+  .schedule-dialog-person { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; padding: 8px 10px; }
+  .schedule-dialog-person em { font-size: 0.62rem; padding: 3px 6px; white-space: nowrap; }
+  .attendance-adjust-grid { grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+  .attendance-adjust-grid input,
+  .attendance-adjust-grid select,
+  .attendance-adjust-grid textarea { font-size: 16px; padding: 10px 12px; }
+  .attendance-adjust-actions { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: stretch; gap: 8px; margin-top: 16px; padding-top: 12px; }
+  .attendance-adjust-actions .secondary-button { flex: 1 1 80px; min-width: 80px; min-height: 44px; order: 1; display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; border-radius: 9px; }
+  .attendance-adjust-actions .primary-button { flex: 2 1 180px; min-width: 140px; min-height: 44px; order: 2; display: inline-flex; align-items: center; justify-content: center; text-align: center; font-weight: 700; white-space: nowrap; border-radius: 9px; }
+  .attendance-adjust-actions .danger-btn { width: 100%; flex: 1 1 100%; margin-right: 0; margin-top: 4px; order: 3; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-align: center; white-space: nowrap; border-radius: 9px; font-size: 0.88rem; }
+  .attendance-adjust-actions .danger-btn[hidden] { display: none !important; }
 }
 
 @media (max-width: 430px) {
@@ -394,4 +414,6 @@
   .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span,
   .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:nth-child(-n + 2) { border-top: 1px solid #e4ece8; border-left: 0; }
   .attendance-work-panel.is-admin-work-summary .attendance-work-summary-line > span:first-child { border-top: 0; }
+  .attendance-adjust-sheet { padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px)); }
+  .attendance-adjust-actions .primary-button { font-size: 0.88rem; }
 }
