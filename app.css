@@ -1169,13 +1169,23 @@ select {
 .shift-legend-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 10px 14px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding: 8px 12px;
   background: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 12px;
   margin-bottom: 12px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.shift-legend-bar > span,
+.shift-legend-bar .week-nav-label {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .shift-legend-chip {
@@ -1188,6 +1198,7 @@ select {
   border-radius: 20px;
   font-size: 0.78rem;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .shift-legend-chip strong {
@@ -1200,7 +1211,12 @@ select {
 }
 
 .period-nav-btn {
-  padding: 5px 14px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 13px;
   border: 1px solid #cbd5e1;
   border-radius: 20px;
   background: #ffffff;
@@ -6561,7 +6577,7 @@ body.dialog-open {
     width: 100%;
     min-width: 320px;
     max-width: 100%;
-    overflow-x: clip !important;
+    overflow-x: hidden !important;
   }
 
   .app-shell,
@@ -6616,11 +6632,13 @@ body.dialog-open {
 
   .topbar-right-container {
     display: grid;
-    grid-template-columns: minmax(122px, 1.05fr) 38px minmax(112px, 1fr) 38px;
+    grid-template-columns: minmax(0, 1.15fr) 38px minmax(0, 1.35fr) 38px;
     gap: 6px;
     align-items: center;
     justify-content: stretch;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .topbar-branch-switcher {
@@ -6766,8 +6784,11 @@ body.dialog-open {
 
 @media (max-width: 390px) {
   .topbar-right-container {
-    grid-template-columns: minmax(108px, 1fr) 36px minmax(92px, .9fr) 36px;
+    grid-template-columns: minmax(0, 1.1fr) 34px minmax(0, 1.3fr) 34px;
     gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .topbar-branch-switcher,
@@ -6957,7 +6978,11 @@ body.dialog-open {
 
 @media (max-width: 390px) {
   .topbar-right-container {
-    grid-template-columns: minmax(116px, 1fr) 36px minmax(88px, .8fr) 36px;
+    grid-template-columns: minmax(0, 1.1fr) 34px minmax(0, 1.3fr) 34px;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .topbar-branch-button {
@@ -7334,59 +7359,75 @@ body.dialog-open {
 @media (max-width: 760px) {
   .topbar .top-actions { display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; }
   .topbar .search-box { width: 100% !important; height: 42px !important; min-height: 42px !important; border-radius: 11px !important; }
-  .topbar .auth-area { width: 100% !important; min-width: 0 !important; }
+  .topbar .auth-area { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
   .topbar .topbar-right-container {
     display: grid !important;
-    grid-template-columns: 40px minmax(0, 1fr) 40px !important;
-    gap: 8px !important;
+    grid-template-columns: 38px minmax(0, 1fr) 38px !important;
+    gap: 6px !important;
     align-items: center !important;
     width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
-  .topbar .topbar-right-container:has(.topbar-branch-switcher) {
-    grid-template-columns: minmax(116px, .95fr) 40px minmax(112px, 1fr) 40px !important;
+  .topbar .topbar-right-container:has(.topbar-branch-switcher),
+  .topbar .topbar-right-container.has-branch-switcher {
+    grid-template-columns: minmax(0, 1.15fr) 38px minmax(0, 1.35fr) 38px !important;
+    gap: 6px !important;
   }
   .topbar .notif-container,
   .topbar .notif-bell-btn,
   .topbar .topbar-logout-button {
-    width: 40px !important;
-    min-width: 40px !important;
-    height: 40px !important;
-    min-height: 40px !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    max-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
     padding: 0 !important;
     border-radius: 11px !important;
+    box-sizing: border-box !important;
+    flex-shrink: 0 !important;
+  }
+  .topbar .topbar-logout-button span {
+    display: none !important;
   }
   .topbar .auth-chip {
     display: grid !important;
     grid-template-columns: 9px minmax(0, 1fr) !important;
     align-items: center !important;
-    gap: 7px !important;
+    gap: 6px !important;
     width: 100% !important;
-    max-width: none !important;
+    max-width: 100% !important;
     min-width: 0 !important;
-    height: 40px !important;
-    min-height: 40px !important;
-    padding: 4px 9px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 3px 7px !important;
     overflow: hidden !important;
     border-radius: 11px !important;
+    box-sizing: border-box !important;
   }
-  .topbar .auth-summary { display: grid !important; width: 100% !important; min-width: 0 !important; padding: 0 !important; text-align: left !important; }
-  .topbar .auth-summary strong { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .76rem !important; line-height: 1.2 !important; }
-  .topbar .auth-summary small { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .62rem !important; line-height: 1.2 !important; }
+  .topbar .auth-summary { display: grid !important; width: 100% !important; min-width: 0 !important; padding: 0 !important; text-align: left !important; overflow: hidden !important; }
+  .topbar .auth-summary strong { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .74rem !important; line-height: 1.2 !important; }
+  .topbar .auth-summary small { display: block !important; min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; font-size: .60rem !important; line-height: 1.2 !important; }
   .topbar .topbar-branch-switcher,
-  .topbar .topbar-branch-button { width: 100% !important; min-width: 0 !important; height: 40px !important; min-height: 40px !important; }
-  .topbar .topbar-branch-label { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  .topbar .topbar-branch-button { width: 100% !important; min-width: 0 !important; max-width: 100% !important; height: 38px !important; min-height: 38px !important; box-sizing: border-box !important; }
+  .topbar .topbar-branch-button { padding: 0 6px !important; gap: 4px !important; font-size: 0.72rem !important; }
+  .topbar .topbar-branch-label { min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  .topbar .topbar-branch-chevron { width: 11px !important; height: 11px !important; flex-shrink: 0 !important; }
 }
 @media (max-width: 390px) {
-  .topbar .topbar-right-container:has(.topbar-branch-switcher) {
-    grid-template-columns: minmax(102px, .9fr) 38px minmax(92px, 1fr) 38px !important;
-    gap: 5px !important;
+  .topbar .topbar-right-container:has(.topbar-branch-switcher),
+  .topbar .topbar-right-container.has-branch-switcher {
+    grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1.25fr) 34px !important;
+    gap: 4px !important;
   }
   .topbar .notif-container,
   .topbar .notif-bell-btn,
-  .topbar .topbar-logout-button { width: 38px !important; min-width: 38px !important; height: 38px !important; min-height: 38px !important; }
+  .topbar .topbar-logout-button { width: 34px !important; min-width: 34px !important; max-width: 34px !important; height: 34px !important; min-height: 34px !important; }
   .topbar .auth-chip,
   .topbar .topbar-branch-switcher,
-  .topbar .topbar-branch-button { height: 38px !important; min-height: 38px !important; }
+  .topbar .topbar-branch-button { height: 34px !important; min-height: 34px !important; }
+  .topbar .auth-chip { padding: 2px 5px !important; gap: 4px !important; }
+  .topbar .topbar-branch-button { padding: 0 4px !important; font-size: 0.68rem !important; }
 }
 
 /* Floating layers never overlap: toast above chat launcher, chat notifications at top. */

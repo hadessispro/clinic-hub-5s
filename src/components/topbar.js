@@ -96,7 +96,7 @@ export function renderTopbar(state) {
     const isManager = ['admin', 'hr', 'leader', 'admin_it', 'superadmin', 'admin_marketing', 'support_marketing', 'telesale_leader'].includes(role);
 
     authArea.innerHTML = `
-      <div class="topbar-right-container">
+      <div class="topbar-right-container ${isManager ? 'has-branch-switcher' : ''}">
         ${isManager ? `
           <!-- Branch Switcher for Managers -->
           <div class="topbar-branch-switcher" id="topbarBranchSwitcher">

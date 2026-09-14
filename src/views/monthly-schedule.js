@@ -312,8 +312,8 @@ export async function renderMonthlySchedule(state) {
   const doctorRosterControls = isDoctorRoster ? `<label>Ngày điều phối<input id="doctorRosterFocusDate" type="date" min="${monthStart}" max="${monthEnd}" value="${selectedDoctorFocusDate}"></label>
     <label class="doctor-roster-search">Tìm bác sĩ<span class="smart-search-control"><i class="ri-search-line smart-search-icon"></i><input id="monthlyScheduleSearch" type="search" value="${escapeHTML(selectedEmployeeSearch)}" placeholder="Tên hoặc mã bác sĩ" autocomplete="off" aria-expanded="false" aria-controls="monthlySearchSuggestionPanel"><span class="smart-search-suggestions" id="monthlySearchSuggestionPanel" role="listbox" hidden></span></span></label>` : '';
 
-  const weekNav = `<div class="shift-legend-bar" aria-label="Chuyển nhanh ngày trong tháng" style="margin-top:10px; margin-bottom:10px;">
-    <span style="font-size:0.8rem; font-weight:700; color:#475569;">Chuyển ngày:</span>
+  const weekNav = `<div class="shift-legend-bar week-nav-bar" aria-label="Chuyển nhanh ngày trong tháng">
+    <span class="week-nav-label" style="font-size:0.8rem; font-weight:700; color:#475569; white-space:nowrap; flex-shrink:0;">Chuyển ngày:</span>
     <button type="button" class="period-nav-btn" data-scroll-day="1">T1 (1–7)</button>
     <button type="button" class="period-nav-btn" data-scroll-day="8">T2 (8–14)</button>
     <button type="button" class="period-nav-btn" data-scroll-day="15">T3 (15–21)</button>
