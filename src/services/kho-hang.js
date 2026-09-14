@@ -137,37 +137,54 @@ export const BAC_SI = [
   { ma: 'LVT10261', ten: 'Trần Hoàng My',        chuc: 'Bác sĩ Part-time',   chi_nhanh: 'le-van-tho' },
 ];
 
-let NHA_CUNG_CAP = [
-  { id: 'NCC-01', ten: 'Công ty TNHH Thiết Bị Nha Khoa Sài Gòn 5S', nguoi: 'Võ Đoàn Thái Tuấn', dien_thoai: '0909199199', ngay_giao: 3, thanh_toan: 'Chuyển khoản theo đợt', danh_gia: 5, ghi_chu: 'Nhà cung cấp vật tư chính thức toàn hệ thống 5S' },
-  { id: 'NCC-02', ten: 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ', nguoi: 'Nguyễn Thị Như Huỳnh', dien_thoai: '0911548525', ngay_giao: 2, thanh_toan: 'Giao hàng thanh toán', danh_gia: 5, ghi_chu: 'Cung cấp vật tư CCDC và chỉnh nha LVT' },
-  { id: 'NCC-03', ten: 'Công ty CP Dược Phẩm & TBYT Laphaco', nguoi: 'Trần Minh Tuấn', dien_thoai: '02838383838', ngay_giao: 2, thanh_toan: 'Giao hàng thanh toán', danh_gia: 4.8, ghi_chu: 'Cung cấp vật tư tiêu hao, cồn sát khuẩn, hóa chất Cidex OPA' },
-  { id: 'NCC-04', ten: 'Công ty TNHH Thiết Bị Y Nha Khoa Việt Tân', nguoi: 'Lê Hoàng Nam', dien_thoai: '02839393939', ngay_giao: 3, thanh_toan: 'Công nợ 30 ngày', danh_gia: 4.9, ghi_chu: 'Cung cấp vật liệu chỉnh nha, mắc cài kim loại, dây cung, mini vis' },
-  { id: 'NCC-05', ten: 'Công ty CP Trang Thiết Bị Nha Khoa Việt Đăng', nguoi: 'Đặng Thanh Sơn', dien_thoai: '02837373737', ngay_giao: 2, thanh_toan: 'Chuyển khoản theo đợt', danh_gia: 5.0, ghi_chu: 'Đại lý chính hãng vật liệu trám, composite, máy rung rửa nội nha' },
-];
+const KHO_NCC_KEY = 'clinic-hub-kho-nha-cung-cap-v2';
+const KHO_BANG_GIA_KEY = 'clinic-hub-kho-bang-gia-v2';
+
+function docNhaCungCap() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(KHO_NCC_KEY);
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return []; // Đã reset toàn bộ NCC theo yêu cầu, mặc định rỗng
+}
+
+function luuNhaCungCap() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(KHO_NCC_KEY, JSON.stringify(NHA_CUNG_CAP));
+    }
+  } catch {}
+}
+
+function docBangGia() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(KHO_BANG_GIA_KEY);
+      if (raw !== null) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+function luuBangGia() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(KHO_BANG_GIA_KEY, JSON.stringify(BANG_GIA));
+    }
+  } catch {}
+}
+
+let NHA_CUNG_CAP = docNhaCungCap();
 let VAT_TU = [...VAT_TU_THUC_TE];
-let BANG_GIA = [
-  ...VAT_TU_THUC_TE.filter((v) => v.gia_von > 0).map((v) => ({
-    vat_tu: v.id,
-    ncc: v.chi_nhanh === 'pham-van-chieu' ? 'NCC-01' : 'NCC-02',
-    don_vi_mua: v.don_vi,
-    quy_cach: 1,
-    gia: v.gia_von,
-    toi_thieu: 1,
-  })),
-  // Bổ sung báo giá cạnh tranh để Supply Chain so sánh giá giữa các nhà cung cấp
-  { vat_tu: '24CC0082', ncc: 'NCC-05', don_vi_mua: 'MÁY', quy_cach: 1, gia: 4650000, toi_thieu: 1, cap_nhat: '2026-08-28' }, // Việt Đăng rẻ hơn 150k
-  { vat_tu: '24CC0082', ncc: 'NCC-03', don_vi_mua: 'MÁY', quy_cach: 1, gia: 4900000, toi_thieu: 1, cap_nhat: '2026-08-25' },
-  { vat_tu: '24CC0081', ncc: 'NCC-05', don_vi_mua: 'Hộp', quy_cach: 1, gia: 760000, toi_thieu: 2, cap_nhat: '2026-08-28' }, // Việt Đăng giá sỉ
-  { vat_tu: '24CC0080', ncc: 'NCC-03', don_vi_mua: 'Cái', quy_cach: 1, gia: 1180000, toi_thieu: 1, cap_nhat: '2026-08-26' }, // Laphaco
-  { vat_tu: '21TQ0137', ncc: 'NCC-03', don_vi_mua: 'Gói', quy_cach: 1, gia: 14000, toi_thieu: 10, cap_nhat: '2026-08-26' }, // Khăn giấy Laphaco
-  { vat_tu: '21TQ0136', ncc: 'NCC-03', don_vi_mua: 'Can', quy_cach: 1, gia: 920000, toi_thieu: 1, cap_nhat: '2026-08-28' }, // CIDEX Laphaco rẻ hơn
-  { vat_tu: '21TQ0136', ncc: 'NCC-05', don_vi_mua: 'Can', quy_cach: 1, gia: 960000, toi_thieu: 1, cap_nhat: '2026-08-25' },
-  { vat_tu: '21TQ0135', ncc: 'NCC-03', don_vi_mua: 'Can', quy_cach: 1, gia: 1100000, toi_thieu: 1, cap_nhat: '2026-08-28' }, // Cồn 70 Laphaco
-  { vat_tu: '21TQ0134', ncc: 'NCC-04', don_vi_mua: 'Bộ', quy_cach: 1, gia: 480000, toi_thieu: 5, cap_nhat: '2026-08-27' }, // Mắc cài Việt Tân
-  { vat_tu: '21TQ0134', ncc: 'NCC-02', don_vi_mua: 'Bộ', quy_cach: 1, gia: 520000, toi_thieu: 1, cap_nhat: '2026-08-28' },
-  { vat_tu: '21TQ0133', ncc: 'NCC-04', don_vi_mua: 'Cái', quy_cach: 1, gia: 290000, toi_thieu: 5, cap_nhat: '2026-08-27' }, // Mini vis Việt Tân
-  { vat_tu: '21TQ0133', ncc: 'NCC-05', don_vi_mua: 'Cái', quy_cach: 1, gia: 310000, toi_thieu: 2, cap_nhat: '2026-08-25' },
-];
+let BANG_GIA = docBangGia();
 let TON_KHO = [...TON_KHO_THUC_TE];
 let DON_HANG = [...DON_HANG_THUC_TE];
 let PHIEU_XUAT = [];
@@ -272,8 +289,16 @@ export function themVatTu(duLieu) {
 
 export function themNhaCungCap(duLieu) {
   if (!duLieu?.ten?.trim()) throw new Error('Vui lòng nhập tên nhà cung cấp.');
+  let maxId = 0;
+  for (const n of NHA_CUNG_CAP) {
+    const match = n.id && String(n.id).match(/^NCC-(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxId) maxId = num;
+    }
+  }
   const moi = {
-    id: `NCC-${String(NHA_CUNG_CAP.length + 1).padStart(2, '0')}`,
+    id: `NCC-${String(maxId + 1).padStart(2, '0')}`,
     ten: duLieu.ten.trim(),
     nguoi: duLieu.nguoi?.trim() || '—',
     dien_thoai: duLieu.dien_thoai?.trim() || '—',
@@ -283,7 +308,25 @@ export function themNhaCungCap(duLieu) {
     ghi_chu: duLieu.ghi_chu?.trim() || '',
   };
   NHA_CUNG_CAP.push(moi);
+  luuNhaCungCap();
   return cho(moi);
+}
+
+export function xoaNhaCungCap(id) {
+  if (!id) throw new Error('Mã nhà cung cấp không hợp lệ.');
+  NHA_CUNG_CAP = NHA_CUNG_CAP.filter((n) => n.id !== id);
+  BANG_GIA = BANG_GIA.filter((g) => g.ncc !== id);
+  luuNhaCungCap();
+  luuBangGia();
+  return cho({ id, thanhCong: true });
+}
+
+export function resetTatCaNhaCungCap() {
+  NHA_CUNG_CAP = [];
+  BANG_GIA = [];
+  luuNhaCungCap();
+  luuBangGia();
+  return cho([]);
 }
 
 export function themBangGia(duLieu) {
@@ -301,6 +344,7 @@ export function themBangGia(duLieu) {
     daCo.gia = gia;
     daCo.toi_thieu = toiThieu;
     daCo.cap_nhat = ngayLech(0);
+    luuBangGia();
     return cho(daCo);
   }
 
@@ -314,6 +358,7 @@ export function themBangGia(duLieu) {
     cap_nhat: ngayLech(0),
   };
   BANG_GIA.push(moi);
+  luuBangGia();
   return cho(moi);
 }
 
@@ -755,8 +800,8 @@ export function goiYHangThieu({ chiNhanh } = {}) {
       can_bu: canBu,
       quotes: dsGia,
       best_quote: bestQuote,
-      ncc_id: bestQuote?.ncc_id || (chiNhanh === 'pham-van-chieu' ? 'NCC-01' : 'NCC-02'),
-      ncc_ten: bestQuote?.ncc_ten || (chiNhanh === 'pham-van-chieu' ? 'Công ty TNHH Thiết Bị Nha Khoa Sài Gòn 5S' : 'Dược & Vật Liệu Nha Khoa Lê Văn Thọ'),
+      ncc_id: bestQuote?.ncc_id || (NHA_CUNG_CAP[0]?.id || ''),
+      ncc_ten: bestQuote?.ncc_ten || (NHA_CUNG_CAP[0]?.ten || 'Chưa gán NCC'),
       don_gia: bestQuote?.gia || v.gia_von || 0,
     });
   });
@@ -857,7 +902,7 @@ export function taoDonHangTuPhieu(phieuId, boi) {
   // Gom nhóm các mặt hàng theo Nhà Cung Cấp
   const theoNcc = {};
   p.dong.forEach((d) => {
-    const nccId = d.ncc_id || 'NCC-02';
+    const nccId = d.ncc_id || (NHA_CUNG_CAP[0]?.id || 'NCC-CHUA-GAN');
     (theoNcc[nccId] ||= []).push(d);
   });
 

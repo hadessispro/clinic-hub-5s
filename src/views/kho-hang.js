@@ -23,6 +23,7 @@ import {
   taoDonHang, taoDonTuDeXuat, taoPhieuXuat, tenChiNhanhKho, tenNhaCungCap, tenNguoi,
   themAnhHoaDon, themBangGia, themHoaDon, themNhaCungCap, themVatTu, thongKeKho,
   xoaAnhHoaDon, xuatKho, xuatCsvDeXuat, xuatCsvVatTu,
+  xoaNhaCungCap, resetTatCaNhaCungCap,
   layDanhSachDeXuat, layChiTietDeXuat, taoPhieuDeXuat, capNhatPhieuDeXuat, xoaPhieuDeXuat,
   goiYHangThieu, soSanhGiaNhaCungCap, taoDonHangTuPhieu, xuatExcelDeXuatBM03,
   BM03_STANDARD_ITEMS,
@@ -1433,9 +1434,16 @@ function veFormNcc() {
 function veNcc() {
   return `<section class="panel">
     <header class="section-title kh-header">
-      <h3>Nhà cung cấp</h3>
-      <span class="pill">${dsNcc.length} nhà đang hợp tác</span>
-      <div class="kh-header-nut">
+      <div>
+        <h3>Nhà cung cấp</h3>
+        <span class="pill">${dsNcc.length} nhà đang hợp tác</span>
+      </div>
+      <div class="kh-header-nut" style="display: flex; gap: 8px; flex-wrap: wrap;">
+        ${dsNcc.length > 0 ? `
+          <button type="button" class="ghost-button" id="khResetTatCaNcc" style="color: #dc2626; border-color: #fecaca; background: #fff5f5;">
+            <i class="ri-restart-line"></i> Reset tất cả NCC
+          </button>
+        ` : ''}
         <button type="button" class="${hienFormNcc ? 'secondary-button' : 'primary-button'}" id="khMoFormNcc">
           <i class="ri-add-line"></i> ${hienFormNcc ? 'Đóng biểu mẫu' : 'Thêm nhà cung cấp'}
         </button>
@@ -1466,10 +1474,24 @@ function veNcc() {
         </div>
         <p class="kh-ncc-dk"><i class="ri-bank-card-line"></i> ${escapeHTML(n.thanh_toan)}</p>
         <p class="kh-ncc-ghi">${escapeHTML(n.ghi_chu)}</p>
-        <button type="button" class="ghost-button kh-nho" data-loc-ncc="${escapeHTML(n.id)}">
-          <i class="ri-truck-line"></i> Xem ${n.so_don} đơn hàng
-        </button>
-      </article>`).join('') || '<p class="empty-state">Không tìm thấy nhà cung cấp nào.</p>'}
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;">
+          <button type="button" class="ghost-button kh-nho" data-loc-ncc="${escapeHTML(n.id)}">
+            <i class="ri-truck-line"></i> Xem ${n.so_don} đơn
+          </button>
+          <button type="button" class="ghost-button kh-nho" data-xoa-ncc="${escapeHTML(n.id)}" data-ten-ncc="${escapeHTML(n.ten)}" style="color:#dc2626; border-color:#fee2e2; background:#fffbfb;" title="Xóa nhà cung cấp này">
+            <i class="ri-delete-bin-line"></i> Xoá
+          </button>
+        </div>
+      </article>`).join('') || `
+        <div class="empty-state" style="grid-column: 1 / -1; padding: 48px 16px; text-align: center; color: var(--muted, #64748b); background: var(--bg-card, #fff); border-radius: 12px; border: 1px dashed var(--border-color, #e2e8f0); margin: 12px 0;">
+          <i class="ri-store-2-line" style="font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.4; color: #0d9488;"></i>
+          <p style="font-weight: 600; font-size: 15px; margin-bottom: 4px; color: var(--text-color, #1e293b);">Chưa có nhà cung cấp nào</p>
+          <p style="font-size: 13px; margin-bottom: 16px;">Danh sách nhà cung cấp trong kho đã được reset về trống. Bấm nút bên dưới để thêm nhà cung cấp mới.</p>
+          <button type="button" class="primary-button kh-nho" id="khThemNccTrong">
+            <i class="ri-add-line"></i> Thêm nhà cung cấp
+          </button>
+        </div>
+      `}
     </div>
   </section>`;
 }
@@ -2517,6 +2539,41 @@ export function initView() {
       });
       hienFormNcc = false;
     }, 'Đã thêm nhà cung cấp mới.');
+  });
+
+  /* Thêm nhà cung cấp từ nút empty state */
+  g('khThemNccTrong')?.addEventListener('click', () => {
+    hienFormNcc = true; ve();
+  });
+
+  /* Reset toàn bộ danh sách nhà cung cấp */
+  g('khResetTatCaNcc')?.addEventListener('click', async () => {
+    const ok = await confirmAction('Bạn có chắc chắn muốn reset và xóa toàn bộ danh sách nhà cung cấp trong kho không? Dữ liệu nhà cung cấp mẫu sẽ được xóa hoàn toàn.', {
+      title: 'Reset nhà cung cấp',
+      confirmText: 'Reset tất cả',
+      danger: true,
+    });
+    if (!ok) return;
+    chay(async () => {
+      await resetTatCaNhaCungCap();
+    }, 'Đã reset toàn bộ danh sách nhà cung cấp.');
+  });
+
+  /* Xóa một nhà cung cấp */
+  document.querySelectorAll('[data-xoa-ncc]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const id = b.dataset.xoaNcc;
+      const ten = b.dataset.tenNcc || id;
+      const ok = await confirmAction(`Bạn có chắc muốn xóa nhà cung cấp "${ten}" không? Báo giá liên quan cũng sẽ được gỡ bỏ.`, {
+        title: 'Xóa nhà cung cấp',
+        confirmText: 'Xóa',
+        danger: true,
+      });
+      if (!ok) return;
+      chay(async () => {
+        await xoaNhaCungCap(id);
+      }, `Đã xóa nhà cung cấp "${ten}".`);
+    });
   });
 
   /* Tạo đơn đặt hàng mới */
