@@ -230,7 +230,8 @@ export async function syncOfflineAttendance(userId) {
 export async function adjustAttendanceRecord({
   employeeCode,
   workDate,
-  branchId = 'le-van-tho',
+  branchId = 'pham-van-chieu',
+  checkoutBranchId = null,
   shiftCode = 'clinic-0800',
   checkinTime = '',
   checkoutTime = '',
@@ -241,7 +242,11 @@ export async function adjustAttendanceRecord({
     throw new Error('Vui lòng chọn nhân viên và ngày cần điều chỉnh công.');
   }
 
-  const fullNote = `[ĐIỀU CHỈNH QUẢN LÝ: ${reason}] ${note || ''}`.trim();
+  const outBranchId = checkoutBranchId || branchId;
+  const isCross = outBranchId && outBranchId !== branchId;
+  const crossTag = isCross ? `[LIEN_CHI_NHANH:vao_${branchId}_ra_${outBranchId}]` : '';
+  const inNote = `[BRANCH:${branchId}][ĐIỀU CHỈNH QUẢN LÝ: ${reason}] ${note || ''}`.trim();
+  const outNote = `[BRANCH:${outBranchId}][ĐIỀU CHỈNH QUẢN LÝ: ${reason}]${crossTag} ${note || ''}`.trim();
 
   // 1. Tìm bản ghi chấm công hiện có của ngày này
   const { data: existingRecords, error: fetchErr } = await dataClient
@@ -267,7 +272,7 @@ export async function adjustAttendanceRecord({
         shift_code: shiftCode,
         branch_id: branchId,
         status: 'valid',
-        note: fullNote,
+        note: inNote,
         updated_at: new Date().toISOString(),
       }).eq('id', existingIn.id);
     } else {
@@ -284,7 +289,7 @@ export async function adjustAttendanceRecord({
         distance_m: 0,
         accuracy_m: 10,
         status: 'valid',
-        note: fullNote,
+        note: inNote,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -301,9 +306,9 @@ export async function adjustAttendanceRecord({
       await dataClient.from('attendance_records').update({
         recorded_at: recordedAt,
         shift_code: shiftCode,
-        branch_id: branchId,
+        branch_id: outBranchId,
         status: 'valid',
-        note: fullNote,
+        note: outNote,
         updated_at: new Date().toISOString(),
       }).eq('id', existingOut.id);
     } else {
@@ -315,12 +320,12 @@ export async function adjustAttendanceRecord({
         work_date: workDate,
         record_type: 'checkout',
         shift_code: shiftCode,
-        branch_id: branchId,
+        branch_id: outBranchId,
         recorded_at: recordedAt,
         distance_m: 0,
         accuracy_m: 10,
         status: 'valid',
-        note: fullNote,
+        note: outNote,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });

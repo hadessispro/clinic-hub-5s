@@ -220,8 +220,12 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
       <thead><tr><th>Ngày & chi nhánh</th><th>Ca làm việc</th><th>Vào / Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn / Về sớm</th><th>Ngày công</th><th>Đối chiếu</th>${canEdit ? '<th>Thao tác</th>' : ''}</tr></thead>
       <tbody>${days.length ? days.map((day) => {
         const [label, tone] = workDayStatus(day);
+        const isCross = day.checkout_branch_id && day.checkout_branch_id !== day.branch_id;
+        const branchBadge = isCross
+          ? `<span class="attendance-branch-badge is-cross" title="Vào: ${escapeHTML(BRANCHES[day.branch_id]?.shortName || day.branch_id)} ➔ Ra: ${escapeHTML(BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id)}">${escapeHTML(BRANCHES[day.branch_id]?.code || day.branch_id)} ➔ ${escapeHTML(BRANCHES[day.checkout_branch_id]?.code || day.checkout_branch_id)}</span>`
+          : `<span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span>`;
         return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}">
-          <td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span></td>
+          <td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong>${branchBadge}</td>
           <td><strong>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</strong></td>
           <td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td>
           <td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td>
@@ -229,7 +233,7 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
           <td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td>
           <td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td>
           <td>${statusPill(label, tone)}</td>
-          ${canEdit ? `<td><button type="button" class="btn-adjust-day" data-action="adjust-day" data-date="${day.work_date}" data-shift="${escapeHTML(day.shift_code || '')}" data-branch="${escapeHTML(day.branch_id || '')}" data-checkin="${day.checkin_at ? formatTime(day.checkin_at) : ''}" data-checkout="${day.checkout_at ? formatTime(day.checkout_at) : ''}">✎ Sửa công</button></td>` : ''}
+          ${canEdit ? `<td><button type="button" class="btn-adjust-day" data-action="adjust-day" data-date="${day.work_date}" data-shift="${escapeHTML(day.shift_code || '')}" data-branch="${escapeHTML(day.branch_id || '')}" data-checkout-branch="${escapeHTML(day.checkout_branch_id || '')}" data-checkin="${day.checkin_at ? formatTime(day.checkin_at) : ''}" data-checkout="${day.checkout_at ? formatTime(day.checkout_at) : ''}">✎ Sửa công</button></td>` : ''}
         </tr>`;
       }).join('') : '<tr><td colspan="' + (canEdit ? 9 : 8) + '" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
     </table></div>
@@ -240,13 +244,17 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
 
 function renderTodayCard(checkin, checkout, shift, employee) {
   if (checkout) {
+    const isCross = checkin?.branchId && checkout?.branchId && checkin.branchId !== checkout.branchId;
+    const branchDetail = isCross
+      ? ` · Vào: ${BRANCHES[checkin.branchId]?.shortName || checkin.branchId} ➔ Ra: ${BRANCHES[checkout.branchId]?.shortName || checkout.branchId}`
+      : (checkout.branchId ? ` · ${BRANCHES[checkout.branchId]?.shortName || ''}` : '');
     return `
       <section class="attendance-primary-card is-complete">
         <div class="attendance-success-mark" aria-hidden="true">✓</div>
         <div class="attendance-primary-copy">
-          <p class="eyebrow">Ca làm hôm nay</p>
+          <p class="eyebrow">Ca làm hôm nay${isCross ? ' (Liên chi nhánh)' : ''}</p>
           <h3>${checkout.isOfflinePending ? 'Đã lưu giờ kết ca trên điện thoại' : 'Đã hoàn thành ca'}</h3>
-          <p>${escapeHTML(employee.name)} · vào ${formatTime(checkin?.time)} · ra ${formatTime(checkout.time)} · GPS ${checkout.distance} m</p>
+          <p>${escapeHTML(employee.name)} · vào ${formatTime(checkin?.time)} · ra ${formatTime(checkout.time)} · GPS ${checkout.distance} m${escapeHTML(branchDetail)}</p>
         </div>
         ${statusPill(attendanceLabel(checkout), attendanceTone(checkout))}
       </section>
@@ -254,17 +262,18 @@ function renderTodayCard(checkin, checkout, shift, employee) {
   }
 
   if (checkin) {
+    const checkinBranchName = BRANCHES[checkin.branchId]?.shortName || '';
     return `
       <section class="attendance-primary-card is-active">
         <div class="attendance-success-mark" aria-hidden="true">✓</div>
         <div class="attendance-primary-copy">
-          <p class="eyebrow">Đang trong ca làm việc</p>
+          <p class="eyebrow">Đang trong ca làm việc${checkinBranchName ? ` · ${escapeHTML(checkinBranchName)}` : ''}</p>
           <h3>${checkin.isOfflinePending ? 'Đã lưu check-in trên điện thoại' : 'Check-in thành công'}</h3>
           <p>${escapeHTML(employee.name)} · ${formatTime(checkin.time)} · cách phòng khám ${checkin.distance} m</p>
         </div>
         <button class="attendance-checkout-button" type="button" data-action="checkout">
           <span class="attendance-button-icon" aria-hidden="true">↗</span>
-          <span><strong>Check-out kết ca</strong><small>Xác minh GPS tại văn phòng</small></span>
+          <span><strong>Check-out kết ca</strong><small>Xác minh GPS linh hoạt (PVC hoặc LVT)</small></span>
         </button>
       </section>
     `;
@@ -597,8 +606,16 @@ function renderAdjustmentDialog(employee, allowedShifts, canEdit = false) {
             </label>
 
             <label>
-              <span>Chi nhánh làm việc *</span>
+              <span>Chi nhánh vào ca *</span>
               <select id="adjustBranch" required>
+                ${Object.values(BRANCHES).map((b) => `<option value="${b.id}">${escapeHTML(b.shortName)}</option>`).join('')}
+              </select>
+            </label>
+
+            <label>
+              <span>Chi nhánh ra ca (nếu khác)</span>
+              <select id="adjustCheckoutBranch">
+                <option value="">Cùng chi nhánh vào ca</option>
                 ${Object.values(BRANCHES).map((b) => `<option value="${b.id}">${escapeHTML(b.shortName)}</option>`).join('')}
               </select>
             </label>
@@ -836,7 +853,7 @@ export async function renderView(state) {
           </section>
           <section class="attendance-rule-card">
             <div class="attendance-card-icon" aria-hidden="true">⏱</div>
-            <div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</h3><p>Check-in trước giờ bắt đầu ít nhất 5 phút. Check-in và check-out đều phải xác minh GPS tại phòng khám.</p></div>
+            <div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(shift?.start || '08:00')}–${escapeHTML(shift?.end || '17:00')}</h3><p>Check-in trước giờ bắt đầu ít nhất 5 phút. Hỗ trợ chấm công và ra ca linh hoạt tại cả 2 chi nhánh PVC và LVT.</p></div>
           </section>
         </div>
 
@@ -953,17 +970,57 @@ export async function renderView(state) {
   `;
 }
 
-function evaluateLocation(reading) {
-  const { settings } = context;
-  const distance = Math.round(distanceMeters(reading.lat, reading.lng, Number(settings.latitude), Number(settings.longitude)));
+function evaluateLocation(reading, preferredBranchId = null) {
   const accuracy = Math.round(reading.accuracy);
   const ageMs = Date.now() - new Date(reading.capturedAt).getTime();
+  const fresh = ageMs >= -5000 && ageMs <= 120000;
+
+  const candidateBranches = Object.values(BRANCHES);
+  const insideMatches = [];
+  let closestBranch = null;
+  let minDistance = Infinity;
+
+  for (const branch of candidateBranches) {
+    const bDist = Math.round(distanceMeters(reading.lat, reading.lng, Number(branch.latitude), Number(branch.longitude)));
+    const bMaxAcc = Number(branch.maxGpsAccuracy || 100);
+    const bRadius = Number(branch.allowedRadius || 100);
+    const bAccurate = accuracy <= bMaxAcc;
+    const bInside = bDist <= bRadius && bAccurate;
+
+    if (bDist < minDistance) {
+      minDistance = bDist;
+      closestBranch = { branch, distance: bDist, accurate: bAccurate, inside: bInside };
+    }
+
+    if (bInside) {
+      insideMatches.push({ branch, distance: bDist, accurate: bAccurate, inside: true });
+    }
+  }
+
+  let selected = null;
+  if (insideMatches.length > 0) {
+    const pref = preferredBranchId ? insideMatches.find((m) => m.branch.id === preferredBranchId) : null;
+    selected = pref || insideMatches.sort((a, b) => a.distance - b.distance)[0];
+  } else {
+    selected = closestBranch || {
+      branch: BRANCH,
+      distance: Math.round(distanceMeters(reading.lat, reading.lng, Number(BRANCH.latitude), Number(BRANCH.longitude))),
+      accurate: accuracy <= Number(BRANCH.maxGpsAccuracy || 100),
+      inside: false,
+    };
+  }
+
+  const { branch, distance, accurate, inside } = selected;
   return {
     ...reading,
     distance,
-    accurate: accuracy <= Number(settings.maxGpsAccuracy),
-    inside: distance <= Number(settings.allowedRadius),
-    fresh: ageMs >= -5000 && ageMs <= 120000,
+    accurate,
+    inside,
+    fresh,
+    branchId: branch.id,
+    branchName: branch.shortName || branch.name,
+    allowedRadius: Number(branch.allowedRadius || 100),
+    maxGpsAccuracy: Number(branch.maxGpsAccuracy || 100),
   };
 }
 
@@ -1154,26 +1211,36 @@ async function captureLocation() {
     });
     if (requestId !== locationRequestId) return;
 
-    lastLocation = evaluateLocation(reading);
+    lastLocation = evaluateLocation(reading, context?.selectedBranchId || context?.settings?.branchId);
     const userRole = context?.state?.profile?.role || context?.state?.role;
     const isTelesale = ['telesale_staff', 'telesale_leader'].includes(userRole)
       || context?.employee?.department === 'mkt' || context?.employee?.department === 'marketing';
 
     if (!lastLocation.accurate && !isTelesale) {
-      updateGpsState('is-warning', 'GPS chưa đủ chính xác', `Sai số hiện tại ±${lastLocation.accuracy} m; yêu cầu tối đa ${context.settings.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
+      updateGpsState('is-warning', 'GPS chưa đủ chính xác', `Sai số hiện tại ±${lastLocation.accuracy} m; yêu cầu tối đa ${lastLocation.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
       setLocationActionState('Thử lấy GPS chính xác hơn');
       return;
     }
     if (!lastLocation.inside) {
       if (isTelesale) {
-        updateGpsState('is-success', 'Tọa độ GPS Telesale hợp lệ', `Đã ghi nhận GPS · Cách phòng khám ${lastLocation.distance} m · Sai số ±${lastLocation.accuracy} m (Chế độ Telesale linh hoạt)`);
+        updateGpsState('is-success', 'Tọa độ GPS Telesale hợp lệ', `Đã ghi nhận GPS · Cách ${lastLocation.branchName} ${lastLocation.distance} m · Sai số ±${lastLocation.accuracy} m (Chế độ Telesale linh hoạt)`);
       } else {
-        updateGpsState('is-error', 'Bạn đang ngoài khu vực chấm công', `Vị trí cách phòng khám ${lastLocation.distance} m; bán kính cho phép ${context.settings.allowedRadius} m.`);
+        updateGpsState('is-error', 'Bạn đang ngoài khu vực chấm công', `Vị trí cách cơ sở gần nhất (${lastLocation.branchName}) ${lastLocation.distance} m; bán kính cho phép ${lastLocation.allowedRadius} m.`);
         setLocationActionState('Lấy lại vị trí');
         return;
       }
     } else {
-      updateGpsState('is-success', 'Vị trí hợp lệ', `Cách phòng khám ${lastLocation.distance} m · GPS ±${lastLocation.accuracy} m.`);
+      updateGpsState('is-success', 'Vị trí hợp lệ', `Tại ${lastLocation.branchName} · Cách cơ sở ${lastLocation.distance} m · GPS ±${lastLocation.accuracy} m.`);
+      if (lastLocation.branchId && context && context.selectedBranchId !== lastLocation.branchId) {
+        context.selectedBranchId = lastLocation.branchId;
+        context.settings = settingsForBranch(lastLocation.branchId, context.state?.settings);
+        const branchSelect = document.getElementById('attendanceBranchChoice');
+        if (branchSelect && branchSelect.value !== lastLocation.branchId) {
+          branchSelect.value = lastLocation.branchId;
+        }
+        const address = document.getElementById('attendanceBranchAddress');
+        if (address) address.textContent = context.settings.clinicAddress;
+      }
     }
     if (!lastLocation.fresh) {
       updateGpsState('is-warning', 'Vị trí đã cũ', 'Vui lòng lấy lại vị trí trước khi xác nhận.');
@@ -1261,10 +1328,13 @@ async function confirmCheckin(button) {
       console.warn('[Attendance Proof] Could not stage photo locally:', storageError);
     }
 
+    const targetBranchId = lastLocation.branchId || context?.selectedBranchId || context.settings.branchId;
+    const targetBranchName = lastLocation.branchName || BRANCHES[targetBranchId]?.shortName || context.settings.clinicName;
+
     const result = await clockIn({
       clientEventId: eventId,
       employee: context.employee.id,
-      branchId: context.settings.branchId,
+      branchId: targetBranchId,
       shift: context.selectedShift?.id,
       type: 'checkin',
       date: clinicDateISO(now, context.settings.timeZone),
@@ -1299,7 +1369,8 @@ async function confirmCheckin(button) {
       checkinTime: now.toISOString(),
       checkedOut: false,
       checkoutTime: null,
-      branchName: BRANCHES[context.settings.branchId]?.shortName || context.settings.clinicName,
+      branchId: targetBranchId,
+      branchName: targetBranchName,
     });
 
     closeDialog();
@@ -1342,21 +1413,26 @@ async function confirmCheckout(button) {
       || context?.employee?.department === 'mkt' || context?.employee?.department === 'marketing';
 
     if (!location.accurate && !isTelesale) {
-      throw new Error(`Sai số GPS ±${location.accuracy} m vượt mức cho phép ${context.settings.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
+      throw new Error(`Sai số GPS ±${location.accuracy} m vượt mức cho phép ${location.maxGpsAccuracy} m. Hãy đứng gần cửa sổ và thử lại.`);
     }
     if (!location.inside && !isTelesale) {
-      throw new Error(`Bạn đang cách phòng khám ${location.distance} m; chỉ được check-out trong bán kính ${context.settings.allowedRadius} m.`);
+      throw new Error(`Bạn đang cách cơ sở gần nhất (${location.branchName}) ${location.distance} m; chỉ được check-out trong bán kính ${location.allowedRadius} m.`);
     }
     if (!location.fresh) {
       throw new Error('Vị trí GPS đã cũ. Vui lòng thử check-out lại.');
     }
 
-    button.innerHTML = '<span class="attendance-button-icon" aria-hidden="true">✓</span><span><strong>GPS hợp lệ · đang lưu…</strong><small>Đang ghi nhận giờ ra ca</small></span>';
+    const checkinBranchId = context.todayCheckin?.branchId || context.settings.branchId;
+    const checkoutBranchId = location.branchId || checkinBranchId;
+    const isCrossBranch = checkinBranchId && checkoutBranchId && checkinBranchId !== checkoutBranchId;
+    const checkoutBranchName = location.branchName || BRANCHES[checkoutBranchId]?.shortName || context.settings.clinicName;
+
+    button.innerHTML = `<span class="attendance-button-icon" aria-hidden="true">✓</span><span><strong>GPS hợp lệ · ${escapeHTML(checkoutBranchName)}</strong><small>Đang ghi nhận giờ ra ca…</small></span>`;
     const now = new Date();
     const result = await clockOut({
       clientEventId: makeEventId(),
       employee: context.employee.id,
-      branchId: context.settings.branchId,
+      branchId: checkoutBranchId,
       shift: context.shift?.id || 'clinic-0800',
       type: 'checkout',
       date: clinicDateISO(now, context.settings.timeZone),
@@ -1372,11 +1448,16 @@ async function confirmCheckout(button) {
     store.setTodayAttendance({
       checkedOut: true,
       checkoutTime: now.toISOString(),
+      branchId: checkoutBranchId,
+      checkoutBranchName,
     });
 
+    const successMsg = isCrossBranch
+      ? `Check-out liên chi nhánh thành công tại ${checkoutBranchName} lúc ${formatTime(result.time)}!`
+      : `Check-out thành công tại ${checkoutBranchName} lúc ${formatTime(result.time)}.`;
     showToast(result.isOfflinePending
       ? 'Đã lưu giờ kết ca trên điện thoại. Hệ thống sẽ tự đồng bộ khi có mạng.'
-      : `Check-out thành công lúc ${formatTime(result.time)}.`);
+      : successMsg);
     navigateTo('attendance');
   } catch (error) {
     if (requestId !== locationRequestId) return;
@@ -1425,7 +1506,9 @@ async function exportWorkExcel() {
       const [status] = workDayStatus(day);
       return {
         'Ngày': new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN'),
-        'Chi nhánh': BRANCHES[day.branch_id]?.shortName || 'Chưa xác định',
+        'Chi nhánh': (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
+          ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
+          : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định'),
         'Ca làm việc': day.shift_name || day.shift_code || 'Chưa có ca',
         'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
         'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
@@ -1468,6 +1551,7 @@ function openAdjustModal(data = {}) {
   const empSelect = document.getElementById('adjustEmployee');
   const dateInput = document.getElementById('adjustWorkDate');
   const branchSelect = document.getElementById('adjustBranch');
+  const checkoutBranchSelect = document.getElementById('adjustCheckoutBranch');
   const shiftSelect = document.getElementById('adjustShift');
   const inInput = document.getElementById('adjustCheckin');
   const outInput = document.getElementById('adjustCheckout');
@@ -1479,6 +1563,7 @@ function openAdjustModal(data = {}) {
   if (empSelect && data.employeeCode) empSelect.value = data.employeeCode;
   if (dateInput) dateInput.value = data.workDate || clinicDateISO();
   if (branchSelect && data.branchId) branchSelect.value = data.branchId;
+  if (checkoutBranchSelect) checkoutBranchSelect.value = data.checkoutBranchId || '';
   if (shiftSelect && data.shiftCode) shiftSelect.value = data.shiftCode;
   if (inInput) inInput.value = data.checkin || '';
   if (outInput) outInput.value = data.checkout || '';
@@ -1701,7 +1786,8 @@ export function initView() {
         employeeCode: context?.targetEmployeeCode || '',
         workDate: d.date,
         shiftCode: d.shift || 'clinic-0800',
-        branchId: d.branch || 'le-van-tho',
+        branchId: d.branch || 'pham-van-chieu',
+        checkoutBranchId: d.checkoutBranch || '',
         checkin: d.checkin || '',
         checkout: d.checkout || '',
       });
@@ -1763,10 +1849,12 @@ export function initView() {
     try {
       const empCode = document.getElementById('adjustEmployee').value;
       const wDate = document.getElementById('adjustWorkDate').value;
+      const checkoutBranchVal = document.getElementById('adjustCheckoutBranch')?.value || null;
       await adjustAttendanceRecord({
         employeeCode: empCode,
         workDate: wDate,
         branchId: document.getElementById('adjustBranch').value,
+        checkoutBranchId: checkoutBranchVal,
         shiftCode: document.getElementById('adjustShift').value,
         checkinTime: document.getElementById('adjustCheckin').value,
         checkoutTime: document.getElementById('adjustCheckout').value,

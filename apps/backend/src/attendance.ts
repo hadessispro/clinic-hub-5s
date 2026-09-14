@@ -52,6 +52,7 @@ type WorkDay = {
   shift_code: string | null;
   shift_name: string | null;
   branch_id: string | null;
+  checkout_branch_id: string | null;
   scheduled_minutes: number;
   regular_minutes: number;
   overtime_minutes: number;
@@ -123,6 +124,7 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     shift_code: shiftCode,
     shift_name: shift ? String(shift.name || shiftCode) : null,
     branch_id: attendanceBranch(checkin || checkout) || null,
+    checkout_branch_id: checkout ? (attendanceBranch(checkout) || null) : null,
     scheduled_minutes: scheduledMinutes,
     regular_minutes: regularMinutes,
     overtime_minutes: overtimeMinutes,
@@ -222,26 +224,74 @@ export class AttendanceController {
       dayCheckin = result.rows[0]?.payload || null;
       if (!dayCheckin) throw new BadRequestException('Bạn cần check-in trước khi kết ca.');
     }
-    let branchId = type === 'checkout' ? (attendanceBranch(dayCheckin) || requestedBranch) : requestedBranch;
-    if (!fallbackBranches[branchId]) {
-      if (fallbackBranches[user.branchId]) {
-        branchId = user.branchId;
-      } else {
-        branchId = 'pham-van-chieu';
+    const locationsResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+      `select payload from app.records where entity_type='clinic_locations' and deleted_at is null`,
+    );
+    const candidateBranches: Record<string, JsonMap> = { ...fallbackBranches };
+    for (const row of locationsResult.rows) {
+      const loc = row.payload;
+      const locId = String(loc.id || '');
+      if (locId && loc.active !== false) {
+        candidateBranches[locId] = { ...candidateBranches[locId], ...loc };
       }
     }
-    if (type === 'checkout' && requestedBranch && requestedBranch !== branchId && fallbackBranches[requestedBranch]) {
-      throw new BadRequestException('Bạn cần check-out tại đúng chi nhánh đã xác nhận lúc vào ca.');
-    }
-    const branch = await this.one('clinic_locations', 'id', branchId) || fallbackBranches[branchId];
-    const maxAccuracy = Math.max(10, Math.min(100, Number(branch.max_gps_accuracy_m || 100)));
-    const radius = Math.max(20, Math.min(300, Number(branch.allowed_radius_m || 100)));
-    if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > maxAccuracy) throw new BadRequestException(`Sai số GPS ±${accuracy || 0} m vượt mức cho phép ${maxAccuracy} m.`);
-    const distance = distanceMeters(lat, lng, Number(branch.latitude), Number(branch.longitude));
-    const policy = locationResult(distance, accuracy, radius, maxAccuracy);
+
     const isTelesale = ['telesale_staff', 'telesale_leader'].includes(user.role)
       || employee?.department === 'mkt' || employee?.department === 'marketing';
-    if (!policy.inside && !isTelesale) throw new BadRequestException(`Vị trí cách phòng khám ${distance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${policy.effectiveRadius} m.`);
+
+    let matchedBranchId = '';
+    let matchedDistance = Infinity;
+    let matchedPolicy = { inside: false, effectiveRadius: 100 };
+    let closestBranchId = '';
+    let minDistance = Infinity;
+    let closestPolicy = { inside: false, effectiveRadius: 100 };
+
+    for (const [candId, cand] of Object.entries(candidateBranches)) {
+      const candLat = Number(cand.latitude);
+      const candLng = Number(cand.longitude);
+      const candMaxAcc = Math.max(10, Math.min(100, Number(cand.max_gps_accuracy_m || 100)));
+      const candRadius = Math.max(20, Math.min(300, Number(cand.allowed_radius_m || 100)));
+      const dist = distanceMeters(lat, lng, candLat, candLng);
+      const pol = locationResult(dist, accuracy, candRadius, candMaxAcc);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestBranchId = candId;
+        closestPolicy = pol;
+      }
+
+      if (pol.inside) {
+        if (!matchedBranchId || candId === requestedBranch || dist < matchedDistance) {
+          matchedBranchId = candId;
+          matchedDistance = dist;
+          matchedPolicy = pol;
+        }
+      }
+    }
+
+    let branchId = '';
+    let distance = 0;
+    let policy = { inside: false, effectiveRadius: 100 };
+
+    if (matchedBranchId) {
+      branchId = matchedBranchId;
+      distance = matchedDistance;
+      policy = matchedPolicy;
+    } else if (isTelesale) {
+      branchId = requestedBranch && candidateBranches[requestedBranch]
+        ? requestedBranch
+        : String(closestBranchId || fallbackBranches['pham-van-chieu']?.id || 'pham-van-chieu');
+      distance = minDistance;
+      policy = closestPolicy;
+    } else {
+      const closestBranch = candidateBranches[closestBranchId] || fallbackBranches['pham-van-chieu'];
+      const maxAccuracy = Math.max(10, Math.min(100, Number(closestBranch.max_gps_accuracy_m || 100)));
+      if (!Number.isFinite(accuracy) || accuracy <= 0 || accuracy > maxAccuracy) {
+        throw new BadRequestException(`Sai số GPS ±${accuracy || 0} m vượt mức cho phép ${maxAccuracy} m.`);
+      }
+      const closestName = String(closestBranch.name || (closestBranchId === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu'));
+      throw new BadRequestException(`Vị trí cách cơ sở gần nhất (${closestName}) ${minDistance} m, sai số ±${accuracy} m; vùng hợp lệ hiện tại ${closestPolicy.effectiveRadius} m.`);
+    }
 
     const duplicate = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
       `select payload from app.records where entity_type='attendance_records' and deleted_at is null and
@@ -286,13 +336,20 @@ export class AttendanceController {
     const shift = await this.one('work_shifts', 'code', shiftCode);
     if (!shift || shift.active === false) throw new BadRequestException('Ca làm chưa được cấu hình trong hệ thống.');
     const telesaleTag = isTelesale ? (policy.inside ? '[TELESALE_CLINIC_GPS]' : '[TELESALE_REMOTE_GPS]') : '';
+    let crossBranchTag = '';
+    if (type === 'checkout' && dayCheckin) {
+      const checkinBranch = attendanceBranch(dayCheckin);
+      if (checkinBranch && checkinBranch !== branchId) {
+        crossBranchTag = `[LIEN_CHI_NHANH:vao_${checkinBranch}_ra_${branchId}]`;
+      }
+    }
     const payload: JsonMap = {
       id: randomUUID(), client_event_id: eventId, employee_code: user.employeeCode, shift_code: shiftCode,
       record_type: type, work_date: local.date, recorded_at: effectiveAt.toISOString(), lat, lng,
       branch_id: branchId,
       distance_m: distance, accuracy_m: accuracy, status: DA_GHI_NHAN, created_by: user.id,
       device_id: String(body.deviceId || '').slice(0, 120) || null, captured_offline: Boolean(body.capturedOffline),
-      synced_at: now.toISOString(), note: `[BRANCH:${branchId}]${telesaleTag}`, created_at: now.toISOString(), updated_at: now.toISOString(),
+      synced_at: now.toISOString(), note: `[BRANCH:${branchId}]${crossBranchTag}${telesaleTag}`, created_at: now.toISOString(), updated_at: now.toISOString(),
     };
     await this.infrastructure.postgres.query(
       `insert into app.records(entity_type,record_key,payload,origin) values ('attendance_records',$1,$2::jsonb,'vps')`,
