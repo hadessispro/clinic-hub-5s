@@ -104,18 +104,31 @@ export async function createEmployee(employee) {
 
 export async function updateEmployee(code, updates) {
   try {
-    const dbData = mapEmployeeToDB({ ...updates, id: code });
-    // Remove code since it is unique and immutable primary identifier in UI logic
-    delete dbData.code;
-
-    const { data, error } = await dataClient
-      .from('employees')
-      .update(dbData)
-      .eq('code', code)
-      .select()
-      .single();
+    const targetCode = updates.id || updates.code || code;
+    const { data, error } = await dataClient.rpc('update_employee_full', {
+      p_old_code: code,
+      p_new_code: targetCode,
+      p_full_name: updates.name,
+      p_phone: updates.phone,
+      p_email: updates.email,
+      p_department: updates.department,
+      p_title: updates.role,
+      p_branch_id: updates.branchId,
+      p_shift_code: updates.shift,
+      p_status: updates.status,
+      p_salary_offer: updates.salaryOffer,
+      p_hourly_rate: updates.hourlyRate,
+      p_manager_code: updates.manager,
+      p_certificates: updates.certificates,
+      p_hire_date: updates.hireDate,
+      p_insurance_date: updates.insuranceDate,
+      p_profile_locked: updates.profileLocked,
+    });
 
     if (error) throw error;
+    if (data?.employee) {
+      return mapEmployeeToUI(data.employee);
+    }
     return mapEmployeeToUI(data);
   } catch (error) {
     console.error(`[Employee Service] updateEmployee (${code}) error:`, error);

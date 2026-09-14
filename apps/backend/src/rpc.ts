@@ -520,6 +520,251 @@ export class RpcService {
       await this.infrastructure.markDataChanged(['profiles', 'employees'], user.id, user.role);
       return nextProfile;
     }
+    if (name === 'update_employee_full') {
+      const allowedRoles = new Set(['admin', 'admin_it', 'superadmin', 'hr']);
+      if (!allowedRoles.has(user.role)) {
+        throw new ForbiddenException('Chỉ ban quản trị hoặc phòng nhân sự (HR) mới có quyền cập nhật nhân viên.');
+      }
+      const oldCode = String(args.p_old_code || '').trim();
+      const newCode = String(args.p_new_code || oldCode).trim();
+      if (!oldCode) throw new BadRequestException('Thiếu mã nhân viên cần cập nhật.');
+      if (!newCode) throw new BadRequestException('Mã nhân viên mới không được để trống.');
+      if (newCode.length > 30 || !/^[A-Za-z0-9_.-]+$/.test(newCode)) {
+        throw new BadRequestException('Mã nhân viên không hợp lệ (tối đa 30 ký tự, chỉ gồm chữ, số, gạch nối, gạch dưới hoặc dấu chấm).');
+      }
+
+      const empRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key, payload from app.records
+         where entity_type='employees' and deleted_at is null
+           and (lower(payload->>'code')=lower($1) or record_key=$1 or payload->>'id'=$1)
+         limit 1`, [oldCode],
+      );
+      const currentEmployee = empRes.rows[0];
+      if (!currentEmployee) {
+        throw new BadRequestException(`Không tìm thấy nhân viên có mã "${oldCode}".`);
+      }
+      const oldEmpPayload = currentEmployee.payload;
+      const actualOldCode = String(oldEmpPayload.code || oldCode);
+
+      const isCodeChanged = newCode.toLowerCase() !== actualOldCode.toLowerCase();
+      if (isCodeChanged) {
+        const conflictEmp = await this.infrastructure.postgres.query(
+          `select 1 from app.records
+           where entity_type='employees' and deleted_at is null
+             and lower(payload->>'code')=lower($1)
+             and record_key<>$2 limit 1`,
+          [newCode, currentEmployee.record_key],
+        );
+        if (conflictEmp.rowCount) {
+          throw new BadRequestException(`Mã nhân viên "${newCode}" đã được sử dụng cho một nhân sự khác.`);
+        }
+
+        const conflictAcc = await this.infrastructure.postgres.query(
+          `select 1 from app.local_accounts
+           where lower(employee_code)=lower($1)
+             and lower(employee_code)<>lower($2) limit 1`,
+          [newCode, actualOldCode],
+        );
+        if (conflictAcc.rowCount) {
+          throw new BadRequestException(`Mã nhân viên "${newCode}" đã liên kết với một tài khoản hệ thống khác.`);
+        }
+      }
+
+      const fullName = args.p_full_name !== undefined ? String(args.p_full_name).trim() : String(oldEmpPayload.full_name || '').trim();
+      if (!fullName) throw new BadRequestException('Họ và tên nhân viên không được để trống.');
+
+      const email = args.p_email !== undefined ? (String(args.p_email).trim().toLowerCase() || null) : (oldEmpPayload.email ? String(oldEmpPayload.email).trim().toLowerCase() : null);
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new BadRequestException('Email không đúng định dạng.');
+      }
+
+      const branchId = args.p_branch_id !== undefined ? String(args.p_branch_id).trim() : String(oldEmpPayload.branch_id || 'pham-van-chieu');
+      const department = args.p_department !== undefined ? String(args.p_department).trim() : String(oldEmpPayload.department || 'other');
+      const title = args.p_title !== undefined ? String(args.p_title).trim() : String(oldEmpPayload.title || '');
+      const shiftCode = args.p_shift_code !== undefined ? (String(args.p_shift_code).trim() || null) : (oldEmpPayload.shift_code || null);
+      const phone = args.p_phone !== undefined ? String(args.p_phone).trim() : String(oldEmpPayload.phone || '');
+      const status = args.p_status !== undefined ? String(args.p_status).trim() : String(oldEmpPayload.status || 'active');
+      const managerCode = args.p_manager_code !== undefined ? (String(args.p_manager_code).trim() || null) : (oldEmpPayload.manager_code || null);
+      const salaryOffer = args.p_salary_offer !== undefined ? Number(args.p_salary_offer) : Number(oldEmpPayload.salary_offer || 0);
+      const hourlyRate = args.p_hourly_rate !== undefined ? Number(args.p_hourly_rate) : Number(oldEmpPayload.hourly_rate || 0);
+      const certificates = Array.isArray(args.p_certificates) ? args.p_certificates : (oldEmpPayload.certificates || []);
+      const hireDate = args.p_hire_date !== undefined ? args.p_hire_date : (oldEmpPayload.hire_date || null);
+      const insuranceDate = args.p_insurance_date !== undefined ? args.p_insurance_date : (oldEmpPayload.insurance_date || null);
+      const profileLocked = args.p_profile_locked !== undefined ? Boolean(args.p_profile_locked) : Boolean(oldEmpPayload.profile_locked);
+
+      const profileRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key, payload from app.records
+         where entity_type='profiles' and deleted_at is null
+           and (lower(payload->>'employee_code')=lower($1)
+                or lower(payload->>'employee_number')=lower($1)
+                or lower(record_key)=lower($2))
+         limit 1`,
+        [actualOldCode, `staff-profile-${actualOldCode.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`],
+      );
+      const currentProfile = profileRes.rows[0];
+
+      const nextEmpPayload: JsonMap = {
+        ...oldEmpPayload,
+        code: newCode,
+        employee_number: isCodeChanged ? (oldEmpPayload.employee_number || actualOldCode) : (args.p_employee_number || oldEmpPayload.employee_number || actualOldCode),
+        full_name: fullName,
+        email,
+        branch_id: branchId,
+        department,
+        title,
+        shift_code: shiftCode,
+        phone,
+        status,
+        manager_code: managerCode,
+        salary_offer: salaryOffer,
+        hourly_rate: hourlyRate,
+        certificates,
+        hire_date: hireDate,
+        insurance_date: insuranceDate,
+        profile_locked: profileLocked,
+        updated_at: new Date().toISOString(),
+      };
+
+      const client = await this.infrastructure.postgres.connect();
+      try {
+        await client.query('begin');
+
+        await client.query(
+          `update app.records
+           set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+           where entity_type='employees' and record_key=$1`,
+          [currentEmployee.record_key, JSON.stringify(nextEmpPayload)],
+        );
+
+        if (currentProfile) {
+          const nextProfilePayload: JsonMap = {
+            ...currentProfile.payload,
+            employee_code: newCode,
+            employee_number: isCodeChanged ? (currentProfile.payload.employee_number || actualOldCode) : currentProfile.payload.employee_number,
+            full_name: fullName,
+            email: email || currentProfile.payload.email,
+            phone: phone || currentProfile.payload.phone,
+            department: department || currentProfile.payload.department,
+            title: title || currentProfile.payload.title,
+            branch_id: branchId || currentProfile.payload.branch_id,
+            updated_at: new Date().toISOString(),
+          };
+          await client.query(
+            `update app.records
+             set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+             where entity_type='profiles' and record_key=$1`,
+            [currentProfile.record_key, JSON.stringify(nextProfilePayload)],
+          );
+
+          await client.query(
+            `update app.local_accounts
+             set employee_code=$2,
+                 email=coalesce($3, email),
+                 branch_id=coalesce($4, branch_id),
+                 updated_at=now()
+             where profile_key=$1 or lower(employee_code)=lower($5)`,
+            [currentProfile.record_key, newCode, email, branchId, actualOldCode],
+          );
+        } else {
+          await client.query(
+            `update app.local_accounts
+             set employee_code=$2,
+                 email=coalesce($3, email),
+                 branch_id=coalesce($4, branch_id),
+                 updated_at=now()
+             where lower(employee_code)=lower($1)`,
+            [actualOldCode, newCode, email, branchId],
+          );
+        }
+
+        if (isCodeChanged) {
+          await client.query(
+            `update app.records
+             set payload = jsonb_set(payload, '{employee_code}', to_jsonb($2::text)),
+                 origin = 'vps',
+                 version = version + 1,
+                 updated_at = now()
+             where entity_type in (
+               'employee_allowed_shifts',
+               'schedule_assignments',
+               'schedule_requests',
+               'attendance_records',
+               'attendance_work_days',
+               'leave_requests'
+             )
+             and deleted_at is null
+             and lower(payload->>'employee_code') = lower($1)`,
+            [actualOldCode, newCode],
+          );
+
+          await client.query(
+            `update app.records
+             set payload = jsonb_set(payload, '{assignee_code}', to_jsonb($2::text)),
+                 origin = 'vps',
+                 version = version + 1,
+                 updated_at = now()
+             where entity_type = 'tasks'
+               and deleted_at is null
+               and lower(payload->>'assignee_code') = lower($1)`,
+            [actualOldCode, newCode],
+          );
+
+          await client.query(
+            `update app.records
+             set payload = jsonb_set(payload, '{manager_code}', to_jsonb($2::text)),
+                 origin = 'vps',
+                 version = version + 1,
+                 updated_at = now()
+             where entity_type = 'employees'
+               and deleted_at is null
+               and lower(payload->>'manager_code') = lower($1)`,
+            [actualOldCode, newCode],
+          );
+        }
+
+        await client.query(
+          `insert into app.auth_audit
+             (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
+           values ($1, $2, $3, $4, $5::jsonb)`,
+          [
+            isCodeChanged ? 'doi_ma_nhan_vien' : 'cap_nhat_nhan_vien',
+            user.employeeCode || null,
+            user.role,
+            newCode,
+            JSON.stringify({
+              ma_cu: actualOldCode,
+              ma_moi: newCode,
+              doi_ma: isCodeChanged,
+              ho_ten: fullName,
+              bo_phan: department,
+              chi_nhanh: branchId,
+              vai_tro: title,
+              cap_nhat_luc: new Date().toISOString(),
+            }),
+          ],
+        );
+
+        await client.query('commit');
+      } catch (err) {
+        await client.query('rollback');
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      const changedEntities = isCodeChanged
+        ? ['employees', 'profiles', 'attendance_records', 'attendance_work_days', 'schedule_assignments', 'leave_requests', 'tasks']
+        : ['employees', 'profiles'];
+      await this.infrastructure.markDataChanged(changedEntities, user.id, user.role);
+
+      return {
+        success: true,
+        message: isCodeChanged
+          ? `Đã đổi mã nhân viên từ ${actualOldCode} sang ${newCode} và cập nhật hồ sơ thành công.`
+          : `Đã cập nhật thông tin nhân viên ${newCode} thành công.`,
+        employee: nextEmpPayload,
+      };
+    }
     // Mở khoá tài khoản bị chặn vì nhập sai mật khẩu nhiều lần.
     //
     // Trước đó không có đường nào làm việc này từ giao diện: tài khoản bị khoá
