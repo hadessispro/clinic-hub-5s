@@ -54,7 +54,7 @@ function renderPersonCard(employee, canManageEmployees = false) {
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  const canManageEmployees = ['admin', 'hr', 'superadmin'].includes(profile.role);
+  const canManageEmployees = ['admin', 'hr', 'superadmin', 'admin_it'].includes(profile.role);
   const marketingScoped = ['admin_marketing', 'support_marketing', 'telesale_leader', 'telesale_staff', 'pg_staff'].includes(profile.role);
   const availableDepartments = marketingScoped ? DEPARTMENTS.filter((department) => department.id === 'mkt') : DEPARTMENTS;
   if (marketingScoped && selectedDept === 'all') {

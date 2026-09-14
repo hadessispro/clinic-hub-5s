@@ -14,7 +14,7 @@ const ROLE_VIEWS = {
   // mọi phụ tá đều duyệt được đơn nghỉ của nhau.
   phu_ta: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
   phu_ta_truong: ['dashboard', 'kho-hang', 'chat', 'tasks', 'attendance', 'schedule', 'leave'],
-  admin_it: ['system-admin', 'tasks', 'attendance', 'schedule', 'leave'],
+  admin_it: ['system-admin', 'people', 'tasks', 'attendance', 'schedule', 'leave'],
   admin_marketing: ['dashboard', 'marketing-leads', 'telesale-management', 'telesale-workspace', 'marketing-analytics', 'pg-management', 'pg-locations', 'pg-workflow', 'gift-inventory', 'people', 'schedule', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   support_marketing: ['dashboard', 'pg-locations', 'pg-workflow', 'gift-inventory', 'chat', 'tasks', 'pg-attendance', 'hoa-hong', 'luong-pg'],
   pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
@@ -34,7 +34,7 @@ const ROLE_VIEWS = {
 /* ── Actions allowed per role ── */
 const ROLE_ACTIONS = {
   admin: ['*'],
-  admin_it: ['system.read', 'system.configure', 'buglog.read', 'buglog.update', 'attendance.read_all', 'attendance.verify', 'schedule.manage', 'employee.read_all', 'leave.create', 'leave.read_self', 'leave.read_all', 'leave.approve'],
+  admin_it: ['system.read', 'system.configure', 'buglog.read', 'buglog.update', 'attendance.read_all', 'attendance.verify', 'schedule.manage', 'employee.read_all', 'employee.manage', 'leave.create', 'leave.read_self', 'leave.read_all', 'leave.approve'],
   admin_marketing: ['marketing.*', 'telesale.*', 'analytics.marketing', 'data.export', 'employee.read_all', 'message.send', 'task.create'],
   support_marketing: ['marketing.leads.create', 'marketing.leads.import', 'telesale.assign', 'message.send', 'task.create'],
   pg_staff: ['marketing.leads.create', 'attendance.self', 'schedule.read_self', 'leave.create', 'message.send'],

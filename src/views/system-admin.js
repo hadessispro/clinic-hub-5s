@@ -19,6 +19,7 @@ import {
 import {
   VAI_TRO_KHOA, layGhiDe, luuGhiDeNhanSu, luuGhiDeVaiTro, xoaGhiDe,
 } from '../services/phan-quyen.js';
+import { updateEmployee } from '../services/employees.js';
 
 // Thẻ đang mở. Giữ ngoài hàm dựng vì router dựng lại cả view mỗi lần điều
 // hướng, và nhảy về thẻ đầu sau mỗi thao tác thì không ai làm việc được.
@@ -637,10 +638,10 @@ function editProfileDialog(profile, account) {
           <div><p class="eyebrow">TÀI KHOẢN HỆ THỐNG</p><h3 id="saProfileTitle">Cập nhật thông tin người dùng</h3></div>
           <button class="icon-button system-dialog-close" type="button" aria-label="Đóng">×</button>
         </header>
-        <p class="system-dialog-message">Thông tin được đồng bộ sang hồ sơ nhân sự và tài khoản đăng nhập. Mã nhân viên không đổi để bảo toàn lịch sử.</p>
+        <p class="system-dialog-message">Thông tin được đồng bộ sang hồ sơ nhân sự và tài khoản đăng nhập. Khi đổi mã nhân sự, hệ thống tự động liên kết phân ca, chấm công và giữ mã cũ để nhân sự đăng nhập kép không bị gián đoạn.</p>
         <form class="sa-profile-form" id="saProfileForm">
           <label><span>Họ và tên *</span><input name="fullName" required maxlength="160" value="${escapeHTML(profile.full_name || '')}"></label>
-          <label><span>Mã nhân viên</span><input value="${escapeHTML(profile.employee_code || '')}" readonly aria-readonly="true"><small>Khóa liên kết dữ liệu, không sửa tại đây.</small></label>
+          <label><span>Mã nhân viên (MNV) *</span><input name="employeeCode" required pattern="[A-Za-z0-9_.-]+" maxlength="30" value="${escapeHTML(profile.employee_code || '')}"><small>Mã định danh duy nhất (Admin IT có quyền điều chỉnh mã mới).</small></label>
           <label><span>Email đăng nhập</span><input name="email" type="email" maxlength="254" value="${escapeHTML(account?.email || profile.email || '')}" placeholder="ten@nhakhoa5s.vn"></label>
           <label><span>Số điện thoại</span><input name="phone" inputmode="tel" maxlength="30" value="${escapeHTML(profile.phone || '')}" placeholder="0901 234 567"></label>
           <label><span>Bộ phận *</span><input name="department" list="saDepartmentList" required maxlength="100" value="${escapeHTML(profile.department || '')}"><datalist id="saDepartmentList">${departmentSuggestions.map((value) => `<option value="${escapeHTML(value)}"></option>`).join('')}</datalist></label>
@@ -666,6 +667,7 @@ function editProfileDialog(profile, account) {
       const form = new FormData(event.currentTarget);
       close({
         fullName: String(form.get('fullName') || '').trim(),
+        employeeCode: String(form.get('employeeCode') || '').trim(),
         email: String(form.get('email') || '').trim(),
         phone: String(form.get('phone') || '').trim(),
         department: String(form.get('department') || '').trim(),
@@ -964,8 +966,22 @@ export function initView() {
     }
     button.disabled = true;
     try {
-      await updateUserProfile(profile.id, updates);
-      showToast(`Đã cập nhật và đồng bộ thông tin của ${profile.employee_code || profile.full_name}.`);
+      const oldCode = profile.employee_code || profile.id;
+      const newCode = updates.employeeCode || oldCode;
+      await updateEmployee(oldCode, {
+        id: newCode,
+        code: newCode,
+        name: updates.fullName,
+        email: updates.email || null,
+        phone: updates.phone,
+        department: updates.department,
+        role: updates.title,
+        branchId: updates.branchId,
+      });
+      showToast(oldCode !== newCode
+        ? `Đã đổi mã nhân sự từ ${oldCode} sang ${newCode} và đồng bộ toàn hệ thống!`
+        : `Đã cập nhật và đồng bộ thông tin của ${newCode} (${updates.fullName}).`
+      );
       store.notify();
     } catch (error) {
       showToast(error.message || 'Không thể cập nhật thông tin người dùng.', true);

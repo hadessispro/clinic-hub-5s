@@ -539,12 +539,27 @@ export class RpcService {
            and (lower(payload->>'code')=lower($1) or record_key=$1 or payload->>'id'=$1)
          limit 1`, [oldCode],
       );
-      const currentEmployee = empRes.rows[0];
-      if (!currentEmployee) {
-        throw new BadRequestException(`Không tìm thấy nhân viên có mã "${oldCode}".`);
+      let currentEmployee = empRes.rows[0];
+
+      const profileRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key, payload from app.records
+         where entity_type='profiles' and deleted_at is null
+           and (lower(payload->>'employee_code')=lower($1)
+                or lower(payload->>'employee_number')=lower($1)
+                or lower(record_key)=lower($2)
+                or record_key=$1
+                or payload->>'id'=$1)
+         limit 1`,
+        [oldCode, `staff-profile-${oldCode.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`],
+      );
+      const currentProfile = profileRes.rows[0];
+
+      if (!currentEmployee && !currentProfile) {
+        throw new BadRequestException(`Không tìm thấy nhân sự hoặc hồ sơ có mã "${oldCode}".`);
       }
-      const oldEmpPayload = currentEmployee.payload;
-      const actualOldCode = String(oldEmpPayload.code || oldCode);
+
+      const oldEmpPayload = currentEmployee?.payload || currentProfile?.payload || {};
+      const actualOldCode = String(oldEmpPayload.code || oldEmpPayload.employee_code || oldCode);
 
       const isCodeChanged = newCode.toLowerCase() !== actualOldCode.toLowerCase();
       if (isCodeChanged) {
@@ -553,7 +568,7 @@ export class RpcService {
            where entity_type='employees' and deleted_at is null
              and lower(payload->>'code')=lower($1)
              and record_key<>$2 limit 1`,
-          [newCode, currentEmployee.record_key],
+          [newCode, currentEmployee?.record_key || ''],
         );
         if (conflictEmp.rowCount) {
           throw new BadRequestException(`Mã nhân viên "${newCode}" đã được sử dụng cho một nhân sự khác.`);
@@ -592,17 +607,6 @@ export class RpcService {
       const insuranceDate = args.p_insurance_date !== undefined ? args.p_insurance_date : (oldEmpPayload.insurance_date || null);
       const profileLocked = args.p_profile_locked !== undefined ? Boolean(args.p_profile_locked) : Boolean(oldEmpPayload.profile_locked);
 
-      const profileRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
-        `select record_key, payload from app.records
-         where entity_type='profiles' and deleted_at is null
-           and (lower(payload->>'employee_code')=lower($1)
-                or lower(payload->>'employee_number')=lower($1)
-                or lower(record_key)=lower($2))
-         limit 1`,
-        [actualOldCode, `staff-profile-${actualOldCode.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`],
-      );
-      const currentProfile = profileRes.rows[0];
-
       const nextEmpPayload: JsonMap = {
         ...oldEmpPayload,
         code: newCode,
@@ -629,11 +633,13 @@ export class RpcService {
       try {
         await client.query('begin');
 
+        const empKey = currentEmployee?.record_key || `employee-${newCode.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
         await client.query(
-          `update app.records
-           set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
-           where entity_type='employees' and record_key=$1`,
-          [currentEmployee.record_key, JSON.stringify(nextEmpPayload)],
+          `insert into app.records (entity_type, record_key, payload, origin, version, created_at, updated_at)
+           values ('employees', $1, $2::jsonb, 'vps', 1, now(), now())
+           on conflict (entity_type, record_key)
+           do update set payload = excluded.payload, origin = 'vps', version = app.records.version + 1, updated_at = now(), deleted_at = null`,
+          [empKey, JSON.stringify(nextEmpPayload)],
         );
 
         if (currentProfile) {
