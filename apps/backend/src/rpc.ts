@@ -269,21 +269,33 @@ export class RpcService {
     if (name === 'review_leave_request') {
       const current = await this.byId('leave_requests', String(args.p_request_id || ''));
       if (!current) throw new Error('Không tìm thấy đơn cần duyệt.');
-      const approved = String(args.p_decision) === 'approved';
-      const next: JsonMap = { ...current.payload, reviewer_code: user.employeeCode, rejection_reason: args.p_reason || null };
-      if (user.role === 'leader') {
-        next.leader_status = approved ? 'approved' : 'rejected'; next.leader_reviewed_at = new Date().toISOString();
-        next.status = approved ? 'pending' : 'rejected'; next.routed_to = approved ? 'hcth' : 'completed';
-      } else if (user.role === 'hr' || admins.has(user.role)) {
-        next.operations_status = approved ? 'approved' : 'rejected'; next.operations_reviewed_at = new Date().toISOString();
-        next.status = approved ? 'approved' : 'rejected'; next.routed_to = 'completed';
-      } else throw new ForbiddenException('Tài khoản không có quyền duyệt đơn.');
+      const decision = String(args.p_decision || '');
+      const isReset = decision === 'pending';
+      const approved = decision === 'approved';
+      const next: JsonMap = { ...current.payload, reviewer_code: user.employeeCode };
+      if (isReset) {
+        if (user.role !== 'hr' && !admins.has(user.role)) throw new ForbiddenException('Tài khoản không có quyền đặt lại đơn.');
+        next.leader_status = 'pending';
+        next.operations_status = 'pending';
+        next.status = 'pending';
+        next.routed_to = 'ns';
+        next.rejection_reason = null;
+      } else {
+        next.rejection_reason = args.p_reason || null;
+        if (user.role === 'leader') {
+          next.leader_status = approved ? 'approved' : 'rejected'; next.leader_reviewed_at = new Date().toISOString();
+          next.status = approved ? 'pending' : 'rejected'; next.routed_to = approved ? 'hcth' : 'completed';
+        } else if (user.role === 'hr' || admins.has(user.role)) {
+          next.operations_status = approved ? 'approved' : 'rejected'; next.operations_reviewed_at = new Date().toISOString();
+          next.status = approved ? 'approved' : 'rejected'; next.routed_to = 'completed';
+        } else throw new ForbiddenException('Tài khoản không có quyền duyệt đơn.');
+      }
       const saved = await this.put('leave_requests', next, current.record_key);
 
       const empCode = String(current.payload.employee_code || '');
       if (empCode && empCode.toLowerCase() !== user.employeeCode.toLowerCase()) {
         const reqType = String(current.payload.request_type || 'đơn từ');
-        const decisionText = approved ? 'đã được phê duyệt' : 'bị từ chối';
+        const decisionText = isReset ? 'đã được đặt lại về trạng thái Chờ duyệt' : (approved ? 'đã được phê duyệt' : 'bị từ chối');
         const notifBody = `Đơn (${reqType}) của bạn ${decisionText} bởi ${user.profile?.full_name || user.employeeCode}.${args.p_reason ? ` Lý do: ${args.p_reason}` : ''}`;
         void this.push.sendToEmployee(empCode, {
           title: `📋 Kết quả duyệt đơn (${reqType})`,

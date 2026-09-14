@@ -15,6 +15,7 @@ export function mapLeaveToUI(db) {
     endTime: db.request_end_time ? String(db.request_end_time).slice(0, 5) : '',
     overtimeMinutes: Number(db.overtime_minutes || 0),
     reason: db.reason,
+    rejectionReason: db.rejection_reason || '',
     status: db.status || 'pending',
     leaderStatus: db.leader_status || 'pending',
     operationsStatus: db.operations_status || 'pending',
@@ -40,6 +41,7 @@ export function mapLeaveToDB(ui) {
     leader_status: ui.leaderStatus,
     operations_status: ui.operationsStatus,
     reviewer_code: ui.reviewer === undefined ? undefined : (ui.reviewer || null),
+    rejection_reason: ui.rejectionReason === undefined ? undefined : (ui.rejectionReason || null),
     routed_to: ui.routedTo,
   };
 }
@@ -161,6 +163,21 @@ export async function updateLeaveRequest(id, updates) {
   } catch (error) {
     console.error(`[Leave Service] updateLeaveRequest (${id}) error:`, error);
     throw error;
+  }
+}
+
+export async function reReviewLeaveRequest(id, targetStatus, reason = '') {
+  try {
+    return await reviewLeaveRequest(id, targetStatus, reason);
+  } catch (rpcErr) {
+    console.warn('[Leave Service] review_leave_request RPC fallback to direct update:', rpcErr);
+    return await updateLeaveRequest(id, {
+      status: targetStatus,
+      leaderStatus: targetStatus === 'approved' ? 'approved' : targetStatus === 'rejected' ? 'rejected' : 'pending',
+      operationsStatus: targetStatus === 'approved' ? 'approved' : targetStatus === 'rejected' ? 'rejected' : 'pending',
+      routedTo: targetStatus === 'pending' ? 'ns' : 'completed',
+      rejectionReason: targetStatus === 'rejected' ? (reason || 'Từ chối sau khi xem xét lại') : null,
+    });
   }
 }
 

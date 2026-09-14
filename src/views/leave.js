@@ -1,4 +1,4 @@
-import { getLeaveRequests, createLeaveRequest, reviewLeaveRequest } from '../services/leave.js';
+import { getLeaveRequests, createLeaveRequest, reviewLeaveRequest, updateLeaveRequest, reReviewLeaveRequest } from '../services/leave.js';
 import { getEmployees } from '../services/employees.js';
 import { LEAVE_STATUS, LEAVE_TYPES } from '../constants.js';
 import { todayISO, escapeHTML, formatShortDate, formatDateTime, formatCurrency, smartMatch, departmentName } from '../utils.js';
@@ -60,8 +60,8 @@ function renderLeaveCard(request) {
         ${['Tạm ứng lương', 'Ứng lương'].includes(request.type) && request.amount ? pill(formatCurrency(request.amount)) : ''}
         ${pill(workflowLabel)}
         ${isLockedOver30Days ? pill("🔒 Đã khóa (Quá 30 ngày)") : (request.status === 'approved' || request.status === 'rejected') && isWithin30Days ? pill(`⏱ Còn ${Math.max(0, 30 - diffDays)} ngày xem xét lại`) : ''}
-      </div>
       <p class="subtle">${escapeHTML(request.reason)}</p>
+      ${request.rejectionReason ? `<p class="subtle" style="color:#c62828;font-size:12px;margin-top:4px;"><b>Lý do từ chối:</b> ${escapeHTML(request.rejectionReason)}</p>` : ''}
       <div class="request-actions">
         <span class="subtle">Duyệt bởi ${escapeHTML(cachedEmployees.find(e => e.id === request.reviewer)?.name || "Quản lý / HR")}</span>
         ${canReview ? `
@@ -430,21 +430,34 @@ export function initView() {
       try {
         let reason = '';
         if (targetStatus === 'rejected') {
-          reason = await requestInput('Vui lòng ghi rõ lý do thay đổi kết quả xét duyệt.', { title: 'Xem xét lại đơn', label: 'Lý do từ chối', placeholder: 'Nhập lý do...', confirmText: 'Cập nhật' });
+          reason = await requestInput('Vui lòng ghi rõ lý do thay đổi kết quả xét duyệt.', {
+            title: 'Xem xét lại đơn',
+            label: 'Lý do từ chối',
+            placeholder: 'Nhập lý do...',
+            confirmText: 'Từ chối đơn',
+            tone: 'danger',
+          });
           if (reason === null) return;
+        } else if (targetStatus === 'pending') {
+          const ok = await confirmAction('Bạn có chắc muốn đặt lại đơn này về trạng thái "Chờ duyệt" để xem xét lại từ đầu?', {
+            title: 'Đặt lại Chờ duyệt',
+            confirmText: 'Đặt lại',
+          });
+          if (!ok) return;
+        } else if (targetStatus === 'approved') {
+          const ok = await confirmAction('Bạn có chắc muốn duyệt lại đơn này (Chấp nhận)?', {
+            title: 'Duyệt lại đơn',
+            confirmText: 'Duyệt chấp nhận',
+          });
+          if (!ok) return;
         }
-        const profile = store.getState().profile;
-        await updateLeaveRequest(id, {
-          status: targetStatus,
-          leaderStatus: targetStatus === 'approved' ? 'approved' : targetStatus === 'rejected' ? 'rejected' : 'pending',
-          operationsStatus: targetStatus === 'approved' ? 'approved' : targetStatus === 'rejected' ? 'rejected' : 'pending',
-          reviewer: profile?.employee_code || 'PVC-IT',
-        });
+
+        await reReviewLeaveRequest(id, targetStatus, reason);
         showToast(targetStatus === 'approved' ? "Đã duyệt lại đơn (Chấp nhận)." : targetStatus === 'rejected' ? "Đã đổi đơn thành từ chối." : "Đã đặt lại đơn về chờ duyệt.");
         store.notify();
       } catch (err) {
         console.error('[Leave View] leave-rereview failed:', err);
-        showToast("Lỗi khi cập nhật lại đơn.", true);
+        showToast("Lỗi khi cập nhật lại đơn: " + (err.message || err), true);
       }
     });
   });
