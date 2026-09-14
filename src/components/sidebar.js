@@ -93,7 +93,7 @@ export function renderSidebar(role) {
     group.items.map((item) => ({ ...item, group: group.group })),
   );
   const preferredByRole = {
-    admin_it: ['system-admin', 'people', 'attendance', 'schedule', 'reports'],
+    admin_it: ['system-admin', 'attendance', 'schedule', 'reports'],
     telesale_leader: ['telesale-management', 'attendance', 'dashboard', 'marketing-analytics'],
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
     pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],

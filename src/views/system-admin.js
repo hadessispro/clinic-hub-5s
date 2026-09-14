@@ -602,9 +602,9 @@ function profileRows(profiles, currentUserId, trangThaiMap) {
         : `<span class="status-pill good">Đăng nhập được</span>`}
         ${tk?.last_login_at ? `<small class="subtle">Vào lần cuối ${formatDateTime(tk.last_login_at)}</small>` : ''}</td>
       <td class="sa-thaotac">${protectedRole ? '<span class="subtle">Được bảo vệ</span>'
-        : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}">Cập nhật</button>`}
+        : `<button class="secondary-button compact-button" type="button" data-save-access="${profile.id}" title="Lưu nhanh vai trò và trạng thái hoạt động">Lưu quyền</button>`}
         ${profile.id === currentUserId || !VAI_TRO_BAO_VE.includes(profile.role) ? `<button class="secondary-button compact-button" type="button"
-          data-edit-profile="${profile.id}" title="Sửa hồ sơ và thông tin đăng nhập"><i class="ri-edit-line"></i> Sửa thông tin</button>` : ''}
+          data-edit-profile="${profile.id}" title="Sửa thông tin cá nhân và đổi mã nhân viên (MNV)"><i class="ri-edit-line"></i> Sửa thông tin / Mã NV</button>` : ''}
         ${profile.employee_code ? `<button class="secondary-button compact-button" type="button"
           data-unlock="${escapeHTML(profile.employee_code)}"
           title="Xoá bộ đếm nhập sai mật khẩu. KHÔNG đổi mật khẩu.">Mở khoá</button>
@@ -635,7 +635,7 @@ function editProfileDialog(profile, account) {
       <section class="system-dialog-panel sa-profile-panel" role="dialog" aria-modal="true" aria-labelledby="saProfileTitle">
         <header class="system-dialog-header">
           <span class="system-dialog-icon"><i class="ri-user-settings-line"></i></span>
-          <div><p class="eyebrow">TÀI KHOẢN HỆ THỐNG</p><h3 id="saProfileTitle">Cập nhật thông tin người dùng</h3></div>
+          <div><p class="eyebrow">TÀI KHOẢN HỆ THỐNG</p><h3 id="saProfileTitle">Cập nhật thông tin &amp; Mã nhân viên</h3></div>
           <button class="icon-button system-dialog-close" type="button" aria-label="Đóng">×</button>
         </header>
         <p class="system-dialog-message">Thông tin được đồng bộ sang hồ sơ nhân sự và tài khoản đăng nhập. Khi đổi mã nhân sự, hệ thống tự động liên kết phân ca, chấm công và giữ mã cũ để nhân sự đăng nhập kép không bị gián đoạn.</p>

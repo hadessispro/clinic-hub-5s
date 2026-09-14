@@ -22,14 +22,12 @@ function renderPersonCard(employee, canManageEmployees = false) {
   const shift = SHIFTS.find(s => s.id === employee.shift);
   return `
     <article class="person-card">
-      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
-        <span class="avatar">${escapeHTML(initials)}</span>
-        <div style="flex:1;min-width:0;">
-          <h4 style="margin:0;font-size:0.95rem;line-height:1.3;">${escapeHTML(employee.name)}</h4>
-          <span class="badge" style="font-family:ui-monospace,monospace;font-weight:700;font-size:0.75rem;background:#eff6ff;color:#2563eb;padding:2px 6px;border-radius:4px;display:inline-block;margin-top:3px;">MNV: ${escapeHTML(employee.id)}</span>
-        </div>
-      </div>
+      <span class="avatar">${escapeHTML(initials)}</span>
       <div>
+        <h4 style="margin:0 0 6px 0;font-size:0.95rem;line-height:1.3;display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
+          <span>${escapeHTML(employee.name)}</span>
+          <span class="badge" style="font-family:ui-monospace,monospace;font-weight:700;font-size:0.75rem;background:#eff6ff;color:#2563eb;padding:2px 6px;border-radius:4px;">${escapeHTML(employee.id)}</span>
+        </h4>
         <div class="person-meta">
           ${pill(departmentName(employee.department))}
           ${pill(employee.role)}
@@ -43,7 +41,7 @@ function renderPersonCard(employee, canManageEmployees = false) {
         ${canManageEmployees ? `
           <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;">
             <button type="button" class="secondary-button btn-sm" data-action="edit-employee" data-code="${escapeHTML(employee.id)}" style="width:100%;font-size:0.78rem;padding:5px 8px;display:inline-flex;align-items:center;justify-content:center;gap:4px;">
-              <i class="ri-edit-line"></i> Sửa / Đổi mã NV
+              <i class="ri-edit-line"></i> Sửa hồ sơ / Đổi mã NV
             </button>
           </div>
         ` : ''}
@@ -54,7 +52,7 @@ function renderPersonCard(employee, canManageEmployees = false) {
 
 export async function renderView(state) {
   const profile = store.getState().profile || {};
-  const canManageEmployees = ['admin', 'hr', 'superadmin', 'admin_it'].includes(profile.role);
+  const canManageEmployees = ['admin', 'hr', 'superadmin'].includes(profile.role);
   const marketingScoped = ['admin_marketing', 'support_marketing', 'telesale_leader', 'telesale_staff', 'pg_staff'].includes(profile.role);
   const availableDepartments = marketingScoped ? DEPARTMENTS.filter((department) => department.id === 'mkt') : DEPARTMENTS;
   if (marketingScoped && selectedDept === 'all') {
