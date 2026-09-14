@@ -143,16 +143,21 @@ export function renderTopbar(state) {
         </div>
 
         <!-- Auth Status Chip (Đồng bộ trực tiếp trạng thái chấm công) -->
-        <div class="auth-chip">
-          <span class="auth-dot online" style="${isCheckedIn ? 'background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);' : (isCheckedOut ? 'background: #9ca3af;' : '')}"></span>
-          <button class="auth-summary" type="button" data-action="jump-integrations" title="Mở bảo mật hệ thống">
+        <div class="auth-chip" data-action="jump-integrations" role="button" tabindex="0" title="Mở bảo mật hệ thống">
+          <div class="auth-avatar-wrap">
+            <span class="auth-avatar-icon">
+              <i class="ri-user-3-fill"></i>
+            </span>
+            <span class="auth-dot online" style="${isCheckedIn ? 'background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);' : (isCheckedOut ? 'background: #9ca3af;' : '')}"></span>
+          </div>
+          <div class="auth-summary">
             <strong>${escapeHTML(profile.full_name)}</strong>
             <small>${escapeHTML(roleLabel)} · ${isCheckedIn
               ? `<span style="color: #047857; font-weight: 700;">Đã vào ca (${formatTime(state.todayAttendance.checkinTime)})</span>`
               : (isCheckedOut
                 ? `<span style="color: #4b5563; font-weight: 600;">Đã kết ca</span>`
                 : 'Online')}</small>
-          </button>
+          </div>
         </div>
 
         <button class="topbar-logout-button" type="button" id="topbarLogoutBtn" title="Đăng xuất" aria-label="Đăng xuất">
@@ -398,10 +403,15 @@ export function renderTopbar(state) {
   } else {
     authArea.innerHTML = `
       <div class="auth-chip">
-        <span class="auth-dot offline"></span>
-        <span class="auth-summary" style="padding: 6px 12px; cursor: default;">
+        <div class="auth-avatar-wrap">
+          <span class="auth-avatar-icon">
+            <i class="ri-user-line"></i>
+          </span>
+          <span class="auth-dot offline"></span>
+        </div>
+        <div class="auth-summary" style="padding: 0 4px; cursor: default;">
           <strong>Chưa đăng nhập</strong>
-        </span>
+        </div>
       </div>
     `;
   }
