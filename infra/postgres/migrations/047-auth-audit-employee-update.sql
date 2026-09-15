@@ -1,4 +1,4 @@
-﻿-- Cho phép ghi nhận thao tác cập nhật thông tin nhân viên và đổi mã nhân sự trong nhật ký tài khoản.
+-- Cho phép ghi nhận thao tác cập nhật thông tin nhân viên và đổi mã nhân sự trong nhật ký tài khoản.
 alter table app.auth_audit drop constraint if exists auth_audit_hanh_dong_check;
 
 alter table app.auth_audit add constraint auth_audit_hanh_dong_check
