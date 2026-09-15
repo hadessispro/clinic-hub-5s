@@ -582,10 +582,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
           and lower(pg_creator.payload->>'employee_code')=lower(l.created_by_pg_code)
       )`);
     }
+    const isExport = String(query.export || '').toLowerCase() === 'true';
     const requestedPage = Math.max(1, Number(query.page || 1));
-    const hasPaging = query.page !== undefined || query.pageSize !== undefined;
+    const hasPaging = !isExport && (query.page !== undefined || query.pageSize !== undefined);
     const pageSize = Math.max(1, Math.min(100, Number(query.pageSize || 50)));
-    const limit = hasPaging ? pageSize : 5000;
+    const limit = isExport ? 50000 : (hasPaging ? pageSize : 10000);
     const offset = hasPaging ? (requestedPage - 1) * pageSize : 0;
     params.push(limit, offset);
     const result = await this.infrastructure.postgres.query(

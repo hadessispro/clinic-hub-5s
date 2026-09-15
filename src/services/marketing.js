@@ -79,6 +79,8 @@ export async function getMarketingLeads(filters = {}) {
     if (filters.date_type) query.set('dateType', filters.date_type);
     if (filters.service_group) query.set('serviceGroup', filters.service_group);
     if (filters.service_type) query.set('serviceType', filters.service_type);
+    if (filters.commission_status) query.set('commissionStatus', filters.commission_status);
+    if (filters.export) query.set('export', 'true');
     const payload = await vpsRequest(`/leads${query.size ? `?${query}` : ''}`);
     return (payload.data || []).map(mapVpsLead);
   }
@@ -361,6 +363,72 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  return true;
+}
+
+/** Xuất danh sách data PG ra định dạng Excel (.xlsx) chuẩn */
+export async function exportPgLeadsToExcel(leads, filename = 'Kho_Data_PG.xlsx') {
+  if (!leads || !leads.length) return false;
+  const XLSX = await import('xlsx');
+  const statusMap = {
+    new: 'Mới nạp',
+    contacted: 'Đã liên hệ',
+    appointment_booked: 'Đã hẹn khám',
+    visited: 'Đã đến phòng khám',
+    converted: 'Chốt thành công',
+    appointment_cancelled: 'Khách hủy hẹn',
+    low_quality: 'Khách không chất lượng (KCL)',
+    cancelled: 'Hủy / Thất bại',
+  };
+
+  const rows = leads.map((l, index) => {
+    const isConfirmed = Boolean(l.pg_arrival_confirmed_at);
+    return {
+      'STT': index + 1,
+      'Khách hàng': l.full_name || '',
+      'Số điện thoại': l.phone || '',
+      'PG tiếp nhận': l.created_by_name || l.created_by_pg || '',
+      'Mã PG': l.created_by_pg || '',
+      'Phân loại data': l.data_class === 'net' ? `Data net · ${l.net_level === 'advanced' ? 'Chuyên sâu' : 'Cơ bản'}` : 'Data thô',
+      'Dịch vụ quan tâm': l.service_interest || '',
+      'Telesale phụ trách': l.assigned_telesale_name || (l.assigned_telesale_id ? `Mã: ${l.assigned_telesale_id}` : 'Chưa gán'),
+      'Mã Telesale': l.assigned_telesale_id || '',
+      'Trạng thái chăm sóc': statusMap[l.status] || l.status || '',
+      'Xác nhận đến / HH': isConfirmed ? 'Đã xác nhận (Đủ ĐK hoa hồng)' : 'Chờ Support xác nhận',
+      'Người xác nhận đến': l.pg_arrival_confirmed_by || '',
+      'Thời gian xác nhận đến': l.pg_arrival_confirmed_at ? new Date(l.pg_arrival_confirmed_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
+      'Chi nhánh': l.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : (l.branch_id === 'pham-van-chieu' ? '5S Phạm Văn Chiêu' : (l.branch_id || '')),
+      'Lịch hẹn': (l.appointment_date || l.appointment_at) ? new Date(l.appointment_date || l.appointment_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
+      'Ghi chú': l.notes || '',
+      'Ngày PG nhập': l.created_at ? new Date(l.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  ws['!cols'] = [
+    { wch: 6 },  // STT
+    { wch: 22 }, // Khách hàng
+    { wch: 14 }, // Số điện thoại
+    { wch: 24 }, // PG tiếp nhận
+    { wch: 15 }, // Mã PG
+    { wch: 24 }, // Phân loại data
+    { wch: 22 }, // Dịch vụ quan tâm
+    { wch: 24 }, // Telesale phụ trách
+    { wch: 15 }, // Mã Telesale
+    { wch: 22 }, // Trạng thái chăm sóc
+    { wch: 30 }, // Xác nhận đến / HH
+    { wch: 22 }, // Người xác nhận đến
+    { wch: 22 }, // Thời gian xác nhận đến
+    { wch: 20 }, // Chi nhánh
+    { wch: 20 }, // Lịch hẹn
+    { wch: 32 }, // Ghi chú
+    { wch: 22 }, // Ngày PG nhập
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Data PG');
+  XLSX.writeFile(wb, filename);
   return true;
 }
 

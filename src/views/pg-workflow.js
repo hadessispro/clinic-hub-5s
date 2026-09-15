@@ -8,7 +8,7 @@ import { LEAD_STATUS } from '../constants.js';
 import { leadStatusPill } from '../components/shared.js';
 import {
   actionPgSupportRequest, cancelPgAssignment, createPgAssignment, createPgLocationSuggestion, createPgSupportRequest,
-  confirmPgLeadArrival, getMarketingLeadPage, getPgAccounts, getPgAssignments, getPgLocationSuggestions, getPgSites, getPgSupportRequests, reviewPgLocationSuggestion,
+  confirmPgLeadArrival, exportPgLeadsToExcel, getMarketingLeadPage, getMarketingLeads, getPgAccounts, getPgAssignments, getPgLocationSuggestions, getPgSites, getPgSupportRequests, reviewPgLocationSuggestion,
 } from '../services/marketing.js';
 
 let suggestions = []; let requests = []; let assignments = []; let accounts = []; let sites = [];
@@ -72,7 +72,7 @@ function renderSupportLeadData() {
   const pages = Math.max(1, Math.ceil(total / pageSize)); const start = total ? ((page - 1) * pageSize) + 1 : 0;
   const pgOptions = accounts.map((row) => ({ code: row.profile?.employee_code || '', name: pgName(row) })).filter((row) => row.code).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
   return `<section class="panel pg-support-data">
-    <div class="section-title"><div><p class="eyebrow">KHO DATA PG</p><h3>Hồ sơ khách hàng do PG tiếp nhận</h3><p class="subtle">Bộ lọc chạy trực tiếp trên cơ sở dữ liệu; mỗi trang chỉ tải 25 hồ sơ để không làm nặng thiết bị.</p></div><span class="pill">${total.toLocaleString('vi-VN')} hồ sơ</span></div>
+    <div class="section-title"><div><p class="eyebrow">KHO DATA PG</p><h3>Hồ sơ khách hàng do PG tiếp nhận</h3><p class="subtle">Bộ lọc chạy trực tiếp trên cơ sở dữ liệu; mỗi trang chỉ tải 25 hồ sơ để không làm nặng thiết bị.</p></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button type="button" class="primary-button" id="exportSupportPgLeads"><i class="ri-file-excel-2-line"></i> Xuất Excel</button><span class="pill">${total.toLocaleString('vi-VN')} hồ sơ</span></div></div>
     <form id="supportPgLeadFilter" class="pg-lead-filter-grid" autocomplete="off">
       <label class="form-field pg-lead-search"><span>Tìm khách hàng</span><div class="pg-lead-search-input"><i class="ri-search-line"></i><input id="supportPgLeadSearch" name="search" value="${escapeHTML(leadSearch)}" placeholder="Tên, số điện thoại, dịch vụ hoặc nguồn"></div></label>
       <label class="form-field"><span>PG tiếp nhận</span><select name="pgCode"><option value="">Tất cả PG</option>${pgOptions.map((row) => `<option value="${escapeHTML(row.code)}"${leadPg === row.code ? ' selected' : ''}>${escapeHTML(row.name)} · ${escapeHTML(row.code)}</option>`).join('')}</select></label>
@@ -81,7 +81,10 @@ function renderSupportLeadData() {
       <label class="form-field"><span>Xác nhận khách đến</span><select name="commissionStatus"><option value="">Tất cả</option><option value="pending_confirmation"${leadCommission === 'pending_confirmation' ? ' selected' : ''}>Chờ Support xác nhận</option><option value="eligible"${leadCommission === 'eligible' ? ' selected' : ''}>Đủ điều kiện hoa hồng</option><option value="paid"${leadCommission === 'paid' ? ' selected' : ''}>Đã thanh toán</option><option value="rejected"${leadCommission === 'rejected' ? ' selected' : ''}>Không đủ điều kiện</option></select></label>
       <label class="form-field"><span>Từ ngày PG nhập</span><input name="dateFrom" type="date" value="${escapeHTML(leadFrom)}" max="${escapeHTML(leadTo || today())}"></label>
       <label class="form-field"><span>Đến ngày PG nhập</span><input name="dateTo" type="date" value="${escapeHTML(leadTo)}" min="${escapeHTML(leadFrom)}" max="${today()}"></label>
-      <button class="ghost-button" data-reset-support-pg-leads type="button"><i class="ri-refresh-line"></i> Xóa lọc</button>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button class="ghost-button" data-reset-support-pg-leads type="button"><i class="ri-refresh-line"></i> Xóa lọc</button>
+        <button class="secondary-button" id="exportSupportPgLeadsFilter" type="button"><i class="ri-file-excel-2-line"></i> Xuất Excel</button>
+      </div>
     </form>
     <div class="table-wrap pg-lead-table-wrap"><table class="pg-lead-table"><thead><tr><th>STT</th><th>Khách hàng</th><th>PG tiếp nhận</th><th>Phân loại</th><th>Dịch vụ</th><th>Telesale</th><th>Trạng thái</th><th>Xác nhận đến / HH</th><th>Ngày nhập</th></tr></thead><tbody>
       ${rows.length ? rows.map((lead, index) => {
@@ -275,4 +278,47 @@ export function initView() {
   }));
   document.querySelectorAll('[data-review-location]').forEach(b => b.addEventListener('click', async () => { const note = await requestInput('Ghi chú giúp PG hiểu kết quả phê duyệt.', { title: b.dataset.reviewLocation === 'approved' ? 'Duyệt tọa độ' : 'Từ chối tọa độ', label: 'Ghi chú duyệt', placeholder: 'Không bắt buộc' }); if (note === null) return; try { await reviewPgLocationSuggestion(b.dataset.id, b.dataset.reviewLocation, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
   document.querySelectorAll('[data-request-action]').forEach(b => b.addEventListener('click', async () => { const isComplete = b.dataset.requestAction === 'complete'; const note = await requestInput(isComplete ? 'Nhập phản hồi cuối cùng để PG nhận kết quả.' : 'Nhập ghi chú cho bước xử lý này.', { title: isComplete ? 'Hoàn tất yêu cầu' : 'Cập nhật yêu cầu', label: isComplete ? 'Phản hồi cho PG' : 'Ghi chú xử lý' }); if (note === null || (isComplete && !note.trim())) return; try { await actionPgSupportRequest(b.dataset.id, b.dataset.requestAction, note); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } }));
+
+  const handleExportPgLeads = async (btn) => {
+    if (btn?.disabled) return;
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang tải xuất Excel...';
+    }
+    showToast('Đang tải dữ liệu toàn bộ data PG theo bộ lọc...');
+    try {
+      const allLeads = await getMarketingLeads({
+        pg_only: true,
+        search: leadSearch || undefined,
+        pg_code: leadPg || undefined,
+        data_class: leadClass || undefined,
+        status: leadStatus || undefined,
+        commission_status: leadCommission || undefined,
+        date_from: leadFrom || undefined,
+        date_to: leadTo || undefined,
+        date_type: 'created',
+        export: true,
+      });
+      if (!allLeads || !allLeads.length) {
+        showToast('Không có hồ sơ PG nào phù hợp bộ lọc hiện tại để xuất Excel.', true);
+        return;
+      }
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const pgPart = leadPg ? `_${leadPg}` : '';
+      const filename = `Kho_Data_PG${pgPart}_${todayStr}.xlsx`;
+      await exportPgLeadsToExcel(allLeads, filename);
+      showToast(`Đã xuất thành công ${allLeads.length.toLocaleString('vi-VN')} hồ sơ PG ra file Excel!`);
+    } catch (err) {
+      console.error('[Export PG Leads Error]', err);
+      showToast('Lỗi xuất file Excel: ' + (err.message || 'Không thể tạo file.'), true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+  };
+  document.getElementById('exportSupportPgLeads')?.addEventListener('click', (e) => handleExportPgLeads(e.currentTarget));
+  document.getElementById('exportSupportPgLeadsFilter')?.addEventListener('click', (e) => handleExportPgLeads(e.currentTarget));
 }
