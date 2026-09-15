@@ -173,6 +173,14 @@ export class AuthService {
 
     const profile = candidate.profile;
     const employee = candidate.employee || {};
+    // Dữ liệu nhân sự cũ không đồng nhất: có hồ sơ lưu tên ở profile,
+    // có hồ sơ chỉ lưu ở employees, thậm chí dùng trường `name`. Nhật ký
+    // an ninh phải nhận diện đúng con người thay vì rơi về tên thiết bị.
+    const actorName = String(
+      profile.full_name || employee.full_name || employee.name
+      || profile.name || profile.display_name || employee.display_name
+      || profile.employee_code || identifier,
+    ).trim();
     const userId = String(profile.id || candidate.profile_key);
     // Older roster imports can use readable record keys such as
     // "staff-profile-pvc-10251". app.local_accounts.user_id is UUID-only,
@@ -225,13 +233,14 @@ export class AuthService {
       const isLocked = attempts >= 4;
 
       try {
-        await this.infrastructure.postgres.query(
+        const securityEvent = await this.infrastructure.postgres.query<{ id: string }>(
           `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
-           values ('login_failed', $1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+           values ('login_failed', $1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+           returning id::text`,
           [
             isLocked ? 'critical' : attempts >= 3 ? 'warning' : 'info',
             profile.employee_code || identifier,
-            profile.full_name || '',
+            actorName,
             profile.role || '',
             profile.branch_id || branchId,
             clientIp,
@@ -243,9 +252,10 @@ export class AuthService {
         if (attempts >= 3) {
           void this.telegram.sendSecurityAlert({
             eventType: 'login_failed',
+            eventId: securityEvent.rows[0]?.id,
             severity: isLocked ? 'critical' : 'warning',
             actorCode: String(profile.employee_code || identifier),
-            actorName: String(profile.full_name || 'Nhân sự'),
+            actorName,
             actorRole: String(profile.role || 'staff'),
             branchId: String(profile.branch_id || branchId),
             clientIp,
@@ -290,25 +300,32 @@ export class AuthService {
     await this.infrastructure.markActive(user.id, user.role);
 
     try {
-      await this.infrastructure.postgres.query(
+      const securityEvent = await this.infrastructure.postgres.query<{ id: string }>(
         `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
-         values ('login_success', 'info', $1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [user.employeeCode, profile.full_name || '', user.role, user.branchId, clientIp, userAgent, JSON.stringify({ branchRequested: branchId })],
+         values ('login_success', 'info', $1, $2, $3, $4, $5, $6, $7::jsonb)
+         returning id::text`,
+        [user.employeeCode, actorName, user.role, user.branchId, clientIp, userAgent,
+          JSON.stringify({ branchRequested: requestedBranchId || 'all', department: user.department || null })],
       );
 
-      if (['admin', 'admin_it', 'superadmin'].includes(user.role)) {
-        void this.telegram.sendSecurityAlert({
-          eventType: 'login_success',
-          severity: 'info',
-          actorCode: user.employeeCode,
-          actorName: String(profile.full_name || 'Quản trị viên'),
-          actorRole: user.role,
-          branchId: user.branchId,
-          clientIp,
-          userAgent,
-          details: { thongBao: 'Quản trị viên đăng nhập vào hệ thống.' },
-        });
-      }
+      // Chỉ chạy khi người dùng thực sự gửi form đăng nhập; refresh token
+      // không đi qua đây nên Telegram không bị spam khi ứng dụng tự gia hạn.
+      void this.telegram.sendSecurityAlert({
+        eventType: 'login_success',
+        eventId: securityEvent.rows[0]?.id,
+        severity: 'info',
+        actorCode: user.employeeCode,
+        actorName,
+        actorRole: user.role,
+        branchId: user.branchId,
+        clientIp,
+        userAgent,
+        details: {
+          thongBao: 'Đăng nhập thành công vào Clinic Hub.',
+          phongBan: user.department || '',
+          chiNhanhDaChon: requestedBranchId || 'all',
+        },
+      });
     } catch {
       // Safe fail
     }
@@ -325,11 +342,28 @@ export class AuthService {
       );
     }
     try {
-      await this.infrastructure.postgres.query(
+      const actorName = String(
+        user.profile?.full_name || user.profile?.name || user.profile?.display_name
+        || user.employeeCode || 'Nhân sự',
+      ).trim();
+      const securityEvent = await this.infrastructure.postgres.query<{ id: string }>(
         `insert into app.security_events (event_type, severity, actor_code, actor_name, actor_role, branch_id, client_ip, user_agent, details)
-         values ('logout', 'info', $1, $2, $3, $4, $5, $6, '{}'::jsonb)`,
-        [user.employeeCode, (user.profile?.full_name as string) || '', user.role, user.branchId, clientIp, userAgent],
+         values ('logout', 'info', $1, $2, $3, $4, $5, $6, '{}'::jsonb)
+         returning id::text`,
+        [user.employeeCode, actorName, user.role, user.branchId, clientIp, userAgent],
       );
+      void this.telegram.sendSecurityAlert({
+        eventType: 'logout',
+        eventId: securityEvent.rows[0]?.id,
+        severity: 'info',
+        actorCode: user.employeeCode,
+        actorName,
+        actorRole: user.role,
+        branchId: user.branchId,
+        clientIp,
+        userAgent,
+        details: { thongBao: 'Đã đăng xuất khỏi Clinic Hub.', phongBan: user.department || '' },
+      });
     } catch {
       // Ignored
     }
@@ -351,7 +385,12 @@ export class AuthService {
       id: String(row.profile.id || payload.sub), email: row.employee?.email ? String(row.employee.email) : null,
       employeeCode: String(row.profile.employee_code || ''), branchId: String(row.profile.branch_id || ''),
       role: String(row.profile.role || 'staff'), department: String(row.profile.department || row.employee?.department || ''),
-      profile: row.profile,
+      profile: {
+        ...row.profile,
+        full_name: row.profile.full_name || row.employee?.full_name || row.employee?.name
+          || row.profile.name || row.profile.display_name || row.employee?.display_name
+          || row.profile.employee_code || '',
+      },
     };
   }
 

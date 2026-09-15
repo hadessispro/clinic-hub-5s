@@ -7,6 +7,7 @@ type JsonMap = Record<string, any>;
 
 export interface SecurityAlertPayload {
   eventType: 'login_success' | 'login_failed' | 'logout' | 'f12_opened' | 'console_tamper' | 'gps_anomaly' | 'suspicious_activity' | 'server_alert';
+  eventId?: string | number;
   severity: 'info' | 'warning' | 'critical';
   actorCode?: string;
   actorName?: string;
@@ -22,6 +23,85 @@ export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
 
   constructor(private readonly infrastructure: InfrastructureService) {}
+
+  private escapeHtml(value: unknown): string {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private roleLabel(role?: string): string {
+    const labels: Record<string, string> = {
+      superadmin: 'Quản trị cấp cao', admin: 'Quản trị viên', admin_it: 'Quản trị IT',
+      hr: 'Nhân sự', leader: 'Quản lý', doctor: 'Bác sĩ', bac_si: 'Bác sĩ',
+      assistant: 'Phụ tá', phu_ta: 'Phụ tá', phu_ta_truong: 'Trưởng bộ phận Phụ tá',
+      receptionist: 'Lễ tân', le_tan: 'Lễ tân', customer_service: 'Chăm sóc khách hàng',
+      cham_soc_khach_hang: 'Chăm sóc khách hàng',
+      admin_marketing: 'Quản trị Marketing', support_marketing: 'Hỗ trợ Marketing',
+      telesale_leader: 'Trưởng nhóm Telesale', telesale_staff: 'Nhân viên Telesale',
+      pg_staff: 'Nhân viên PG', staff: 'Nhân viên',
+    };
+    const key = String(role || '').trim().toLowerCase();
+    return labels[key] || role || 'Chưa xác định';
+  }
+
+  private branchLabel(branchId?: string): string {
+    const key = String(branchId || '').trim().toLowerCase();
+    if (!key || key === 'all') return 'Toàn hệ thống';
+    if (['pvc', 'pham_van_chieu', 'pham-van-chieu', '5s_pham_van_chieu'].includes(key)) return '5S Phạm Văn Chiêu (PVC)';
+    if (['lvt', 'le_van_tho', 'le-van-tho', '5s_le_van_tho'].includes(key)) return '5S Lê Văn Thọ (LVT)';
+    return String(branchId);
+  }
+
+  private departmentLabel(department?: string): string {
+    const labels: Record<string, string> = {
+      bs: 'Bác sĩ / Chuyên môn', phuta: 'Phụ tá', dvkh: 'Dịch vụ khách hàng',
+      le_tan: 'Lễ tân', letan: 'Lễ tân', hcns: 'Hành chính – Nhân sự',
+      marketing: 'Marketing', telesale: 'Telesale', it: 'Công nghệ thông tin',
+    };
+    const key = String(department || '').trim().toLowerCase();
+    return labels[key] || department || 'Chưa cập nhật';
+  }
+
+  private deviceSummary(userAgent?: string): { device: string; operatingSystem: string; browser: string } {
+    const ua = String(userAgent || '').trim();
+    if (!ua) return { device: 'Không xác định', operatingSystem: 'Không xác định', browser: 'Không xác định' };
+
+    let operatingSystem = 'Hệ điều hành khác';
+    const android = ua.match(/Android\s+([\d.]+)/i);
+    const ios = ua.match(/(?:iPhone OS|CPU OS)\s+([\d_]+)/i);
+    const windows = ua.match(/Windows NT\s+([\d.]+)/i);
+    const mac = ua.match(/Mac OS X\s+([\d_]+)/i);
+    if (android) operatingSystem = `Android ${android[1]}`;
+    else if (ios) operatingSystem = `iOS ${ios[1].replace(/_/g, '.')}`;
+    else if (windows) operatingSystem = `Windows ${windows[1] === '10.0' ? '10/11' : windows[1]}`;
+    else if (mac) operatingSystem = `macOS ${mac[1].replace(/_/g, '.')}`;
+    else if (/Linux/i.test(ua)) operatingSystem = 'Linux';
+
+    let browser = 'Trình duyệt khác';
+    const edge = ua.match(/Edg(?:A|iOS)?\/([\d.]+)/i);
+    const chrome = ua.match(/(?:Chrome|CriOS)\/([\d.]+)/i);
+    const firefox = ua.match(/(?:Firefox|FxiOS)\/([\d.]+)/i);
+    const safari = ua.match(/Version\/([\d.]+).*Safari/i);
+    if (edge) browser = `Microsoft Edge ${edge[1].split('.')[0]}`;
+    else if (chrome) browser = `Google Chrome ${chrome[1].split('.')[0]}`;
+    else if (firefox) browser = `Firefox ${firefox[1].split('.')[0]}`;
+    else if (safari) browser = `Safari ${safari[1].split('.')[0]}`;
+
+    let device = /iPad|Tablet/i.test(ua) ? 'Máy tính bảng'
+      : /Mobi|Android|iPhone/i.test(ua) ? 'Điện thoại' : 'Máy tính';
+    if (/iPhone/i.test(ua)) device = 'iPhone';
+    else if (/iPad/i.test(ua)) device = 'iPad';
+    else {
+      const androidModel = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\s+Build\/|;|\))/i)?.[1]?.trim();
+      if (androidModel && !/^[a-z]{2}(?:[-_][a-z]{2})?$/i.test(androidModel)) {
+        device = `Điện thoại Android (${androidModel})`;
+      }
+    }
+    return { device, operatingSystem, browser };
+  }
 
   private get botToken(): string {
     return String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
@@ -128,7 +208,7 @@ export class TelegramService {
     if (alert.eventType === 'f12_opened') eventTitle = 'PHÁT HIỆN MỞ F12 / DEVTOOLS';
     else if (alert.eventType === 'console_tamper') eventTitle = 'CAN THIỆP MÃ NGUỒN TRỰC TIẾP TRÊN CONSOLE';
     else if (alert.eventType === 'login_failed') eventTitle = 'ĐĂNG NHẬP THẤT BẠI NHIỀU LẦN';
-    else if (alert.eventType === 'login_success') eventTitle = 'QUẢN TRỊ VIÊN ĐĂNG NHẬP';
+    else if (alert.eventType === 'login_success') eventTitle = 'ĐĂNG NHẬP HỆ THỐNG';
     else if (alert.eventType === 'logout') eventTitle = 'ĐĂNG XUẤT HỆ THỐNG';
     else if (alert.eventType === 'gps_anomaly') eventTitle = 'CHẤM CÔNG GPS BẤT THƯỜNG';
     else if (alert.eventType === 'server_alert') eventTitle = 'CẢNH BÁO TÀI NGUYÊN MÁY CHỦ';
@@ -139,20 +219,30 @@ export class TelegramService {
       timeStyle: 'medium',
     }).format(new Date());
 
-    const detailsStr = alert.details && Object.keys(alert.details).length > 0
-      ? `\n<b>Chi tiết:</b> <code>${JSON.stringify(alert.details, null, 1).replace(/</g, '&lt;')}</code>`
-      : '';
+    const device = this.deviceSummary(alert.userAgent);
+    const actorName = this.escapeHtml(alert.actorName || 'Chưa xác định');
+    const actorCode = this.escapeHtml(alert.actorCode || 'Chưa có mã');
+    const department = this.escapeHtml(this.departmentLabel(alert.details?.phongBan || alert.details?.department));
+    const selectedBranch = alert.details?.chiNhanhDaChon
+      ? this.branchLabel(String(alert.details.chiNhanhDaChon)) : '';
+    const note = this.escapeHtml(alert.details?.thongBao || alert.details?.canhBao || '');
 
     const message = [
       `${icon} <b>${eventTitle}</b> [${severityLabel}]`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `👤 <b>Nhân sự:</b> ${alert.actorName || 'Chưa xác định'} (${alert.actorCode ? `Mã: <code>${alert.actorCode}</code>` : 'Khách'})`,
-      `🏷️ <b>Vai trò:</b> ${alert.actorRole || 'N/A'}`,
-      `🏢 <b>Chi nhánh:</b> ${alert.branchId || 'Toàn hệ thống'}`,
-      `🌐 <b>Địa chỉ IP:</b> <code>${alert.clientIp || 'Unknown'}</code>`,
+      alert.eventId ? `🧾 <b>Mã nhật ký:</b> <code>#${this.escapeHtml(alert.eventId)}</code>` : '',
+      `👤 <b>Người thực hiện:</b> ${actorName}`,
+      `🪪 <b>Mã nhân sự:</b> <code>${actorCode}</code>`,
+      `💼 <b>Chức danh / quyền:</b> ${this.escapeHtml(this.roleLabel(alert.actorRole))}`,
+      `🏷️ <b>Phòng ban:</b> ${department}`,
+      `🏢 <b>Chi nhánh hồ sơ:</b> ${this.escapeHtml(this.branchLabel(alert.branchId))}`,
+      selectedBranch ? `📍 <b>Phạm vi đã chọn:</b> ${this.escapeHtml(selectedBranch)}` : '',
+      `🌐 <b>Địa chỉ IP:</b> <code>${this.escapeHtml(alert.clientIp || 'Không xác định')}</code>`,
+      `📱 <b>Thiết bị:</b> ${this.escapeHtml(device.device)}`,
+      `💻 <b>Hệ điều hành:</b> ${this.escapeHtml(device.operatingSystem)}`,
+      `🌍 <b>Trình duyệt:</b> ${this.escapeHtml(device.browser)}`,
       `🕒 <b>Thời gian:</b> ${timeStr}`,
-      alert.userAgent ? `📱 <b>Thiết bị:</b> <i>${alert.userAgent.slice(0, 120)}</i>` : '',
-      detailsStr,
+      note ? `📝 <b>Ghi chú:</b> ${note}` : '',
     ].filter(Boolean).join('\n');
 
     await this.broadcast(message, 'HTML');
