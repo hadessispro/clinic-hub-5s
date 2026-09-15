@@ -314,7 +314,7 @@ async function bootstrap() {
 
         // Setup marketing & lead realtime sync for authorized marketing roles only
         const userRole = authInfo?.profile?.role || authInfo?.user?.role || store.getState()?.role;
-        const MARKETING_SYNC_ROLES = ['admin', 'superadmin', 'admin_it', 'admin_marketing', 'telesale_leader', 'telesale_staff', 'support_marketing', 'pg_staff'];
+        const MARKETING_SYNC_ROLES = ['admin', 'superadmin', 'admin_it', 'admin_marketing', 'telesale_leader', 'telesale_staff', 'support_marketing'];
         if (MARKETING_SYNC_ROLES.includes(userRole)) {
           import('./services/marketing.js').then(({ subscribeToRealtime }) => {
             marketingSub?.();

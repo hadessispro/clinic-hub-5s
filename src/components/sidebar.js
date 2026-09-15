@@ -16,6 +16,9 @@ const MOBILE_NAV_ICONS = {
   'telesale-management': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="11" cy="7" r="4"/><path d="M19 8v6M16 11h6"/></svg>',
   'telesale-workspace': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
   'marketing-analytics': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  'pg-workflow': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  'gift-inventory': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
+  'pg-attendance': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
 };
 
 function mobileNavIcon(view) {
@@ -36,6 +39,9 @@ const MOBILE_NAV_LABELS = {
   'luong-pg': 'Lương PG',
   'telesale-workspace': 'Telesale',
   'marketing-analytics': 'Báo cáo MKT',
+  'pg-workflow': 'Ca & Hỗ trợ',
+  'gift-inventory': 'Trao quà',
+  'pg-attendance': 'Chấm công',
 };
 
 function mobileNavLabel(item) {
@@ -96,7 +102,7 @@ export function renderSidebar(role) {
     admin_it: ['system-admin', 'attendance', 'schedule', 'reports'],
     telesale_leader: ['telesale-management', 'attendance', 'dashboard', 'marketing-analytics'],
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
-    pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'tasks'],
+    pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
     admin_marketing: ['telesale-management', 'hoa-hong', 'marketing-leads', 'pg-management'],
     support_marketing: ['pg-management', 'hoa-hong', 'pg-workflow', 'pg-locations'],
   };

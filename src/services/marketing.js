@@ -675,9 +675,9 @@ export function subscribeToRealtime(callback) {
   const currentRole = store?.getState?.()?.profile?.role || store?.getState?.()?.role;
   const MARKETING_LEAD_ROLES = new Set([
     'admin', 'superadmin', 'admin_it', 'admin_marketing',
-    'telesale_leader', 'telesale_staff', 'support_marketing', 'pg_staff',
+    'telesale_leader', 'telesale_staff', 'support_marketing',
   ]);
-  const hasAccess = !currentRole || MARKETING_LEAD_ROLES.has(currentRole);
+  const hasAccess = Boolean(currentRole && MARKETING_LEAD_ROLES.has(currentRole));
 
   if (useVps) {
     let stopped = false;

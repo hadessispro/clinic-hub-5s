@@ -4166,7 +4166,7 @@ tr:last-child td {
 @media (max-width: 760px) {
   body {
     padding-bottom: calc(86px + env(safe-area-inset-bottom));
-    overscroll-behavior-y: contain;
+    overscroll-behavior-y: auto;
   }
 
   .app-shell {
@@ -6534,9 +6534,18 @@ body.dialog-open {
   .operation-filterbar { display: flex; flex-wrap: wrap; }
 }
 @media (max-width: 760px) {
-  html, body, .app-shell, .main-area, .attendance-page {
+  html {
     max-width: 100vw !important;
-    overflow-x: hidden !important;
+    overflow-x: hidden;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  body, .app-shell, .main-area, .attendance-page {
+    max-width: 100vw !important;
+    overflow: visible !important;
+    touch-action: pan-y;
   }
   .main-area {
     padding: 10px !important;
@@ -6619,11 +6628,23 @@ body.dialog-open {
 
 /* Authoritative compact layout for manager and attendance screens. */
 @media (max-width: 760px) {
-  html, body {
+  html {
     width: 100%;
     min-width: 320px;
     max-width: 100%;
-    overflow-x: hidden !important;
+    overflow-x: hidden;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  body {
+    width: 100%;
+    min-width: 320px;
+    max-width: 100%;
+    overflow: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: pan-y;
   }
 
   .app-shell,
@@ -7772,7 +7793,7 @@ body.dialog-open {
 @media (max-width: 760px) {
   body {
     min-height: 100dvh;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: auto;
     -webkit-tap-highlight-color: transparent;
   }
   .main-area {
@@ -13655,21 +13676,39 @@ html, body {
   }
 }
 
-/* Trên Di động (<= 760px): .sidebar chuyển thành thanh nổi dưới đáy, .app-shell khoá tràn ngang */
+/* Trên Di động (<= 760px): .sidebar chuyển thành thanh nổi dưới đáy, .app-shell cho phép cuộn dọc tự nhiên */
 @media (max-width: 760px) {
-  html, body {
+  html {
     overflow-x: hidden;
+    overflow-x: clip !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  body {
+    overflow: visible !important;
+    overscroll-behavior-y: auto !important;
+    min-height: 100% !important;
+    touch-action: pan-y;
   }
   .app-shell {
     min-width: 0 !important;
     max-width: 100vw !important;
     box-sizing: border-box !important;
-    overflow-x: clip !important;
+    overflow: visible !important;
+    min-height: 100% !important;
+    touch-action: pan-y;
   }
   .main-area {
     min-width: 0 !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    overflow: visible !important;
+    height: auto !important;
+    touch-action: pan-y;
+  }
+  .view-stack {
+    touch-action: pan-y;
   }
 }
 

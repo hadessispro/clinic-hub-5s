@@ -33,7 +33,9 @@ export async function renderView(state) {
   const allowExport = canExportData(profile.role);
 
   const [leads, employees, telesaleAccounts] = await Promise.all([
-    getMarketingLeads(),
+    isPgStaff
+      ? getMarketingLeads({ pg_code: profile.employee_code })
+      : getMarketingLeads(),
     isLeadManager ? getEmployees() : Promise.resolve([]),
     isLeadManager ? getTelesaleAccounts() : Promise.resolve([]),
   ]);
@@ -60,7 +62,7 @@ export async function renderView(state) {
     { key: 'cancelled', title: 'Hủy / Thất bại', icon: 'ri-close-circle-line', badgeBg: '#fee2e2', badgeColor: '#b91c1c' },
   ];
 
-  const kanbanHtml = `
+  const kanbanHtml = isPgStaff ? '' : `
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap:14px; margin-top:14px; align-items:start;">
       ${kanbanColumns.map(col => {
         const colLeads = leads.filter(l => (l.status || 'new') === col.key);
@@ -169,7 +171,7 @@ export async function renderView(state) {
       }).join('')
     : `<tr><td colspan="10" style="text-align:center; padding:20px; color:#94a3b8;">Chưa có dữ liệu Lead</td></tr>`;
 
-  const spreadsheetTableHtml = `
+  const spreadsheetTableHtml = isPgStaff ? '' : `
     <div style="overflow-x:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; margin-top:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
       <table class="spreadsheet-table">
         <thead>
@@ -197,8 +199,12 @@ export async function renderView(state) {
   const sourceOptionsHtml = MARKETING_SOURCES.map(s => option(s, s, s === defaultSource)).join('');
   const telesaleOptionsHtml = telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`)).join('');
 
-  const pgSubmissionRows = leads.length
-    ? leads.map((lead) => `<tr data-pg-submission-row>
+  const myLeads = isPgStaff
+    ? leads.filter((lead) => !lead.created_by_pg || lead.created_by_pg === profile.employee_code || lead.created_by_employee_code === profile.employee_code)
+    : leads;
+
+  const pgSubmissionRows = myLeads.length
+    ? myLeads.map((lead) => `<tr data-pg-submission-row>
         <td><strong>${escapeHTML(lead.full_name)}</strong><br><span class="subtle">${escapeHTML(lead.phone || 'Không có SĐT')}</span></td>
         <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
         <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
@@ -270,7 +276,7 @@ export async function renderView(state) {
         </form>
       </section>
       <section class="panel" style="margin-top:14px">
-        <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Số liệu thực tế của tài khoản hiện tại · 50 bản ghi mỗi trang</p></div><span class="pill">${leads.length} bản ghi</span></div>
+        <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Số liệu thực tế của tài khoản hiện tại · 50 bản ghi mỗi trang</p></div><span class="pill">${myLeads.length} bản ghi</span></div>
         <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Lịch hẹn</th><th>Trạng thái</th></tr></thead><tbody>${pgSubmissionRows}</tbody></table></div>
         <div class="data-pagination" id="pgSubmissionPagination" aria-label="Phân trang dữ liệu PG">
           <div class="data-pagination-summary" id="pgSubmissionPaginationSummary"></div>
@@ -288,8 +294,9 @@ export async function renderView(state) {
       </section>
     ` : ''}
 
+    ${isPgStaff ? '' : `
     <!-- Lead Pipeline & Spreadsheet Management Section -->
-    <section class="panel" style="margin-top:14px;${isPgStaff ? 'display:none;' : ''}">
+    <section class="panel" style="margin-top:14px;">
       <div class="marketing-pipeline-header">
         <div class="marketing-pipeline-heading">
           <h3 style="margin:0; font-size:1.1rem; font-weight:700;">Tổng quan Lead Marketing & Tiến độ Telesale (${leads.length})</h3>
@@ -369,10 +376,14 @@ export async function renderView(state) {
         ${spreadsheetTableHtml}
       </div>
     </section>
+    `}
   `;
 }
 
 export function initView() {
+  const profile = store.getState().profile || {};
+  const isPgStaff = profile.role === 'pg_staff';
+
   const dataClass = document.getElementById('leadDataClass');
   const netLevelField = document.getElementById('leadNetLevelField');
   const appointmentField = document.getElementById('leadAppointmentField');
@@ -413,19 +424,17 @@ export function initView() {
   netLevel?.addEventListener('change', updateServiceOptions);
   toggleNetFields();
 
-  document.getElementById('distributeRawLeads')?.addEventListener('click', async () => {
-    try {
-      const quantity = Number(document.getElementById('rawDistributionQuantity')?.value || 0);
-      const result = await distributeRawLeads(quantity);
-      showToast(`Đã chia đều ${result.distributed} data thô.`);
-      await navigateTo('marketing-leads');
-    } catch (error) { showToast(error.message, true); }
-  });
-
   const form = document.getElementById('createLeadForm');
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn?.disabled) return;
+      const originalHtml = submitBtn?.innerHTML || '<span>+</span>Nạp Lead vào hệ thống';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang nạp Lead...';
+      }
       const formData = new FormData(form);
       const data = Object.fromEntries(formData.entries());
       try {
@@ -437,11 +446,73 @@ export function initView() {
         if (newLead) {
           cachedLeads.unshift(newLead);
         }
+        await navigateTo('marketing-leads');
       } catch (err) {
         showToast("Lỗi khi thêm Lead: " + err.message, true);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalHtml;
+        }
       }
     });
   }
+
+  // PG Submission Table Pagination
+  const pgRows = Array.from(document.querySelectorAll('[data-pg-submission-row]'));
+  const pgSummary = document.getElementById('pgSubmissionPaginationSummary');
+  const pgNumbers = document.getElementById('pgSubmissionPageNumbers');
+  const pgPrevious = document.getElementById('pgSubmissionPrevPage');
+  const pgNext = document.getElementById('pgSubmissionNextPage');
+  const pgPageSizeSelect = document.getElementById('pgSubmissionPageSize');
+
+  function renderPgSubmissionPage() {
+    if (!pgRows.length) {
+      document.getElementById('pgSubmissionPagination')?.setAttribute('hidden', '');
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(pgRows.length / pgSubmissionPageSize));
+    pgSubmissionPage = Math.min(Math.max(1, pgSubmissionPage), totalPages);
+    const start = (pgSubmissionPage - 1) * pgSubmissionPageSize;
+    const end = Math.min(start + pgSubmissionPageSize, pgRows.length);
+    pgRows.forEach((row, index) => { row.hidden = index < start || index >= end; });
+    if (pgSummary) pgSummary.textContent = `Hiển thị ${start + 1}–${end} trong ${pgRows.length} bản ghi thực tế`;
+    if (pgPrevious) pgPrevious.disabled = pgSubmissionPage <= 1;
+    if (pgNext) pgNext.disabled = pgSubmissionPage >= totalPages;
+    if (pgNumbers) {
+      const pages = Array.from(new Set([1, pgSubmissionPage - 1, pgSubmissionPage, pgSubmissionPage + 1, totalPages]))
+        .filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+      pgNumbers.innerHTML = pages.map((page, index) => {
+        const gap = index > 0 && page - pages[index - 1] > 1 ? '<span class="data-page-gap">…</span>' : '';
+        return `${gap}<button type="button" class="data-page-number${page === pgSubmissionPage ? ' is-active' : ''}" data-pg-submission-page="${page}" ${page === pgSubmissionPage ? 'aria-current="page"' : ''}>${page}</button>`;
+      }).join('');
+      pgNumbers.querySelectorAll('[data-pg-submission-page]').forEach((button) => button.addEventListener('click', () => {
+        pgSubmissionPage = Number(button.dataset.pgSubmissionPage) || 1;
+        renderPgSubmissionPage();
+      }));
+    }
+  }
+
+  pgPageSizeSelect?.addEventListener('change', () => {
+    pgSubmissionPageSize = Number(pgPageSizeSelect.value) || 50;
+    pgSubmissionPage = 1;
+    renderPgSubmissionPage();
+  });
+  pgPrevious?.addEventListener('click', () => { pgSubmissionPage -= 1; renderPgSubmissionPage(); });
+  pgNext?.addEventListener('click', () => { pgSubmissionPage += 1; renderPgSubmissionPage(); });
+  renderPgSubmissionPage();
+
+  // If PG Staff, skip lead pipeline listeners (kanban drag-drop, telesale assign, 20k+ DOM bindings)
+  if (isPgStaff) return;
+
+  document.getElementById('distributeRawLeads')?.addEventListener('click', async () => {
+    try {
+      const quantity = Number(document.getElementById('rawDistributionQuantity')?.value || 0);
+      const result = await distributeRawLeads(quantity);
+      showToast(`Đã chia đều ${result.distributed} data thô.`);
+      await navigateTo('marketing-leads');
+    } catch (error) { showToast(error.message, true); }
+  });
 
   // View Switcher logic
   const btnKanban = document.getElementById('viewModeKanban');
@@ -737,47 +808,4 @@ export function initView() {
   if (searchInput) searchInput.addEventListener('input', applyFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyFilters);
   if (sourceSelect) sourceSelect.addEventListener('change', applyFilters);
-
-  const pgRows = Array.from(document.querySelectorAll('[data-pg-submission-row]'));
-  const pgSummary = document.getElementById('pgSubmissionPaginationSummary');
-  const pgNumbers = document.getElementById('pgSubmissionPageNumbers');
-  const pgPrevious = document.getElementById('pgSubmissionPrevPage');
-  const pgNext = document.getElementById('pgSubmissionNextPage');
-  const pgPageSizeSelect = document.getElementById('pgSubmissionPageSize');
-
-  function renderPgSubmissionPage() {
-    if (!pgRows.length) {
-      document.getElementById('pgSubmissionPagination')?.setAttribute('hidden', '');
-      return;
-    }
-    const totalPages = Math.max(1, Math.ceil(pgRows.length / pgSubmissionPageSize));
-    pgSubmissionPage = Math.min(Math.max(1, pgSubmissionPage), totalPages);
-    const start = (pgSubmissionPage - 1) * pgSubmissionPageSize;
-    const end = Math.min(start + pgSubmissionPageSize, pgRows.length);
-    pgRows.forEach((row, index) => { row.hidden = index < start || index >= end; });
-    if (pgSummary) pgSummary.textContent = `Hiển thị ${start + 1}–${end} trong ${pgRows.length} bản ghi thực tế`;
-    if (pgPrevious) pgPrevious.disabled = pgSubmissionPage <= 1;
-    if (pgNext) pgNext.disabled = pgSubmissionPage >= totalPages;
-    if (pgNumbers) {
-      const pages = Array.from(new Set([1, pgSubmissionPage - 1, pgSubmissionPage, pgSubmissionPage + 1, totalPages]))
-        .filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
-      pgNumbers.innerHTML = pages.map((page, index) => {
-        const gap = index > 0 && page - pages[index - 1] > 1 ? '<span class="data-page-gap">…</span>' : '';
-        return `${gap}<button type="button" class="data-page-number${page === pgSubmissionPage ? ' is-active' : ''}" data-pg-submission-page="${page}" ${page === pgSubmissionPage ? 'aria-current="page"' : ''}>${page}</button>`;
-      }).join('');
-      pgNumbers.querySelectorAll('[data-pg-submission-page]').forEach((button) => button.addEventListener('click', () => {
-        pgSubmissionPage = Number(button.dataset.pgSubmissionPage) || 1;
-        renderPgSubmissionPage();
-      }));
-    }
-  }
-
-  pgPageSizeSelect?.addEventListener('change', () => {
-    pgSubmissionPageSize = Number(pgPageSizeSelect.value) || 50;
-    pgSubmissionPage = 1;
-    renderPgSubmissionPage();
-  });
-  pgPrevious?.addEventListener('click', () => { pgSubmissionPage -= 1; renderPgSubmissionPage(); });
-  pgNext?.addEventListener('click', () => { pgSubmissionPage += 1; renderPgSubmissionPage(); });
-  renderPgSubmissionPage();
 }

@@ -2,7 +2,7 @@ import { store } from '../store.js';
 import { escapeHTML, oNguoiPhuTrach } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
-import { geolocationErrorMessage } from '../services/geolocation.js';
+import { geolocationErrorMessage, acquirePrecisePosition, acquireCurrentPosition } from '../services/geolocation.js';
 import { navigateTo } from '../router.js';
 import { LEAD_STATUS } from '../constants.js';
 import { leadStatusPill } from '../components/shared.js';
@@ -124,11 +124,91 @@ export async function renderView() {
 
 export function initView() {
   let reading = null;
-  document.getElementById('captureSuggestionGps')?.addEventListener('click', () => navigator.geolocation.getCurrentPosition(({ coords }) => {
-    reading = coords; const form = document.getElementById('pgSuggestLocation'); form.elements.latitude.value = coords.latitude; form.elements.longitude.value = coords.longitude; form.elements.accuracy.value = Math.round(coords.accuracy); document.getElementById('suggestionGpsState').textContent = `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} · ±${Math.round(coords.accuracy)} m`;
-  }, (error) => showToast(geolocationErrorMessage(error), true), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
-  document.getElementById('pgSuggestLocation')?.addEventListener('submit', async (event) => { event.preventDefault(); if (!reading) return showToast('Hãy lấy GPS hiện tại trước.', true); try { await createPgLocationSuggestion(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi tọa độ chờ Admin duyệt.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
-  document.getElementById('pgSupportRequest')?.addEventListener('submit', async (event) => { event.preventDefault(); try { await createPgSupportRequest(Object.fromEntries(new FormData(event.currentTarget))); showToast('Đã gửi yêu cầu cho Support.'); await navigateTo('pg-workflow'); } catch (e) { showToast(e.message, true); } });
+  const captureBtn = document.getElementById('captureSuggestionGps');
+  const gpsState = document.getElementById('suggestionGpsState');
+
+  captureBtn?.addEventListener('click', async () => {
+    if (captureBtn.disabled) return;
+    captureBtn.disabled = true;
+    const originalBtnText = captureBtn.innerHTML;
+    captureBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang lấy GPS...';
+    if (gpsState) gpsState.textContent = 'Đang dò tọa độ GPS trên thiết bị...';
+
+    try {
+      let coords;
+      try {
+        const precise = await acquirePrecisePosition({ timeoutMs: 10000, targetAccuracyM: 35 });
+        coords = { latitude: precise.lat, longitude: precise.lng, accuracy: precise.accuracy };
+      } catch {
+        const single = await acquireCurrentPosition({ timeoutMs: 7000 });
+        coords = { latitude: single.lat, longitude: single.lng, accuracy: single.accuracy };
+      }
+      reading = coords;
+      const form = document.getElementById('pgSuggestLocation');
+      if (form) {
+        form.elements.latitude.value = coords.latitude;
+        form.elements.longitude.value = coords.longitude;
+        form.elements.accuracy.value = Math.round(coords.accuracy);
+      }
+      if (gpsState) {
+        gpsState.innerHTML = `<strong style="color:#059669"><i class="ri-checkbox-circle-line"></i> Đã lấy GPS:</strong> ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} · ±${Math.round(coords.accuracy)} m`;
+      }
+      showToast('Đã lấy tọa độ GPS thành công.');
+    } catch (error) {
+      if (gpsState) gpsState.textContent = 'Không lấy được tọa độ. Hãy thử lại.';
+      showToast(geolocationErrorMessage(error), true);
+    } finally {
+      captureBtn.disabled = false;
+      captureBtn.innerHTML = originalBtnText;
+    }
+  });
+
+  const suggestForm = document.getElementById('pgSuggestLocation');
+  suggestForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!reading) return showToast('Hãy lấy GPS hiện tại trước.', true);
+    const submitBtn = suggestForm.querySelector('button[type="submit"]');
+    if (submitBtn?.disabled) return;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang gửi...';
+    }
+    try {
+      await createPgLocationSuggestion(Object.fromEntries(new FormData(event.currentTarget)));
+      showToast('Đã gửi tọa độ chờ Admin duyệt.');
+      await navigateTo('pg-workflow');
+    } catch (e) {
+      showToast(e.message, true);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Gửi Admin xác nhận';
+      }
+    }
+  });
+
+  const supportReqForm = document.getElementById('pgSupportRequest');
+  supportReqForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitBtn = supportReqForm.querySelector('button[type="submit"]');
+    if (submitBtn?.disabled) return;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang gửi...';
+    }
+    try {
+      await createPgSupportRequest(Object.fromEntries(new FormData(event.currentTarget)));
+      showToast('Đã gửi yêu cầu cho Support.');
+      await navigateTo('pg-workflow');
+    } catch (e) {
+      showToast(e.message, true);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Gửi Support';
+      }
+    }
+  });
   document.getElementById('pgShiftFilter')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget));
     supportDate = data.date || today(); supportPg = data.pgCode || ''; supportStatus = data.status || '';

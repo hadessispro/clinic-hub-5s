@@ -3,7 +3,7 @@ import { escapeHTML, oNguoiPhuTrach } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
-import { geolocationErrorMessage } from '../services/geolocation.js';
+import { geolocationErrorMessage, acquirePrecisePosition, acquireCurrentPosition } from '../services/geolocation.js';
 import {
   discardRejected, enqueue, listPending, listRejected, makeClientEventId, syncQueue,
 } from '../services/pg-attendance-offline.js';
@@ -83,8 +83,34 @@ export async function renderView() {
     </section></div>`;
 }
 
-function position() {
-  return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+async function position(onProgress) {
+  try {
+    const reading = await acquirePrecisePosition({
+      timeoutMs: 12000,
+      targetAccuracyM: 35,
+      onReading: (r, best) => {
+        if (onProgress && best) {
+          onProgress(best.accuracy);
+        }
+      },
+    });
+    return {
+      coords: {
+        latitude: reading.lat,
+        longitude: reading.lng,
+        accuracy: reading.accuracy,
+      },
+    };
+  } catch {
+    const single = await acquireCurrentPosition({ timeoutMs: 8000 });
+    return {
+      coords: {
+        latitude: single.lat,
+        longitude: single.lng,
+        accuracy: single.accuracy,
+      },
+    };
+  }
 }
 
 export function initView() {
@@ -109,18 +135,25 @@ export function initView() {
   });
 
   document.querySelectorAll('[data-pg-clock]').forEach((button) => button.addEventListener('click', async () => {
+    if (button.disabled) return;
     button.disabled = true;
+    const originalHtml = button.innerHTML;
     const type = button.dataset.pgClock;
 
     // GPS luôn phải lấy thật tại thời điểm bấm, kể cả khi đang mất mạng. Định
     // vị là chức năng của thiết bị, không phụ thuộc Internet.
     let coords;
     try {
+      button.innerHTML = `<span class="attendance-button-icon"><i class="ri-loader-4-line ri-spin"></i></span><span><strong>Đang xác định GPS...</strong><small>Vui lòng giữ nguyên máy</small></span>`;
       showToast('Đang lấy GPS chính xác...');
-      const result = await position();
+      const result = await position((acc) => {
+        button.innerHTML = `<span class="attendance-button-icon"><i class="ri-loader-4-line ri-spin"></i></span><span><strong>Đang dò GPS (±${acc}m)...</strong><small>Đang tìm tọa độ chuẩn</small></span>`;
+      });
       coords = result.coords;
+      button.innerHTML = `<span class="attendance-button-icon"><i class="ri-check-line"></i></span><span><strong>Đã có GPS (±${Math.round(coords.accuracy)}m)</strong><small>Đang ghi nhận vào hệ thống...</small></span>`;
     } catch (error) {
       button.disabled = false;
+      button.innerHTML = originalHtml;
       showToast(geolocationErrorMessage(error), true);
       return;
     }
@@ -162,6 +195,7 @@ export function initView() {
         await queueOffline(entry, type);
       } else {
         button.disabled = false;
+        button.innerHTML = originalHtml;
         showToast(error?.message || 'Không ghi nhận được chấm công.', true);
         return;
       }
