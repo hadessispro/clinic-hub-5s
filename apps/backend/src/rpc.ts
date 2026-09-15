@@ -728,27 +728,50 @@ export class RpcService {
           );
         }
 
-        await client.query(
-          `insert into app.auth_audit
-             (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
-           values ($1, $2, $3, $4, $5::jsonb)`,
-          [
-            isCodeChanged ? 'doi_ma_nhan_vien' : 'cap_nhat_nhan_vien',
-            user.employeeCode || null,
-            user.role,
-            newCode,
-            JSON.stringify({
-              ma_cu: actualOldCode,
-              ma_moi: newCode,
-              doi_ma: isCodeChanged,
-              ho_ten: fullName,
-              bo_phan: department,
-              chi_nhanh: branchId,
-              vai_tro: title,
-              cap_nhat_luc: new Date().toISOString(),
-            }),
-          ],
-        );
+        try {
+          await client.query(
+            `insert into app.auth_audit
+               (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
+             values ($1, $2, $3, $4, $5::jsonb)`,
+            [
+              isCodeChanged ? 'doi_ma_nhan_vien' : 'cap_nhat_nhan_vien',
+              user.employeeCode || null,
+              user.role,
+              newCode,
+              JSON.stringify({
+                ma_cu: actualOldCode,
+                ma_moi: newCode,
+                doi_ma: isCodeChanged,
+                ho_ten: fullName,
+                bo_phan: department,
+                chi_nhanh: branchId,
+                vai_tro: title,
+                cap_nhat_luc: new Date().toISOString(),
+              }),
+            ],
+          );
+        } catch {
+          await client.query(
+            `insert into app.auth_audit
+               (hanh_dong, actor_code, actor_role, muc_tieu_ma, chi_tiet)
+             values ('cap_nhat_ho_so', $1, $2, $3, $4::jsonb)`,
+            [
+              user.employeeCode || null,
+              user.role,
+              newCode,
+              JSON.stringify({
+                ma_cu: actualOldCode,
+                ma_moi: newCode,
+                doi_ma: isCodeChanged,
+                ho_ten: fullName,
+                bo_phan: department,
+                chi_nhanh: branchId,
+                vai_tro: title,
+                cap_nhat_luc: new Date().toISOString(),
+              }),
+            ],
+          ).catch(() => undefined);
+        }
 
         await client.query('commit');
       } catch (err) {
