@@ -1,0 +1,130 @@
+.preview-bottom-dock {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 0;
+  display: flex;
+  width: min(calc(100% - 30px), 400px);
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: auto;
+  pointer-events: none;
+}
+
+.preview-bottom-dock .preview-bottom-nav {
+  position: static;
+  display: flex;
+  width: auto;
+  height: 62px;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid rgba(24, 55, 47, .08);
+  border-radius: 21px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 16px 36px rgba(24, 52, 45, .16), inset 0 1px 0 rgba(255, 255, 255, .9);
+  backdrop-filter: blur(22px) saturate(1.25);
+  pointer-events: auto;
+}
+
+.preview-bottom-dock .preview-bottom-nav button {
+  min-width: 45px;
+  height: 48px;
+  flex: 1;
+  gap: 0;
+  border-radius: 15px;
+  transition: flex .22s ease, color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.preview-bottom-dock .preview-bottom-nav button:active,
+.preview-dock-action:active {
+  transform: scale(.94);
+}
+
+.preview-bottom-dock .preview-bottom-nav svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
+}
+
+.preview-bottom-dock .preview-bottom-nav span {
+  width: 0;
+  overflow: hidden;
+  font-size: 0;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+.preview-bottom-dock .preview-bottom-nav button.active {
+  flex: 1;
+  background: #e5f5f1;
+  color: #087b72;
+}
+
+.preview-bottom-dock .preview-bottom-nav button.active span {
+  width: 0;
+  font-size: 0;
+  opacity: 0;
+}
+
+.preview-dock-action {
+  position: relative;
+  display: grid;
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+  place-items: center;
+  border: 5px solid rgba(255, 255, 255, .94);
+  border-radius: 21px;
+  background: linear-gradient(145deg, #49aef5, #167ee8);
+  box-shadow: 0 15px 29px rgba(24, 126, 226, .34), 0 3px 9px rgba(24, 52, 45, .12);
+  color: #fff;
+  pointer-events: auto;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.preview-dock-action::before {
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 13px;
+  content: "";
+}
+
+.preview-dock-action svg {
+  width: 23px;
+  height: 23px;
+  stroke-width: 2;
+}
+
+.preview-dock-action i {
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 2px solid #238be8;
+  border-radius: 50%;
+  background: #fff;
+  color: #167ee8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.preview-dock-action span {
+  display: none;
+}
+
+@media (min-width: 431px) {
+  .preview-bottom-dock {
+    bottom: 33px;
+  }
+}

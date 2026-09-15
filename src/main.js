@@ -471,11 +471,21 @@ if (startupUrl.searchParams.has('_app_refresh')) {
   startupUrl.searchParams.delete('_app_refresh');
   window.history.replaceState(window.history.state, '', `${startupUrl.pathname}${startupUrl.search}${startupUrl.hash}`);
 }
-bootstrap();
+const localMobilePreview = import.meta.env.DEV
+  && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  && new URLSearchParams(window.location.search).get('preview') === 'mobile-admin';
+
+if (localMobilePreview) {
+  import('./dev/mobile-admin-preview.js')
+    .then(({ renderMobileAdminPreview }) => renderMobileAdminPreview())
+    .catch((error) => console.error('[Clinic Hub] Không thể mở mobile preview:', error));
+} else {
+  bootstrap();
+}
 
 // Cache the app shell after the first successful online visit so an existing
 // signed-in employee can reopen the check-in screen without a network signal.
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !localMobilePreview) {
   let reloadingForServiceWorkerUpdate = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloadingForServiceWorkerUpdate) return;
