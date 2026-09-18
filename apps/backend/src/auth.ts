@@ -250,21 +250,24 @@ export class AuthService {
         );
 
         if (attempts >= 3) {
-          void this.telegram.sendSecurityAlert({
-            eventType: 'login_failed',
-            eventId: securityEvent.rows[0]?.id,
-            severity: isLocked ? 'critical' : 'warning',
-            actorCode: String(profile.employee_code || identifier),
-            actorName,
-            actorRole: String(profile.role || 'staff'),
-            branchId: String(profile.branch_id || branchId),
-            clientIp,
-            userAgent,
-            details: {
-              canhBao: isLocked ? 'Tài khoản đã bị tạm khóa 10 phút do sai mật khẩu 4 lần' : 'Đăng nhập sai nhiều lần liên tiếp',
-              soLanSai: attempts,
-            },
-          });
+          const shouldAlert = await this.telegram.shouldNotify('login_failed_repeated', true);
+          if (shouldAlert) {
+            void this.telegram.sendSecurityAlert({
+              eventType: 'login_failed',
+              eventId: securityEvent.rows[0]?.id,
+              severity: isLocked ? 'critical' : 'warning',
+              actorCode: String(profile.employee_code || identifier),
+              actorName,
+              actorRole: String(profile.role || 'staff'),
+              branchId: String(profile.branch_id || branchId),
+              clientIp,
+              userAgent,
+              details: {
+                canhBao: isLocked ? 'Tài khoản đã bị tạm khóa 10 phút do sai mật khẩu 4 lần' : 'Đăng nhập sai nhiều lần liên tiếp',
+                soLanSai: attempts,
+              },
+            });
+          }
         }
       } catch {
         // Safe fail
@@ -310,22 +313,25 @@ export class AuthService {
 
       // Chỉ chạy khi người dùng thực sự gửi form đăng nhập; refresh token
       // không đi qua đây nên Telegram không bị spam khi ứng dụng tự gia hạn.
-      void this.telegram.sendSecurityAlert({
-        eventType: 'login_success',
-        eventId: securityEvent.rows[0]?.id,
-        severity: 'info',
-        actorCode: user.employeeCode,
-        actorName,
-        actorRole: user.role,
-        branchId: user.branchId,
-        clientIp,
-        userAgent,
-        details: {
-          thongBao: 'Đăng nhập thành công vào Clinic Hub.',
-          phongBan: user.department || '',
-          chiNhanhDaChon: requestedBranchId || 'all',
-        },
-      });
+      const shouldAlert = await this.telegram.shouldNotify('login_success', false);
+      if (shouldAlert) {
+        void this.telegram.sendSecurityAlert({
+          eventType: 'login_success',
+          eventId: securityEvent.rows[0]?.id,
+          severity: 'info',
+          actorCode: user.employeeCode,
+          actorName,
+          actorRole: user.role,
+          branchId: user.branchId,
+          clientIp,
+          userAgent,
+          details: {
+            thongBao: 'Đăng nhập thành công vào Clinic Hub.',
+            phongBan: user.department || '',
+            chiNhanhDaChon: requestedBranchId || 'all',
+          },
+        });
+      }
     } catch {
       // Safe fail
     }

@@ -30,6 +30,7 @@ import {
 } from '../services/kho-hang.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
+import { exportTableToExcel } from '../services/excel-export.js';
 import { confirmAction } from '../components/app-dialog.js';
 import { nenWebp } from '../components/nen-anh.js';
 import { navigateTo } from '../router.js';
@@ -2849,13 +2850,59 @@ export function initView() {
   });
 
   /* Xuất báo cáo */
-  g('khXuatVt')?.addEventListener('click', () => {
+  g('khXuatVt')?.addEventListener('click', async () => {
     if (!dsVatTu.length) { showToast('Không có vật tư nào để xuất.', true); return; }
-    downloadText(`kho-vat-tu-${todayISO()}.csv`, '﻿' + xuatCsvVatTu(dsVatTu), 'text/csv');
-    showToast(`Đã xuất ${dsVatTu.length} mặt hàng.`);
+    const data = dsVatTu.map((v, i) => ({
+      'STT': i + 1,
+      'Mã': v.ma || '',
+      'Tên vật tư': v.ten || '',
+      'Nhóm': NHOM_VAT_TU[v.nhom] || v.nhom || '',
+      'Đơn vị': v.don_vi || '',
+      'Tồn kho': Number(v.so_luong || 0),
+      'Định mức': Number(v.dinh_muc_hien || 0),
+      'Mức tồn': MUC_TON[v.muc_ton]?.ten || v.muc_ton || '',
+      'Đang về': Number(v.dang_cho_ve || 0),
+      'Số NCC': Number(v.so_nha_cung_cap || 0),
+      'Đơn giá tốt nhất (VNĐ)': v.gia_tot_nhat ? Math.round(v.gia_tot_nhat.don_gia_quy_doi) : '',
+      'NCC rẻ nhất': v.gia_tot_nhat ? tenNhaCungCap(v.gia_tot_nhat.ncc) : 'Chưa có báo giá',
+      'Lưu ý đặc biệt': (v.co || []).map((c) => CO_DAC_BIET[c]?.ten || c).join(' · '),
+    }));
+    await exportTableToExcel({
+      filename: `kho-vat-tu-${todayISO()}.xlsx`,
+      sheetName: 'Tồn kho vật tư',
+      data,
+    });
+    showToast(`Đã xuất ${dsVatTu.length} mặt hàng ra file Excel (.xlsx) có bộ lọc.`);
   });
-  g('khXuatDx')?.addEventListener('click', () => {
-    downloadText(`de-xuat-mua-hang-${todayISO()}.csv`, '﻿' + xuatCsvDeXuat(deXuat), 'text/csv');
-    showToast('Đã xuất đề xuất mua hàng.');
+
+  g('khXuatDx')?.addEventListener('click', async () => {
+    if (!deXuat?.nhom?.length) { showToast('Không có dữ liệu đề xuất mua hàng.', true); return; }
+    const data = [];
+    let stt = 1;
+    deXuat.nhom.forEach((n) => {
+      (n.dong || []).forEach((x) => {
+        data.push({
+          'STT': stt++,
+          'Nhà cung cấp': n.ten || '',
+          'Mã': x.vat_tu?.ma || '',
+          'Vật tư': x.vat_tu?.ten || '',
+          'Tồn kho': Number(x.ton || 0),
+          'Định mức': Number(x.dinh_muc || 0),
+          'Đang về': Number(x.dang_cho_ve || 0),
+          'Cần bù': Number(x.can_bu || 0),
+          'Cần đặt': Number(x.can_mua || 0),
+          'Đơn vị mua': x.don_vi_mua || '',
+          'Quy cách': x.quy_cach || '',
+          'Đơn giá (VNĐ)': Number(x.don_gia || 0),
+          'Thành tiền (VNĐ)': Number(x.thanh_tien || 0),
+        });
+      });
+    });
+    await exportTableToExcel({
+      filename: `de-xuat-mua-hang-${todayISO()}.xlsx`,
+      sheetName: 'Đề xuất mua hàng',
+      data,
+    });
+    showToast('Đã xuất đề xuất mua hàng ra file Excel (.xlsx) có bộ lọc.');
   });
 }

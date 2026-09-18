@@ -49,11 +49,26 @@ export async function renderView() {
         ${records.length ? records.map((row) => `<tr><td>${oNguoiPhuTrach(row.pg_name, row.pg_code)}</td><td>${escapeHTML(row.work_date)}</td><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${escapeHTML(row.site_name)}</td><td>${row.distance_m} m</td><td>±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : '<tr><td colspan="8">Không có dữ liệu trong khoảng ngày đã chọn.</td></tr>'}
       </tbody></table></div>
     </section>`;
-  const shift = assignments[0];
-  const hasCheckin = records.some((row) => row.record_type === 'checkin')
-    || pendingQueue.some((row) => row.type === 'checkin');
-  const hasCheckout = records.some((row) => row.record_type === 'checkout')
-    || pendingQueue.some((row) => row.type === 'checkout');
+  const renderShiftCard = (shift, index, totalShifts) => {
+    const shiftRecords = records.filter((r) => r.assignment_id === shift.id);
+    const shiftPending = pendingQueue.filter((r) => r.assignmentId === shift.id);
+    const hasCheckin = shiftRecords.some((r) => r.record_type === 'checkin')
+      || shiftPending.some((r) => r.type === 'checkin')
+      || shift.status === 'checked_in'
+      || shift.status === 'completed';
+    const hasCheckout = shiftRecords.some((r) => r.record_type === 'checkout')
+      || shiftPending.some((r) => r.type === 'checkout')
+      || shift.status === 'completed';
+    const caLabel = totalShifts > 1 ? `Ca ${index + 1}` : 'Ca Support phân công';
+
+    return `<section class="attendance-primary-card ${hasCheckout ? 'is-complete' : (hasCheckin ? 'is-active' : '')}" style="${index > 0 ? 'margin-top:16px' : ''}">
+      <div class="attendance-time-block"><span>${caLabel}</span><strong>${escapeHTML(String(shift.start_time).slice(0,5))}</strong><small>Kết thúc ${escapeHTML(String(shift.end_time).slice(0,5))}</small></div>
+      <div class="attendance-primary-copy"><p class="eyebrow">${hasCheckout ? 'Đã hoàn thành' : (hasCheckin ? 'Đang trong ca' : 'Sẵn sàng check-in')}</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div>
+      ${hasCheckin ? `<button class="attendance-checkout-button" data-pg-clock="checkout" data-assignment-id="${escapeHTML(shift.id)}" ${hasCheckout ? 'disabled' : ''}><span class="attendance-button-icon">↗</span><span><strong>${hasCheckout ? 'Đã check-out' : 'Check-out kết ca'}</strong><small>Xác minh GPS tại điểm làm việc</small></span></button>` : `<button class="attendance-checkin-button" data-pg-clock="checkin" data-assignment-id="${escapeHTML(shift.id)}"><span class="attendance-button-icon">⌖</span><span><strong>Xác nhận chấm công</strong><small>${caLabel}</small></span></button>`}
+    </section>
+    <div class="attendance-info-grid"><section class="attendance-office-card"><div class="attendance-card-icon">⌖</div><div><p class="eyebrow">Điểm chấm công</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div><span class="attendance-radius">${shift.allowed_radius_m} m</span></section><section class="attendance-rule-card"><div class="attendance-card-icon">⏱</div><div><p class="eyebrow">Quy định ${caLabel.toLowerCase()}</p><h3>Ca ${escapeHTML(String(shift.start_time).slice(0,5))}–${escapeHTML(String(shift.end_time).slice(0,5))}</h3><p>Vị trí và thời gian do Support thiết lập · sai số GPS tối đa ±${shift.max_accuracy_m} m.</p></div></section></div>`;
+  };
+
   const queueBanner = `
     ${pendingQueue.length ? `
       <div class="attendance-sync-banner">
@@ -72,12 +87,7 @@ export async function renderView() {
   return `<div class="attendance-page">
     ${queueBanner}
     <header class="attendance-page-header"><div><p class="eyebrow">GPS Attendance · PG Marketing</p><h3>Chấm công vào ca</h3><p>${dateLabel(today())}</p></div><div class="attendance-header-actions"><span class="network-status ${navigator.onLine ? 'is-online' : 'is-offline'}"><span></span>${navigator.onLine ? 'Đang online' : 'Đang ngoại tuyến'}</span></div></header>
-    ${shift ? `<section class="attendance-primary-card ${hasCheckout ? 'is-complete' : (hasCheckin ? 'is-active' : '')}">
-      <div class="attendance-time-block"><span>Ca Support phân công</span><strong>${escapeHTML(String(shift.start_time).slice(0,5))}</strong><small>Kết thúc ${escapeHTML(String(shift.end_time).slice(0,5))}</small></div>
-      <div class="attendance-primary-copy"><p class="eyebrow">${hasCheckout ? 'Đã hoàn thành' : (hasCheckin ? 'Đang trong ca' : 'Sẵn sàng check-in')}</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div>
-      ${hasCheckin ? `<button class="attendance-checkout-button" data-pg-clock="checkout" ${hasCheckout ? 'disabled' : ''}><span class="attendance-button-icon">↗</span><span><strong>${hasCheckout ? 'Đã check-out' : 'Check-out kết ca'}</strong><small>Xác minh GPS tại điểm làm việc</small></span></button>` : `<button class="attendance-checkin-button" data-pg-clock="checkin"><span class="attendance-button-icon">⌖</span><span><strong>Xác nhận chấm công</strong><small>Ca do Support phân công</small></span></button>`}
-    </section>
-    <div class="attendance-info-grid"><section class="attendance-office-card"><div class="attendance-card-icon">⌖</div><div><p class="eyebrow">Điểm chấm công</p><h3>${escapeHTML(shift.site_name)}</h3><p>${escapeHTML(shift.address)}</p></div><span class="attendance-radius">${shift.allowed_radius_m} m</span></section><section class="attendance-rule-card"><div class="attendance-card-icon">⏱</div><div><p class="eyebrow">Quy định hôm nay</p><h3>Ca ${escapeHTML(String(shift.start_time).slice(0,5))}–${escapeHTML(String(shift.end_time).slice(0,5))}</h3><p>Vị trí và thời gian do Support thiết lập · sai số GPS tối đa ±${shift.max_accuracy_m} m.</p></div></section></div>` : '<section class="attendance-primary-card"><div class="attendance-primary-copy"><p class="eyebrow">Chưa có ca hôm nay</p><h3>Support chưa phân công vị trí</h3><p>Sau khi Support giao ngày, giờ và điểm làm việc, ca sẽ tự động xuất hiện tại đây.</p></div></section>'}
+    ${assignments.length ? assignments.map((shift, index) => renderShiftCard(shift, index, assignments.length)).join('') : '<section class="attendance-primary-card"><div class="attendance-primary-copy"><p class="eyebrow">Chưa có ca hôm nay</p><h3>Support chưa phân công vị trí</h3><p>Sau khi Support giao ngày, giờ và điểm làm việc, ca sẽ tự động xuất hiện tại đây.</p></div></section>'}
     <section class="attendance-history-panel"><div class="section-title"><div><p class="eyebrow">Lịch sử</p><h3>Chấm công hôm nay</h3></div><span class="pill">${records.length} lượt</span></div>
       <div class="table-wrap"><table><thead><tr><th>Loại</th><th>Thời gian</th><th>Khoảng cách</th><th>GPS</th><th>Trạng thái</th></tr></thead><tbody>${pendingQueue.map((row) => `<tr><td>${row.type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.capturedAt).toLocaleString('vi-VN')}</td><td>—</td><td>±${Math.round(row.accuracy)} m</td><td>Chờ đồng bộ</td></tr>`).join('')}${records.length ? records.map((row) => `<tr><td>${row.record_type === 'checkin' ? 'Vào ca' : 'Ra ca'}</td><td>${new Date(row.recorded_at).toLocaleString('vi-VN')}</td><td>${row.distance_m} m</td><td>±${row.accuracy_m} m</td><td>${escapeHTML(row.status)}</td></tr>`).join('') : (pendingQueue.length ? '' : '<tr><td colspan="5">Chưa chấm công.</td></tr>')}</tbody></table></div>
     </section></div>`;
@@ -139,6 +149,7 @@ export function initView() {
     button.disabled = true;
     const originalHtml = button.innerHTML;
     const type = button.dataset.pgClock;
+    const assignmentId = button.dataset.assignmentId || undefined;
 
     // GPS luôn phải lấy thật tại thời điểm bấm, kể cả khi đang mất mạng. Định
     // vị là chức năng của thiết bị, không phụ thuộc Internet.
@@ -160,6 +171,7 @@ export function initView() {
 
     const entry = {
       clientEventId: makeClientEventId(),
+      assignmentId,
       pgCode: store.getState().profile?.employee_code || '',
       type,
       latitude: coords.latitude,
@@ -178,6 +190,7 @@ export function initView() {
     try {
       await recordPgAttendance({
         clientEventId: entry.clientEventId,
+        assignmentId: entry.assignmentId,
         type,
         latitude: entry.latitude,
         longitude: entry.longitude,

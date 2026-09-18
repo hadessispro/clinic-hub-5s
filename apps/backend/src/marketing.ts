@@ -67,6 +67,39 @@ function seconds(value: unknown) {
   return hour * 3600 + minute * 60 + second;
 }
 
+function isShiftConflict(
+  startA: string, endA: string,
+  startB: string, endB: string,
+  maxHandoverMinutes = 60,
+): boolean {
+  const sA = seconds(startA);
+  const eA = seconds(endA);
+  const sB = seconds(startB);
+  const eB = seconds(endB);
+
+  const overlapStart = Math.max(sA, sB);
+  const overlapEnd = Math.min(eA, eB);
+  const overlapSeconds = overlapEnd - overlapStart;
+
+  // Không giao nhau -> không xung đột
+  if (overlapSeconds <= 0) return false;
+
+  const overlapMinutes = overlapSeconds / 60;
+
+  // Ranh giới giao ca giữa ca trước và ca sau (tối đa maxHandoverMinutes, mặc định 60 phút):
+  // 1) Ca A bắt đầu trước, ca B bắt đầu sau và kết thúc sau ca A (giao ca giữa A và B)
+  const isHandoverAtoB = sA < sB && eA < eB && overlapMinutes <= maxHandoverMinutes;
+  // 2) Ca B bắt đầu trước, ca A bắt đầu sau và kết thúc sau ca B (giao ca giữa B và A)
+  const isHandoverBtoA = sB < sA && eB < eA && overlapMinutes <= maxHandoverMinutes;
+
+  if (isHandoverAtoB || isHandoverBtoA) {
+    return false; // Giao ca hợp lệ
+  }
+
+  // Trùng ca thực sự
+  return true;
+}
+
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
   const radians = (value: number) => value * Math.PI / 180;
   const dLat = radians(lat2 - lat1);
@@ -443,6 +476,27 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('Số điện thoại này đã tồn tại trong hệ thống. Không thể nhập trùng khách hàng.');
     }
 
+    let source = String(input.source || '').trim();
+    if (!source || source === 'PG' || source === 'PG Field Intake') {
+      const pgCode = user.role === 'pg_staff' ? user.employeeCode : String(input.pgCode || input.created_by_pg_code || user.employeeCode).trim();
+      const shiftSite = await this.infrastructure.postgres.query<{ site_name: string }>(
+        `select s.name site_name
+         from marketing.pg_shift_assignments a
+         join marketing.pg_work_sites s on s.id=a.site_id
+         where lower(trim(a.pg_code))=lower(trim($1))
+           and a.work_date=(now() at time zone 'Asia/Ho_Chi_Minh')::date
+           and a.status in ('scheduled','checked_in','completed')
+         order by case when a.status='checked_in' then 1 else 2 end, a.start_time desc
+         limit 1`,
+        [pgCode],
+      );
+      if (shiftSite.rows[0]?.site_name) {
+        source = shiftSite.rows[0].site_name;
+      } else {
+        source = source || (user.role === 'pg_staff' ? 'PG Field Intake' : 'PG');
+      }
+    }
+
     let result;
     try {
       result = await this.infrastructure.postgres.query(
@@ -452,7 +506,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
          )
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,null,null,null) returning *`,
         [customerName, phone, appointmentAt?.toISOString() || null, dataClass, dataClass === 'net' ? netLevel : null,
-          serviceType, input.source || 'PG', input.branchId || input.branch_id || null,
+          serviceType, source, input.branchId || input.branch_id || null,
           input.notes || null, user.employeeCode],
       );
     } catch (error) {
@@ -775,22 +829,137 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateLead(user: AuthUser, leadId: string, input: JsonMap) {
-    const own = user.role === 'telesale_staff';
-    if (!own && !managerRoles.has(user.role)) throw new ForbiddenException();
-    const status = String(input.status || '');
-    if (!leadStatuses.has(status)) throw new BadRequestException('Trạng thái Lead không hợp lệ.');
-    const lowQualityReason = status === 'low_quality' ? String(input.lowQualityReason || input.low_quality_reason || '').trim() : '';
-    if (status === 'low_quality' && !lowQualityReasons.has(lowQualityReason)) {
-      throw new BadRequestException('Khách không chất lượng bắt buộc phải chọn lý do hợp lệ.');
-    }
-    const params: unknown[] = [leadId, status, input.notes || null, lowQualityReason || null];
-    let owner = '';
-    if (own) { params.push(user.employeeCode); owner = `and assigned_telesale_code=$${params.length}`; }
-    const result = await this.infrastructure.postgres.query(
-      `update marketing.leads set status=$2,notes=coalesce($3,notes),low_quality_reason=$4,updated_at=now() where id=$1 ${owner} returning *`, params,
+    const existingRes = await this.infrastructure.postgres.query(
+      `select * from marketing.leads where id=$1`, [leadId],
     );
-    if (!result.rows[0]) throw new ForbiddenException('Lead không thuộc quyền xử lý của tài khoản này.');
-    await this.audit(user, 'lead.update', 'marketing.lead', leadId, { status, lowQualityReason: lowQualityReason || null });
+    const existing = existingRes.rows[0];
+    if (!existing) throw new BadRequestException('Hồ sơ Lead không tồn tại.');
+
+    const isManager = managerRoles.has(user.role) || supportRoles.has(user.role);
+    const isCreator = Boolean(existing.created_by_pg_code && existing.created_by_pg_code.toLowerCase() === user.employeeCode.toLowerCase());
+    const isTelesale = user.role === 'telesale_staff' && Boolean(existing.assigned_telesale_code && existing.assigned_telesale_code.toLowerCase() === user.employeeCode.toLowerCase());
+
+    if (!isManager && !isCreator && !isTelesale) {
+      throw new ForbiddenException('Tài khoản không có quyền chỉnh sửa hồ sơ Lead này.');
+    }
+
+    // Lead creator (PG / support) has a 15-minute edit window from lead creation time
+    if (!isManager && isCreator) {
+      const createdAt = new Date(existing.created_at).getTime();
+      const diffMinutes = (Date.now() - createdAt) / (60 * 1000);
+      if (diffMinutes > 15) {
+        throw new BadRequestException('Đã quá thời gian 15 phút cho phép chỉnh sửa data. Vui lòng liên hệ Support PG để được hỗ trợ.');
+      }
+    }
+
+    const updateFields: string[] = [];
+    const updateValues: unknown[] = [leadId];
+    const addParam = (val: unknown) => {
+      updateValues.push(val);
+      return `$${updateValues.length}`;
+    };
+
+    // 1. Customer Name
+    const customerNameInput = input.customerName ?? input.customer_name ?? input.full_name;
+    if (customerNameInput !== undefined) {
+      const customerName = String(customerNameInput || '').trim();
+      if (!customerName) throw new BadRequestException('Tên khách hàng không được để trống.');
+      updateFields.push(`customer_name=${addParam(customerName)}`);
+    }
+
+    // 2. Phone
+    if (input.phone !== undefined) {
+      const rawPhone = String(input.phone || '').trim();
+      const phoneDigits = rawPhone.replace(/\D/g, '');
+      if (rawPhone && phoneDigits.length < 8) {
+        throw new BadRequestException('Số điện thoại không hợp lệ (tối thiểu 8 chữ số).');
+      }
+      if (rawPhone) {
+        // Check duplicate with OTHER leads, excluding this leadId
+        const dupCheck = await this.infrastructure.postgres.query(
+          `select id from marketing.leads
+           where length(marketing.normalize_lead_phone(phone)) >= 8
+             and marketing.normalize_lead_phone(phone)=$1
+             and id != $2 limit 1`,
+          [rawPhone, leadId],
+        );
+        if (dupCheck.rowCount) {
+          throw new ConflictException('Số điện thoại này đã tồn tại ở một hồ sơ khác trong hệ thống.');
+        }
+      }
+      updateFields.push(`phone=${addParam(rawPhone || null)}`);
+    }
+
+    // 3. Service Type
+    const serviceInput = input.serviceType ?? input.service_type ?? input.service_interest;
+    if (serviceInput !== undefined) {
+      updateFields.push(`service_type=${addParam(String(serviceInput || '').trim() || null)}`);
+    }
+
+    // 4. Appointment At
+    const appointmentInput = input.appointmentAt ?? input.appointment_at;
+    if (appointmentInput !== undefined) {
+      const appDate = appointmentInput ? new Date(String(appointmentInput)) : null;
+      updateFields.push(`appointment_at=${addParam(appDate ? appDate.toISOString() : null)}`);
+    }
+
+    // 5. Data Class & Net Level
+    const dataClassInput = input.dataClass ?? input.data_class;
+    if (dataClassInput !== undefined) {
+      const dc = String(dataClassInput || '').trim();
+      if (dc && !dataClasses.has(dc)) throw new BadRequestException('Phân loại data không hợp lệ.');
+      updateFields.push(`data_class=${addParam(dc || 'raw')}`);
+    }
+    const netLevelInput = input.netLevel ?? input.net_level;
+    if (netLevelInput !== undefined) {
+      const nl = String(netLevelInput || '').trim();
+      updateFields.push(`net_level=${addParam(nl || null)}`);
+    }
+
+    // 6. Branch
+    const branchInput = input.branchId ?? input.branch_id;
+    if (branchInput !== undefined) {
+      updateFields.push(`branch_id=${addParam(String(branchInput || '').trim() || null)}`);
+    }
+
+    // 7. Source
+    if (input.source !== undefined) {
+      updateFields.push(`source=${addParam(String(input.source || '').trim() || 'PG')}`);
+    }
+
+    // 8. Notes
+    if (input.notes !== undefined) {
+      updateFields.push(`notes=${addParam(input.notes ? String(input.notes).trim() : null)}`);
+    }
+
+    // 9. Status & Low Quality Reason (Telesale / Manager)
+    if (input.status !== undefined) {
+      const status = String(input.status || '');
+      if (!leadStatuses.has(status)) throw new BadRequestException('Trạng thái Lead không hợp lệ.');
+      const lowQualityReason = status === 'low_quality' ? String(input.lowQualityReason || input.low_quality_reason || '').trim() : '';
+      if (status === 'low_quality' && !lowQualityReasons.has(lowQualityReason)) {
+        throw new BadRequestException('Khách không chất lượng bắt buộc phải chọn lý do hợp lệ.');
+      }
+      updateFields.push(`status=${addParam(status)}`);
+      if (status === 'low_quality') {
+        updateFields.push(`low_quality_reason=${addParam(lowQualityReason)}`);
+      }
+    }
+
+    if (!updateFields.length) {
+      return { data: existing };
+    }
+
+    updateFields.push(`updated_at=now()`);
+
+    const result = await this.infrastructure.postgres.query(
+      `update marketing.leads set ${updateFields.join(', ')} where id=$1 returning *`,
+      updateValues,
+    );
+    await this.audit(user, 'lead.update', 'marketing.lead', leadId, {
+      updatedFields: updateFields,
+      editorRole: user.role,
+    });
     return { data: result.rows[0] };
   }
 
@@ -1070,31 +1239,111 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     );
     if (!valid.rows[0]?.pg_valid) throw new BadRequestException('Tài khoản PG không tồn tại hoặc đã bị khóa.');
     if (!valid.rows[0]?.site_valid) throw new BadRequestException('Vị trí chấm công không tồn tại hoặc đã ngừng hoạt động.');
+    const assignmentId = typeof input.id === 'string' && input.id.trim()
+      ? input.id.trim()
+      : (typeof input.assignmentId === 'string' && input.assignmentId.trim() ? input.assignmentId.trim() : '');
     const client = await this.infrastructure.postgres.connect();
     let assignment: JsonMap;
     try {
       await client.query('begin');
-      const current = await client.query(
-        `select a.*,exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id) has_attendance
-         from marketing.pg_shift_assignments a
-         where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2 for update`,
-        [pgCode, workDate],
-      );
-      if (current.rows[0]?.has_attendance) throw new BadRequestException('Ca này đã phát sinh chấm công nên không thể thay đổi phân công.');
-      const result = current.rows[0]
-        ? await client.query(
+
+      if (assignmentId) {
+        const current = await client.query(
+          `select a.*,exists(select 1 from marketing.pg_attendance t where t.assignment_id=a.id) has_attendance
+           from marketing.pg_shift_assignments a
+           where a.id::text=$1 for update`,
+          [assignmentId],
+        );
+        if (!current.rows[0]) throw new BadRequestException('Ca phân công không tồn tại.');
+        if (current.rows[0].has_attendance) throw new BadRequestException('Ca này đã phát sinh chấm công nên không thể thay đổi phân công.');
+
+        const pgOtherShifts = await client.query(
+          `select a.id, a.start_time::text, a.end_time::text
+           from marketing.pg_shift_assignments a
+           where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2 and a.id::text<>$3
+             and a.status in ('scheduled','checked_in','completed')`,
+          [pgCode, workDate, assignmentId],
+        );
+        for (const s of pgOtherShifts.rows) {
+          const s1 = seconds(startTime);
+          const e1 = seconds(endTime);
+          const s2 = seconds(s.start_time);
+          const e2 = seconds(s.end_time);
+          if (s1 < e2 && e1 > s2) {
+            throw new BadRequestException(`PG đã có ca làm việc ${String(s.start_time).slice(0, 5)}–${String(s.end_time).slice(0, 5)} trong ngày. Hai ca của cùng một PG không được trùng giờ.`);
+          }
+        }
+
+        const siteShifts = await client.query(
+          `select a.*, coalesce(p.payload->>'full_name', a.pg_code) pg_name
+           from marketing.pg_shift_assignments a
+           left join app.records p on p.entity_type='profiles' and p.deleted_at is null
+             and lower(trim(p.payload->>'employee_code'))=lower(trim(a.pg_code))
+           where a.site_id::text=$1 and a.work_date=$2 and a.id::text<>$3
+             and a.status in ('scheduled','checked_in','completed')
+             and a.start_time < $5 and a.end_time > $4`,
+          [siteId, workDate, assignmentId, startTime, endTime],
+        );
+        for (const c of siteShifts.rows) {
+          if (c.pg_code.toLowerCase().trim() === pgCode.toLowerCase().trim()) continue;
+          if (isShiftConflict(String(c.start_time), String(c.end_time), startTime, endTime, 60)) {
+            throw new BadRequestException(`Địa điểm này đã có PG ${c.pg_name} (${c.pg_code}) làm ca ${String(c.start_time).slice(0, 5)}–${String(c.end_time).slice(0, 5)}. Trong cùng một ca tại một địa điểm không được có 2 PG cùng lúc (cho phép giao ca tối đa 60 phút).`);
+          }
+        }
+
+        const result = await client.query(
           `update marketing.pg_shift_assignments
-           set site_id=$2,start_time=$3,end_time=$4,status='scheduled',created_by_code=$5,
+           set pg_code=$2,site_id=$3,work_date=$4,start_time=$5,end_time=$6,status='scheduled',created_by_code=$7,
                cancelled_at=null,cancelled_by_code=null,cancel_reason=null,expired_at=null,completed_at=null,updated_at=now()
            where id=$1 returning *`,
-          [current.rows[0].id, siteId, startTime, endTime, user.employeeCode],
-        )
-        : await client.query(
+          [assignmentId, pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
+        );
+        assignment = result.rows[0];
+      } else {
+        const pgShifts = await client.query(
+          `select a.id, a.start_time::text, a.end_time::text
+           from marketing.pg_shift_assignments a
+           where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2
+             and a.status in ('scheduled','checked_in','completed') for update`,
+          [pgCode, workDate],
+        );
+        if (pgShifts.rows.length >= 2) {
+          throw new BadRequestException(`Nhân viên PG ${pgCode} đã được phân công tối đa 2 ca trong ngày ${workDate}.`);
+        }
+        for (const s of pgShifts.rows) {
+          const s1 = seconds(startTime);
+          const e1 = seconds(endTime);
+          const s2 = seconds(s.start_time);
+          const e2 = seconds(s.end_time);
+          if (s1 < e2 && e1 > s2) {
+            throw new BadRequestException(`PG đã có ca làm việc ${String(s.start_time).slice(0, 5)}–${String(s.end_time).slice(0, 5)} trong ngày. Hai ca của cùng một PG không được trùng giờ.`);
+          }
+        }
+
+        const siteShifts = await client.query(
+          `select a.*, coalesce(p.payload->>'full_name', a.pg_code) pg_name
+           from marketing.pg_shift_assignments a
+           left join app.records p on p.entity_type='profiles' and p.deleted_at is null
+             and lower(trim(p.payload->>'employee_code'))=lower(trim(a.pg_code))
+           where a.site_id::text=$1 and a.work_date=$2
+             and a.status in ('scheduled','checked_in','completed')
+             and a.start_time < $4 and a.end_time > $3`,
+          [siteId, workDate, startTime, endTime],
+        );
+        for (const c of siteShifts.rows) {
+          if (c.pg_code.toLowerCase().trim() === pgCode.toLowerCase().trim()) continue;
+          if (isShiftConflict(String(c.start_time), String(c.end_time), startTime, endTime, 60)) {
+            throw new BadRequestException(`Địa điểm này đã có PG ${c.pg_name} (${c.pg_code}) làm ca ${String(c.start_time).slice(0, 5)}–${String(c.end_time).slice(0, 5)}. Trong cùng một ca tại một địa điểm không được có 2 PG cùng lúc (cho phép giao ca tối đa 60 phút).`);
+          }
+        }
+
+        const result = await client.query(
           `insert into marketing.pg_shift_assignments(pg_code,site_id,work_date,start_time,end_time,created_by_code,status)
            values ($1,$2,$3,$4,$5,$6,'scheduled') returning *`,
           [pgCode, siteId, workDate, startTime, endTime, user.employeeCode],
         );
-      assignment = result.rows[0];
+        assignment = result.rows[0];
+      }
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -1128,12 +1377,27 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     return { data: result.rows };
   }
 
-  async listAssignmentHistory(user: AuthUser, from?: string, to?: string, status?: string) {
+  async listAssignmentHistory(user: AuthUser, from?: string, to?: string, status?: string, pageInput?: number | string, pageSizeInput?: number | string) {
     requireRole(user, supportRoles);
     await this.expireAssignments();
+    const page = Math.max(1, Number(pageInput || 1));
+    const pageSize = Math.max(1, Math.min(100, Number(pageSizeInput || 25)));
+    const offset = (page - 1) * pageSize;
+
     const values: unknown[] = [from || clinicDate(new Date(Date.now() - 30 * 86400000)), to || clinicDate()];
     const statusFilter = status && ['scheduled', 'checked_in', 'completed', 'cancelled', 'expired'].includes(status)
       ? `and a.status=$${values.push(status)}` : '';
+
+    const countResult = await this.infrastructure.postgres.query<{ total: string | number }>(
+      `select count(distinct a.id) as total
+       from marketing.pg_shift_assignments a
+       join marketing.pg_work_sites s on s.id=a.site_id
+       where a.work_date between $1 and $2 ${statusFilter}`,
+      values,
+    );
+    const total = Number(countResult.rows[0]?.total || 0);
+
+    const dataValues = [...values, pageSize, offset];
     const result = await this.infrastructure.postgres.query(
       `select a.*,s.name site_name,s.address,
               coalesce(e.payload->>'full_name',p.payload->>'full_name',a.pg_code) pg_name,
@@ -1149,9 +1413,18 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
        left join marketing.pg_assignment_events ev on ev.assignment_id=a.id
        where a.work_date between $1 and $2 ${statusFilter}
        group by a.id,s.name,s.address,e.payload,p.payload
-       order by a.work_date desc,a.start_time desc,a.pg_code`, values,
+       order by a.work_date desc,a.start_time desc,a.pg_code
+       limit $${dataValues.length - 1} offset $${dataValues.length}`, dataValues,
     );
-    return { data: result.rows };
+    return {
+      data: result.rows,
+      meta: {
+        total,
+        page,
+        pageSize,
+        pageCount: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
   }
 
   async cancelAssignment(user: AuthUser, id: string, input: JsonMap) {
@@ -1336,15 +1609,38 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     // Ca bị expire_pg_assignments() tự đánh dấu hết hạn chính vì check-in không
     // lên được máy chủ. Với lượt ngoại tuyến hợp lệ thì phải nhận lại ca đó,
     // nếu không PG mất công dù đã có mặt đúng giờ.
+    const assignmentId = typeof input.assignmentId === 'string' && UUID_PATTERN.test(input.assignmentId)
+      ? input.assignmentId : null;
     const allowedStatuses = offline ? ['scheduled', 'checked_in', 'expired'] : ['scheduled', 'checked_in'];
-    const assignment = await this.infrastructure.postgres.query<{
-      id: string; start_time: string; end_time: string; status: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
-    }>(
-      `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+
+    let assignmentQuery = '';
+    let assignmentParams: unknown[] = [];
+
+    if (assignmentId) {
+      assignmentQuery = `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+       from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
+       where a.id::text=$1 and lower(trim(a.pg_code))=lower(trim($2)) and a.work_date=$3
+         and a.status = any($4) limit 1`;
+      assignmentParams = [assignmentId, user.employeeCode, workDate, allowedStatuses];
+    } else if (type === 'checkout') {
+      assignmentQuery = `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
        from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
        where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2
-         and a.status = any($3) limit 1`, [user.employeeCode, workDate, allowedStatuses],
-    );
+         and a.status = 'checked_in'
+       order by a.start_time desc limit 1`;
+      assignmentParams = [user.employeeCode, workDate];
+    } else {
+      assignmentQuery = `select a.id,a.start_time::text,a.end_time::text,a.status,s.latitude,s.longitude,s.allowed_radius_m,s.max_accuracy_m
+       from marketing.pg_shift_assignments a join marketing.pg_work_sites s on s.id=a.site_id and s.active=true
+       where lower(trim(a.pg_code))=lower(trim($1)) and a.work_date=$2
+         and a.status = any($3)
+       order by abs(extract(epoch from (a.start_time - $4::time))) asc limit 1`;
+      assignmentParams = [user.employeeCode, workDate, allowedStatuses, clinicTime(capturedAt)];
+    }
+
+    const assignment = await this.infrastructure.postgres.query<{
+      id: string; start_time: string; end_time: string; status: string; latitude: number; longitude: number; allowed_radius_m: number; max_accuracy_m: number;
+    }>(assignmentQuery, assignmentParams);
     const shift = assignment.rows[0];
     if (!shift) {
       throw new BadRequestException(offline
@@ -1913,8 +2209,25 @@ export class MarketingController {
   @Patch('/pg-sites/:id') updateSite(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.updateSite(request.user, id, body); }
   @Delete('/pg-sites/:id') deleteSite(@Req() request: ActorRequest, @Param('id') id: string) { return this.service.deleteSite(request.user, id); }
   @Get('/pg-assignments') assignments(@Req() request: ActorRequest, @Query('date') date?: string) { return this.service.listAssignments(request.user, date); }
-  @Get('/pg-assignment-history') assignmentHistory(@Req() request: ActorRequest, @Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string) { return this.service.listAssignmentHistory(request.user, from, to, status); }
   @Post('/pg-assignments') createAssignment(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.createAssignment(request.user, body); }
+  @Get('/pg-assignment-history') assignmentHistory(
+    @Req() request: ActorRequest,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('page_size') pageSizeSnake?: string,
+  ) {
+    return this.service.listAssignmentHistory(
+      request.user,
+      from,
+      to,
+      status,
+      page,
+      pageSize || pageSizeSnake,
+    );
+  }
   @Patch('/pg-assignments/:id/cancel') cancelAssignment(@Req() request: ActorRequest, @Param('id') id: string, @Body() body: JsonMap) { return this.service.cancelAssignment(request.user, id, body); }
   @Get('/pg-location-suggestions') locationSuggestions(@Req() request: ActorRequest) { return this.service.listLocationSuggestions(request.user); }
   @Post('/pg-location-suggestions') suggestLocation(@Req() request: ActorRequest, @Body() body: JsonMap) { return this.service.suggestLocation(request.user, body); }

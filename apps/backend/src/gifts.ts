@@ -65,7 +65,7 @@ export class GiftsService {
     if (query.recipient) {
       const recipient = String(query.recipient).trim();
       const digits = recipient.replace(/\D/g, '');
-      const nameSearch = `m.recipient_name ilike ${add(`%${recipient}%`)}`;
+      const nameSearch = `(m.recipient_name ilike ${add(`%${recipient}%`)} or coalesce(m.customer_code,'') ilike ${add(`%${recipient}%`)})`;
       clauses.push(digits ? `(${nameSearch} or regexp_replace(coalesce(m.recipient_phone,''),'\\D','','g') like ${add(`%${digits}%`)})` : nameSearch);
     }
     if (query.quantityMin) clauses.push(`m.quantity >= ${add(Number(query.quantityMin))}`);
@@ -141,7 +141,12 @@ export class GiftsService {
     const quantity = positiveInt(input.quantity, 'Số lượng');
     const itemId = String(input.itemId || '');
     const recipientName = String(input.recipientName || '').trim();
-    if (type === 'issue' && !recipientName) throw new BadRequestException('Vui lòng nhập người nhận quà.');
+    const customerCode = String(input.customerCode || input.customer_code || '').trim();
+    const recipientPhone = String(input.recipientPhone || input.recipient_phone || '').trim();
+    if (type === 'issue') {
+      if (!recipientName) throw new BadRequestException('Vui lòng nhập người nhận quà.');
+      if (!customerCode && !recipientPhone) throw new BadRequestException('Vui lòng nhập Mã khách hàng hoặc Số điện thoại để kiểm tra trùng lặp.');
+    }
     const customerImageUrl = String(input.customerImageUrl || '').trim();
     const receiptUrl = String(input.receiptUrl || '').trim();
     if (type === 'issue' && (!customerImageUrl || !receiptUrl)) {
@@ -154,6 +159,39 @@ export class GiftsService {
     const client = await this.infrastructure.postgres.connect();
     try {
       await client.query('begin');
+      if (type === 'issue') {
+        const cleanPhone = recipientPhone.replace(/\D/g, '');
+        const dupClauses: string[] = [];
+        const dupParams: unknown[] = [];
+        if (customerCode) {
+          dupParams.push(customerCode);
+          dupClauses.push(`lower(trim(coalesce(m.customer_code,'')))=lower(trim($${dupParams.length}))`);
+        }
+        if (cleanPhone.length >= 8) {
+          dupParams.push(cleanPhone);
+          dupClauses.push(`regexp_replace(coalesce(m.recipient_phone,''),'\\D','','g')=$${dupParams.length}`);
+        }
+        if (dupClauses.length) {
+          const dupCheck = await client.query(
+            `select m.id, m.recipient_name, m.customer_code, m.recipient_phone, m.occurred_at, i.name item_name
+             from marketing.gift_stock_movements m
+             join marketing.gift_items i on i.id=m.gift_item_id
+             where m.movement_type in ('issue','legacy_issue')
+               and (${dupClauses.join(' or ')})
+             order by m.occurred_at desc limit 1`,
+            dupParams,
+          );
+          if (dupCheck.rows[0]) {
+            const d = dupCheck.rows[0];
+            const dateStr = new Date(d.occurred_at).toLocaleDateString('vi-VN');
+            const who = d.recipient_name ? `"${d.recipient_name}" ` : '';
+            const codeStr = customerCode || recipientPhone;
+            throw new BadRequestException(
+              `Khách hàng ${who}(Mã/SĐT: ${codeStr}) đã nhận phần quà "${d.item_name}" vào ngày ${dateStr}. Mỗi khách hàng chỉ được nhận quà 1 lần.`
+            );
+          }
+        }
+      }
       const item = await client.query('select id from marketing.gift_items where id=$1::uuid and active=true for update', [itemId]);
       if (!item.rows[0]) throw new BadRequestException('Quà tặng không tồn tại hoặc đã ngừng sử dụng.');
       const stock = await client.query<{ stock: number }>(
@@ -162,9 +200,9 @@ export class GiftsService {
       );
       if (['issue','adjustment_out'].includes(type) && stock.rows[0].stock < quantity) throw new BadRequestException(`Không đủ tồn kho. Hiện còn ${stock.rows[0].stock}.`);
       const result = await client.query(
-        `insert into marketing.gift_stock_movements(gift_item_id,movement_type,quantity,recipient_name,recipient_phone,lead_id,pg_code,branch_id,note,occurred_at,created_by_code,created_by_role,customer_image_url,customer_image_name,receipt_url,receipt_name)
-         values($1::uuid,$2,$3,$4,$5,nullif($6,'')::uuid,$7,$8,$9,coalesce(nullif($10,'')::timestamptz,now()),$11,$12,nullif($13,''),nullif($14,''),nullif($15,''),nullif($16,'')) returning *`,
-        [itemId,type,quantity,recipientName || null,String(input.recipientPhone || '').trim() || null,String(input.leadId || ''),pgCode,String(input.branchId || user.branchId || '').trim() || null,String(input.note || '').trim() || null,String(input.occurredAt || ''),user.employeeCode,user.role,customerImageUrl,String(input.customerImageName || '').slice(0,250),receiptUrl,String(input.receiptName || '').slice(0,250)],
+        `insert into marketing.gift_stock_movements(gift_item_id,movement_type,quantity,recipient_name,recipient_phone,customer_code,lead_id,pg_code,branch_id,note,occurred_at,created_by_code,created_by_role,customer_image_url,customer_image_name,receipt_url,receipt_name)
+         values($1::uuid,$2,$3,$4,$5,nullif($6,''),nullif($7,'')::uuid,$8,$9,$10,coalesce(nullif($11,'')::timestamptz,now()),$12,$13,nullif($14,''),nullif($15,''),nullif($16,''),nullif($17,'')) returning *`,
+        [itemId,type,quantity,recipientName || null,recipientPhone || null,customerCode || null,String(input.leadId || ''),pgCode,String(input.branchId || user.branchId || '').trim() || null,String(input.note || '').trim() || null,String(input.occurredAt || ''),user.employeeCode,user.role,customerImageUrl,String(input.customerImageName || '').slice(0,250),receiptUrl,String(input.receiptName || '').slice(0,250)],
       );
       await client.query('commit');
       await this.infrastructure.markDataChanged(['marketing.gifts'], user.id, user.role);

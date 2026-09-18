@@ -13,6 +13,10 @@ import { ScheduleController, ScheduleService } from './schedule';
 import { TelegramController, TelegramService } from './telegram';
 import { SecurityController, SecurityService } from './security';
 import { ReminderController, ReminderService } from './reminder';
+import { GoogleDriveService } from './google-drive.service';
+import { MediaController } from './media.controller';
+import { SmtpService } from './smtp.service';
+import { PayrollController, SystemSmtpController } from './payroll.controller';
 
 @Controller()
 class HealthController {
@@ -83,6 +87,9 @@ export class DailyReportScheduler implements OnApplicationBootstrap, OnApplicati
     TelegramController,
     SecurityController,
     ReminderController,
+    MediaController,
+    PayrollController,
+    SystemSmtpController,
   ],
   providers: [
     InfrastructureService,
@@ -99,6 +106,8 @@ export class DailyReportScheduler implements OnApplicationBootstrap, OnApplicati
     PushService,
     ReminderService,
     DailyReportScheduler,
+    GoogleDriveService,
+    SmtpService,
   ],
 })
 export class AppModule {}

@@ -136,7 +136,19 @@ export class DataService {
   }
 
   private owns(user: AuthUser, table: string, row: JsonMap, managedCodes: Set<string> | null = null) {
-    if (adminRoles.has(user.role) || user.role === 'hr') return true;
+    if (adminRoles.has(user.role)) return true;
+
+    // Nhân viên bị khóa/nghỉ việc: CHỈ admin (admin, admin_it, superadmin) mới có quyền xem danh sách
+    if (table === 'employees') {
+      const isLocked = row.status === 'inactive' || row.profile_locked === true || row.profile_locked === 'true' || row.active === false;
+      if (isLocked) return false;
+    }
+    if (table === 'profiles') {
+      const isLocked = row.active === false || row.status === 'inactive';
+      if (isLocked) return false;
+    }
+
+    if (user.role === 'hr') return true;
     const employee = user.employeeCode.toLowerCase();
     if (departmentLeaderRoles.has(user.role)) {
       if (table === 'employees' || table === 'profiles') return String(row.department || '').toLowerCase() === user.department.toLowerCase();

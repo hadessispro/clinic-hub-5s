@@ -247,3 +247,35 @@ export async function sendImmediateReminder(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function getNotificationRules() {
+  return dataClient.request('/api/v2/security/rules');
+}
+
+export async function updateNotificationRule(actionType, shouldNotify) {
+  return dataClient.request(`/api/v2/security/rules/${encodeURIComponent(actionType)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ shouldNotify: Boolean(shouldNotify) }),
+  });
+}
+
+export async function getSystemSmtp() {
+  return dataClient.request('/system/smtp');
+}
+
+export async function saveSystemSmtp(config) {
+  return dataClient.request('/system/smtp', { method: 'POST', body: JSON.stringify(config) });
+}
+
+export async function testSystemSmtp(config) {
+  return dataClient.request('/system/smtp/test', { method: 'POST', body: JSON.stringify(config) });
+}
+
+export async function deleteUserAccount(userId, employeeCode) {
+  const { data, error } = await dataClient.rpc('system_delete_user', {
+    p_user_id: userId,
+    p_employee_code: employeeCode,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}

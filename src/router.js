@@ -36,9 +36,11 @@ const viewImports = {
   'le-tan': () => import('./views/le-tan.js'),
   'so-benh-an': () => import('./views/so-benh-an.js'),
   'kho-hang': () => import('./views/kho-hang.js'),
+  'phu-ta-drive': () => import('./views/phu-ta-drive.js'),
 };
 
 const viewTitles = {
+  'phu-ta-drive': 'Kho ảnh & Đồng bộ Drive (Phụ tá)',
   'so-benh-an': 'Sổ bệnh án điện tử',
   'kho-hang': 'Kho vật tư',
   'le-tan': 'Lễ tân · tiếp đón và chăm sóc',

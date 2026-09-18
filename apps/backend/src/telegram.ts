@@ -6,8 +6,21 @@ import { InfrastructureService } from './infrastructure';
 type JsonMap = Record<string, any>;
 
 export interface SecurityAlertPayload {
-  eventType: 'login_success' | 'login_failed' | 'logout' | 'f12_opened' | 'console_tamper' | 'gps_anomaly' | 'suspicious_activity' | 'server_alert';
   eventId?: string | number;
+  eventType:
+    | 'login_success'
+    | 'login_failed'
+    | 'logout'
+    | 'login_anomaly'
+    | 'f12_opened'
+    | 'console_tamper'
+    | 'gps_anomaly'
+    | 'suspicious_activity'
+    | 'server_alert'
+    | 'change_role'
+    | 'lock_account'
+    | 'delete_employee'
+    | 'bulk_media_access';
   severity: 'info' | 'warning' | 'critical';
   actorCode?: string;
   actorName?: string;
@@ -21,6 +34,10 @@ export interface SecurityAlertPayload {
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
+
+  // ponytail: in-memory cache up to 100 rules with 5-min TTL; upgrade to Redis pub/sub if multi-instance
+  private rulesCache: Map<string, boolean> = new Map();
+  private rulesCacheExpiresAt = 0;
 
   constructor(private readonly infrastructure: InfrastructureService) {}
 
@@ -164,7 +181,7 @@ export class TelegramService {
     try {
       const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify({
           chat_id: chatId,
           text,
@@ -200,6 +217,57 @@ export class TelegramService {
     return sent;
   }
 
+  async shouldNotify(actionType: string, defaultAllow = false): Promise<boolean> {
+    const now = Date.now();
+    if (this.rulesCacheExpiresAt > now && this.rulesCache.has(actionType)) {
+      return Boolean(this.rulesCache.get(actionType));
+    }
+
+    try {
+      const res = await this.infrastructure.postgres.query<{ action_type: string; should_notify: boolean }>(
+        `select action_type, should_notify from app.notification_rules`,
+      );
+      this.rulesCache.clear();
+      for (const row of res.rows) {
+        this.rulesCache.set(row.action_type, Boolean(row.should_notify));
+      }
+      this.rulesCacheExpiresAt = now + 5 * 60 * 1000;
+      if (this.rulesCache.has(actionType)) {
+        return Boolean(this.rulesCache.get(actionType));
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to fetch notification_rules for ${actionType}: ${e}`);
+    }
+
+    return defaultAllow;
+  }
+
+  invalidateRulesCache(): void {
+    this.rulesCache.clear();
+    this.rulesCacheExpiresAt = 0;
+  }
+
+  async getNotificationRules(): Promise<any[]> {
+    const res = await this.infrastructure.postgres.query(
+      `select action_type, category, severity, should_notify, description, updated_at
+       from app.notification_rules
+       order by category, action_type`,
+    );
+    return res.rows;
+  }
+
+  async updateNotificationRule(actionType: string, shouldNotify: boolean): Promise<any> {
+    const res = await this.infrastructure.postgres.query(
+      `update app.notification_rules
+       set should_notify = $2, updated_at = now()
+       where action_type = $1
+       returning action_type, category, severity, should_notify, description, updated_at`,
+      [actionType, Boolean(shouldNotify)],
+    );
+    this.invalidateRulesCache();
+    return res.rows[0];
+  }
+
   async sendSecurityAlert(alert: SecurityAlertPayload): Promise<void> {
     const icon = alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️';
     const severityLabel = alert.severity === 'critical' ? 'NGHIÊM TRỌNG' : alert.severity === 'warning' ? 'CẢNH BÁO' : 'THÔNG TIN';
@@ -208,9 +276,14 @@ export class TelegramService {
     if (alert.eventType === 'f12_opened') eventTitle = 'PHÁT HIỆN MỞ F12 / DEVTOOLS';
     else if (alert.eventType === 'console_tamper') eventTitle = 'CAN THIỆP MÃ NGUỒN TRỰC TIẾP TRÊN CONSOLE';
     else if (alert.eventType === 'login_failed') eventTitle = 'ĐĂNG NHẬP THẤT BẠI NHIỀU LẦN';
+    else if (alert.eventType === 'login_anomaly') eventTitle = 'CẢNH BÁO ĐĂNG NHẬP BẤT THƯỜNG';
     else if (alert.eventType === 'login_success') eventTitle = 'ĐĂNG NHẬP HỆ THỐNG';
+    else if (alert.eventType === 'delete_employee') eventTitle = 'XÓA NHÂN SỰ RA KHỎI HỆ THỐNG';
     else if (alert.eventType === 'logout') eventTitle = 'ĐĂNG XUẤT HỆ THỐNG';
     else if (alert.eventType === 'gps_anomaly') eventTitle = 'CHẤM CÔNG GPS BẤT THƯỜNG';
+    else if (alert.eventType === 'change_role') eventTitle = 'THAY ĐỔI VAI TRÒ / QUYỀN HẠN TÀI KHOẢN';
+    else if (alert.eventType === 'lock_account') eventTitle = 'KHÓA TÀI KHOẢN NHÂN SỰ';
+    else if (alert.eventType === 'bulk_media_access') eventTitle = 'CẢNH BÁO TRUY XUẤT ẢNH HÀNG LOẠT';
     else if (alert.eventType === 'server_alert') eventTitle = 'CẢNH BÁO TÀI NGUYÊN MÁY CHỦ';
 
     const timeStr = new Intl.DateTimeFormat('vi-VN', {
@@ -361,7 +434,7 @@ export class TelegramService {
       );
       proposalsCount = Number(propRes.rows[0]?.count || 0);
 
-      // 3. Security events today
+      // 3. Security & login events today
       const secRes = await this.infrastructure.postgres.query<{ event_type: string; count: string }>(
         `select event_type, count(*) as count from app.security_events
          where created_at::date = $1::date
@@ -369,31 +442,76 @@ export class TelegramService {
         [today],
       );
       if (secRes.rows.length > 0) {
-        securitySummary = secRes.rows.map((r) => `  • <code>${r.event_type}</code>: ${r.count} sự kiện`).join('\n');
+        const secLabels: Record<string, string> = {
+          login_success: '🔑 Đăng nhập thành công',
+          login_failed: '❌ Đăng nhập thất bại',
+          login_anomaly: '⚠️ Đăng nhập ngoài giờ / IP lạ',
+          f12_opened: '⚠️ Mở DevTools (F12)',
+          console_tamper: '🚨 Can thiệp Console',
+          gps_anomaly: '📍 Chấm công GPS bất thường',
+          change_role: '🛡️ Đổi vai trò / phân quyền',
+          lock_account: '🔒 Khóa tài khoản',
+          bulk_media_access: '📦 Tải/xem ảnh hàng loạt',
+          server_alert: '💻 Cảnh báo tài nguyên máy chủ',
+        };
+        securitySummary = secRes.rows
+          .map((r) => `  • ${secLabels[r.event_type] || r.event_type}: ${r.count} sự kiện`)
+          .join('\n');
       }
+
+      // 4. Clinical media audit today
+      let mediaSummary = '  • Chưa có hoạt động kho ảnh hôm nay';
+      try {
+        const mediaRes = await this.infrastructure.postgres.query<{ action: string; count: string }>(
+          `select action, count(*) as count from app.media_audit_log
+           where created_at::date = $1::date
+           group by action`,
+          [today],
+        );
+        if (mediaRes.rows.length > 0) {
+          const actionLabels: Record<string, string> = {
+            upload: '📸 Tải lên ảnh lâm sàng mới',
+            view: '👁️ Lượt xem / tra cứu ảnh',
+            download: '📥 Tải ảnh về máy',
+            create_folder: '📁 Tạo thư mục bệnh nhân',
+            delete: '🗑️ Xóa tệp ảnh',
+            delete_folder: '🗑️ Xóa thư mục bệnh nhân',
+            update_note: '📝 Cập nhật ghi chú ảnh',
+          };
+          mediaSummary = mediaRes.rows
+            .map((r) => `  • ${actionLabels[r.action] || r.action}: ${r.count} lượt`)
+            .join('\n');
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to aggregate media audit log for daily report: ${err}`);
+      }
+
+      const vnDate = new Intl.DateTimeFormat('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        dateStyle: 'full',
+      }).format(new Date());
+
+      return [
+        `📊 <b>BÁO CÁO VẬN HÀNH NGÀY ${today}</b>`,
+        `📅 <i>${vnDate}</i>`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏰ <b>Tình hình Chấm công theo chi nhánh:</b>`,
+        attendanceStats,
+        ``,
+        `📦 <b>Đề xuất mua hàng mới:</b> ${proposalsCount} phiếu`,
+        ``,
+        `📸 <b>Kho ảnh lâm sàng & Truy cập hôm nay:</b>`,
+        mediaSummary,
+        ``,
+        `🛡️ <b>Tình hình an ninh & kiểm soát:</b>`,
+        securitySummary,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🤖 <i>Clinic Hub 5S Automated Security & Operations Sentinel</i>`,
+      ].join('\n');
     } catch (e: any) {
       this.logger.error('Error fetching daily report data:', e);
+      return `❌ Lỗi tổng hợp báo cáo vận hành ngày ${today}: ${e?.message || e}`;
     }
-
-    const vnDate = new Intl.DateTimeFormat('vi-VN', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      dateStyle: 'full',
-    }).format(new Date());
-
-    return [
-      `📊 <b>BÁO CÁO VẬN HÀNH NGÀY ${today}</b>`,
-      `📅 <i>${vnDate}</i>`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `⏰ <b>Tình hình Chấm công theo chi nhánh:</b>`,
-      attendanceStats,
-      ``,
-      `📦 <b>Đề xuất mua hàng mới:</b> ${proposalsCount} phiếu`,
-      ``,
-      `🛡️ <b>Tình hình an ninh & kiểm soát:</b>`,
-      securitySummary,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `🤖 <i>Clinic Hub 5S Automated Security & Operations Sentinel</i>`,
-    ].join('\n');
   }
 
   async buildBranchUsersMessage(): Promise<string> {

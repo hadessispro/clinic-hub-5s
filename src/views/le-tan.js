@@ -24,6 +24,7 @@ import {
   tenChamSoc, tenTelesale,
 } from '../services/le-tan.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
+import { exportTableToExcel, exportWorkbookToExcel } from '../services/excel-export.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
@@ -1346,11 +1347,34 @@ export function initView() {
   /* Báo cáo */
   g('bcKy')?.addEventListener('change', (e) => { kyBaoCao = e.target.value; ve(); });
   g('bcChiNhanh')?.addEventListener('change', (e) => { bcChiNhanh = e.target.value; ve(); });
-  g('bcXuat')?.addEventListener('click', () => {
+  g('bcXuat')?.addEventListener('click', async () => {
     if (!baoCao) return;
-    downloadText(`bao-cao-le-tan-${baoCao.ky}.csv`,
-      '﻿' + xuatCsvBaoCao(baoCao), 'text/csv');
-    showToast(`Đã xuất báo cáo tháng ${baoCao.ky}.`);
+    const branchesData = (baoCao.theo_chi_nhanh || []).map((c) => ({
+      'Chi nhánh': c.ten || '',
+      'Số lịch hẹn': Number(c.so || 0),
+      'Số khách': Number(c.so_khach || 0),
+      'Đã đến': Number(c.den || 0),
+      'Không đến': Number(c.khong_den || 0),
+      'Tỷ lệ đến (%)': c.ty_le_den || 0,
+    }));
+    const sourcesData = (baoCao.theo_nguon || []).map((n) => ({
+      'Nguồn khách': n.ten || '',
+      'Số lượng': Number(n.so || 0),
+    }));
+    const doctorsData = (baoCao.theo_bac_si || []).map((b) => ({
+      'Bác sĩ': b.ten || '',
+      'Số lịch hẹn': Number(b.so || 0),
+      'Hoàn tất': Number(b.hoan_tat || 0),
+    }));
+    await exportWorkbookToExcel({
+      filename: `bao-cao-le-tan-${baoCao.ky}.xlsx`,
+      sheets: [
+        { sheetName: 'Theo chi nhánh', data: branchesData },
+        { sheetName: 'Theo nguồn', data: sourcesData },
+        { sheetName: 'Theo bác sĩ', data: doctorsData },
+      ],
+    });
+    showToast(`Đã xuất báo cáo tháng ${baoCao.ky} ra file Excel (.xlsx) chuẩn có bộ lọc.`);
   });
 
   document.querySelectorAll('[data-pt]').forEach((b) => {
@@ -1363,11 +1387,30 @@ export function initView() {
   g('ltMoForm')?.addEventListener('click', () => { hienForm = true; ve(); });
   g('ltDongForm')?.addEventListener('click', () => { hienForm = false; ve(); });
 
-  g('ltXuat')?.addEventListener('click', () => {
+  g('ltXuat')?.addEventListener('click', async () => {
     if (!dsLichHen.length) { showToast('Không có dòng nào để xuất.', true); return; }
-    downloadText(`lich-hen-${todayISO()}.csv`,
-      '﻿' + xuatCsvLichHen(dsLichHen), 'text/csv');
-    showToast(`Đã xuất ${dsLichHen.length} lịch hẹn.`);
+    const data = dsLichHen.map((x, i) => ({
+      'STT': i + 1,
+      'Mã': x.ma || '',
+      'Ngày': x.ngay || '',
+      'Giờ': x.gio || '',
+      'Khách hàng': x.khach?.ten || '',
+      'Điện thoại': x.khach?.dien_thoai || '',
+      'Chi nhánh': tenChiNhanh(x.chi_nhanh),
+      'Bác sĩ': tenBacSi(x.bac_si),
+      'Phòng': x.phong || '',
+      'Loại': LOAI_LICH[x.loai] || x.loai || '',
+      'Trạng thái': (TRANG_THAI[x.trang_thai] || {}).ten || x.trang_thai || '',
+      'Nguồn': NGUON[x.nguon] || x.nguon || '',
+      'Nội dung': x.noi_dung || '',
+      'Giờ đến': x.den_luc ? x.den_luc.slice(11, 16) : '',
+    }));
+    await exportTableToExcel({
+      filename: `lich-hen-${todayISO()}.xlsx`,
+      sheetName: 'Danh sách lịch hẹn',
+      data,
+    });
+    showToast(`Đã xuất ${dsLichHen.length} lịch hẹn ra file Excel (.xlsx) có bộ lọc.`);
   });
 
   g('ltLuu')?.addEventListener('click', async () => {

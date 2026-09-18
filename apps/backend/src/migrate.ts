@@ -15,7 +15,8 @@ async function main() {
     for (const file of files) {
       const exists = await pool.query('select 1 from app.schema_migrations where version=$1', [file]);
       if (exists.rowCount) continue;
-      const sql = await readFile(join(directory, file), 'utf8');
+      const rawSql = await readFile(join(directory, file), 'utf8');
+      const sql = rawSql.replace(/^\uFEFF/, '');
       const client = await pool.connect();
       try {
         await client.query('begin');

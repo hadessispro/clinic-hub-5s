@@ -41,12 +41,13 @@ async function refreshSession(refreshToken) {
   }
 }
 
-async function api(path, options = {}) {
+export async function api(path, options = {}) {
   const session = readSession();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(options.timeout || 20000));
   try {
-    const response = await fetch(`/api/v2${path}`, {
+    const normalizedPath = path.startsWith('/api/v2') ? path : `/api/v2${path}`;
+    const response = await fetch(normalizedPath, {
       ...options,
       credentials: 'same-origin',
       cache: options.cache || 'no-store',

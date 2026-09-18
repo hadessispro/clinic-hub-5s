@@ -17,6 +17,7 @@
  */
 
 import { BRANCHES } from '../branch.js';
+import { api } from '../local-client.js';
 
 /* ── Ký hiệu răng ─────────────────────────────────────────────────────
  *
@@ -1065,3 +1066,36 @@ export function xuatCsvLuotKham(ho, ds) {
   ]));
   return dong.map((r) => r.map((o) => `"${String(o ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
 }
+
+/* ── Media & Kho Lưu Trữ Bệnh Nhân ─────────────────────────────────────── */
+
+export async function taiLenMediaBenhNhan(payload) {
+  return await api('/media/upload', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function layMediaBenhNhan(patientCode) {
+  const res = await api(`/media/patient/${encodeURIComponent(patientCode)}`);
+  return res?.media || [];
+}
+
+export async function layNhatKyMedia(mediaId) {
+  const res = await api(`/media/audit/${encodeURIComponent(mediaId)}`);
+  return res?.logs || [];
+}
+
+export async function capNhatMedia(mediaId, payload) {
+  return await api(`/media/${encodeURIComponent(mediaId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function xoaMedia(mediaId) {
+  return await api(`/media/${encodeURIComponent(mediaId)}`, {
+    method: 'DELETE',
+  });
+}
+

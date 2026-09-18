@@ -36,3 +36,12 @@ tham-khao/vttech/
 # Luu tru tam thoi cac script cu khong day len GitHub
 archive/
 
+# Temporary doc screenshots
+doc_screenshots/
+
+# Tools & scratch test scripts
+tools/
+scripts/clean_test_drive.cjs
+scripts/tao_excel_cham_cong_bu.cjs
+scripts/test_drive_e2e.cjs
+

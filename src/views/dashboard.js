@@ -56,7 +56,7 @@ function renderWorkDashboard({ state, profile, today, attendance, employees, tas
   const ownCheckout = ownAttendance.find((row) => row.type === 'checkout');
   const ownAssignment = assignments.find((row) => row.employee === employeeCode);
   const shift = SHIFTS.find((row) => row.id === (ownAssignment?.shift || ownCheckin?.shift));
-  const activeEmployees = employees.filter((row) => row.status !== 'inactive');
+  const activeEmployees = employees.filter((row) => row.status !== 'inactive' && !row.profileLocked && row.active !== false);
   const checkedInCodes = new Set(attendance.filter((row) => row.type === 'checkin').map((row) => row.employee));
   const openTasks = tasks.filter((row) => row.status !== 'done');
   const pendingRequests = requests.filter((row) => row.status === 'pending');

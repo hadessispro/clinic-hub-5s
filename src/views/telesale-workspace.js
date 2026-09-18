@@ -233,7 +233,7 @@ export function initView() {
 
   const btnExport = document.getElementById('btnExportTelesaleCSV');
   if (btnExport) {
-    btnExport.addEventListener('click', () => {
+    btnExport.addEventListener('click', async () => {
       const query = (document.getElementById('searchTelesaleInput')?.value || '').trim().toLocaleLowerCase('vi');
       const status = document.getElementById('filterTelesaleStatus')?.value || '';
       const branch = document.getElementById('filterTelesaleBranch')?.value || '';
@@ -249,8 +249,8 @@ export function initView() {
       }
       const employeeCode = String(profile.employee_code || profile.id || 'Telesale').replace(/[^a-zA-Z0-9_-]+/g, '_');
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-      exportLeadsToCSV(exportRows, `Khach_hang_${employeeCode}_${today}.csv`);
-      showToast(`Đã xuất ${exportRows.length.toLocaleString('vi-VN')} khách hàng theo bộ lọc hiện tại.`);
+      await exportLeadsToCSV(exportRows, `Khach_hang_${employeeCode}_${today}.xlsx`);
+      showToast(`Đã xuất ${exportRows.length.toLocaleString('vi-VN')} khách hàng ra file Excel (.xlsx) có bộ lọc.`);
     });
   }
 

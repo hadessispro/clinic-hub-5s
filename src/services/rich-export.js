@@ -1,4 +1,5 @@
 import { downloadText, formatDate, formatDateTime, formatCurrency, departmentName, escapeHTML } from '../utils.js';
+import { exportWorkbookToExcel } from './excel-export.js';
 import { getAttendance } from './attendance.js';
 import { getEmployees } from './employees.js';
 import { getLeaveRequests } from './leave.js';
@@ -193,37 +194,41 @@ export async function exportRichAnalyticsReport() {
   // Download HTML Report
   downloadText(`BAO_CAO_PHAN_TICH_5S_${new Date().toISOString().slice(0, 10)}.html`, htmlContent, 'text/html');
 
-  // Also Generate & Download CSV Spreadsheet for Excel Analysis
-  const csvHeader = 'Mã NV,Họ Tên,Phòng Ban,Loại Dữ Liệu,Ngày/Thời Gian,Loại Đơn/Trạng Thái,Chi Tiết/Lý Do,Ảnh/GPS Bằng Chứng\n';
-  const csvRows = [
-    ...attendance.map(a => {
-      const emp = empMap[a.employee] || { name: a.employeeName || a.employee || '', department: '' };
-      return [
-        `"${a.employee || ''}"`,
-        `"${emp.name || ''}"`,
-        `"${departmentName(emp.department)}"`,
-        '"Chấm công GPS"',
-        `"${formatDateTime(a.timestamp || a.created_at || a.time)}"`,
-        `"${a.status || 'valid'}"`,
-        `"${a.distance ? a.distance + 'm' : 'Trong bán kính'}"`,
-        `"${a.photoUrl || a.proofUrl || ''}"`
-      ].join(',');
-    }),
-    ...leaveRequests.map(l => {
-      const emp = empMap[l.employee] || { name: l.employee === 'PVC-IT' ? 'Admin IT' : (l.employee || ''), department: '' };
-      return [
-        `"${l.employee || ''}"`,
-        `"${emp.name || ''}"`,
-        `"${departmentName(emp.department)}"`,
-        `"${l.type || 'Đơn từ'}"`,
-        `"${formatDate(l.from)}"`,
-        `"${l.status || 'pending'}"`,
-        `"${String(l.reason || '').replace(/"/g, '""')}"`,
-        `"${l.amount ? formatCurrency(l.amount) : ''}"`
-      ].join(',');
-    })
-  ];
+  // Also Generate & Download Excel Spreadsheet (.xlsx) for Data Analysis
+  const attendanceRows = attendance.map((a, idx) => {
+    const emp = empMap[a.employee] || { name: a.employeeName || a.employee || '', department: '' };
+    return {
+      'STT': idx + 1,
+      'Mã NV': a.employee || '',
+      'Họ và tên': emp.name || '',
+      'Phòng ban': departmentName(emp.department),
+      'Thời gian': formatDateTime(a.timestamp || a.created_at || a.time),
+      'Trạng thái': a.status || 'valid',
+      'Khoảng cách': a.distance ? `${a.distance}m` : 'Trong bán kính',
+      'Ảnh / Link bằng chứng': a.photoUrl || a.proofUrl || '',
+    };
+  });
 
-  const csvContent = '\uFEFF' + csvHeader + csvRows.join('\n');
-  downloadText(`BAO_CAO_DU_LIEU_EXCEL_5S_${new Date().toISOString().slice(0, 10)}.csv`, csvContent, 'text/csv');
+  const leaveRows = leaveRequests.map((l, idx) => {
+    const emp = empMap[l.employee] || { name: l.employee === 'PVC-IT' ? 'Admin IT' : (l.employee || ''), department: '' };
+    return {
+      'STT': idx + 1,
+      'Mã NV': l.employee || '',
+      'Họ và tên': emp.name || '',
+      'Phòng ban': departmentName(emp.department),
+      'Loại đơn': l.type || 'Đơn từ',
+      'Ngày đăng ký': formatDate(l.from),
+      'Trạng thái': l.status || 'pending',
+      'Chi tiết / Lý do': l.reason || '',
+      'Số tiền (VNĐ)': l.amount ? Number(l.amount) : '',
+    };
+  });
+
+  await exportWorkbookToExcel({
+    filename: `BAO_CAO_DU_LIEU_EXCEL_5S_${new Date().toISOString().slice(0, 10)}.xlsx`,
+    sheets: [
+      { sheetName: 'Chấm công GPS', data: attendanceRows },
+      { sheetName: 'Đơn từ & Tạm ứng', data: leaveRows },
+    ],
+  });
 }

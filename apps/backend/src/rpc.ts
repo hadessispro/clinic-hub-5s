@@ -3,6 +3,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Injectable, 
 import { AuthGuard, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 import { PushService } from './push';
+import { TelegramService } from './telegram';
 
 type JsonMap = Record<string, unknown>;
 const admins = new Set(['admin', 'admin_it', 'superadmin']);
@@ -12,6 +13,7 @@ export class RpcService {
   constructor(
     private readonly infrastructure: InfrastructureService,
     private readonly push: PushService,
+    private readonly telegram: TelegramService,
   ) {}
 
   private async put(table: string, value: JsonMap, key = String(value.id || randomUUID())) {
@@ -425,21 +427,172 @@ export class RpcService {
       if (!admins.has(user.role)) throw new ForbiddenException();
       const current = await this.ensureProfile(String(args.p_user_id || ''));
       if (!current) throw new Error('Không tìm thấy hồ sơ người dùng.');
-      const next = { ...current.payload, role: args.p_role, active: Boolean(args.p_active) };
+      const oldRole = current.payload.role;
+      const newRole = args.p_role;
+      const isActive = Boolean(args.p_active);
+      const isLocked = isActive === false;
+      const roleChanged = oldRole !== newRole;
+      const targetCode = String(current.payload.employee_code || args.p_user_id);
+      const targetName = String(current.payload.full_name || targetCode);
+
+      const next = { ...current.payload, role: newRole, active: isActive };
       await this.put('profiles', next, current.record_key);
+
+      // Đồng bộ trạng thái vào bảng employees: Khóa tài khoản -> status: 'inactive' (ẩn khỏi dashboard, ca trực...)
+      if (targetCode) {
+        await this.infrastructure.postgres.query(
+          `update app.records
+           set payload = jsonb_set(payload, '{status}', $1::jsonb),
+               origin='vps', version=version+1, updated_at=now()
+           where entity_type='employees' and deleted_at is null
+             and (lower(payload->>'code')=lower($2) or lower(record_key)=lower($2))`,
+          [JSON.stringify(isActive ? 'active' : 'inactive'), targetCode],
+        );
+        this.infrastructure.markDataChanged(['profiles', 'employees']);
+      }
+
       await this.infrastructure.postgres.query(
         `insert into app.auth_audit
            (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
          values ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [Boolean(args.p_active) === false ? 'khoa_tai_khoan' : 'doi_vai_tro',
+        [isLocked ? 'khoa_tai_khoan' : 'doi_vai_tro',
          user.employeeCode || null, user.role,
-         String(current.payload.employee_code || args.p_user_id), String(args.p_role || ''),
-         JSON.stringify({ vai_tro_cu: current.payload.role, vai_tro_moi: args.p_role,
-                          hoat_dong: Boolean(args.p_active) })],
+         targetCode, String(newRole || ''),
+         JSON.stringify({ vai_tro_cu: oldRole, vai_tro_moi: newRole,
+                          hoat_dong: isActive })],
       );
+
+      // Bắn cảnh báo CRITICAL đến Telegram khi thay đổi vai trò hoặc khóa tài khoản
+      if (roleChanged || isLocked) {
+        const actionType = isLocked ? 'lock_account' : 'change_role';
+        const shouldAlert = await this.telegram.shouldNotify(actionType, true);
+        if (shouldAlert) {
+          void this.telegram.sendSecurityAlert({
+            eventType: isLocked ? 'lock_account' : 'change_role',
+            severity: 'critical',
+            actorCode: user.employeeCode,
+            actorName: String(user.profile?.full_name || 'Quản trị viên'),
+            actorRole: user.role,
+            branchId: user.branchId,
+            details: {
+              doiTuong: `${targetName} (${targetCode})`,
+              hanhDong: isLocked ? 'Khóa tài khoản' : 'Thay đổi vai trò người dùng',
+              vaiTroCu: oldRole,
+              vaiTroMoi: newRole,
+              trangThai: isActive ? 'Hoạt động' : 'Bị khóa',
+            },
+          });
+        }
+      }
+
       return next;
     }
+    if (name === 'system_delete_user') {
+      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ Admin IT hoặc Ban Giám Đốc mới có quyền xóa nhân sự.');
+      const targetUserId = String(args.p_user_id || '').trim();
+      const targetEmpCode = String(args.p_employee_code || '').trim();
+      if (!targetUserId && !targetEmpCode) throw new BadRequestException('Vui lòng cung cấp mã hoặc ID nhân sự cần xóa.');
+
+      const current = await this.ensureProfile(targetUserId || targetEmpCode);
+      const targetCode = String(current?.payload?.employee_code || targetEmpCode || targetUserId);
+      const targetName = String(current?.payload?.full_name || targetCode);
+      const targetRole = String(current?.payload?.role || 'staff');
+
+      // Chặn tự xóa chính mình hoặc xóa Superadmin
+      if (current && (current.record_key === user.id || current.payload?.id === user.id || targetCode.toLowerCase() === (user.employeeCode || '').toLowerCase())) {
+        throw new BadRequestException('Không thể tự xóa tài khoản của chính mình.');
+      }
+      if (['superadmin'].includes(targetRole) && user.role !== 'superadmin') {
+        throw new ForbiddenException('Không có quyền xóa tài khoản Superadmin.');
+      }
+
+      const now = new Date().toISOString();
+
+      // 1. Soft delete trên profiles
+      if (current) {
+        await this.infrastructure.postgres.query(
+          `update app.records
+           set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+               payload = jsonb_set(jsonb_set(payload, '{active}', 'false'::jsonb), '{deleted_at}', $1::jsonb)
+           where entity_type='profiles' and record_key=$2`,
+          [JSON.stringify(now), current.record_key],
+        );
+      }
+
+      // 2. Soft delete trên employees
+      if (targetCode) {
+        await this.infrastructure.postgres.query(
+          `update app.records
+           set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+               payload = jsonb_set(jsonb_set(payload, '{status}', '"inactive"'::jsonb), '{deleted_at}', $1::jsonb)
+           where entity_type='employees' and deleted_at is null
+             and (lower(payload->>'code')=lower($2) or lower(record_key)=lower($2))`,
+          [JSON.stringify(now), targetCode],
+        );
+      }
+
+      // 3. Ghi audit an ninh
+      try {
+        await this.infrastructure.postgres.query(
+          `insert into app.auth_audit
+             (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
+           values ($1, $2, $3, $4, $5, $6::jsonb)`,
+          ['xoa_nhan_su',
+           user.employeeCode || null, user.role,
+           targetCode, targetRole,
+           JSON.stringify({
+             target_name: targetName,
+             target_code: targetCode,
+             deleted_by: user.employeeCode || user.id,
+             deleted_at: now,
+           })],
+        );
+      } catch {
+        await this.infrastructure.postgres.query(
+          `insert into app.auth_audit
+             (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
+           values ($1, $2, $3, $4, $5, $6::jsonb)`,
+          ['khoa_tai_khoan',
+           user.employeeCode || null, user.role,
+           targetCode, targetRole,
+           JSON.stringify({
+             target_name: targetName,
+             target_code: targetCode,
+             hanh_dong_chi_tiet: 'xoa_nhan_su_khoi_he_thong',
+             deleted_by: user.employeeCode || user.id,
+             deleted_at: now,
+           })],
+        ).catch(() => {});
+      }
+
+      // 4. Bắn cảnh báo Telegram CRITICAL
+      try {
+        const shouldAlert = await this.telegram.shouldNotify('delete_employee', true);
+        if (shouldAlert) {
+          void this.telegram.sendSecurityAlert({
+            eventType: 'delete_employee',
+            severity: 'critical',
+            actorCode: user.employeeCode,
+            actorName: String(user.profile?.full_name || 'Quản trị viên'),
+            actorRole: user.role,
+            branchId: user.branchId,
+            details: {
+              doiTuong: `${targetName} (${targetCode})`,
+              hanhDong: 'XÓA NHÂN SỰ RA KHỎI HỆ THỐNG',
+              vaiTro: targetRole,
+              ngayXoa: now,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('[RPC system_delete_user] Telegram alert warning:', err);
+      }
+
+      this.infrastructure.markDataChanged(['profiles', 'employees']);
+      return { success: true, code: targetCode, name: targetName };
+    }
     if (name === 'system_update_user_profile') {
+
       if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được sửa thông tin tài khoản.');
       const current = await this.ensureProfile(String(args.p_user_id || ''));
       if (!current) throw new BadRequestException('Không tìm thấy hồ sơ người dùng.');

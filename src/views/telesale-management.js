@@ -232,8 +232,8 @@ export function initView() {
       const to = dateTo ? new Date(`${dateTo}T23:59:59.999+07:00`) : null;
       rows = rows.filter((lead) => { const value = new Date(lead.created_at || 0); return (!from || value >= from) && (!to || value <= to); });
       if (!rows.length) { showToast('Không có dữ liệu phù hợp để xuất.', true); return; }
-      exportLeadsToCSV(rows, `Ho_so_Telesale_${reportDate}.csv`);
-      showToast(`Đã xuất ${rows.length} hồ sơ.`);
+      await exportLeadsToCSV(rows, `Ho_so_Telesale_${reportDate}.xlsx`);
+      showToast(`Đã xuất ${rows.length} hồ sơ ra file Excel (.xlsx) có bộ lọc.`);
     } catch (error) { showToast(error.message || 'Không thể xuất dữ liệu.', true); }
   });
   initLeadConsultationDrawer({

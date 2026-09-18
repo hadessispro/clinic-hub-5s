@@ -19,6 +19,10 @@ const MOBILE_NAV_ICONS = {
   'pg-workflow': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   'gift-inventory': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
   'pg-attendance': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  'phu-ta-drive': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  'kho-hang': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+  'so-benh-an': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10M8 14h6"/></svg>',
+  'le-tan': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
 };
 
 function mobileNavIcon(view) {
@@ -42,6 +46,10 @@ const MOBILE_NAV_LABELS = {
   'pg-workflow': 'Ca & Hỗ trợ',
   'gift-inventory': 'Trao quà',
   'pg-attendance': 'Chấm công',
+  'phu-ta-drive': 'Kho ảnh',
+  'kho-hang': 'Kho hàng',
+  'so-benh-an': 'Bệnh án',
+  'le-tan': 'Lễ tân',
 };
 
 function mobileNavLabel(item) {
@@ -100,11 +108,16 @@ export function renderSidebar(role) {
   );
   const preferredByRole = {
     admin_it: ['system-admin', 'attendance', 'schedule', 'reports'],
+    hr: ['payroll', 'people', 'attendance', 'recruitment'],
     telesale_leader: ['telesale-management', 'attendance', 'dashboard', 'marketing-analytics'],
     telesale_staff: ['telesale-workspace', 'tasks', 'attendance', 'chat'],
     pg_staff: ['marketing-leads', 'attendance', 'pg-workflow', 'gift-inventory'],
     admin_marketing: ['telesale-management', 'hoa-hong', 'marketing-leads', 'pg-management'],
     support_marketing: ['pg-management', 'hoa-hong', 'pg-workflow', 'pg-locations'],
+    phu_ta: ['phu-ta-drive', 'kho-hang', 'attendance', 'schedule'],
+    phu_ta_truong: ['phu-ta-drive', 'kho-hang', 'attendance', 'schedule'],
+    bac_si: ['so-benh-an', 'phu-ta-drive', 'attendance', 'schedule'],
+    le_tan: ['le-tan', 'so-benh-an', 'attendance', 'chat'],
   };
   const preferredViews = preferredByRole[role] || ['dashboard', 'attendance', 'schedule', 'chat'];
   const preferredItems = preferredViews

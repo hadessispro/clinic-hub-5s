@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Injectable, Logger, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, Logger, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard, AuthService, AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 import { SecurityAlertPayload, TelegramService } from './telegram';
@@ -44,9 +44,12 @@ export class SecurityService {
       this.logger.error('Failed to insert security event:', error);
     }
 
-    // Always dispatch warnings and critical events to Telegram
+    // Dispatch warnings and critical events to Telegram if permitted by rules
     if (event.severity === 'critical' || event.severity === 'warning') {
-      void this.telegram.sendSecurityAlert(event);
+      const allowed = await this.telegram.shouldNotify(event.eventType, true);
+      if (allowed) {
+        void this.telegram.sendSecurityAlert(event);
+      }
     }
   }
 
@@ -100,6 +103,14 @@ export class SecurityService {
     );
     return res.rows;
   }
+
+  async getNotificationRules() {
+    return this.telegram.getNotificationRules();
+  }
+
+  async updateNotificationRule(actionType: string, shouldNotify: boolean) {
+    return this.telegram.updateNotificationRule(actionType, shouldNotify);
+  }
 }
 
 @Controller('/api/v2/security')
@@ -136,5 +147,27 @@ export class SecurityController {
     }
     const limit = Number(limitQuery) || 20;
     return this.security.getRecentAlerts(limit);
+  }
+
+  @Get('/rules')
+  @UseGuards(AuthGuard)
+  async getRules(@Req() req: { user: AuthUser }) {
+    if (!['admin', 'admin_it', 'superadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('Chỉ quản trị viên mới có quyền xem cấu hình thông báo.');
+    }
+    return this.security.getNotificationRules();
+  }
+
+  @Patch('/rules/:actionType')
+  @UseGuards(AuthGuard)
+  async updateRule(
+    @Req() req: { user: AuthUser },
+    @Param('actionType') actionType: string,
+    @Body() body: { shouldNotify: boolean },
+  ) {
+    if (!['admin', 'admin_it', 'superadmin'].includes(req.user.role)) {
+      throw new ForbiddenException('Chỉ quản trị viên mới có quyền cập nhật cấu hình thông báo.');
+    }
+    return this.security.updateNotificationRule(actionType, body.shouldNotify);
   }
 }

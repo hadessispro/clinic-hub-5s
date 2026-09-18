@@ -1,11 +1,13 @@
 import {
   getSystemHealth, getBugLogs, createBugLog, updateBugLog,
   publishSystemAnnouncement, getSystemAnnouncements, getSystemProfiles,
-  updateUserAccess, updateUserProfile, unlockAccount, datLaiMatKhau, getAccountStates, getTechnicalAudit, getIntegrationFailures,
+  updateUserAccess, updateUserProfile, unlockAccount, datLaiMatKhau, deleteUserAccount, getAccountStates, getTechnicalAudit, getIntegrationFailures,
   getSystemErrorLogs, resolveSystemError, subscribeToSystemErrors,
   getDatabaseCatalog, runDatabaseQuery,
   getAttendanceAdjustments, createAttendanceAdjustment, updateAttendanceAdjustment, deleteAttendanceAdjustment,
   getReminderConfig, saveReminderConfig, sendImmediateReminder,
+  getSystemSmtp, saveSystemSmtp, testSystemSmtp,
+  getNotificationRules, updateNotificationRule,
 } from '../services/system-admin.js';
 import { playChime, CHIME_OPTIONS } from '../services/audio-chime.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
@@ -47,16 +49,95 @@ let ccPage = 1;
 let ccPageSize = 20;
 let ccData = null;
 let reminderConfigData = null;
+let notificationRulesData = [];
+let smtpConfigData = null;
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
+  'thong-bao': 'Cảnh báo Telegram & An ninh',
   'chuong-bao': 'Chuông báo & Lời chúc 5S Care',
   'cham-cong': 'Điều chỉnh chấm công',
   database: 'Truy vấn cơ sở dữ liệu',
   bug: 'Bug và thông báo',
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
+  'smtp': 'Cấu hình Mail SMTP',
 };
+
+function renderNotificationPolicyPanel(rules) {
+  const dsRules = Array.isArray(rules) ? rules : [];
+  const categoryLabels = {
+    media: 'Kho ảnh lâm sàng',
+    security: 'Hệ thống & An ninh',
+    auth: 'Đăng nhập & Tài khoản',
+    attendance: 'Chấm công & Ca trực',
+  };
+
+  const severityBadges = {
+    critical: '<span class="status-pill is-danger" style="background:#fee2e2;color:#b91c1c;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">🚨 CRITICAL</span>',
+    high: '<span class="status-pill is-warning" style="background:#fef3c7;color:#b45309;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">⚠️ HIGH</span>',
+    info: '<span class="status-pill is-info" style="background:#e0f2fe;color:#0369a1;font-weight:700;padding:3px 8px;border-radius:6px;font-size:11px;">ℹ️ INFO</span>',
+  };
+
+  const notifyingCount = dsRules.filter((r) => r.should_notify).length;
+
+  return `<section class="panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">CHÍNH SÁCH CẢNH BÁO AN NINH VÀ TELEGRAM</p>
+        <h3>Quy tắc Thông báo & Nhật ký Kiểm toán</h3>
+      </div>
+      <span class="subtle">Đang kích hoạt ${notifyingCount}/${dsRules.length} cảnh báo tức thì</span>
+    </div>
+
+    <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:13px;line-height:1.6;color:#334155;">
+      <strong style="color:#0f172a;font-size:14px;">💡 Chiến lược tối ưu hóa vận hành & Giảm nhiễu kênh Telegram:</strong>
+      <ul style="margin:8px 0 0 18px;padding:0;">
+        <li><b>Cảnh báo tức thì (Telegram):</b> Ưu tiên các sự cố <strong style="color:#dc2626;">CRITICAL</strong> (xóa ảnh, xóa thư mục, thay đổi quyền admin, khóa tài khoản) và <strong style="color:#d97706;">HIGH</strong> (đăng nhập ngoài giờ hành chính 22h-6h hoặc IP lạ, can thiệp F12 DevTools, tải ảnh hàng loạt > 30 ảnh).</li>
+        <li><b>Gom Báo cáo ngày (22:00):</b> Các tác vụ thường nhật <strong style="color:#0284c7;">INFO</strong> (tải ảnh lên, tạo thư mục mới, xem ảnh, đăng nhập ban ngày) được ghi nhận 100% vào Database và tự động tổng hợp số liệu gửi 1 lần duy nhất lúc 22:00, chấm dứt hoàn toàn tình trạng loãng kênh chat.</li>
+      </ul>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Loại sự kiện & Mô tả</th>
+            <th>Nhóm</th>
+            <th>Mức độ</th>
+            <th>Phương thức</th>
+            <th style="text-align:center;">Bắn Telegram</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${!dsRules.length ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748b;">Chưa tải được danh sách quy tắc. Bấm Làm mới dữ liệu để tải lại.</td></tr>' : ''}
+          ${dsRules.map((r) => `
+            <tr>
+              <td>
+                <div style="font-weight:600;color:#0f172a;">${escapeHTML(r.description || r.action_type)}</div>
+                <code style="font-size:11px;color:#64748b;background:#f1f5f9;padding:1px 5px;border-radius:4px;">${escapeHTML(r.action_type)}</code>
+              </td>
+              <td>
+                <span style="font-size:12px;color:#475569;font-weight:500;">${escapeHTML(categoryLabels[r.category] || r.category)}</span>
+              </td>
+              <td>
+                ${severityBadges[r.severity] || escapeHTML(r.severity)}
+              </td>
+              <td>
+                <span id="rule-status-${escapeHTML(r.action_type)}" style="font-size:12px;font-weight:600;color:${r.should_notify ? '#dc2626' : '#0284c7'};">
+                  ${r.should_notify ? '⚡ Bắn tức thì' : '📅 Gom báo cáo 22h'}
+                </span>
+              </td>
+              <td style="text-align:center;">
+                <input type="checkbox" data-rule-action="${escapeHTML(r.action_type)}"${r.should_notify ? ' checked' : ''} style="transform:scale(1.25);cursor:pointer;" />
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </section>`;
+}
 
 function renderReminderControlPanel(config) {
   const cfg = config || {};
@@ -292,6 +373,31 @@ function renderReminderControlPanel(config) {
       </div>
     </section>
   </div>`;
+}
+
+function bindNotificationRuleActions() {
+  document.querySelectorAll('[data-rule-action]').forEach((chk) => {
+    chk.addEventListener('change', async () => {
+      const actionType = chk.dataset.ruleAction;
+      const shouldNotify = chk.checked;
+      const badge = document.getElementById(`rule-status-${actionType}`);
+      if (badge) {
+        badge.textContent = shouldNotify ? '⚡ Bắn tức thì' : '📅 Gom báo cáo 22h';
+        badge.style.color = shouldNotify ? '#dc2626' : '#0284c7';
+      }
+      try {
+        await updateNotificationRule(actionType, shouldNotify);
+        showToast(`Đã cập nhật quy tắc: ${actionType}`);
+      } catch (err) {
+        chk.checked = !shouldNotify;
+        if (badge) {
+          badge.textContent = !shouldNotify ? '⚡ Bắn tức thì' : '📅 Gom báo cáo 22h';
+          badge.style.color = !shouldNotify ? '#dc2626' : '#0284c7';
+        }
+        showToast(err.message || 'Không thể cập nhật quy tắc thông báo.', true);
+      }
+    });
+  });
 }
 
 function bindReminderActions() {
@@ -611,7 +717,13 @@ function profileRows(profiles, currentUserId, trangThaiMap) {
         <button class="secondary-button compact-button" type="button"
           data-reset-pw="${escapeHTML(profile.employee_code)}"
           data-ten="${escapeHTML(profile.full_name || profile.employee_code)}"
-          title="Đặt mật khẩu mới. Dùng khi người dùng quên hẳn mật khẩu.">Đặt lại mật khẩu</button>` : ''}</td></tr>`;
+          title="Đặt mật khẩu mới. Dùng khi người dùng quên hẳn mật khẩu.">Đặt lại mật khẩu</button>` : ''}
+        ${!protectedRole ? `<button class="secondary-button compact-button is-danger" type="button"
+          data-delete-user="${escapeHTML(profile.id)}"
+          data-delete-code="${escapeHTML(profile.employee_code || '')}"
+          data-delete-name="${escapeHTML(profile.full_name || profile.employee_code || '')}"
+          style="color:#dc2626; border-color:#fecaca; background:#fff5f5;"
+          title="Xóa nhân sự khỏi hệ thống (Ẩn vĩnh viễn và hủy quyền)"><i class="ri-delete-bin-line"></i> Xóa</button>` : ''}</td></tr>`;
   }).join('');
 }
 
@@ -680,6 +792,80 @@ function editProfileDialog(profile, account) {
   });
 }
 
+function renderSmtpConfigPanel(data) {
+  const cfg = data?.config || {};
+  const isConfigured = cfg.isConfigured;
+  return `<section class="panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">CẤU HÌNH HỆ THỐNG</p>
+        <h3>Máy Chủ SMTP Gửi Email Phiếu Lương</h3>
+      </div>
+      <span class="status-pill ${isConfigured ? 'is-success' : 'is-danger'}" style="font-size:12px;">
+        <i class="ri-${isConfigured ? 'checkbox-circle' : 'error-warning'}-line"></i>
+        ${isConfigured ? 'Đã cấu hình' : 'Chưa thiết lập'}
+      </span>
+    </div>
+
+    <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:13px;line-height:1.6;color:#334155;">
+      <strong style="color:#0f172a;"><i class="ri-information-line"></i> Hướng dẫn cấu hình Gmail SMTP:</strong>
+      <ol style="margin:8px 0 0 18px;padding:0;">
+        <li>Đăng nhập Gmail → Vào <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">Google Account Security</a></li>
+        <li>Bật <strong>Xác minh 2 bước (2-Step Verification)</strong></li>
+        <li>Vào <strong>App Passwords</strong> → Tạo mật khẩu ứng dụng 16 ký tự</li>
+        <li>Nhập mật khẩu ứng dụng đó vào ô bên dưới (không phải mật khẩu Gmail thường)</li>
+      </ol>
+    </div>
+
+    <form id="systemSmtpForm" class="form-grid">
+      <div class="form-field">
+        <label>Máy chủ SMTP (Host)</label>
+        <input name="host" id="sysSmtpHost" value="${escapeHTML(cfg.host || 'smtp.gmail.com')}" placeholder="smtp.gmail.com" />
+      </div>
+      <div class="form-field">
+        <label>Cổng (Port)</label>
+        <select name="port" id="sysSmtpPort">
+          <option value="465" ${cfg.port === 465 || !cfg.port ? 'selected' : ''}>465 (SSL — Khuyên dùng)</option>
+          <option value="587" ${cfg.port === 587 ? 'selected' : ''}>587 (STARTTLS)</option>
+        </select>
+      </div>
+      <div class="form-field full">
+        <label>Tài khoản gửi (Email SMTP / Gmail)</label>
+        <input name="user" id="sysSmtpUser" type="email" required value="${escapeHTML(cfg.user || '')}" placeholder="hr@nhakhoa5s.vn hoặc example@gmail.com" />
+      </div>
+      <div class="form-field full">
+        <label>Mật khẩu ứng dụng (App Password)</label>
+        <input name="pass" id="sysSmtpPass" type="password" value="${escapeHTML(cfg.passMasked || '')}" placeholder="Nhập mật khẩu ứng dụng 16 ký tự" />
+        <small class="subtle" style="font-size:0.72rem;">Đối với Gmail: Bật 2FA → Tạo "Mật khẩu ứng dụng" (App Password) tại Google Account. Để trống nếu không thay đổi.</small>
+      </div>
+      <div class="form-field full">
+        <label>Tên hiển thị người gửi</label>
+        <input name="fromName" id="sysSmtpFromName" value="${escapeHTML(cfg.fromName || 'CÔNG TY CỔ PHẦN 5S SÀI GÒN - PHÒNG NHÂN SỰ')}" />
+      </div>
+      <div class="form-field full">
+        <label>Email phản hồi (From Email)</label>
+        <input name="fromEmail" id="sysSmtpFromEmail" type="email" value="${escapeHTML(cfg.fromEmail || cfg.user || '')}" placeholder="Để trống = dùng tài khoản SMTP" />
+      </div>
+
+      <div id="sysSmtpTestResult" style="display:none; margin:10px 0; padding:10px 12px; border-radius:8px; font-size:0.82rem; grid-column:1/-1;"></div>
+
+      <div class="form-field full" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:10px;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="email" id="sysSmtpTestEmail" placeholder="Email nhận thử nghiệm..." style="padding:7px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem; width:240px;" />
+          <button type="button" class="secondary-button" id="btnTestSystemSmtp" style="white-space:nowrap;">
+            <i class="ri-send-plane-line"></i> Gửi thư thử nghiệm
+          </button>
+        </div>
+        <button type="submit" class="primary-button" id="btnSaveSystemSmtp">
+          <i class="ri-save-line"></i> Lưu cấu hình hệ thống
+        </button>
+      </div>
+    </form>
+
+    ${cfg.updatedAt ? `<p class="subtle" style="margin-top:14px; font-size:0.75rem;"><i class="ri-time-line"></i> Cập nhật lần cuối: ${escapeHTML(cfg.updatedAt)} bởi ${escapeHTML(cfg.updatedBy || 'admin_it')}</p>` : ''}
+  </section>`;
+}
+
 export async function renderView(state) {
   /* Mỗi nguồn tự chịu lỗi của mình.
    *
@@ -714,6 +900,12 @@ export async function renderView(state) {
   if (theDangMo === 'chuong-bao') {
     const res = await getReminderConfig().catch(() => ({ config: null }));
     reminderConfigData = res?.config || null;
+  }
+  if (theDangMo === 'thong-bao') {
+    notificationRulesData = await getNotificationRules().catch(() => []);
+  }
+  if (theDangMo === 'smtp') {
+    try { smtpConfigData = await getSystemSmtp(); } catch { smtpConfigData = null; }
   }
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   tkProfiles = profiles;
@@ -784,6 +976,8 @@ export async function renderView(state) {
       <details class="sync-error-details"><summary>Lỗi đồng bộ dữ liệu (${failed.length})</summary>${failed.length ? failed.map((item) => `<article><strong>${escapeHTML(item.entity_type)} · ${escapeHTML(item.entity_id || '')}</strong><span>${escapeHTML(item.last_error || 'Không có mô tả')}</span><small>${formatDateTime(item.created_at)} · thử ${item.attempts || 0} lần</small></article>`).join('') : '<p class="subtle">Không có lỗi đồng bộ.</p>'}</details>
     </section>`,
     'audit': `<section class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT TRAIL</p><h3>Lịch sử thay đổi hệ thống</h3></div><span class="subtle">${audits.length} thao tác gần nhất</span></div><div class="system-audit-list">${audits.slice(0, 30).map((item) => `<article><strong>${escapeHTML(item.action)} · ${escapeHTML(item.entity)}</strong><span>${escapeHTML(item.entity_id || '')}</span><small>${formatDateTime(item.created_at)}</small></article>`).join('') || '<p class="subtle">Chưa có audit log.</p>'}</div></section>`,
+    'thong-bao': renderNotificationPolicyPanel(notificationRulesData),
+    'smtp': renderSmtpConfigPanel(smtpConfigData),
   };
   return `<div class="view-header"><div><p class="eyebrow">TRUNG TÂM QUẢN TRỊ</p><h3>${escapeHTML(TEN_THE[the])}</h3></div><button class="secondary-button" type="button" id="refreshSystem">↻ Làm mới dữ liệu</button></div>
     <section class="system-health-grid">${metric('Database', health.database === 'online' ? 'Đang hoạt động' : 'Có lỗi', `Kiểm tra ${formatDateTime(health.checked_at)}`)}${metric('Tài khoản hoạt động', health.active_profiles, `${health.inactive_profiles || 0} tài khoản bị khóa`)}${metric('Dữ liệu chấm công', health.attendance_records, `Lần cuối ${health.last_attendance_at ? formatDateTime(health.last_attendance_at) : 'chưa có'}`)}${metric('Đồng bộ lỗi', health.failed_sync, `${health.pending_sync || 0} đang chờ`)}${metric('Lỗi ứng dụng', errorLogs.filter((x) => !x.resolved).length, `${errorLogs.filter((x) => x.level === 'critical' && !x.resolved).length} nghiêm trọng`)}</section>
@@ -835,12 +1029,60 @@ function bindLogActions() {
   document.querySelectorAll('[data-resolve-log]').forEach((button) => button.addEventListener('click', async () => { try { await resolveSystemError(button.dataset.resolveLog, button.dataset.resolved !== 'true'); showToast('Đã cập nhật trạng thái log.'); store.notify(); } catch (error) { showToast(error.message || 'Không thể cập nhật log.', true); } }));
 }
 
+function bindSmtpEvents() {
+  document.getElementById('systemSmtpForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const host = document.getElementById('sysSmtpHost')?.value?.trim() || 'smtp.gmail.com';
+    const port = Number(document.getElementById('sysSmtpPort')?.value || 465);
+    const user = document.getElementById('sysSmtpUser')?.value?.trim();
+    const pass = document.getElementById('sysSmtpPass')?.value?.trim();
+    const fromName = document.getElementById('sysSmtpFromName')?.value?.trim();
+    const fromEmail = document.getElementById('sysSmtpFromEmail')?.value?.trim();
+    if (!user) { showToast('Vui lòng nhập tài khoản email SMTP.', true); return; }
+    try {
+      await saveSystemSmtp({ host, port, user, pass, fromName, fromEmail });
+      showToast('Đã lưu cấu hình SMTP hệ thống thành công.');
+      store.notify();
+    } catch (err) {
+      showToast(err.message || 'Lỗi lưu cấu hình SMTP.', true);
+    }
+  });
+
+  document.getElementById('btnTestSystemSmtp')?.addEventListener('click', async () => {
+    const statusDiv = document.getElementById('sysSmtpTestResult');
+    const host = document.getElementById('sysSmtpHost')?.value?.trim();
+    const port = Number(document.getElementById('sysSmtpPort')?.value || 465);
+    const user = document.getElementById('sysSmtpUser')?.value?.trim();
+    const pass = document.getElementById('sysSmtpPass')?.value?.trim();
+    const fromName = document.getElementById('sysSmtpFromName')?.value?.trim();
+    const testEmail = document.getElementById('sysSmtpTestEmail')?.value?.trim();
+    if (!user) { showToast('Vui lòng nhập tài khoản email SMTP trước.', true); return; }
+    if (statusDiv) { statusDiv.style.display = 'block'; statusDiv.style.background = '#eff6ff'; statusDiv.style.color = '#1e40af'; statusDiv.style.border = '1px solid #bfdbfe'; statusDiv.textContent = '⏳ Đang kết nối và xác thực SMTP...'; }
+    try {
+      const res = await testSystemSmtp({ host, port, user, pass, fromName, testEmail });
+      if (statusDiv) {
+        if (res.success) {
+          statusDiv.style.background = '#f0fdf4'; statusDiv.style.color = '#15803d'; statusDiv.style.border = '1px solid #bbf7d0';
+          statusDiv.innerHTML = `<strong><i class="ri-checkbox-circle-line"></i> Thành công:</strong> ${escapeHTML(res.message)}`;
+        } else {
+          statusDiv.style.background = '#fef2f2'; statusDiv.style.color = '#dc2626'; statusDiv.style.border = '1px solid #fecaca';
+          statusDiv.innerHTML = `<strong><i class="ri-error-warning-line"></i> Thất bại:</strong> ${escapeHTML(res.message)}`;
+        }
+      }
+    } catch (err) {
+      if (statusDiv) { statusDiv.style.background = '#fef2f2'; statusDiv.style.color = '#dc2626'; statusDiv.style.border = '1px solid #fecaca'; statusDiv.innerHTML = `<strong><i class="ri-error-warning-line"></i> Lỗi:</strong> ${escapeHTML(err.message || 'Không thể kết nối.')}`; }
+    }
+  });
+}
+
 export function initView() {
   document.getElementById('refreshSystem')?.addEventListener('click', () => store.notify());
   document.getElementById('announcementForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang phát hành…'; try { await publishSystemAnnouncement(data); showToast('Đã phát hành thông báo đến người dùng.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '🔔 Phát hành thông báo realtime'; showToast(error.message || 'Không thể phát hành thông báo.', true); } });
   document.getElementById('bugForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang lưu bug…'; try { await createBugLog(data); showToast('Đã thêm bug log.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '+ Thêm bug log'; showToast(error.message || 'Không thể thêm bug log.', true); } });
   bindLiveFilters(); bindBugActions(); bindLogActions();
   bindReminderActions();
+  bindNotificationRuleActions();
+  bindSmtpEvents();
   document.querySelectorAll('[data-the]').forEach((b) => b.addEventListener('click', () => {
     theDangMo = b.dataset.the;
     store.notify();
@@ -1144,6 +1386,29 @@ export function initView() {
   }));
 
   document.querySelectorAll('[data-save-access]').forEach((button) => button.addEventListener('click', async () => { const id = button.dataset.saveAccess; const role = document.querySelector(`[data-user-role="${id}"]`).value; const active = document.querySelector(`[data-user-active="${id}"]`).checked; if (!await confirmAction(`Xác nhận cập nhật quyền ${roleLabel[role]} và trạng thái tài khoản?`, { title: 'Cập nhật phân quyền', confirmText: 'Lưu phân quyền' })) return; try { await updateUserAccess(id, role, active); showToast('Đã cập nhật quyền tài khoản và lưu audit.'); store.notify(); } catch (error) { showToast(error.message || 'Không thể cập nhật tài khoản.', true); } }));
+
+  document.querySelectorAll('[data-delete-user]').forEach((button) => button.addEventListener('click', async () => {
+    const id = button.dataset.deleteUser;
+    const code = button.dataset.deleteCode;
+    const name = button.dataset.deleteName;
+    const targetLabel = code ? `${name} (Mã: ${code})` : name;
+    if (!await confirmAction(
+      `Bạn có chắc chắn muốn XÓA nhân sự ${targetLabel} khỏi hệ thống?\n\n• Nhân sự sẽ bị ẩn hoàn toàn khỏi danh sách tài khoản và HR.\n• Toàn bộ quyền truy cập và đăng nhập bị hủy bỏ.\n• Dữ liệu lịch sử (chấm công, phiếu lương, chứng từ cũ) vẫn được bảo toàn an toàn.`,
+      { title: `Xóa nhân sự ${name}?`, confirmText: 'Xác nhận xóa', tone: 'danger' }
+    )) return;
+
+    try {
+      button.disabled = true;
+      button.innerHTML = '<i class="ri-loader-4-line ri-spin"></i>';
+      await deleteUserAccount(id, code);
+      showToast(`Đã xóa nhân sự ${targetLabel} khỏi hệ thống thành công.`);
+      store.notify();
+    } catch (error) {
+      button.disabled = false;
+      button.innerHTML = '<i class="ri-delete-bin-line"></i> Xóa';
+      showToast(error.message || 'Không thể xóa nhân sự.', true);
+    }
+  }));
   logSub?.unsubscribe(); logSub = subscribeToSystemErrors(() => { if (store.getState().currentView === 'system-admin') store.notify(); });
 }
 

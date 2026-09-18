@@ -1,5 +1,6 @@
 import { dataClient } from '../data-client.js';
 import { store } from '../store.js';
+import { exportTableToExcel } from './excel-export.js';
 
 const useVps = Boolean(dataClient?.isLocal && dataClient?.request);
 
@@ -173,7 +174,15 @@ export async function updateMarketingLead(id, updates) {
       method: 'PATCH', body: JSON.stringify({
         status: updates.status,
         notes: updates.notes,
-        lowQualityReason: updates.low_quality_reason,
+        lowQualityReason: updates.low_quality_reason || updates.lowQualityReason,
+        customerName: updates.customer_name || updates.customerName || updates.full_name,
+        phone: updates.phone,
+        serviceType: updates.service_type || updates.serviceType || updates.service_interest,
+        appointmentAt: updates.appointment_at || updates.appointmentAt,
+        dataClass: updates.data_class || updates.dataClass,
+        netLevel: updates.net_level || updates.netLevel,
+        branchId: updates.branch_id || updates.branchId,
+        source: updates.source,
       }),
     });
     notifyDataChange('marketing_leads');
@@ -302,28 +311,11 @@ export async function createMarketingCampaign(campData) {
   }
 }
 
-/** Export Marketing Leads data to Excel (CSV with UTF-8 BOM) */
-export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv') {
+/** Export Marketing Leads data ra file Excel (.xlsx) chuẩn có bộ lọc và căn độ rộng cột */
+export async function exportMarketingLeadsToExcel(leads, filename = 'Danh_sach_Lead_Marketing.xlsx') {
   if (!leads || !leads.length) {
     return false;
   }
-
-  const headers = [
-    'STT',
-    'Họ tên khách hàng',
-    'Số điện thoại',
-    'Phân loại data',
-    'Nguồn Lead',
-    'Dịch vụ quan tâm',
-    'Chi nhánh đăng ký',
-    'Telesale phụ trách',
-    'Mã Telesale',
-    'PG/Nguồn nhập',
-    'Trạng thái',
-    'Lịch hẹn',
-    'Ghi chú nhu cầu',
-    'Thời gian nạp Lead'
-  ];
 
   const statusMap = {
     new: 'Mới nạp',
@@ -336,40 +328,37 @@ export function exportLeadsToCSV(leads, filename = 'Danh_sach_Lead_Marketing.csv
     cancelled: 'Hủy/Thất bại'
   };
 
-  const rows = leads.map((l, index) => [
-    index + 1,
-    `"${(l.full_name || '').replace(/"/g, '""')}"`,
-    `"${(l.phone || '').replace(/"/g, '""')}"`,
-    `"${(l.data_class === 'net' ? `Data net - ${l.net_level === 'advanced' ? 'Chuyên sâu' : 'Cơ bản'}` : 'Data thô').replace(/"/g, '""')}"`,
-    `"${(l.source || '').replace(/"/g, '""')}"`,
-    `"${(l.service_interest || '').replace(/"/g, '""')}"`,
-    `"${l.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu'}"`,
-    `"${(l.assigned_telesale_name || l.assigned_telesale_id || 'Chưa gán').replace(/"/g, '""')}"`,
-    `"${(l.assigned_telesale_id || '').replace(/"/g, '""')}"`,
-    `"${(l.created_by_name || l.created_by_pg || l.source || '').replace(/"/g, '""')}"`,
-    `"${(statusMap[l.status] || l.status || '').replace(/"/g, '""')}"`,
-    `"${(l.appointment_date ? new Date(l.appointment_date).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '').replace(/"/g, '""')}"`,
-    `"${(l.notes || '').replace(/"/g, '""')}"`,
-    `"${new Date(l.created_at || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}"`
-  ]);
+  const rows = leads.map((l, index) => ({
+    'STT': index + 1,
+    'Họ tên khách hàng': l.full_name || '',
+    'Số điện thoại': l.phone || '',
+    'Phân loại data': l.data_class === 'net' ? `Data net · ${l.net_level === 'advanced' ? 'Chuyên sâu' : 'Cơ bản'}` : 'Data thô',
+    'Nguồn Lead': l.source || '',
+    'Dịch vụ quan tâm': l.service_interest || '',
+    'Chi nhánh đăng ký': l.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : (l.branch_id === 'pham-van-chieu' ? '5S Phạm Văn Chiêu' : (l.branch_id || '')),
+    'Telesale phụ trách': l.assigned_telesale_name || (l.assigned_telesale_id ? `Mã: ${l.assigned_telesale_id}` : 'Chưa gán'),
+    'Mã Telesale': l.assigned_telesale_id || '',
+    'PG/Nguồn nhập': l.created_by_name || l.created_by_pg || l.source || '',
+    'Trạng thái': statusMap[l.status] || l.status || '',
+    'Lịch hẹn': (l.appointment_date || l.appointment_at) ? new Date(l.appointment_date || l.appointment_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
+    'Ghi chú nhu cầu': l.notes || '',
+    'Thời gian nạp Lead': l.created_at ? new Date(l.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
+  }));
 
-  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  return true;
+  const safeFilename = filename.toLowerCase().replace(/\.csv$/, '.xlsx');
+  return exportTableToExcel({
+    filename: safeFilename,
+    sheetName: 'Data Marketing',
+    data: rows,
+  });
 }
 
-/** Xuất danh sách data PG ra định dạng Excel (.xlsx) chuẩn */
+/** Giữ tương thích ngược với các module gọi exportLeadsToCSV */
+export const exportLeadsToCSV = exportMarketingLeadsToExcel;
+
+/** Xuất danh sách data PG ra định dạng Excel (.xlsx) chuẩn có bộ lọc và căn độ rộng cột */
 export async function exportPgLeadsToExcel(leads, filename = 'Kho_Data_PG.xlsx') {
   if (!leads || !leads.length) return false;
-  const XLSX = await import('xlsx');
   const statusMap = {
     new: 'Mới nạp',
     contacted: 'Đã liên hệ',
@@ -388,6 +377,7 @@ export async function exportPgLeadsToExcel(leads, filename = 'Kho_Data_PG.xlsx')
       'Khách hàng': l.full_name || '',
       'Số điện thoại': l.phone || '',
       'PG tiếp nhận': l.created_by_name || l.created_by_pg || '',
+      'Nguồn / Điểm làm việc': l.source || '',
       'Mã PG': l.created_by_pg || '',
       'Phân loại data': l.data_class === 'net' ? `Data net · ${l.net_level === 'advanced' ? 'Chuyên sâu' : 'Cơ bản'}` : 'Data thô',
       'Dịch vụ quan tâm': l.service_interest || '',
@@ -404,33 +394,13 @@ export async function exportPgLeadsToExcel(leads, filename = 'Kho_Data_PG.xlsx')
     };
   });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-
-  ws['!cols'] = [
-    { wch: 6 },  // STT
-    { wch: 22 }, // Khách hàng
-    { wch: 14 }, // Số điện thoại
-    { wch: 24 }, // PG tiếp nhận
-    { wch: 15 }, // Mã PG
-    { wch: 24 }, // Phân loại data
-    { wch: 22 }, // Dịch vụ quan tâm
-    { wch: 24 }, // Telesale phụ trách
-    { wch: 15 }, // Mã Telesale
-    { wch: 22 }, // Trạng thái chăm sóc
-    { wch: 30 }, // Xác nhận đến / HH
-    { wch: 22 }, // Người xác nhận đến
-    { wch: 22 }, // Thời gian xác nhận đến
-    { wch: 20 }, // Chi nhánh
-    { wch: 20 }, // Lịch hẹn
-    { wch: 32 }, // Ghi chú
-    { wch: 22 }, // Ngày PG nhập
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, 'Data PG');
-  XLSX.writeFile(wb, filename);
-  return true;
+  return exportTableToExcel({
+    filename,
+    sheetName: 'Data PG',
+    data: rows,
+  });
 }
+
 
 /** Delete a Marketing Lead */
 export async function deleteMarketingLead(leadId) {
@@ -675,13 +645,14 @@ export async function cancelPgAssignment(id, reason) {
   return payload.data;
 }
 
-export async function getPgAssignmentHistory(from, to, status = '') {
+export async function getPgAssignmentHistory(from, to, status = '', page = 1, pageSize = 25) {
   const query = new URLSearchParams();
   if (from) query.set('from', from);
   if (to) query.set('to', to);
   if (status) query.set('status', status);
-  const payload = await vpsRequest(`/pg-assignment-history${query.size ? `?${query}` : ''}`);
-  return payload.data || [];
+  if (page) query.set('page', String(page));
+  if (pageSize) query.set('pageSize', String(pageSize));
+  return vpsRequest(`/pg-assignment-history${query.size ? `?${query}` : ''}`);
 }
 
 export async function getPgLocationSuggestions() { return (await vpsRequest('/pg-location-suggestions')).data || []; }

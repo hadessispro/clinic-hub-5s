@@ -1,4 +1,4 @@
-import { getMarketingLeads, createMarketingLead, updateMarketingLead, deleteMarketingLead, distributeRawLeads, exportLeadsToCSV, getTelesaleAccounts } from '../services/marketing.js';
+import { getMarketingLeads, createMarketingLead, updateMarketingLead, deleteMarketingLead, distributeRawLeads, exportLeadsToCSV, getTelesaleAccounts, getPgSites, getPgAssignments } from '../services/marketing.js';
 import { getEmployees } from '../services/employees.js';
 import { LEAD_STATUS, MARKETING_SOURCES } from '../constants.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
@@ -11,6 +11,7 @@ import { navigateTo } from '../router.js';
 
 let cachedLeads = [];
 let cachedEmployees = [];
+let cachedPgSites = [];
 let activeViewMode = 'kanban'; // 'kanban' | 'table'
 let activeDataClassFilter = '';
 let activePgUnhandledOnly = false;
@@ -31,17 +32,21 @@ export async function renderView(state) {
   const showIntakeForm = isPgStaff || isTelesaleLeader;
   const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
   const allowExport = canExportData(profile.role);
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
-  const [leads, employees, telesaleAccounts] = await Promise.all([
+  const [leads, employees, telesaleAccounts, pgSites, pgTodayShifts] = await Promise.all([
     isPgStaff
       ? getMarketingLeads({ pg_code: profile.employee_code })
       : getMarketingLeads(),
     isLeadManager ? getEmployees() : Promise.resolve([]),
     isLeadManager ? getTelesaleAccounts() : Promise.resolve([]),
+    (isPgStaff || isSupportMkt || isLeadManager) ? getPgSites().catch(() => []) : Promise.resolve([]),
+    (isPgStaff || isSupportMkt) ? getPgAssignments(todayDateStr).catch(() => []) : Promise.resolve([]),
   ]);
 
   cachedLeads = leads;
   cachedEmployees = employees;
+  cachedPgSites = pgSites;
 
   const telesaleEmployees = telesaleAccounts
     .filter((employee) => ['telesale_staff', 'telesale_leader'].includes(employee.role) && employee.active !== false)
@@ -85,6 +90,9 @@ export async function renderView(state) {
                     <div class="card-header">
                       <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#0f172a; line-height:1.2;">${escapeHTML(lead.full_name)}</h4>
                       <div class="card-header-actions">
+                        <button type="button" class="btn-card-action" data-edit-lead-id="${lead.id}" title="Chỉnh sửa Lead">
+                          <i class="ri-edit-line"></i>
+                        </button>
                         <button type="button" class="btn-card-action" data-toggle-card="${lead.id}" title="Thu gọn / Mở rộng">
                           <i class="ri-arrow-down-s-line" id="toggle-icon-${lead.id}"></i>
                         </button>
@@ -161,6 +169,9 @@ export async function renderView(state) {
             <td style="color:#94a3b8; text-align:right;">
               <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px;">
                 <span style="font-size:0.78rem;">${formatDateTime(lead.created_at)}</span>
+                <button type="button" data-edit-lead-id="${lead.id}" title="Chỉnh sửa Lead" style="background:none; border:none; color:#0284c7; cursor:pointer; font-size:0.95rem;">
+                  <i class="ri-edit-line"></i>
+                </button>
                 <button type="button" data-delete-lead="${lead.id}" title="Xóa Lead" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:0.95rem;">
                   <i class="ri-delete-bin-line"></i>
                 </button>
@@ -195,8 +206,16 @@ export async function renderView(state) {
     </div>
   `;
 
-  const defaultSource = isPgStaff ? 'PG Field Intake' : 'Facebook Ads';
-  const sourceOptionsHtml = MARKETING_SOURCES.map(s => option(s, s, s === defaultSource)).join('');
+  const myTodayShift = (pgTodayShifts || []).find(s => String(s.pg_code).toLowerCase() === String(profile.employee_code).toLowerCase() && ['scheduled', 'checked_in', 'completed'].includes(s.status));
+  const assignedSiteName = myTodayShift?.site_name || '';
+  const defaultSource = assignedSiteName || (isPgStaff ? 'PG Field Intake' : 'Facebook Ads');
+  const siteNames = (pgSites || []).filter(s => s.active !== false).map(s => s.name);
+  const combinedSources = Array.from(new Set([
+    ...(assignedSiteName ? [assignedSiteName] : []),
+    ...siteNames,
+    ...MARKETING_SOURCES,
+  ]));
+  const sourceOptionsHtml = combinedSources.map(s => option(s, s, s === defaultSource)).join('');
   const telesaleOptionsHtml = telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`)).join('');
 
   const myLeads = isPgStaff
@@ -204,14 +223,32 @@ export async function renderView(state) {
     : leads;
 
   const pgSubmissionRows = myLeads.length
-    ? myLeads.map((lead) => `<tr data-pg-submission-row>
-        <td><strong>${escapeHTML(lead.full_name)}</strong><br><span class="subtle">${escapeHTML(lead.phone || 'Không có SĐT')}</span></td>
-        <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
-        <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
-        <td>${lead.appointment_at ? formatDateTime(lead.appointment_at) : 'Chưa có lịch hẹn'}</td>
-        <td>${leadStatusPill(lead.status)}</td>
-      </tr>`).join('')
-    : '<tr><td colspan="5">Bạn chưa nhập dữ liệu khách hàng nào.</td></tr>';
+    ? myLeads.map((lead) => {
+        const createdAtMs = lead.created_at ? new Date(lead.created_at).getTime() : 0;
+        const diffMinutes = (Date.now() - createdAtMs) / (60 * 1000);
+        const canEdit = isLeadManager || isSupportMkt || (diffMinutes <= 15);
+        const remainingMinutes = Math.max(1, Math.ceil(15 - diffMinutes));
+
+        return `<tr data-pg-submission-row id="pg-lead-row-${lead.id}">
+          <td><strong>${escapeHTML(lead.full_name)}</strong><br><span class="subtle">${escapeHTML(lead.phone || 'Không có SĐT')}</span></td>
+          <td><span class="pill" style="font-size:0.75rem; background:#ecfdf5; color:#065f46; font-weight:600;"><i class="ri-map-pin-2-line"></i> ${escapeHTML(lead.source || 'PG')}</span></td>
+          <td>${lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô'}</td>
+          <td>${escapeHTML(lead.service_interest || 'Khám tổng quát')}</td>
+          <td>${lead.appointment_at ? formatDateTime(lead.appointment_at) : 'Chưa có lịch hẹn'}</td>
+          <td>${leadStatusPill(lead.status)}</td>
+          <td style="text-align:right;">
+            ${canEdit
+              ? `<button type="button" class="secondary-button" data-edit-lead-id="${lead.id}" style="font-size:0.75rem; padding:4px 9px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;" title="Chỉnh sửa thông tin lead">
+                  <i class="ri-edit-line"></i> Sửa ${isLeadManager || isSupportMkt ? '' : `(${remainingMinutes}p)`}
+                </button>`
+              : `<span class="subtle" style="font-size:0.75rem; color:#94a3b8; display:inline-flex; align-items:center; gap:3px;" title="Đã quá 15 phút, không thể chỉnh sửa">
+                  <i class="ri-lock-line"></i> Đã khóa
+                </span>`
+            }
+          </td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="7">Bạn chưa nhập dữ liệu khách hàng nào.</td></tr>';
 
   return `
     <div class="view-header">
@@ -225,7 +262,7 @@ export async function renderView(state) {
       <section class="panel">
         <div class="section-title">
           <h3>+ Nạp Data Khách Hàng (${isTelesaleLeader ? 'Quản lý Telesale' : 'PG'})</h3>
-          ${pill(isPgStaff ? "Nạp trực tiếp từ thị trường" : "Nạp từ Ads / Hotline")}
+          ${pill(isPgStaff ? (assignedSiteName ? `Ca trực: ${assignedSiteName}` : "Nạp trực tiếp từ thị trường") : "Nạp từ Ads / Hotline")}
         </div>
         <form class="form-grid three" id="createLeadForm">
           <div class="form-field">
@@ -250,7 +287,7 @@ export async function renderView(state) {
             <small>Dùng để kiểm tra trùng trên toàn bộ kho khách hàng.</small>
           </div>
           <div class="form-field">
-            <label for="leadSource">Nguồn tiếp nhận</label>
+            <label for="leadSource">Nguồn tiếp nhận ${assignedSiteName ? `<span style="color:#0f766e; font-size:0.75rem; font-weight:700;"><i class="ri-map-pin-2-fill"></i> (Ca: ${escapeHTML(assignedSiteName)})</span>` : ''}</label>
             <select id="leadSource" name="source">${sourceOptionsHtml}</select>
           </div>
           <div class="form-field">
@@ -277,7 +314,7 @@ export async function renderView(state) {
       </section>
       <section class="panel" style="margin-top:14px">
         <div class="section-title"><div><h3>Dữ liệu tôi đã nhập</h3><p class="subtle">Số liệu thực tế của tài khoản hiện tại · 50 bản ghi mỗi trang</p></div><span class="pill">${myLeads.length} bản ghi</span></div>
-        <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Phân loại</th><th>Dịch vụ</th><th>Lịch hẹn</th><th>Trạng thái</th></tr></thead><tbody>${pgSubmissionRows}</tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Nguồn / Điểm làm việc</th><th>Phân loại</th><th>Dịch vụ</th><th>Lịch hẹn</th><th>Trạng thái</th><th style="text-align:right;">Thao tác</th></tr></thead><tbody>${pgSubmissionRows}</tbody></table></div>
         <div class="data-pagination" id="pgSubmissionPagination" aria-label="Phân trang dữ liệu PG">
           <div class="data-pagination-summary" id="pgSubmissionPaginationSummary"></div>
           <div class="data-pagination-actions">
@@ -314,10 +351,10 @@ export async function renderView(state) {
             </button>
           </div>
 
-          <!-- Export Excel CSV Button for Admin/Leaders -->
+          <!-- Export Excel Button for Admin/Leaders -->
           ${allowExport ? `
             <button type="button" id="btnExportCSV" class="primary-button marketing-export-button">
-              <i class="ri-file-excel-2-line" style="font-size:1.05rem;"></i> Xuất Data Excel (CSV)
+              <i class="ri-file-excel-2-line" style="font-size:1.05rem;"></i> Xuất Data Excel (.xlsx)
             </button>
           ` : ''}
         </div>
@@ -378,6 +415,161 @@ export async function renderView(state) {
     </section>
     `}
   `;
+}
+
+function openEditLeadModal(lead) {
+  let modalEl = document.getElementById('editLeadModal');
+  if (!modalEl) {
+    modalEl = document.createElement('div');
+    modalEl.id = 'editLeadModal';
+    document.body.appendChild(modalEl);
+  }
+  modalEl.style.display = 'flex';
+  modalEl.style.position = 'fixed';
+  modalEl.style.inset = '0';
+  modalEl.style.zIndex = '99999';
+  modalEl.style.background = 'rgba(15, 23, 42, 0.6)';
+  modalEl.style.backdropFilter = 'blur(3px)';
+  modalEl.style.alignItems = 'center';
+  modalEl.style.justifyContent = 'center';
+  modalEl.style.padding = '16px';
+
+  const profile = store.getState().profile || {};
+  const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'support_marketing'].includes(profile.role);
+  const createdAtMs = lead.created_at ? new Date(lead.created_at).getTime() : 0;
+  const diffMinutes = (Date.now() - createdAtMs) / (60 * 1000);
+  const remainingMinutes = Math.max(0, Math.ceil(15 - diffMinutes));
+
+  const isNet = lead.data_class === 'net';
+  const serviceOptions = (isNet ? (NET_SERVICES[lead.net_level] || NET_SERVICES.basic) : RAW_SERVICES)
+    .map(s => `<option value="${escapeHTML(s)}" ${lead.service_interest === s ? 'selected' : ''}>${escapeHTML(s)}</option>`).join('');
+
+  modalEl.innerHTML = `
+    <div style="background:#ffffff; border-radius:14px; max-width:560px; width:100%; max-height:90vh; overflow-y:auto; padding:22px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2); position:relative;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
+        <div>
+          <p class="eyebrow" style="margin:0; font-size:0.75rem; color:#0284c7; font-weight:700;">HỒ SƠ KHÁCH HÀNG</p>
+          <h3 style="margin:4px 0 0; font-size:1.1rem; font-weight:800; color:#0f172a;">Chỉnh sửa thông tin Lead</h3>
+          ${!isLeadManager && diffMinutes <= 15 ? `<small style="color:#059669; font-weight:600;"><i class="ri-timer-line"></i> Còn khoảng ${remainingMinutes} phút để hoàn tất sửa đổi</small>` : ''}
+        </div>
+        <button type="button" id="closeEditLeadModalBtn" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:#64748b; line-height:1;"><i class="ri-close-line"></i></button>
+      </div>
+
+      <form id="editLeadForm" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <input type="hidden" name="leadId" value="${escapeHTML(lead.id)}" />
+
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Họ tên khách hàng *</label>
+          <input name="customerName" required value="${escapeHTML(lead.full_name || '')}" style="width:100%; height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.88rem; box-sizing:border-box;" placeholder="Nguyễn Văn A" />
+        </div>
+
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Số điện thoại *</label>
+          <input name="phone" type="tel" inputmode="tel" required value="${escapeHTML(lead.phone || '')}" style="width:100%; height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.88rem; box-sizing:border-box;" placeholder="090..." />
+          <small style="font-size:0.73rem; color:#64748b;">Được sửa tên mà không bị lỗi trùng với chính số điện thoại này.</small>
+        </div>
+
+        <div>
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Phân loại data</label>
+          <select name="dataClass" id="editLeadDataClass" style="width:100%; height:36px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;">
+            <option value="raw" ${lead.data_class !== 'net' ? 'selected' : ''}>Data thô</option>
+            <option value="net" ${lead.data_class === 'net' ? 'selected' : ''}>Data net</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Cấp độ Net</label>
+          <select name="netLevel" id="editLeadNetLevel" style="width:100%; height:36px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;" ${lead.data_class !== 'net' ? 'disabled' : ''}>
+            <option value="basic" ${lead.net_level !== 'advanced' ? 'selected' : ''}>Net cơ bản</option>
+            <option value="advanced" ${lead.net_level === 'advanced' ? 'selected' : ''}>Net chuyên sâu</option>
+          </select>
+        </div>
+
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Dịch vụ quan tâm</label>
+          <select name="serviceInterest" id="editLeadService" style="width:100%; height:36px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;">
+            ${serviceOptions}
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Lịch hẹn</label>
+          <input name="appointmentAt" type="datetime-local" value="${lead.appointment_date || lead.appointment_at ? new Date(lead.appointment_date || lead.appointment_at).toISOString().slice(0, 16) : ''}" style="width:100%; height:36px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;" />
+        </div>
+
+        <div>
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Chi nhánh đăng ký</label>
+          <select name="branchId" style="width:100%; height:36px; padding:0 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;">
+            <option value="le-van-tho" ${lead.branch_id === 'le-van-tho' ? 'selected' : ''}>5S Lê Văn Thọ</option>
+            <option value="pham-van-chieu" ${lead.branch_id === 'pham-van-chieu' ? 'selected' : ''}>5S Phạm Văn Chiêu</option>
+          </select>
+        </div>
+
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Nguồn / Điểm làm việc</label>
+          <input name="source" value="${escapeHTML(lead.source || '')}" style="width:100%; height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.88rem; box-sizing:border-box;" placeholder="VD: Emart Gò Vấp" />
+        </div>
+
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.82rem; font-weight:700; color:#334155; margin-bottom:3px; display:block;">Ghi chú nhu cầu</label>
+          <textarea name="notes" rows="2" style="width:100%; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; box-sizing:border-box;" placeholder="Yêu cầu tư vấn, tình trạng răng miệng...">${escapeHTML(lead.notes || '')}</textarea>
+        </div>
+
+        <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+          <button type="button" id="cancelEditLeadBtn" class="secondary-button" style="padding:6px 14px; font-size:0.85rem;">Hủy</button>
+          <button type="submit" class="primary-button" id="saveEditLeadBtn" style="padding:6px 16px; font-size:0.85rem;"><i class="ri-save-line"></i> Lưu thay đổi</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => { modalEl.style.display = 'none'; };
+  document.getElementById('closeEditLeadModalBtn')?.addEventListener('click', closeModal);
+  document.getElementById('cancelEditLeadBtn')?.addEventListener('click', closeModal);
+  modalEl.onclick = (e) => { if (e.target === modalEl) closeModal(); };
+
+  const editDataClass = document.getElementById('editLeadDataClass');
+  const editNetLevel = document.getElementById('editLeadNetLevel');
+  const editService = document.getElementById('editLeadService');
+  const updateEditServices = () => {
+    if (!editService) return;
+    const isNetSel = editDataClass?.value === 'net';
+    if (editNetLevel) editNetLevel.disabled = !isNetSel;
+    const items = isNetSel ? (NET_SERVICES[editNetLevel?.value] || NET_SERVICES.basic) : RAW_SERVICES;
+    const prev = editService.value;
+    editService.innerHTML = items.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
+    if (items.includes(prev)) editService.value = prev;
+  };
+  editDataClass?.addEventListener('change', updateEditServices);
+  editNetLevel?.addEventListener('change', updateEditServices);
+
+  document.getElementById('editLeadForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('saveEditLeadBtn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang lưu...'; }
+    const fd = new FormData(e.target);
+    const updates = {
+      customer_name: String(fd.get('customerName') || '').trim(),
+      phone: String(fd.get('phone') || '').trim(),
+      data_class: String(fd.get('dataClass') || 'raw').trim(),
+      net_level: fd.get('dataClass') === 'net' ? String(fd.get('netLevel') || 'basic').trim() : null,
+      service_type: String(fd.get('serviceInterest') || '').trim(),
+      appointment_at: fd.get('appointmentAt') ? new Date(String(fd.get('appointmentAt'))).toISOString() : null,
+      branch_id: String(fd.get('branchId') || '').trim(),
+      source: String(fd.get('source') || '').trim(),
+      notes: String(fd.get('notes') || '').trim() || null,
+    };
+
+    try {
+      await updateMarketingLead(lead.id, updates);
+      showToast('Đã cập nhật thông tin khách hàng thành công.');
+      closeModal();
+      await navigateTo('marketing-leads');
+    } catch (err) {
+      showToast(err.message || 'Lỗi khi cập nhật Lead.', true);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="ri-save-line"></i> Lưu thay đổi'; }
+    }
+  });
 }
 
 export function initView() {
@@ -558,17 +750,18 @@ export function initView() {
     });
   }
 
-  // Export CSV Button Event
+  // Export Excel Button Event
   const btnExportCSV = document.getElementById('btnExportCSV');
   if (btnExportCSV) {
-    btnExportCSV.addEventListener('click', () => {
+    btnExportCSV.addEventListener('click', async () => {
       if (!cachedLeads || !cachedLeads.length) {
         showToast("Không có dữ liệu Lead để xuất!", true);
         return;
       }
-      const success = exportLeadsToCSV(cachedLeads);
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const success = await exportLeadsToCSV(cachedLeads, `Kho_Data_Marketing_${todayStr}.xlsx`);
       if (success) {
-        showToast("✅ Đã xuất dữ liệu Lead sang file Excel (CSV) thành công!");
+        showToast("Đã xuất dữ liệu Lead sang file Excel (.xlsx) chuẩn có bộ lọc!");
       }
     });
   }
@@ -808,4 +1001,13 @@ export function initView() {
   if (searchInput) searchInput.addEventListener('input', applyFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyFilters);
   if (sourceSelect) sourceSelect.addEventListener('change', applyFilters);
+
+  document.querySelectorAll('[data-edit-lead-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const leadId = btn.dataset.editLeadId;
+      const lead = cachedLeads.find(l => String(l.id) === String(leadId));
+      if (lead) openEditLeadModal(lead);
+    });
+  });
 }

@@ -19,6 +19,8 @@ let assignmentHistory = [];
 let assignmentHistoryFrom = '';
 let assignmentHistoryTo = '';
 let assignmentHistoryStatus = '';
+let assignmentHistoryPage = 1;
+const PG_ASSIGNMENT_PAGE_SIZE = 25;
 let report = { totals: {}, pg: [], telesale: [] };
 let attendance = [];
 let attendanceFrom = '';
@@ -70,10 +72,15 @@ export async function renderView() {
     getMarketingReports(),
     adminOperations ? getPgAttendance(attendanceFrom, attendanceTo) : Promise.resolve([]),
     pgLeadRequest,
-    getPgAssignmentHistory(assignmentHistoryFrom, assignmentHistoryTo, assignmentHistoryStatus),
+    getPgAssignmentHistory(assignmentHistoryFrom, assignmentHistoryTo, assignmentHistoryStatus, assignmentHistoryPage, PG_ASSIGNMENT_PAGE_SIZE),
   ]);
   [accounts, sites, assignments, report, attendance] = loaded;
-  assignmentHistory = loaded[6] || [];
+  const historyRes = loaded[6] || { data: [], meta: {} };
+  assignmentHistory = Array.isArray(historyRes) ? historyRes : (historyRes.data || []);
+  const assignmentHistoryMeta = historyRes.meta || { page: assignmentHistoryPage, pageSize: PG_ASSIGNMENT_PAGE_SIZE, total: assignmentHistory.length, pageCount: 1 };
+  const historyTotal = Number(assignmentHistoryMeta.total ?? assignmentHistory.length);
+  const historyPages = Math.max(1, Math.ceil(historyTotal / PG_ASSIGNMENT_PAGE_SIZE));
+  const historyStart = historyTotal ? ((Number(assignmentHistoryMeta.page || 1) - 1) * PG_ASSIGNMENT_PAGE_SIZE) + 1 : 0;
   const pgLeadResult = loaded[5];
   const totals = report.totals || {};
   const pgRows = report.pg || [];
@@ -123,11 +130,24 @@ export async function renderView() {
     </div>` : ''}
 
     <section class="panel pg-assignment-panel" style="margin-top:14px">
-      <div class="section-title"><div><h3>Phân công vị trí và thời gian</h3><p class="subtle">PG nhận thông báo ngay; chấm công chỉ mở theo ca và vị trí còn hiệu lực.</p></div><span class="pill">Mỗi PG · mỗi ngày một ca</span></div>
+      <div class="section-title"><div><h3>Phân công vị trí và thời gian</h3><p class="subtle">PG nhận thông báo ngay; chấm công chỉ mở theo ca và vị trí còn hiệu lực.</p></div><span class="pill">Tối đa 2 ca/ngày · Giao ca 30–60p</span></div>
       <form id="pgAssignmentForm" class="pg-assignment-form">
-        <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG theo tên</option>${accounts.map((row) => `<option value="${escapeHTML(row.profile?.employee_code || '')}">${escapeHTML(row.employee?.full_name || row.profile?.full_name || row.profile?.employee_code || '')}</option>`).join('')}</select></label>
+        <label class="form-field"><span>Nhân viên PG</span><select name="pgCode" required><option value="">Chọn PG theo tên</option>${accounts.map((row) => {
+          const code = row.profile?.employee_code || '';
+          const count = assignments.filter((a) => !['cancelled', 'expired'].includes(a.status) && a.pg_code === code).length;
+          const countBadge = count >= 2 ? ' · [Đã đủ 2 ca]' : (count === 1 ? ' · [Đã có 1 ca]' : '');
+          const name = row.employee?.full_name || row.profile?.full_name || code || '';
+          return `<option value="${escapeHTML(code)}">${escapeHTML(name)}${countBadge}</option>`;
+        }).join('')}</select></label>
         <label class="form-field"><span>Vị trí</span><select name="siteId" required><option value="">Chọn vị trí</option>${sites.map((site) => `<option value="${site.id}">${escapeHTML(site.name)}</option>`).join('')}</select></label>
         <label class="form-field"><span>Ngày làm</span><input name="workDate" type="date" value="${today()}" required></label>
+        <div class="pg-shift-presets" style="grid-column: 1 / -1; display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 4px">
+          <span class="subtle" style="font-size:12px; align-self:center">Chọn nhanh:</span>
+          <button type="button" class="ghost-button" data-shift-preset="07:30-12:30" style="padding:2px 8px; font-size:12px">Sáng (07:30–12:30)</button>
+          <button type="button" class="ghost-button" data-shift-preset="12:30-17:30" style="padding:2px 8px; font-size:12px">Chiều (12:30–17:30)</button>
+          <button type="button" class="ghost-button" data-shift-preset="17:00-22:00" style="padding:2px 8px; font-size:12px">Tối (17:00–22:00)</button>
+          <button type="button" class="ghost-button" data-shift-preset="08:00-17:00" style="padding:2px 8px; font-size:12px">Hành chính</button>
+        </div>
         <label class="form-field"><span>Giờ vào</span><input name="startTime" type="time" value="08:00" required></label>
         <label class="form-field"><span>Giờ ra</span><input name="endTime" type="time" value="17:00" required></label>
         <button class="primary-button pg-assignment-submit" type="submit"><i class="ri-send-plane-line"></i> Giao cho PG</button>
@@ -138,7 +158,7 @@ export async function renderView() {
     </section>
 
     <section class="panel pg-assignment-history" style="margin-top:14px">
-      <div class="section-title"><div><p class="eyebrow">LỊCH SỬ PHÂN CÔNG</p><h3>Đối soát ca PG</h3><p class="subtle">Lưu cả phân công đã hủy, tự hết hạn, check-in và hoàn thành.</p></div><span class="pill">${assignmentHistory.length} bản ghi</span></div>
+      <div class="section-title"><div><p class="eyebrow">LỊCH SỬ PHÂN CÔNG</p><h3>Đối soát ca PG</h3><p class="subtle">Lưu cả phân công đã hủy, tự hết hạn, check-in và hoàn thành.</p></div><span class="pill">${historyTotal.toLocaleString('vi-VN')} bản ghi</span></div>
       <form id="pgAssignmentHistoryFilter" class="pg-assignment-history-filter">
         <label class="form-field"><span>Từ ngày</span><input name="from" type="date" value="${assignmentHistoryFrom}"></label>
         <label class="form-field"><span>Đến ngày</span><input name="to" type="date" value="${assignmentHistoryTo}"></label>
@@ -148,6 +168,14 @@ export async function renderView() {
       <div class="table-wrap"><table><thead><tr><th>PG</th><th>Ngày · ca</th><th>Vị trí</th><th>Trạng thái</th><th>Người xử lý / lý do</th></tr></thead><tbody>
         ${assignmentHistory.length ? assignmentHistory.map((row) => { const [label, tone] = assignmentStatus(row); const lastEvent = Array.isArray(row.events) ? row.events.at(-1) : null; return `<tr><td><strong>${escapeHTML(row.pg_name || row.pg_code)}</strong><small>${escapeHTML(row.pg_code)}</small></td><td><strong>${escapeHTML(String(row.work_date).slice(0,10))}</strong><small>${escapeHTML(String(row.start_time).slice(0,5))}–${escapeHTML(String(row.end_time).slice(0,5))}</small></td><td><strong>${escapeHTML(row.site_name)}</strong><small>${escapeHTML(row.address)}</small></td><td><span class="assignment-status is-${tone}">${escapeHTML(label)}</span></td><td><strong>${escapeHTML(lastEvent?.actor_code || row.created_by_code || 'Hệ thống')}</strong><small>${escapeHTML(row.cancel_reason || lastEvent?.reason || (row.status === 'expired' ? 'Tự động hết hạn do chưa check-in' : '—'))}</small></td></tr>`; }).join('') : '<tr><td colspan="5">Không có phân công phù hợp bộ lọc.</td></tr>'}
       </tbody></table></div>
+      <div class="data-pagination" style="margin-top:12px">
+        <span class="data-pagination-summary">Hiển thị ${historyStart}–${Math.min(historyStart + assignmentHistory.length - 1, historyTotal)} trong ${historyTotal.toLocaleString('vi-VN')} phân công</span>
+        <div class="data-pagination-actions">
+          <button type="button" class="data-page-nav" data-assignment-history-page="${Math.max(1, assignmentHistoryPage - 1)}"${assignmentHistoryPage <= 1 ? ' disabled' : ''}>‹ <span>Trước</span></button>
+          <label class="data-page-picker"><span>Trang</span><select aria-label="Chọn trang lịch sử phân công" data-assignment-history-page-select>${Array.from({ length: historyPages }, (_, index) => `<option value="${index + 1}"${index + 1 === assignmentHistoryPage ? ' selected' : ''}>${index + 1}/${historyPages}</option>`).join('')}</select></label>
+          <button type="button" class="data-page-nav" data-assignment-history-page="${Math.min(historyPages, assignmentHistoryPage + 1)}"${assignmentHistoryPage >= historyPages ? ' disabled' : ''}><span>Sau</span> ›</button>
+        </div>
+      </div>
     </section>
 
     ${(adminOperations || isSupportMarketing) ? `<section class="panel" style="margin-top:14px">
@@ -427,6 +455,15 @@ export function initView() {
     try { await deletePgSite(site.id); await refresh('Đã xóa địa điểm chấm công.'); } catch (error) { showToast(error.message, true); }
     finally { button.disabled = false; delete button.dataset.pending; }
   }));
+  document.querySelectorAll('[data-shift-preset]').forEach((btn) => btn.addEventListener('click', () => {
+    const form = document.getElementById('pgAssignmentForm');
+    if (!form) return;
+    const [start, end] = String(btn.dataset.shiftPreset || '').split('-');
+    if (start && end) {
+      form.elements.startTime.value = start;
+      form.elements.endTime.value = end;
+    }
+  }));
   document.getElementById('pgAssignmentForm')?.addEventListener('submit', async (event) => {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     try { await createPgAssignment(data); await refresh('Đã giao lịch và vị trí cho PG.'); } catch (error) { showToast(error.message, true); }
@@ -443,6 +480,15 @@ export function initView() {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     if (data.from && data.to && data.from > data.to) return showToast('Ngày bắt đầu không được lớn hơn ngày kết thúc.', true);
     assignmentHistoryFrom = data.from || daysAgo(30); assignmentHistoryTo = data.to || today(); assignmentHistoryStatus = data.status || '';
+    assignmentHistoryPage = 1;
+    await navigateTo('pg-management');
+  });
+  document.querySelectorAll('[data-assignment-history-page]').forEach((button) => button.addEventListener('click', async () => {
+    assignmentHistoryPage = Number(button.dataset.assignmentHistoryPage || 1);
+    await navigateTo('pg-management');
+  }));
+  document.querySelector('[data-assignment-history-page-select]')?.addEventListener('change', async (event) => {
+    assignmentHistoryPage = Number(event.currentTarget.value || 1);
     await navigateTo('pg-management');
   });
   document.querySelectorAll('[data-toggle-pg]').forEach((button) => button.addEventListener('click', async () => {

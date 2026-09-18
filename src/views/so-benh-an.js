@@ -26,11 +26,13 @@ import {
   CHI_SO_NHA_CHU, GIAI_DOAN, LOAI_THU_THUAT, SINH_HIEU, TRANG_THAI_KE_HOACH,
   MUC_LUU_Y, TRUONG_DANH_DAU, boDanhDau, themAnh, themDanhDau,
   PHAN_HANG, baoCaoPhanHang, xuatCsvPhanHang, themKeHoach, capNhatKeHoach,
+  taiLenMediaBenhNhan, layMediaBenhNhan, layNhatKyMedia, capNhatMedia, xoaMedia,
 } from '../services/so-benh-an.js';
 import { BAC_SI, tenBacSi, tenChiNhanh } from '../services/le-tan.js';
+import { getEmployees } from '../services/employees.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
-import { nenWebp } from '../components/nen-anh.js';
+import { nenWebp, doKb } from '../components/nen-anh.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
@@ -40,6 +42,8 @@ import { store } from '../store.js';
 let hoSoMo = '';
 let duLieu = null;
 let dsHoSo = [];
+let dsMediaBenhNhan = [];
+let dsGoiYPhuTa = [];
 
 let fTim = ''; let fChiNhanh = ''; let fBacSi = '';
 let fCanhBao = false; let fRangSau = false; let trang = 1;
@@ -910,6 +914,85 @@ function veKeHoach(ds, tongChiPhi) {
   </section>`;
 }
 
+function veKhoAnhDrive(dsMedia = []) {
+  return `
+    <section class="panel sbn-drive-panel" style="border: 1.5px solid #bae6fd; background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 60px);">
+      <header class="section-title sbn-header" style="border-bottom: 1px solid #e0f2fe; padding-bottom: 12px; margin-bottom: 14px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:36px; height:36px; border-radius:8px; background:#0284c7; color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px;">
+            <i class="ri-image-2-line"></i>
+          </div>
+          <div>
+            <h3 style="margin:0; font-size:16px; color:#0369a1; display:flex; align-items:center; gap:8px;">
+              Kho Ảnh Lâm Sàng · Hồ Sơ Điện Tử
+              <span class="pill" style="background:#e0f2fe; color:#0284c7; font-size:11px; font-weight:600;">Ảnh cho Lê Văn Thọ</span>
+            </h3>
+            <p style="margin:2px 0 0 0; font-size:12px; color:#64748b;">
+              Tự động phân thư mục theo Phụ tá & Bệnh nhân · Nhật ký kiểm toán an ninh
+            </p>
+          </div>
+        </div>
+        <div class="sbn-header-nut">
+          <button type="button" class="primary-button" id="sbnBtnTaiAnhDrive" style="display:inline-flex; align-items:center; gap:6px;">
+            <i class="ri-upload-cloud-2-line"></i> Tải ảnh lâm sàng (Phụ tá)
+          </button>
+        </div>
+      </header>
+
+      ${!dsMedia.length ? `
+        <div style="text-align:center; padding:28px 16px; color:#64748b; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1;">
+          <i class="ri-image-add-line" style="font-size:36px; color:#94a3b8; display:block; margin-bottom:8px;"></i>
+          <p style="margin:0 0 6px 0; font-weight:500;">Chưa có ảnh nào cho bệnh nhân này</p>
+          <small style="display:block; margin-bottom:12px; color:#94a3b8;">Ảnh tải lên sẽ tự động đồng bộ theo cây thư mục Phụ tá ➔ Bệnh nhân và lưu nhật ký an ninh</small>
+          <button type="button" class="secondary-button sbn-nho" id="sbnBtnTaiAnhDriveRong">
+            <i class="ri-camera-lens-line"></i> Chụp / Tải ảnh lên hồ sơ ngay
+          </button>
+        </div>
+      ` : `
+        <div class="sbn-drive-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:12px;">
+          ${dsMedia.map((m) => `
+            <div class="sbn-drive-the" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+              <div style="position:relative; width:100%; aspect-ratio:4/3; background:#0f172a; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:pointer;" data-xem-lon="${escapeHTML(m.id)}">
+                <img src="/api/v2/media/view/${escapeHTML(m.id)}" alt="${escapeHTML(m.file_name)}" loading="lazy" style="width:100%; height:100%; object-fit:cover;" />
+                <span style="position:absolute; top:6px; left:6px; background:rgba(0,0,0,0.65); color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; backdrop-filter:blur(4px);">
+                  ${escapeHTML(LOAI_ANH[m.category] || m.category || 'Ảnh')}
+                </span>
+                <span style="position:absolute; bottom:6px; right:6px; background:rgba(2,132,199,0.85); color:#fff; font-size:10px; padding:1px 5px; border-radius:3px;">
+                  ${doKb(Number(m.file_size || 0))}
+                </span>
+              </div>
+              <div style="padding:8px 10px; font-size:12px; display:flex; flex-direction:column; gap:3px; flex:1;">
+                <div style="font-weight:600; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(m.file_name)}">
+                  ${escapeHTML(m.file_name)}
+                </div>
+                <div style="font-size:11px; color:#475569; display:flex; align-items:center; gap:4px;">
+                  <i class="ri-user-heart-line" style="color:#0284c7;"></i>
+                  <span>${escapeHTML(m.assistant_name || 'Phụ tá')}</span>
+                </div>
+                <div style="font-size:10px; color:#94a3b8;">
+                  ${new Date(m.created_at).toLocaleString('vi-VN')}
+                </div>
+                ${m.notes ? `<div style="font-size:11px; color:#64748b; font-style:italic; background:#f8fafc; padding:2px 6px; border-radius:3px; margin-top:2px;">${escapeHTML(m.notes)}</div>` : ''}
+              </div>
+              <div style="border-top:1px solid #f1f5f9; padding:6px 8px; display:flex; justify-content:space-between; align-items:center; background:#fafafa;">
+                <button type="button" class="ghost-button sbn-nho" data-xem-lon="${escapeHTML(m.id)}" title="Xem phóng to">
+                  <i class="ri-eye-line"></i> Xem
+                </button>
+                <a href="/api/v2/media/download/${escapeHTML(m.id)}" class="ghost-button sbn-nho" title="Tải file gốc về máy" download>
+                  <i class="ri-download-2-line"></i>
+                </a>
+                <button type="button" class="ghost-button sbn-nho" data-audit-anh="${escapeHTML(m.id)}" title="Xem nhật ký ai đã xem ảnh này" style="color:#0284c7;">
+                  <i class="ri-shield-check-line"></i> Kiểm toán
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </section>
+  `;
+}
+
 function veSoChiTiet() {
   const h = duLieu.ho_so;
   const luot = locLuotKham(duLieu.luot_kham, {
@@ -966,6 +1049,8 @@ function veSoChiTiet() {
 
     ${veThuoc(duLieu.thuoc)}
     ${veKeHoach(duLieu.ke_hoach, duLieu.tong_chi_phi)}
+
+    ${veKhoAnhDrive(dsMediaBenhNhan)}
 
     ${veFormKham()}
 
@@ -1043,7 +1128,15 @@ export async function renderView() {
   if (hoSoMo) {
     duLieu = await moHoSo(hoSoMo, { ma: toi.employee_code || '?', vai_tro: toi.role || '?' })
       .catch(() => null);
-    if (!duLieu) { hoSoMo = ''; }
+    if (!duLieu) {
+      hoSoMo = '';
+    } else {
+      dsMediaBenhNhan = await layMediaBenhNhan(duLieu.ho_so?.ma || duLieu.ma || hoSoMo).catch(() => []);
+      if (!dsGoiYPhuTa.length) {
+        const emps = await getEmployees().catch(() => []);
+        dsGoiYPhuTa = emps.map((e) => e.name || e.full_name).filter(Boolean);
+      }
+    }
   }
   if (!hoSoMo) {
     dsHoSo = await layDanhSachHoSo({
@@ -1501,5 +1594,275 @@ export function initView() {
     downloadText(`benh-an-${duLieu.ho_so.ma}-${todayISO()}.csv`,
       '﻿' + xuatCsvLuotKham(duLieu.ho_so, luot), 'text/csv');
     showToast(`Đã xuất ${luot.length} lượt khám.`);
+  });
+
+  /* ── Thao tác Media & Kho Lưu Trữ Hồ Sơ ───────────────────────────── */
+
+  const moModalTaiAnh = () => {
+    let modal = g('modalTaiAnhDrive');
+    if (modal) modal.remove();
+
+    const div = document.createElement('div');
+    div.id = 'modalTaiAnhDrive';
+    div.className = 'system-dialog-layer is-open';
+    div.innerHTML = `
+      <div class="system-dialog-backdrop"></div>
+      <section class="system-dialog-panel" style="max-width:540px; width:95%;">
+        <header class="system-dialog-header">
+          <span class="system-dialog-icon default" style="color:#0284c7;"><i class="ri-folder-image-line"></i></span>
+          <div>
+            <p class="eyebrow">KHO ẢNH LÂM SÀNG · HỒ SƠ ĐIỆN TỬ</p>
+            <h3>Tải Ảnh Lâm Sàng Bệnh Nhân</h3>
+          </div>
+          <button class="icon-button system-dialog-close" type="button" id="btnDongTaiAnhX">×</button>
+        </header>
+        <div style="padding:16px 20px; display:flex; flex-direction:column; gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500;">
+            <span>Phụ tá thực hiện ca:</span>
+            <input type="text" id="taiAnhPhuTa" list="dsPhuTaGoiY" class="input" placeholder="Nhập tên phụ tá..." value="${escapeHTML(toi.full_name || toi.name || '')}">
+            <datalist id="dsPhuTaGoiY">
+              ${dsGoiYPhuTa.map((t) => `<option value="${escapeHTML(t)}">`).join('')}
+            </datalist>
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500;">
+              <span>Phân loại ảnh:</span>
+              <select id="taiAnhLoai" class="input">
+                <option value="trong_mieng">Ảnh trong miệng</option>
+                <option value="can_canh">Ảnh cận cảnh răng</option>
+                <option value="xquang">Phim X-quang</option>
+                <option value="ngoai_mat">Ảnh ngoài mặt</option>
+                <option value="khac">Khác</option>
+              </select>
+            </label>
+            <label style="display:flex; flex-direction:column; gap:4px; font-size:13px; font-weight:500;">
+              <span>Ghi chú / Vị trí răng:</span>
+              <input type="text" id="taiAnhGhiChu" class="input" placeholder="Ví dụ: Răng 26 trước mài">
+            </label>
+          </div>
+          <div style="border:2px dashed #94a3b8; border-radius:8px; padding:20px 16px; text-align:center; background:#f8fafc; cursor:pointer;" id="dropZoneTaiAnh">
+            <i class="ri-camera-lens-line" style="font-size:32px; color:#0284c7; display:block; margin-bottom:6px;"></i>
+            <span style="font-size:13px; font-weight:600; color:#334155;">Bấm vào đây để chọn ảnh hoặc chụp ảnh</span>
+            <small style="display:block; color:#64748b; margin-top:4px;">Tự động tối ưu WebP chuẩn y khoa trước khi lưu trữ đám mây</small>
+            <input type="file" id="taiAnhInputFile" accept="image/*" multiple style="display:none;">
+            <div id="taiAnhXemTruoc" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; justify-content:center;"></div>
+          </div>
+        </div>
+        <footer class="system-dialog-actions" style="padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" class="secondary-button" id="btnHuyTaiAnhDrive">Hủy</button>
+          <button type="button" class="primary-button" id="btnXacNhanTaiAnhDrive" style="display:inline-flex; align-items:center; gap:6px;">
+            <i class="ri-upload-cloud-line"></i> Lưu vào kho hồ sơ
+          </button>
+        </footer>
+      </section>
+    `;
+    document.body.appendChild(div);
+
+    let tepChon = [];
+    const inp = div.querySelector('#taiAnhInputFile');
+    const drop = div.querySelector('#dropZoneTaiAnh');
+    const preview = div.querySelector('#taiAnhXemTruoc');
+
+    drop.addEventListener('click', (e) => {
+      if (e.target !== inp) inp.click();
+    });
+
+    inp.addEventListener('change', () => {
+      tepChon = [...inp.files];
+      preview.innerHTML = tepChon.map((f) => `
+        <div style="font-size:11px; background:#e0f2fe; color:#0369a1; padding:3px 8px; border-radius:4px;">
+          ${escapeHTML(f.name)} (${doKb(f.size)})
+        </div>
+      `).join('');
+    });
+
+    const dong = () => div.remove();
+    div.querySelector('.system-dialog-backdrop').addEventListener('click', dong);
+    div.querySelector('#btnDongTaiAnhX').addEventListener('click', dong);
+    div.querySelector('#btnHuyTaiAnhDrive').addEventListener('click', dong);
+
+    div.querySelector('#btnXacNhanTaiAnhDrive').addEventListener('click', async () => {
+      if (!tepChon.length) {
+        showToast('Vui lòng chọn ít nhất 1 ảnh.', true);
+        return;
+      }
+      const phuTa = (div.querySelector('#taiAnhPhuTa').value || '').trim() || toi.full_name || 'Phụ tá';
+      const loai = div.querySelector('#taiAnhLoai').value;
+      const ghiChu = (div.querySelector('#taiAnhGhiChu').value || '').trim();
+
+      showToast(`Đang nén ${tepChon.length} ảnh và lưu vào kho hồ sơ...`);
+      const btn = div.querySelector('#btnXacNhanTaiAnhDrive');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang tải lên...';
+
+      try {
+        const xong = [];
+        for (const f of tepChon) {
+          xong.push(await nenWebp(f));
+        }
+
+        const pCode = duLieu?.ho_so?.ma || duLieu?.ma || hoSoMo;
+        const pName = duLieu?.ho_so?.ten || duLieu?.ten || 'Bệnh nhân';
+
+        await taiLenMediaBenhNhan({
+          patientCode: pCode,
+          patientName: pName,
+          assistantName: phuTa,
+          doctorName: duLieu?.ho_so?.bac_si_chinh || '',
+          category: loai,
+          notes: ghiChu,
+          files: xong.map((x) => ({
+            name: x.ten_goc,
+            type: 'image/webp',
+            data: x.tep.split(',')[1],
+          })),
+        });
+
+        showToast(`Đã lưu thành công ${xong.length} ảnh vào hồ sơ bệnh nhân!`);
+        dong();
+        dsMediaBenhNhan = await layMediaBenhNhan(pCode).catch(() => []);
+        ve();
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ri-upload-cloud-line"></i> Lưu vào kho hồ sơ';
+        showToast(`Lỗi tải ảnh: ${err.message}`, true);
+      }
+    });
+  };
+
+  g('sbnBtnTaiAnhDrive')?.addEventListener('click', moModalTaiAnh);
+  g('sbnBtnTaiAnhDriveRong')?.addEventListener('click', moModalTaiAnh);
+
+  document.querySelectorAll('[data-xem-lon]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const mediaId = el.dataset.xemLon;
+      const media = dsMediaBenhNhan.find((m) => String(m.id) === String(mediaId));
+      if (!media) return;
+
+      let modal = g('modalXemAnhLon');
+      if (modal) modal.remove();
+
+      const div = document.createElement('div');
+      div.id = 'modalXemAnhLon';
+      div.className = 'system-dialog-layer is-open';
+      div.innerHTML = `
+        <div class="system-dialog-backdrop"></div>
+        <section class="system-dialog-panel" style="max-width:850px; width:95%; max-height:92vh; display:flex; flex-direction:column;">
+          <header class="system-dialog-header" style="flex-shrink:0;">
+            <span class="system-dialog-icon default"><i class="ri-image-line"></i></span>
+            <div>
+              <p class="eyebrow">ẢNH LÂM SÀNG · HỒ SƠ ĐIỆN TỬ</p>
+              <h3>${escapeHTML(media.file_name)}</h3>
+            </div>
+            <button class="icon-button system-dialog-close" type="button" id="btnDongXemAnhX">×</button>
+          </header>
+          <div style="flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#0f172a; padding:10px;">
+            <img src="/api/v2/media/view/${escapeHTML(media.id)}" style="max-width:100%; max-height:68vh; object-fit:contain; border-radius:4px;" alt="${escapeHTML(media.file_name)}" />
+          </div>
+          <footer class="system-dialog-actions" style="padding:10px 16px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+            <div style="font-size:12px; color:#64748b;">
+              Phụ tá: <b>${escapeHTML(media.assistant_name || 'Phụ tá')}</b> · Ngày: ${new Date(media.created_at).toLocaleString('vi-VN')}
+            </div>
+            <div style="display:flex; gap:8px;">
+              <a href="/api/v2/media/download/${escapeHTML(media.id)}" class="secondary-button sbn-nho" download style="display:inline-flex; align-items:center; gap:4px;">
+                <i class="ri-download-2-line"></i> Tải về máy
+              </a>
+              <button type="button" class="primary-button sbn-nho" id="btnDongXemAnh">Đóng</button>
+            </div>
+          </footer>
+        </section>
+      `;
+      document.body.appendChild(div);
+      const dong = () => div.remove();
+      div.querySelector('.system-dialog-backdrop').addEventListener('click', dong);
+      div.querySelector('#btnDongXemAnhX').addEventListener('click', dong);
+      div.querySelector('#btnDongXemAnh').addEventListener('click', dong);
+    });
+  });
+
+  document.querySelectorAll('[data-audit-anh]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const mediaId = el.dataset.auditAnh;
+      const media = dsMediaBenhNhan.find((m) => String(m.id) === String(mediaId));
+      showToast('Đang tải nhật ký kiểm toán...');
+      const logs = await layNhatKyMedia(mediaId).catch(() => []);
+
+      let modal = g('modalAuditMedia');
+      if (modal) modal.remove();
+
+      const div = document.createElement('div');
+      div.id = 'modalAuditMedia';
+      div.className = 'system-dialog-layer is-open';
+      div.innerHTML = `
+        <div class="system-dialog-backdrop"></div>
+        <section class="system-dialog-panel" style="max-width:640px; width:95%;">
+          <header class="system-dialog-header">
+            <span class="system-dialog-icon success"><i class="ri-shield-check-line"></i></span>
+            <div>
+              <p class="eyebrow">NHẬT KÝ KIỂM TOÁN HÌNH ẢNH (BẤT BIẾN)</p>
+              <h3>Lịch Sử Truy Cập & Thao Tác</h3>
+            </div>
+            <button class="icon-button system-dialog-close" type="button" id="btnDongAuditX">×</button>
+          </header>
+          <div style="padding:16px 20px; max-height:420px; overflow-y:auto;">
+            <p style="margin:0 0 12px 0; font-size:12px; color:#64748b;">
+              Tệp: <b>${escapeHTML(media?.file_name || mediaId)}</b> · Hồ sơ: <b>${escapeHTML(duLieu?.ho_so?.ma || '')}</b>
+            </p>
+            ${!logs.length ? '<p style="color:#64748b; text-align:center; padding:20px 0;">Chưa có lượt truy cập nào được ghi nhận.</p>' : `
+              <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead>
+                  <tr style="border-bottom:1.5px solid #e2e8f0; text-align:left; color:#64748b; font-size:11px;">
+                    <th style="padding:6px 8px;">Thời gian</th>
+                    <th style="padding:6px 8px;">Người thực hiện</th>
+                    <th style="padding:6px 8px;">Hành động</th>
+                    <th style="padding:6px 8px;">Địa chỉ IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${logs.map((l) => `
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                      <td style="padding:8px; white-space:nowrap; color:#334155;">
+                        ${new Date(l.created_at).toLocaleString('vi-VN')}
+                      </td>
+                      <td style="padding:8px;">
+                        <b style="color:#1e293b;">${escapeHTML(l.actor_name || l.actor_code)}</b>
+                        <small style="display:block; color:#94a3b8;">${escapeHTML(l.actor_code)} · ${escapeHTML(l.actor_role)}</small>
+                      </td>
+                      <td style="padding:8px;">
+                        <span class="pill" style="${
+                          l.action === 'upload' ? 'background:#dcfce7; color:#15803d;' :
+                          l.action === 'download' ? 'background:#fef3c7; color:#b45309;' :
+                          l.action === 'view' ? 'background:#e0f2fe; color:#0369a1;' :
+                          'background:#fee2e2; color:#b91c1c;'
+                        } font-size:11px; font-weight:600;">
+                          ${
+                            l.action === 'upload' ? 'Tải lên' :
+                            l.action === 'download' ? 'Tải về' :
+                            l.action === 'view' ? 'Xem ảnh' :
+                            l.action === 'delete' ? 'Xoá ảnh' :
+                            l.action === 'update_note' ? 'Sửa ghi chú' : l.action
+                          }
+                        </span>
+                      </td>
+                      <td style="padding:8px; font-family:monospace; color:#64748b; font-size:11px;">
+                        ${escapeHTML(l.client_ip || '—')}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `}
+          </div>
+          <footer class="system-dialog-actions" style="padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+            <button type="button" class="primary-button" id="btnDongAudit">Đóng</button>
+          </footer>
+        </section>
+      `;
+      document.body.appendChild(div);
+      const dong = () => div.remove();
+      div.querySelector('.system-dialog-backdrop').addEventListener('click', dong);
+      div.querySelector('#btnDongAuditX').addEventListener('click', dong);
+      div.querySelector('#btnDongAudit').addEventListener('click', dong);
+    });
   });
 }

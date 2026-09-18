@@ -54,7 +54,7 @@ export const ROLE_PROFILES = {
   superadmin: { label: 'Superadmin', scope: 'Role dự phòng; chưa kích hoạt chức năng hoặc tài khoản.' },
   bac_si: { label: 'Bác sĩ', scope: 'Khám, ghi sơ đồ răng, chẩn đoán và diễn biến điều trị trong sổ bệnh án điện tử.' },
   le_tan: { label: 'Lễ tân', scope: 'Tiếp đón khách tại quầy, đặt và đổi lịch hẹn, check-in, và các hàng đợi chăm sóc khách hàng.' },
-  phu_ta: { label: 'Phụ tá · Kho vật tư', scope: 'Giữ kho chi nhánh: theo dõi tồn, lập đơn đặt hàng, nhận hàng, xuất vật tư cho phòng và lưu chứng từ.' },
+  phu_ta: { label: 'Phụ tá', scope: 'Hỗ trợ điều trị, Kho ảnh lâm sàng Drive, Kho vật tư, chấm công và lịch làm việc.' },
   phu_ta_truong: { label: 'Trưởng bộ phận Phụ tá', scope: 'Toàn quyền kho vật tư kể cả duyệt đơn đặt và duyệt xuất kho, kèm quyền quản lý bộ phận phụ tá: duyệt đơn nghỉ, lịch làm và chấm công.' },
   hr: { label: 'Nhân sự', scope: 'Tuyển dụng, hồ sơ, hội nhập, đơn từ, lịch làm, công lương.' },
   leader: { label: 'Trưởng bộ phận', scope: 'Giao việc, duyệt đơn cấp 1, xác nhận lịch và hiệu suất đội nhóm.' },

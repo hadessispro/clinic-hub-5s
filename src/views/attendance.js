@@ -33,6 +33,7 @@ import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, normalizeText, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
+import { exportTableToExcel, exportWorkbookToExcel } from '../services/excel-export.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
@@ -892,7 +893,7 @@ export async function renderView(state) {
             Xuất Excel bảng công
           </button>
           <button class="secondary-button" type="button" data-action="export-attendance">
-            Xuất CSV nhật ký GPS
+            Xuất Excel nhật ký GPS
           </button>
         </div>
       </header>
@@ -1473,25 +1474,38 @@ async function confirmCheckout(button) {
   }
 }
 
-function exportAttendance() {
-  const rows = [
-    ['Nhan su', 'Phong ban', 'Loai', 'Thoi gian', 'Khoang cach (m)', 'Sai so GPS (m)', 'Trang thai', 'Ngoai tuyen'],
-    ...context.records.map((record) => {
-      const employee = context.employees.find((item) => item.id === record.employee);
-      return [
-        employee?.name || record.employee,
-        departmentName(employee?.department),
-        recordTypeLabel(record),
-        formatDateTime(record.time),
-        record.distance,
-        record.accuracy,
-        attendanceLabel(record),
-        record.capturedOffline ? 'Co' : 'Khong',
-      ];
-    }),
-  ];
-  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n');
-  downloadText(`cham-cong-le-van-tho-${clinicDateISO()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+async function exportAttendance() {
+  if (!context?.records?.length) {
+    showToast('Không có dữ liệu chấm công để xuất.', true);
+    return;
+  }
+  const data = context.records.map((record, index) => {
+    const employee = context.employees?.find((item) => item.id === record.employee);
+    return {
+      'STT': index + 1,
+      'Mã NV': record.employee || '',
+      'Họ và tên': employee?.name || record.employee || '',
+      'Phòng ban': departmentName(employee?.department),
+      'Loại ghi nhận': recordTypeLabel(record),
+      'Thời gian': formatDateTime(record.time),
+      'Khoảng cách GPS (m)': record.distance != null ? Number(record.distance) : '',
+      'Sai số GPS (m)': record.accuracy != null ? Number(record.accuracy) : '',
+      'Đánh giá': attendanceLabel(record),
+      'Chế độ': record.capturedOffline ? 'Ngoại tuyến' : 'Trực tuyến',
+    };
+  });
+
+  try {
+    await exportTableToExcel({
+      filename: `cham-cong-le-van-tho-${clinicDateISO()}.xlsx`,
+      sheetName: 'Nhật ký GPS',
+      data,
+    });
+    showToast('Đã xuất file Excel nhật ký chấm công chuẩn có bộ lọc.');
+  } catch (error) {
+    console.error('[Attendance] Export attendance Excel failed:', error);
+    showToast('Lỗi xuất file Excel chấm công.', true);
+  }
 }
 
 async function exportWorkExcel() {
@@ -1501,7 +1515,6 @@ async function exportWorkExcel() {
     return;
   }
   try {
-    const XLSX = await import('xlsx');
     const data = rows.map((day) => {
       const [status] = workDayStatus(day);
       return {
@@ -1530,20 +1543,22 @@ async function exportWorkExcel() {
       { 'Nội dung': 'Ngày công', 'Quy tắc / công thức': 'Giờ công thường / số phút chuẩn của ca, tối đa 1 ngày; tăng ca được cộng riêng vào tổng giờ.' },
       { 'Nội dung': 'Cần đối chiếu', 'Quy tắc / công thức': 'Thiếu giờ vào/ra, thiếu ca hoặc dữ liệu bất thường không tự cộng công.' },
     ];
-    const workbook = XLSX.utils.book_new();
-    const workSheet = XLSX.utils.json_to_sheet(data);
-    workSheet['!cols'] = [12, 24, 24, 11, 11, 22, 22, 24, 16, 15, 12, 24].map((wch) => ({ wch }));
-    const rulesSheet = XLSX.utils.json_to_sheet(rules);
-    rulesSheet['!cols'] = [{ wch: 24 }, { wch: 90 }];
-    XLSX.utils.book_append_sheet(workbook, workSheet, 'Bảng công');
-    XLSX.utils.book_append_sheet(workbook, rulesSheet, 'Quy tắc tính công');
-    XLSX.writeFile(workbook, `bang-cong-${context.targetEmployee?.id || context.employee?.id || 'nhan-vien'}-${attendanceWorkMonth}.xlsx`);
-    showToast('Đã xuất file Excel bảng công tiếng Việt.');
+
+    const targetEmpName = context.targetEmployee?.id || context.employee?.id || 'nhan-vien';
+    await exportWorkbookToExcel({
+      filename: `bang-cong-${targetEmpName}-${attendanceWorkMonth}.xlsx`,
+      sheets: [
+        { sheetName: 'Bảng công', data },
+        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
+      ],
+    });
+    showToast('Đã xuất file Excel bảng công tiếng Việt chuẩn có bộ lọc.');
   } catch (error) {
     console.error('[Attendance] Export work Excel failed:', error);
     showToast('Không thể xuất file Excel. Vui lòng thử lại.', true);
   }
 }
+
 
 function openAdjustModal(data = {}) {
   const modal = document.getElementById('attendanceAdjustModal');
