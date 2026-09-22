@@ -115,20 +115,42 @@ export class MediaController {
     const notes = (body.notes || '').trim();
     const branchId = actor.branchId || 'le_van_tho';
 
-    // 1. Lấy / tạo cây thư mục: Gốc -> Phụ tá -> Bệnh nhân
-    const assistantFolderName = assistantName.toLowerCase().startsWith('phụ tá')
-      ? assistantName
-      : `Phụ tá ${assistantName}`;
-    const assistantFolderId = await this.drive.getOrCreateFolder(
-      assistantFolderName,
-      this.drive.rootFolderId,
+    // 1. Kiểm tra thư mục khách hàng đã tồn tại trong hệ thống chưa
+    const existingFolderRes = await this.infrastructure.postgres.query<{
+      id: string;
+      assistant_code: string;
+      assistant_name: string;
+      branch_id: string;
+      google_drive_folder_id: string;
+    }>(
+      `select id, assistant_code, assistant_name, branch_id, google_drive_folder_id
+       from app.patient_media_folders
+       where lower(trim(patient_code)) = lower(trim($1))
+       order by updated_at desc limit 1`,
+      [patientCode],
     );
+    const existingFolder = existingFolderRes.rows[0];
 
-    const patientFolderName = `[${patientCode}] ${patientName}`;
-    const patientFolderId = await this.drive.getOrCreateFolder(
-      patientFolderName,
-      assistantFolderId,
-    );
+    let patientFolderId = existingFolder?.google_drive_folder_id;
+    const finalBranchId = existingFolder?.branch_id || branchId;
+    const finalAssistantName = existingFolder?.assistant_name || assistantName;
+
+    // Nếu chưa có, tạo cây thư mục trên Google Drive: Gốc -> Phụ tá -> Bệnh nhân
+    if (!patientFolderId) {
+      const assistantFolderName = finalAssistantName.toLowerCase().startsWith('phụ tá')
+        ? finalAssistantName
+        : `Phụ tá ${finalAssistantName}`;
+      const assistantFolderId = await this.drive.getOrCreateFolder(
+        assistantFolderName,
+        this.drive.rootFolderId,
+      );
+
+      const patientFolderName = `[${patientCode}] ${patientName}`;
+      patientFolderId = await this.drive.getOrCreateFolder(
+        patientFolderName,
+        assistantFolderId,
+      );
+    }
 
     // 2. Upload từng file
     const clientIp = (req.headers['x-forwarded-for'] || req.ip || '').toString();
@@ -164,8 +186,8 @@ export class MediaController {
           patientCode,
           patientName,
           body.encounterId || null,
-          branchId,
-          assistantName,
+          finalBranchId,
+          finalAssistantName,
           doctorName,
           cleanFileName,
           mimeType,
@@ -193,14 +215,15 @@ export class MediaController {
           actor.employeeCode,
           String(actor.profile?.full_name || actor.employeeCode),
           actor.role,
-          branchId,
+          finalBranchId,
           clientIp,
           userAgent,
           JSON.stringify({
             fileName: cleanFileName,
             fileSize: uploaded.size,
             driveFileId: uploaded.fileId,
-            assistant: assistantName,
+            assistant: finalAssistantName,
+            doctor: doctorName,
           }),
         ],
       );
@@ -215,31 +238,46 @@ export class MediaController {
     }
 
     if (uploadedRecords.length > 0) {
-      // 3. Tự động đồng bộ / cập nhật thư mục khách hàng của phụ tá
+      // 3. Tự động đồng bộ / cập nhật thư mục khách hàng
       try {
-        await this.infrastructure.postgres.query(
-          `insert into app.patient_media_folders
-             (assistant_code, assistant_name, patient_code, patient_name, branch_id,
-              google_drive_folder_id, google_drive_web_link, created_by, updated_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, now())
-           on conflict (lower(trim(assistant_code)), lower(trim(patient_code)))
-           do update set
-             assistant_name = excluded.assistant_name,
-             patient_name = excluded.patient_name,
-             google_drive_folder_id = excluded.google_drive_folder_id,
-             google_drive_web_link = excluded.google_drive_web_link,
-             updated_at = now()`,
-          [
-            actor.employeeCode,
-            assistantName,
-            patientCode,
-            patientName,
-            branchId,
-            patientFolderId,
-            `https://drive.google.com/drive/folders/${patientFolderId}`,
-            actor.employeeCode,
-          ],
-        );
+        if (existingFolder) {
+          await this.infrastructure.postgres.query(
+            `update app.patient_media_folders
+             set updated_at = now(),
+                 google_drive_folder_id = coalesce(nullif(app.patient_media_folders.google_drive_folder_id, ''), $1),
+                 google_drive_web_link = coalesce(nullif(app.patient_media_folders.google_drive_web_link, ''), $2)
+             where id = $3`,
+            [
+              patientFolderId,
+              `https://drive.google.com/drive/folders/${patientFolderId}`,
+              existingFolder.id,
+            ],
+          );
+        } else {
+          await this.infrastructure.postgres.query(
+            `insert into app.patient_media_folders
+               (assistant_code, assistant_name, patient_code, patient_name, branch_id,
+                google_drive_folder_id, google_drive_web_link, created_by, updated_at)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, now())
+             on conflict (lower(trim(assistant_code)), lower(trim(patient_code)))
+             do update set
+               assistant_name = excluded.assistant_name,
+               patient_name = excluded.patient_name,
+               google_drive_folder_id = excluded.google_drive_folder_id,
+               google_drive_web_link = excluded.google_drive_web_link,
+               updated_at = now()`,
+            [
+              actor.employeeCode,
+              finalAssistantName,
+              patientCode,
+              patientName,
+              finalBranchId,
+              patientFolderId,
+              `https://drive.google.com/drive/folders/${patientFolderId}`,
+              actor.employeeCode,
+            ],
+          );
+        }
       } catch (err) {
         // Không để lỗi bảng thư mục làm hỏng kết quả upload
       }
@@ -412,18 +450,14 @@ export class MediaController {
   async getFolders(
     @Req() req: FastifyRequest & { user: AuthUser },
     @Query('assistantCode') queryAssistantCode?: string,
+    @Query('branchId') queryBranchId?: string,
     @Query('search') search?: string,
     @Query('page') pageStr?: string,
     @Query('pageSize') pageSizeStr?: string,
   ) {
     const actor = req.user;
-    const isItOrAdmin = ['admin', 'admin_it', 'superadmin'].includes(actor.role);
-
-    // Nếu không phải IT/Admin, chỉ được xem thư mục của chính mình
-    let targetAssistant = queryAssistantCode;
-    if (!isItOrAdmin) {
-      targetAssistant = actor.employeeCode;
-    }
+    // Cho phép Phụ tá, Bác sĩ, Admin, IT xem ảnh lâm sàng toàn diện của cả hai chi nhánh
+    const targetAssistant = queryAssistantCode;
 
     const page = Math.max(1, parseInt(pageStr || '1', 10));
     const pageSize = Math.max(1, Math.min(100, parseInt(pageSizeStr || '50', 10)));
@@ -435,6 +469,11 @@ export class MediaController {
     if (targetAssistant && targetAssistant.trim()) {
       params.push(targetAssistant.trim());
       conditions.push(`lower(trim(f.assistant_code)) = lower(trim($${params.length}))`);
+    }
+
+    if (queryBranchId && queryBranchId.trim()) {
+      params.push(queryBranchId.trim());
+      conditions.push(`f.branch_id = $${params.length}`);
     }
 
     if (search && search.trim()) {
@@ -457,8 +496,8 @@ export class MediaController {
              max(m.created_at) as last_media_at
       from app.patient_media_folders f
       left join app.patient_media m
-        on lower(trim(m.patient_code)) = lower(trim(f.patient_code))
-        and lower(trim(m.created_by)) = lower(trim(f.assistant_code))
+        on ((f.google_drive_folder_id is not null and f.google_drive_folder_id <> '' and m.google_drive_folder_id = f.google_drive_folder_id)
+            or ((f.google_drive_folder_id is null or f.google_drive_folder_id = '') and lower(trim(m.patient_code)) = lower(trim(f.patient_code))))
         and not m.is_deleted
       where ${whereClause}
       group by f.id
@@ -546,7 +585,11 @@ export class MediaController {
     const folder = folderRes.rows[0];
     if (!folder) throw new NotFoundException('Không tìm thấy thư mục hồ sơ bệnh nhân.');
 
-    if (!isItOrAdmin && folder.assistant_code.toLowerCase() !== actor.employeeCode.toLowerCase()) {
+    const isAuthorized =
+      isItOrAdmin ||
+      ['phu_ta_truong', 'bac_si'].includes(actor.role) ||
+      folder.assistant_code.toLowerCase() === actor.employeeCode.toLowerCase();
+    if (!isAuthorized) {
       throw new BadRequestException('Bạn không có quyền xóa thư mục do nhân sự khác phụ trách.');
     }
 
@@ -644,7 +687,7 @@ export class MediaController {
     @Query('pageSize') pageSizeStr?: string,
   ) {
     const actor = req.user;
-    const isItOrAdmin = ['admin', 'admin_it', 'superadmin'].includes(actor.role);
+    const isMedicalOrAdmin = ['admin', 'admin_it', 'superadmin', 'phu_ta', 'phu_ta_truong', 'bac_si'].includes(actor.role);
 
     const page = Math.max(1, parseInt(pageStr || '1', 10));
     const pageSize = Math.max(1, Math.min(100, parseInt(pageSizeStr || '25', 10)));
@@ -653,8 +696,8 @@ export class MediaController {
     const conditions: string[] = ['1=1'];
     const params: any[] = [];
 
-    // Nếu không phải IT/Admin, chỉ xem logs của chính mình
-    if (!isItOrAdmin) {
+    // Nếu không phải Quản trị viên hoặc Nhân sự y tế, chỉ xem logs của chính mình
+    if (!isMedicalOrAdmin) {
       params.push(actor.employeeCode);
       conditions.push(`lower(trim(l.actor_code)) = lower(trim($${params.length}))`);
     } else if (assistantCode && assistantCode.trim()) {

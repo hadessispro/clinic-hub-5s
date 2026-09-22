@@ -11,9 +11,10 @@ export async function taoThuMucDongBo(payload) {
   });
 }
 
-export async function layDanhSachThuMuc({ assistantCode = '', search = '', page = 1, pageSize = 50 } = {}) {
+export async function layDanhSachThuMuc({ assistantCode = '', branchId = '', search = '', page = 1, pageSize = 50 } = {}) {
   const params = new URLSearchParams();
   if (assistantCode) params.set('assistantCode', assistantCode);
+  if (branchId) params.set('branchId', branchId);
   if (search) params.set('search', search);
   if (page) params.set('page', String(page));
   if (pageSize) params.set('pageSize', String(pageSize));

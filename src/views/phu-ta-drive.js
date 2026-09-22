@@ -52,28 +52,45 @@ export async function renderView() {
   const profile = store.getState().profile || {};
   const role = profile.role || 'staff';
   const isItAdmin = ['admin', 'admin_it', 'superadmin'].includes(role);
-  const assistantName = profile.full_name || profile.employee_code || 'Phụ tá';
+  const isDoctor = role === 'bac_si';
+  const assistantName = profile.full_name || profile.employee_code || (isDoctor ? 'Bác sĩ' : 'Phụ tá');
   const assistantCode = profile.employee_code || '';
 
-  // Nạp dữ liệu song song an toàn
+  // Nạp dữ liệu song song an toàn - Cho phép Phụ tá và Bác sĩ xem toàn bộ 2 chi nhánh
   try {
-    const [folderRes, hoSoRes] = await Promise.all([
+    const [folderRes, hoSoRes, asstList, statusRes] = await Promise.all([
       layDanhSachThuMuc({
-        assistantCode: isItAdmin ? filterAssistant : assistantCode,
+        assistantCode: filterAssistant,
+        branchId: filterBranch,
         search: filterSearch,
         page: 1,
         pageSize: 50,
       }),
       layDanhSachHoSo().catch(() => []),
+      layDanhSachPhuTa().catch(() => []),
+      isItAdmin ? layTrangThaiAdminDrive().catch(() => null) : Promise.resolve(null),
     ]);
 
     folders = folderRes?.folders || [];
     folderMeta = folderRes?.meta || { page: 1, pageSize: 50, total: 0 };
     dsHoSoGoiY = hoSoRes || [];
+    adminStatus = statusRes;
+
+    // Hợp nhất danh sách phụ tá từ API và các thư mục hiện hữu cho mọi người dùng
+    const mapPhuTa = new Map();
+    (asstList || []).forEach((e) => {
+      if (e && e.code) mapPhuTa.set(e.code, { code: e.code, name: e.name || e.code, branchId: e.branch_id });
+    });
+    folders.forEach((f) => {
+      if (f && f.assistant_code && !mapPhuTa.has(f.assistant_code)) {
+        mapPhuTa.set(f.assistant_code, { code: f.assistant_code, name: f.assistant_name || f.assistant_code, branchId: f.branch_id });
+      }
+    });
+    dsNhanVienPhuTa = Array.from(mapPhuTa.values());
 
     if (activeTab === 'audit' || isItAdmin) {
       const auditRes = await layNhatKyKiemToan({
-        assistantCode: isItAdmin ? filterAssistant : assistantCode,
+        assistantCode: filterAssistant,
         action: filterAction,
         dateFrom: filterDateFrom,
         dateTo: filterDateTo,
@@ -82,26 +99,6 @@ export async function renderView() {
       }).catch(() => ({ logs: [], meta: { page: 1, pageSize: 25, total: 0 } }));
       auditLogs = auditRes?.logs || [];
       auditMeta = auditRes?.meta || { page: 1, pageSize: 25, total: 0 };
-    }
-
-    if (isItAdmin) {
-      const [statusRes, asstList] = await Promise.all([
-        layTrangThaiAdminDrive().catch(() => null),
-        layDanhSachPhuTa().catch(() => []),
-      ]);
-      adminStatus = statusRes;
-
-      // Hợp nhất danh sách phụ tá từ API và các thư mục hiện hữu
-      const mapPhuTa = new Map();
-      (asstList || []).forEach((e) => {
-        if (e && e.code) mapPhuTa.set(e.code, { code: e.code, name: e.name || e.code, branchId: e.branch_id });
-      });
-      folders.forEach((f) => {
-        if (f && f.assistant_code && !mapPhuTa.has(f.assistant_code)) {
-          mapPhuTa.set(f.assistant_code, { code: f.assistant_code, name: f.assistant_name || f.assistant_code, branchId: f.branch_id });
-        }
-      });
-      dsNhanVienPhuTa = Array.from(mapPhuTa.values());
     }
 
     // Nếu đang chọn một thư mục, tải lại ảnh của thư mục đó
@@ -741,7 +738,7 @@ export async function renderView() {
           <div class="ptd-metric-info">
             <span>Thư mục bệnh nhân</span>
             <strong>${folders.length}</strong>
-            <small>${isItAdmin && filterAssistant ? 'Đang lọc theo phụ tá' : 'Thuộc tài khoản của bạn'}</small>
+            <small>${filterAssistant ? 'Đang lọc theo phụ tá' : filterBranch ? (filterBranch === 'le_van_tho' ? 'Chi nhánh Lê Văn Thọ' : 'Chi nhánh Phạm Văn Chiêu') : 'Toàn bộ 2 chi nhánh'}</small>
           </div>
         </div>
 
@@ -752,7 +749,7 @@ export async function renderView() {
           <div class="ptd-metric-info">
             <span>Tổng ảnh lâm sàng</span>
             <strong>${totalPhotos.toLocaleString('vi-VN')}</strong>
-            <small>Đã lưu trữ trong hồ sơ</small>
+            <small>Đã lưu trữ trong hồ sơ (cả 2 chi nhánh)</small>
           </div>
         </div>
 
@@ -793,7 +790,7 @@ export async function renderView() {
 /* ── TAB 1: Danh sách thư mục & Chi tiết ảnh ─────────────────────────── */
 
 function renderTabFolders(isItAdmin) {
-  // Lọc folders theo branch nếu Admin-IT chọn
+  // Lọc folders theo branch nếu chọn
   const displayFolders = filterBranch
     ? folders.filter((f) => f.branch_id === filterBranch)
     : folders;
@@ -818,47 +815,45 @@ function renderTabFolders(isItAdmin) {
           </button>
         </div>
 
-        ${isItAdmin ? `
-          <div class="ptd-admin-filter-box">
-            <div class="ptd-admin-filter-header">
-              <span class="ptd-admin-filter-title">
-                <i class="ri-shield-keyhole-line" style="color:#087f7b;"></i> BỘ LỌC ADMIN-IT
-              </span>
-              <div style="display:flex;align-items:center;gap:6px;">
-                ${(filterAssistant || filterBranch) ? `
-                  <button type="button" class="ptd-admin-filter-reset" id="ptBtnResetAdminFilter" title="Xóa toàn bộ bộ lọc">
-                    <i class="ri-refresh-line"></i> Bỏ lọc
-                  </button>
-                ` : `
-                  <span class="pill" style="font-size:9.5px;background:#dcfce7;color:#15803d;padding:1px 6px;font-weight:600;">Toàn quyền</span>
-                `}
-              </div>
-            </div>
-
-            <div class="ptd-filter-fields">
-              <label class="ptd-filter-field">
-                <span class="ptd-filter-label"><i class="ri-user-heart-line" style="color:#087f7b;"></i> Phụ tá / Điều dưỡng:</span>
-                <select id="ptFilterAssistantSelect" class="ptd-filter-select">
-                  <option value="">-- Tất cả phụ tá (${dsNhanVienPhuTa.length}) --</option>
-                  ${dsNhanVienPhuTa.map((e) => `
-                    <option value="${escapeHTML(e.code)}" ${filterAssistant === e.code ? 'selected' : ''}>
-                      ${escapeHTML(e.name)} (${escapeHTML(e.code)})
-                    </option>
-                  `).join('')}
-                </select>
-              </label>
-
-              <label class="ptd-filter-field">
-                <span class="ptd-filter-label"><i class="ri-building-line" style="color:#087f7b;"></i> Chi nhánh cơ sở:</span>
-                <select id="ptFilterBranchSelect" class="ptd-filter-select">
-                  <option value="">-- Tất cả cơ sở phòng khám --</option>
-                  <option value="le_van_tho" ${filterBranch === 'le_van_tho' ? 'selected' : ''}>Cơ sở 1: Lê Văn Thọ</option>
-                  <option value="pham_van_chieu" ${filterBranch === 'pham_van_chieu' ? 'selected' : ''}>Cơ sở 2: Phạm Văn Chiêu</option>
-                </select>
-              </label>
+        <div class="ptd-admin-filter-box">
+          <div class="ptd-admin-filter-header">
+            <span class="ptd-admin-filter-title">
+              <i class="ri-filter-3-line" style="color:#087f7b;"></i> BỘ LỌC HỒ SƠ & CHI NHÁNH
+            </span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${(filterAssistant || filterBranch) ? `
+                <button type="button" class="ptd-admin-filter-reset" id="ptBtnResetAdminFilter" title="Xóa toàn bộ bộ lọc">
+                  <i class="ri-refresh-line"></i> Bỏ lọc
+                </button>
+              ` : `
+                <span class="pill" style="font-size:9.5px;background:#dcfce7;color:#15803d;padding:1px 6px;font-weight:600;">Cả 2 chi nhánh</span>
+              `}
             </div>
           </div>
-        ` : ''}
+
+          <div class="ptd-filter-fields">
+            <label class="ptd-filter-field">
+              <span class="ptd-filter-label"><i class="ri-user-heart-line" style="color:#087f7b;"></i> Phụ tá phụ trách:</span>
+              <select id="ptFilterAssistantSelect" class="ptd-filter-select">
+                <option value="">-- Tất cả phụ tá (${dsNhanVienPhuTa.length}) --</option>
+                ${dsNhanVienPhuTa.map((e) => `
+                  <option value="${escapeHTML(e.code)}" ${filterAssistant === e.code ? 'selected' : ''}>
+                    ${escapeHTML(e.name)} (${escapeHTML(e.code)})
+                  </option>
+                `).join('')}
+              </select>
+            </label>
+
+            <label class="ptd-filter-field">
+              <span class="ptd-filter-label"><i class="ri-building-line" style="color:#087f7b;"></i> Chi nhánh cơ sở:</span>
+              <select id="ptFilterBranchSelect" class="ptd-filter-select">
+                <option value="">-- Tất cả 2 chi nhánh --</option>
+                <option value="le_van_tho" ${filterBranch === 'le_van_tho' ? 'selected' : ''}>Cơ sở 1: Lê Văn Thọ</option>
+                <option value="pham_van_chieu" ${filterBranch === 'pham_van_chieu' ? 'selected' : ''}>Cơ sở 2: Phạm Văn Chiêu</option>
+              </select>
+            </label>
+          </div>
+        </div>
 
         <div class="ptd-search-box">
           <i class="ri-search-line"></i>
@@ -1331,6 +1326,10 @@ function moModalUploadAnh() {
     return;
   }
 
+  const currentProfile = store.getState().profile || {};
+  const isDoc = currentProfile.role === 'bac_si';
+  const defaultDoctorName = isDoc ? (currentProfile.full_name || '') : '';
+
   const existing = document.getElementById('ptModalUploadAnh');
   if (existing) existing.remove();
 
@@ -1366,17 +1365,33 @@ function moModalUploadAnh() {
           </label>
           <label class="form-field" style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;">
             <span>Bác sĩ điều trị (tùy chọn):</span>
-            <input name="doctorName" placeholder="VD: BS. Quân" class="input" style="padding:8px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:8px;" />
+            <input name="doctorName" value="${escapeHTML(defaultDoctorName)}" placeholder="VD: BS. Quân" class="input" style="padding:8px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:8px;" />
           </label>
         </div>
 
-        <!-- Khung chọn ảnh & camera -->
-        <div style="border:2px dashed #cbd5e1;border-radius:10px;padding:18px 14px;text-align:center;background:#f8fafc;cursor:pointer;transition:border-color 0.15s;" id="ptDropZoneDirect">
-          <i class="ri-camera-lens-line" style="font-size:32px;color:#087f7b;display:block;margin-bottom:4px;"></i>
-          <span style="font-size:13px;font-weight:600;color:#334155;">Bấm vào đây để chọn ảnh hoặc chụp ảnh</span>
-          <small style="display:block;color:#94a3b8;margin-top:2px;font-size:11px;">Tự động nén WebP chuẩn y khoa trước khi lưu trữ</small>
-          <input type="file" id="ptFileInputDirect" multiple accept="image/*" capture="environment" style="display:none;" />
-          <div id="ptPreviewThumbsContainer" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;justify-content:center;"></div>
+        <!-- Khung chọn ảnh từ máy hoặc chụp từ camera -->
+        <div style="border:2px dashed #087f7b;border-radius:12px;padding:18px 14px;text-align:center;background:#f8fafc;cursor:pointer;transition:all 0.15s;" id="ptDropZoneDirect">
+          <div style="display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+            <button type="button" class="primary-button" id="ptBtnPickFiles" style="padding:7px 14px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;background:#087f7b;border-radius:7px;">
+              <i class="ri-folder-image-line"></i> Tải ảnh từ máy / Thư viện
+            </button>
+            <button type="button" class="secondary-button" id="ptBtnCaptureCamera" style="padding:7px 14px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;background:#ffffff;border:1px solid #cbd5e1;border-radius:7px;color:#334155;">
+              <i class="ri-camera-lens-line" style="color:#087f7b;"></i> Chụp ảnh trực tiếp
+            </button>
+          </div>
+          <p style="font-size:12px;font-weight:500;color:#64748b;margin:0 0 2px;">
+            Hoặc bấm vào ô này / kéo thả nhiều tệp ảnh vào đây
+          </p>
+          <small style="display:block;color:#94a3b8;font-size:11px;">
+            Tự động nén WebP chuẩn y khoa trước khi lưu trữ · Cho phép chọn nhiều ảnh
+          </small>
+
+          <!-- Input 1: File picker chọn ảnh từ máy/thư viện (KHÔNG ép camera) -->
+          <input type="file" id="ptFileInputDirect" multiple accept="image/*" style="display:none;" />
+          <!-- Input 2: Chụp ảnh trực tiếp từ camera -->
+          <input type="file" id="ptCameraInputDirect" accept="image/*" capture="environment" style="display:none;" />
+
+          <div id="ptPreviewThumbsContainer" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center;"></div>
         </div>
 
         <label class="form-field" style="display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;">
@@ -1411,16 +1426,31 @@ function moModalUploadAnh() {
 
   const dropZone = div.querySelector('#ptDropZoneDirect');
   const fileInput = div.querySelector('#ptFileInputDirect');
+  const cameraInput = div.querySelector('#ptCameraInputDirect');
   const previewContainer = div.querySelector('#ptPreviewThumbsContainer');
+  const btnPickFiles = div.querySelector('#ptBtnPickFiles');
+  const btnCaptureCamera = div.querySelector('#ptBtnCaptureCamera');
 
   const renderThumbs = () => {
     if (!previewContainer) return;
-    previewContainer.innerHTML = filesToUpload.map((f, i) => `
-      <div style="position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid #cbd5e1;background:#0f172a;">
-        <img src="${URL.createObjectURL(f)}" alt="${escapeHTML(f.name)}" style="width:100%;height:100%;object-fit:cover;" />
-        <button type="button" data-del-idx="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(239,68,68,0.9);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;">×</button>
+    if (!filesToUpload.length) {
+      previewContainer.innerHTML = '';
+      return;
+    }
+    const totalSize = filesToUpload.reduce((s, f) => s + (f.size || 0), 0);
+    previewContainer.innerHTML = `
+      <div style="width:100%;font-size:11.5px;color:#0f766e;font-weight:600;margin-bottom:4px;text-align:left;">
+        <i class="ri-check-line"></i> Đã chọn ${filesToUpload.length} ảnh (${doKb(totalSize)}):
       </div>
-    `).join('');
+      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;">
+        ${filesToUpload.map((f, i) => `
+          <div style="position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid #cbd5e1;background:#0f172a;" title="${escapeHTML(f.name)} (${doKb(f.size)})">
+            <img src="${URL.createObjectURL(f)}" alt="${escapeHTML(f.name)}" style="width:100%;height:100%;object-fit:cover;" />
+            <button type="button" data-del-idx="${i}" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(239,68,68,0.9);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;">×</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
 
     previewContainer.querySelectorAll('[data-del-idx]').forEach((b) => {
       b.addEventListener('click', (ev) => {
@@ -1432,8 +1462,18 @@ function moModalUploadAnh() {
     });
   };
 
+  btnPickFiles?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    fileInput?.click();
+  });
+
+  btnCaptureCamera?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    cameraInput?.click();
+  });
+
   dropZone?.addEventListener('click', (ev) => {
-    if (!ev.target.closest('[data-del-idx]')) {
+    if (!ev.target.closest('[data-del-idx]') && !ev.target.closest('#ptBtnPickFiles') && !ev.target.closest('#ptBtnCaptureCamera')) {
       fileInput?.click();
     }
   });
@@ -1442,6 +1482,14 @@ function moModalUploadAnh() {
     const picked = Array.from(fileInput.files || []);
     filesToUpload = [...filesToUpload, ...picked];
     renderThumbs();
+    fileInput.value = '';
+  });
+
+  cameraInput?.addEventListener('change', () => {
+    const picked = Array.from(cameraInput.files || []);
+    filesToUpload = [...filesToUpload, ...picked];
+    renderThumbs();
+    cameraInput.value = '';
   });
 
   dropZone?.addEventListener('dragover', (e) => {
@@ -1450,12 +1498,12 @@ function moModalUploadAnh() {
     dropZone.style.background = '#f0fdfa';
   });
   dropZone?.addEventListener('dragleave', () => {
-    dropZone.style.borderColor = '#cbd5e1';
+    dropZone.style.borderColor = '#087f7b';
     dropZone.style.background = '#f8fafc';
   });
   dropZone?.addEventListener('drop', (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = '#cbd5e1';
+    dropZone.style.borderColor = '#087f7b';
     dropZone.style.background = '#f8fafc';
     const dropped = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
     if (dropped.length) {
