@@ -648,6 +648,12 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         coalesce(creator.full_name,nullif(trim(cp.pg_name),''),l.created_by_pg_code) created_by_name,
         creator.role created_by_role,
         coalesce(telesale.full_name,nullif(trim(cp.telesale_name),'')) assigned_telesale_name,
+        coalesce(
+          case when l.source not in ('PG', 'PG Field Intake', 'Facebook Ads', 'Google Ads', 'TikTok Ads', 'Zalo OA') and nullif(trim(l.source), '') is not null then l.source else null end,
+          nullif(trim(cp.booth), ''),
+          shift_site.site_name,
+          l.source
+        ) booth_name,
         case when cp.id is null then null else jsonb_build_object(
           'customerCode',cp.customer_code,'customerName',cp.customer_name,'phone',cp.phone,
           'serviceNeed',cp.service_need,'booth',cp.booth,'pgName',cp.pg_name,'telesaleName',cp.telesale_name,
@@ -673,6 +679,14 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
            and lower(p.payload->>'employee_code')=lower(l.created_by_pg_code)
          order by p.updated_at desc limit 1
        ) creator on true
+       left join lateral (
+         select s.name site_name
+         from marketing.pg_shift_assignments a
+         join marketing.pg_work_sites s on s.id=a.site_id
+         where lower(a.pg_code)=lower(l.created_by_pg_code)
+           and a.work_date=l.created_at::date
+         order by a.created_at desc limit 1
+       ) shift_site on true
        -- Tên người telesale đang phụ trách. Cùng khuôn với creator ở trên, và
        -- cố ý dùng lại đúng thứ tự ưu tiên đó: hồ sơ nhân sự trước, hồ sơ tài
        -- khoản sau. Hai cách phân giải tên khác nhau trong cùng một hệ thống

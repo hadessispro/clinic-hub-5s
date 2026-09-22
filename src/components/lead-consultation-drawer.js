@@ -24,6 +24,7 @@ function facts(lead) {
   const customer = lead.customer_profile || {};
   const appointment = lead.appointment_at || lead.appointment_date || customer.appointmentText;
   const lowQualityReason = lead.low_quality_reason || customer.lowQualityReason;
+  const boothName = lead.booth_name || customer.booth || (lead.source !== 'PG' && lead.source !== 'PG Field Intake' ? lead.source : null);
   return `<div class="lead-dossier-head">
     <span class="lead-dossier-eyebrow">TRÌNH TƯ VẤN KHÁCH HÀNG</span>
     <h3 id="leadConsultationTitle">${safe(lead.full_name || customer.customerName, 'Khách hàng')}</h3>
@@ -33,8 +34,10 @@ function facts(lead) {
   <div class="lead-dossier-facts">
     <div><small>Mã hồ sơ</small><strong>${safe(customer.customerCode || lead.id)}</strong></div>
     <div><small>Dịch vụ quan tâm</small><strong>${safe(lead.service_interest || customer.serviceNeed)}</strong></div>
-    <div><small>Nguồn tiếp nhận</small><strong>${safe(lead.created_by_name || customer.pgName || lead.source)}</strong></div>
+    <div><small>Người tiếp nhận / PG</small><strong>${safe(lead.created_by_name || customer.pgName || (lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.source))}</strong></div>
+    <div><small>Booth / Điểm làm việc</small><strong style="color:var(--teal-dark, #0f766e);"><i class="ri-map-pin-2-line"></i> ${safe(boothName, 'Chưa xác định')}</strong></div>
     <div><small>Lịch hẹn</small><strong>${appointment ? safe(String(appointment).includes('T') ? formatDateTime(appointment) : appointment) : 'Chưa có lịch hẹn'}</strong></div>
+    <div><small>Chi nhánh hẹn khám</small><strong>${safe(branchName(lead.branch_id || customer.arrivalBranch))}</strong></div>
     ${lead.status === 'low_quality' ? `<div class="full"><small>Lý do khách KCL</small><strong>${safe(LOW_QUALITY_REASONS[lowQualityReason] || lowQualityReason)}</strong></div>` : ''}
   </div>`;
 }

@@ -16,6 +16,7 @@ function mapVpsLead(row) {
     created_by_pg: row.created_by_pg_code,
     created_by_name: row.created_by_name || row.customer_profile?.pgName || null,
     created_by_role: row.created_by_role || null,
+    booth_name: row.booth_name || row.customer_profile?.booth || (row.source !== 'PG' && row.source !== 'PG Field Intake' ? row.source : null) || null,
     low_quality_reason: row.low_quality_reason || row.customer_profile?.lowQualityReason || null,
   };
 }
@@ -339,6 +340,7 @@ export async function exportMarketingLeadsToExcel(leads, filename = 'Danh_sach_L
     'Telesale phụ trách': l.assigned_telesale_name || (l.assigned_telesale_id ? `Mã: ${l.assigned_telesale_id}` : 'Chưa gán'),
     'Mã Telesale': l.assigned_telesale_id || '',
     'PG/Nguồn nhập': l.created_by_name || l.created_by_pg || l.source || '',
+    'Booth/Điểm trực': l.booth_name || '',
     'Trạng thái': statusMap[l.status] || l.status || '',
     'Lịch hẹn': (l.appointment_date || l.appointment_at) ? new Date(l.appointment_date || l.appointment_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '',
     'Ghi chú nhu cầu': l.notes || '',

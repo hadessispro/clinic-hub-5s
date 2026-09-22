@@ -65,9 +65,10 @@ export async function renderView(state) {
     ? leads.map((lead) => {
         const creatorName = lead.created_by_name || lead.created_by_pg || 'Không xác định';
         const creatorCode = lead.created_by_pg || '';
+        const boothName = lead.booth_name || lead.customer_profile?.booth || (lead.source !== 'PG' && lead.source !== 'PG Field Intake' ? lead.source : '');
         const creatorLabel = lead.created_by_role === 'pg_staff'
-          ? `PG nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`
-          : `Nguồn nhập: ${creatorName}${creatorCode ? ` · ${creatorCode}` : ''}`;
+          ? `PG: ${creatorName}${creatorCode ? ` (${creatorCode})` : ''}`
+          : `Nguồn: ${creatorName}${creatorCode ? ` (${creatorCode})` : ''}`;
         return `
           <article class="task-card telesale-lead-card" data-workspace-lead="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name).toLowerCase()}" data-phone="${escapeHTML(lead.phone)}" data-status="${escapeHTML(lead.status)}" data-branch="${escapeHTML(lead.branch_id)}">
             <div class="telesale-card-summary">
@@ -83,7 +84,7 @@ export async function renderView(state) {
             <div id="workspace-card-body-${escapeHTML(lead.id)}" hidden>
             <div class="task-meta" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
               ${pill(`<i class="ri-phone-line" style="color:var(--teal-dark); margin-right:4px;"></i>${escapeHTML(lead.phone)}`, true)}
-              ${pill(lead.source)}
+              ${boothName ? pill(`<i class="ri-map-pin-2-line" style="color:#0f766e; margin-right:4px;"></i>${escapeHTML(boothName)}`, true) : (lead.source ? pill(lead.source) : '')}
               ${pill(lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô')}
               ${pill(lead.service_interest)}
               ${pill(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}
@@ -99,12 +100,18 @@ export async function renderView(state) {
 
   const leadTableRows = leads.length ? leads.map((lead, index) => {
     const creatorName = lead.created_by_name || lead.created_by_pg || lead.source || 'Không xác định';
+    const boothName = lead.booth_name || lead.customer_profile?.booth || (lead.source !== 'PG' && lead.source !== 'PG Field Intake' ? lead.source : '');
     const dataLabel = lead.data_class === 'net' ? `Data net ${lead.net_level === 'advanced' ? 'chuyên sâu' : 'cơ bản'}` : 'Data thô';
     return `<tr data-workspace-lead-row="${escapeHTML(lead.id)}" data-name="${escapeHTML(lead.full_name || '').toLowerCase()}" data-phone="${escapeHTML(lead.phone || '')}" data-status="${escapeHTML(lead.status || '')}" data-branch="${escapeHTML(lead.branch_id || '')}">
       <td data-label="STT">${(telesalePage - 1) * telesalePageSize + index + 1}</td><td data-label="Khách hàng"><strong>${escapeHTML(lead.full_name || 'Chưa có tên')}</strong><small>${escapeHTML(lead.phone || 'Chưa có SĐT')}</small></td>
       <td data-label="Phân loại"><span class="tsm-data-tag ${lead.data_class === 'net' ? 'is-net' : ''}">${escapeHTML(dataLabel)}</span></td><td data-label="Dịch vụ">${escapeHTML(lead.service_interest || 'Chưa cập nhật')}</td>
       <td data-label="Chi nhánh">${escapeHTML(lead.branch_id === 'le-van-tho' ? '5S Lê Văn Thọ' : '5S Phạm Văn Chiêu')}</td><td data-label="Trạng thái" data-workspace-lead-status>${leadStatusPill(lead.status)}</td>
-      <td data-label="Nguồn nhập"><strong>${escapeHTML(creatorName)}</strong><small>${escapeHTML(lead.created_by_pg || lead.source || '')}</small></td><td data-label="Ngày tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
+      <td data-label="Nguồn nhập">
+        <strong>${escapeHTML(creatorName)}</strong>
+        ${boothName ? `<div style="display:inline-flex;align-items:center;gap:3px;color:#0f766e;font-size:0.75rem;font-weight:600;margin-top:2px;"><i class="ri-map-pin-2-line"></i> ${escapeHTML(boothName)}</div>` : ''}
+        <small class="subtle">${escapeHTML(lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : (lead.created_by_pg || lead.source || ''))}</small>
+      </td>
+      <td data-label="Ngày tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
       <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td></tr>`;
   }).join('') : '<tr><td colspan="9" class="tsm-empty">Không có Lead phù hợp bộ lọc.</td></tr>';
 

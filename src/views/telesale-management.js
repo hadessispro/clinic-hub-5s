@@ -93,7 +93,11 @@ export async function renderView() {
       ${telesales.map((member) => option(member.employee_code, tenNguoiPhuTrach(member.name, member.employee_code), lead.assigned_telesale_id === member.employee_code)).join('')}
     </select></td>
     <td data-label="Trạng thái"><span data-tsm-lead-status>${leadStatusPill(lead.status)}</span></td>
-    <td data-label="Nguồn nhập"><strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong><small>${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small></td>
+    <td data-label="Nguồn nhập">
+      <strong>${escapeHTML(lead.created_by_name || lead.source || 'Chưa xác định')}</strong>
+      ${(lead.booth_name || lead.customer_profile?.booth) ? `<div style="display:inline-flex;align-items:center;gap:3px;color:#0f766e;font-size:0.75rem;font-weight:600;margin-top:2px;"><i class="ri-map-pin-2-line"></i> ${escapeHTML(lead.booth_name || lead.customer_profile?.booth)}</div>` : ''}
+      <small class="subtle">${lead.created_by_role === 'pg_staff' ? 'Nhân viên PG' : lead.created_by_role === 'telesale_leader' ? 'Quản lý Telesale' : escapeHTML(lead.source || '')}</small>
+    </td>
     <td data-label="Tiếp nhận"><time>${formatDateTime(lead.created_at)}</time></td>
     <td data-label="Hồ sơ"><button type="button" class="secondary-button" data-open-lead-consultation="${escapeHTML(lead.id)}"><i class="ri-customer-service-2-line"></i> Tư vấn</button></td>
   </tr>`).join('') || '<tr><td colspan="11" class="tsm-empty">Không có hồ sơ phù hợp với bộ lọc.</td></tr>';
