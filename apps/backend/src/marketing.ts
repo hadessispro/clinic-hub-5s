@@ -524,9 +524,9 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const params: unknown[] = [];
     const where: string[] = [];
     if (user.role === 'pg_staff') {
-      params.push(user.employeeCode); where.push(`l.created_by_pg_code=$${params.length}`);
+      params.push(user.employeeCode); where.push(`lower(l.created_by_pg_code)=lower($${params.length})`);
     } else if (user.role === 'telesale_staff') {
-      params.push(user.employeeCode); where.push(`l.assigned_telesale_code=$${params.length}`);
+      params.push(user.employeeCode); where.push(`lower(l.assigned_telesale_code)=lower($${params.length})`);
     } else if (!reportRoles.has(user.role)) {
       throw new ForbiddenException();
     }
@@ -836,15 +836,15 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (!existing) throw new BadRequestException('Hồ sơ Lead không tồn tại.');
 
     const isManager = managerRoles.has(user.role) || supportRoles.has(user.role);
-    const isCreator = Boolean(existing.created_by_pg_code && existing.created_by_pg_code.toLowerCase() === user.employeeCode.toLowerCase());
-    const isTelesale = user.role === 'telesale_staff' && Boolean(existing.assigned_telesale_code && existing.assigned_telesale_code.toLowerCase() === user.employeeCode.toLowerCase());
+    const isCreator = Boolean(existing.created_by_pg_code && user.employeeCode && existing.created_by_pg_code.trim().toLowerCase() === user.employeeCode.trim().toLowerCase());
+    const isTelesale = user.role === 'telesale_staff' && Boolean(existing.assigned_telesale_code && user.employeeCode && existing.assigned_telesale_code.trim().toLowerCase() === user.employeeCode.trim().toLowerCase());
 
     if (!isManager && !isCreator && !isTelesale) {
       throw new ForbiddenException('Tài khoản không có quyền chỉnh sửa hồ sơ Lead này.');
     }
 
-    // Lead creator (PG / support) has a 15-minute edit window from lead creation time
-    if (!isManager && isCreator) {
+    // Lead creator (PG intake) has a strict 15-minute edit window from lead creation time
+    if (!isManager && isCreator && user.role !== 'telesale_staff') {
       const createdAt = new Date(existing.created_at).getTime();
       const diffMinutes = (Date.now() - createdAt) / (60 * 1000);
       if (diffMinutes > 15) {
@@ -879,7 +879,7 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
         const dupCheck = await this.infrastructure.postgres.query(
           `select id from marketing.leads
            where length(marketing.normalize_lead_phone(phone)) >= 8
-             and marketing.normalize_lead_phone(phone)=$1
+             and marketing.normalize_lead_phone(phone)=marketing.normalize_lead_phone($1)
              and id != $2 limit 1`,
           [rawPhone, leadId],
         );

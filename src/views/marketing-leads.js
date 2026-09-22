@@ -30,7 +30,7 @@ export async function renderView(state) {
   const isSupportMkt = profile.role === 'support_marketing';
   const isTelesaleLeader = profile.role === 'telesale_leader';
   const showIntakeForm = isPgStaff || isTelesaleLeader;
-  const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader'].includes(profile.role);
+  const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'support_marketing'].includes(profile.role);
   const allowExport = canExportData(profile.role);
   const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 
@@ -218,8 +218,9 @@ export async function renderView(state) {
   const sourceOptionsHtml = combinedSources.map(s => option(s, s, s === defaultSource)).join('');
   const telesaleOptionsHtml = telesaleEmployees.map(e => option(e.employee_code || e.id, `${e.name}`)).join('');
 
+  const profileEmpCode = String(profile.employee_code || '').trim().toLowerCase();
   const myLeads = isPgStaff
-    ? leads.filter((lead) => !lead.created_by_pg || lead.created_by_pg === profile.employee_code || lead.created_by_employee_code === profile.employee_code)
+    ? leads.filter((lead) => !lead.created_by_pg || String(lead.created_by_pg || '').trim().toLowerCase() === profileEmpCode || String(lead.created_by_employee_code || '').trim().toLowerCase() === profileEmpCode)
     : leads;
 
   const pgSubmissionRows = myLeads.length
@@ -438,6 +439,7 @@ function openEditLeadModal(lead) {
   const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'support_marketing'].includes(profile.role);
   const createdAtMs = lead.created_at ? new Date(lead.created_at).getTime() : 0;
   const diffMinutes = (Date.now() - createdAtMs) / (60 * 1000);
+  const isExpired = !isLeadManager && (diffMinutes > 15);
   const remainingMinutes = Math.max(0, Math.ceil(15 - diffMinutes));
 
   const isNet = lead.data_class === 'net';
@@ -450,12 +452,19 @@ function openEditLeadModal(lead) {
         <div>
           <p class="eyebrow" style="margin:0; font-size:0.75rem; color:#0284c7; font-weight:700;">HỒ SƠ KHÁCH HÀNG</p>
           <h3 style="margin:4px 0 0; font-size:1.1rem; font-weight:800; color:#0f172a;">Chỉnh sửa thông tin Lead</h3>
-          ${!isLeadManager && diffMinutes <= 15 ? `<small style="color:#059669; font-weight:600;"><i class="ri-timer-line"></i> Còn khoảng ${remainingMinutes} phút để hoàn tất sửa đổi</small>` : ''}
+          ${!isLeadManager && !isExpired ? `<small style="color:#059669; font-weight:600;"><i class="ri-timer-line"></i> Còn khoảng ${remainingMinutes} phút để hoàn tất sửa đổi</small>` : ''}
         </div>
         <button type="button" id="closeEditLeadModalBtn" style="background:none; border:none; font-size:1.4rem; cursor:pointer; color:#64748b; line-height:1;"><i class="ri-close-line"></i></button>
       </div>
 
-      <form id="editLeadForm" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      ${isExpired ? `
+        <div style="background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; border-radius:8px; padding:10px 14px; font-size:0.84rem; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+          <i class="ri-lock-line" style="font-size:1.1rem;"></i>
+          <div>Hồ sơ đã quá 15 phút cho phép chỉnh sửa và đã được khóa.<br><span style="font-weight:400; font-size:0.78rem;">Vui lòng liên hệ Support PG để được hỗ trợ điều chỉnh.</span></div>
+        </div>
+      ` : ''}
+
+      <form id="editLeadForm" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; ${isExpired ? 'opacity:0.65; pointer-events:none;' : ''}">
         <input type="hidden" name="leadId" value="${escapeHTML(lead.id)}" />
 
         <div style="grid-column:1/-1;">
@@ -516,8 +525,12 @@ function openEditLeadModal(lead) {
         </div>
 
         <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
-          <button type="button" id="cancelEditLeadBtn" class="secondary-button" style="padding:6px 14px; font-size:0.85rem;">Hủy</button>
-          <button type="submit" class="primary-button" id="saveEditLeadBtn" style="padding:6px 16px; font-size:0.85rem;"><i class="ri-save-line"></i> Lưu thay đổi</button>
+          ${isExpired ? `
+            <button type="button" id="cancelEditLeadBtn" class="secondary-button" style="padding:6px 18px; font-size:0.85rem;">Đóng</button>
+          ` : `
+            <button type="button" id="cancelEditLeadBtn" class="secondary-button" style="padding:6px 14px; font-size:0.85rem;">Hủy</button>
+            <button type="submit" class="primary-button" id="saveEditLeadBtn" style="padding:6px 16px; font-size:0.85rem;"><i class="ri-save-line"></i> Lưu thay đổi</button>
+          `}
         </div>
       </form>
     </div>
@@ -545,6 +558,13 @@ function openEditLeadModal(lead) {
 
   document.getElementById('editLeadForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const currentDiff = (Date.now() - createdAtMs) / (60 * 1000);
+    if (!isLeadManager && currentDiff > 15) {
+      showToast('Đã quá thời gian 15 phút cho phép chỉnh sửa data. Vui lòng liên hệ Support PG để được hỗ trợ.', true);
+      closeModal();
+      await navigateTo('marketing-leads');
+      return;
+    }
     const saveBtn = document.getElementById('saveEditLeadBtn');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang lưu...'; }
     const fd = new FormData(e.target);
@@ -692,7 +712,59 @@ export function initView() {
   });
   pgPrevious?.addEventListener('click', () => { pgSubmissionPage -= 1; renderPgSubmissionPage(); });
   pgNext?.addEventListener('click', () => { pgSubmissionPage += 1; renderPgSubmissionPage(); });
-  renderPgSubmissionPage();
+  // Gán sự kiện mở modal Sửa Lead cho tất cả người dùng (kể cả PG staff)
+  document.querySelectorAll('[data-edit-lead-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const leadId = btn.dataset.editLeadId;
+      const lead = cachedLeads.find(l => String(l.id) === String(leadId));
+      if (!lead) return;
+      const createdAtMs = lead.created_at ? new Date(lead.created_at).getTime() : 0;
+      const diffMinutes = (Date.now() - createdAtMs) / (60 * 1000);
+      const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'support_marketing'].includes(profile.role);
+      if (!isLeadManager && diffMinutes > 15) {
+        showToast('Hồ sơ đã quá 15 phút, không thể chỉnh sửa. Vui lòng liên hệ Support PG.', true);
+        const parent = btn.parentElement;
+        if (parent) {
+          parent.innerHTML = `<span class="subtle" style="font-size:0.75rem; color:#94a3b8; display:inline-flex; align-items:center; gap:3px;" title="Đã quá 15 phút, không thể chỉnh sửa">
+            <i class="ri-lock-line"></i> Đã khóa
+          </span>`;
+        }
+        return;
+      }
+      openEditLeadModal(lead);
+    });
+  });
+
+  // Bộ đếm thời gian thực cho bảng nạp Lead PG: tự động cập nhật số phút và chuyển sang Đã khóa sau 15p
+  if (window._pgEditCountdownInterval) {
+    clearInterval(window._pgEditCountdownInterval);
+  }
+  const updatePgCountdowns = () => {
+    const isLeadManager = ['admin', 'admin_it', 'superadmin', 'admin_marketing', 'telesale_leader', 'support_marketing'].includes(profile.role);
+    if (isLeadManager) return;
+    document.querySelectorAll('[data-pg-submission-row]').forEach((row) => {
+      const btn = row.querySelector('[data-edit-lead-id]');
+      if (!btn) return;
+      const leadId = btn.dataset.editLeadId;
+      const lead = cachedLeads.find(l => String(l.id) === String(leadId));
+      if (!lead || !lead.created_at) return;
+      const createdAtMs = new Date(lead.created_at).getTime();
+      const diffMinutes = (Date.now() - createdAtMs) / (60 * 1000);
+      if (diffMinutes > 15) {
+        const parent = btn.parentElement;
+        if (parent) {
+          parent.innerHTML = `<span class="subtle" style="font-size:0.75rem; color:#94a3b8; display:inline-flex; align-items:center; gap:3px;" title="Đã quá 15 phút, không thể chỉnh sửa">
+            <i class="ri-lock-line"></i> Đã khóa
+          </span>`;
+        }
+      } else {
+        const remainingMinutes = Math.max(1, Math.ceil(15 - diffMinutes));
+        btn.innerHTML = `<i class="ri-edit-line"></i> Sửa (${remainingMinutes}p)`;
+      }
+    });
+  };
+  window._pgEditCountdownInterval = setInterval(updatePgCountdowns, 30000);
 
   // If PG Staff, skip lead pipeline listeners (kanban drag-drop, telesale assign, 20k+ DOM bindings)
   if (isPgStaff) return;
@@ -1001,13 +1073,4 @@ export function initView() {
   if (searchInput) searchInput.addEventListener('input', applyFilters);
   if (branchSelect) branchSelect.addEventListener('change', applyFilters);
   if (sourceSelect) sourceSelect.addEventListener('change', applyFilters);
-
-  document.querySelectorAll('[data-edit-lead-id]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const leadId = btn.dataset.editLeadId;
-      const lead = cachedLeads.find(l => String(l.id) === String(leadId));
-      if (lead) openEditLeadModal(lead);
-    });
-  });
 }
