@@ -1008,8 +1008,11 @@ function renderTelegramApprovalCard(data) {
       <div style="background:#ffffff; border-radius:10px; padding:14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
         <!-- Header Telegram -->
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px; border-bottom:1px solid #e2e8f0; padding-bottom:8px;">
-          <div style="background:#229ED9; color:#fff; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px;">
-            🤖
+          <div style="width:36px; height:36px; border-radius:50%; overflow:hidden; flex-shrink:0; box-shadow:0 2px 8px rgba(34,158,217,0.3); border:1.5px solid #229ED9; display:flex; align-items:center; justify-content:center; background:#0f172a;">
+            <img src="/images/ai-bot-avatar.jpg" alt="AI Sentinel" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+            <div style="display:none; width:100%; height:100%; align-items:center; justify-content:center; background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+              <i class="ri-terminal-box-fill" style="color:#38bdf8; font-size:20px;"></i>
+            </div>
           </div>
           <div style="flex:1;">
             <div style="display:flex; align-items:center; gap:4px;">
