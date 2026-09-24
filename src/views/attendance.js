@@ -162,6 +162,22 @@ function renderAttendancePagination({ page, pageCount, total, pageSize, prefix, 
   </div>`;
 }
 
+function formatShiftDisplayName(day) {
+  if (day?.shift_name && !day.shift_name.startsWith('Ca CHIEU') && !day.shift_name.startsWith('Ca SANG')) {
+    return day.shift_name;
+  }
+  const code = String(day?.shift_code || day?.shift_name || '').trim();
+  if (!code) return 'Chưa có ca';
+  const found = SHIFTS.find((s) => s.id === code || s.name === code);
+  if (found) return found.name;
+  const upper = code.toUpperCase();
+  if (upper === 'CHIEU' || upper === 'C' || upper.includes('AFTERNOON') || upper.includes('CHIỀU')) return 'Ca chiều';
+  if (upper === 'SANG' || upper === 'S' || upper.includes('MORNING') || upper.includes('SÁNG')) return 'Ca sáng';
+  if (upper === 'HC' || upper === 'HANH_CHINH' || upper.includes('OFFICE') || upper.includes('HÀNH CHÍNH')) return 'Ca hành chính';
+  if (upper === 'FULL' || upper === 'F') return 'Ca full';
+  return day?.shift_name || code;
+}
+
 function workDayStatus(day) {
   const labels = {
     complete: ['Đủ vào/ra', 'good'],
@@ -227,7 +243,7 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
           : `<span class="attendance-branch-badge is-${escapeHTML(day.branch_id || 'unknown')}">${escapeHTML(BRANCHES[day.branch_id]?.shortName || 'Chưa xác định')}</span>`;
         return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}">
           <td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong>${branchBadge}</td>
-          <td><strong>${escapeHTML(day.shift_name || day.shift_code || 'Chưa có ca')}</strong></td>
+          <td><strong>${escapeHTML(formatShiftDisplayName(day))}</strong></td>
           <td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td>
           <td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td>
           <td class="attendance-number is-overtime">${minuteLabel(day.overtime_minutes)}</td>
@@ -1522,7 +1538,7 @@ async function exportWorkExcel() {
         'Chi nhánh': (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
           ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
           : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định'),
-        'Ca làm việc': day.shift_name || day.shift_code || 'Chưa có ca',
+        'Ca làm việc': formatShiftDisplayName(day),
         'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
         'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
         'Giờ công thường (phút)': Number(day.regular_minutes || 0),

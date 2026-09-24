@@ -220,7 +220,9 @@ export class RpcService {
         department: row.profile.department || row.employee?.department || '', title: row.employee?.title || '', contact_role: row.profile.role }));
     }
     if (name === 'submit_leave_request') {
-      const employeeCode = ['staff'].includes(user.role) ? user.employeeCode : String(args.p_employee_code || user.employeeCode);
+      // Chỉ Admin và HR mới được nộp đơn hộ người khác. Toàn bộ nhân sự khác nộp đơn BẮT BUỘC gắn với employeeCode của chính mình
+      const isPrivileged = admins.has(user.role) || user.role === 'hr';
+      const employeeCode = isPrivileged && args.p_employee_code ? String(args.p_employee_code).trim() : user.employeeCode;
       const leaveId = randomUUID();
       const saved = await this.put('leave_requests', { id: leaveId, employee_code: employeeCode, request_type: args.p_request_type,
         from_date: args.p_from_date, to_date: args.p_to_date || args.p_from_date, reason: args.p_reason,
@@ -271,6 +273,11 @@ export class RpcService {
     if (name === 'review_leave_request') {
       const current = await this.byId('leave_requests', String(args.p_request_id || ''));
       if (!current) throw new Error('Không tìm thấy đơn cần duyệt.');
+      const empCode = String(current.payload.employee_code || '').trim();
+      // Chống tự duyệt đơn: Người nộp đơn không được tự duyệt đơn của chính mình (kể cả Leader)
+      if (empCode.toLowerCase() === user.employeeCode.toLowerCase() && !admins.has(user.role) && user.role !== 'hr') {
+        throw new ForbiddenException('Bạn không thể tự phê duyệt đơn của chính mình. Đơn phải được chuyển cho Quản lý cấp trên hoặc phòng Nhân sự duyệt.');
+      }
       const decision = String(args.p_decision || '');
       const isReset = decision === 'pending';
       const approved = decision === 'approved';
@@ -284,7 +291,16 @@ export class RpcService {
         next.rejection_reason = null;
       } else {
         next.rejection_reason = args.p_reason || null;
-        if (user.role === 'leader') {
+        if (user.role === 'leader' || user.role === 'phu_ta_truong') {
+          // Kiểm tra chéo: Trưởng bộ phận chỉ được duyệt đơn của nhân viên thuộc bộ phận mình quản lý
+          const empResult = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+            `select payload from app.records where entity_type='employees' and deleted_at is null and lower(payload->>'code')=lower($1) limit 1`,
+            [empCode],
+          );
+          const empDept = String(empResult.rows[0]?.payload?.department || '');
+          if (empDept && user.department && empDept.toLowerCase() !== user.department.toLowerCase()) {
+            throw new ForbiddenException(`Bạn chỉ có quyền duyệt đơn của nhân sự thuộc bộ phận ${user.department}.`);
+          }
           next.leader_status = approved ? 'approved' : 'rejected'; next.leader_reviewed_at = new Date().toISOString();
           next.status = approved ? 'pending' : 'rejected'; next.routed_to = approved ? 'hcth' : 'completed';
         } else if (user.role === 'hr' || admins.has(user.role)) {
@@ -294,7 +310,6 @@ export class RpcService {
       }
       const saved = await this.put('leave_requests', next, current.record_key);
 
-      const empCode = String(current.payload.employee_code || '');
       if (empCode && empCode.toLowerCase() !== user.employeeCode.toLowerCase()) {
         const reqType = String(current.payload.request_type || 'đơn từ');
         const decisionText = isReset ? 'đã được đặt lại về trạng thái Chờ duyệt' : (approved ? 'đã được phê duyệt' : 'bị từ chối');
@@ -590,6 +605,160 @@ export class RpcService {
 
       this.infrastructure.markDataChanged(['profiles', 'employees']);
       return { success: true, code: targetCode, name: targetName };
+    }
+    if (name === 'system_delete_request') {
+      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ Admin IT hoặc Ban Giám Đốc mới có quyền xóa đơn.');
+      const requestId = String(args.p_request_id || '').trim();
+      const reason = String(args.p_reason || '').trim();
+      const cleanupAttendance = Boolean(args.p_cleanup_attendance);
+
+      if (!requestId) throw new BadRequestException('Vui lòng chọn đơn cần xóa.');
+      if (reason.length < 5) throw new BadRequestException('Vui lòng nhập lý do xóa tối thiểu 5 ký tự.');
+
+      const current = await this.byId('leave_requests', requestId);
+      if (!current) throw new BadRequestException('Không tìm thấy đơn cần xóa (có thể đã bị xóa trước đó).');
+
+      const beforePayload = current.payload;
+      const empCode = String(beforePayload.employee_code || '').trim();
+      const fromDate = String(beforePayload.from_date || '').trim();
+      const toDate = String(beforePayload.to_date || fromDate).trim();
+      const reqType = String(beforePayload.request_type || 'Đơn từ');
+
+      const client = await this.infrastructure.postgres.connect();
+      try {
+        await client.query('begin');
+
+        const nowIso = new Date().toISOString();
+
+        // 1. Soft-delete đơn leave_requests
+        await client.query(
+          `update app.records
+           set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+               payload = jsonb_set(jsonb_set(payload, '{status}', '"deleted"'::jsonb), '{deleted_reason}', $1::jsonb)
+           where entity_type='leave_requests' and record_key=$2`,
+          [JSON.stringify(reason), current.record_key],
+        );
+
+        const cleanedAttendanceRecords: string[] = [];
+        const cleanedWorkDays: string[] = [];
+
+        // 2. Thu hồi lượt chấm công và ngày công phát sinh nếu có yêu cầu
+        if (cleanupAttendance && empCode && fromDate) {
+          const attRes = await client.query<{ record_key: string; payload: JsonMap }>(
+            `select record_key, payload from app.records
+             where entity_type='attendance_records' and deleted_at is null
+               and lower(payload->>'employee_code')=lower($1)
+               and payload->>'work_date' between $2 and $3`,
+            [empCode, fromDate, toDate],
+          );
+
+          for (const attRow of attRes.rows) {
+            await client.query(
+              `update app.records set deleted_at=now(), origin='vps', version=version+1, updated_at=now()
+               where entity_type='attendance_records' and record_key=$1`,
+              [attRow.record_key],
+            );
+            cleanedAttendanceRecords.push(attRow.record_key);
+          }
+
+          // Xóa hoặc tính lại ngày công
+          const wdRes = await client.query<{ record_key: string }>(
+            `select record_key from app.records
+             where entity_type='attendance_work_days' and deleted_at is null
+               and lower(payload->>'employee_code')=lower($1)
+               and payload->>'work_date' between $2 and $3`,
+            [empCode, fromDate, toDate],
+          );
+          for (const wdRow of wdRes.rows) {
+            await client.query(
+              `update app.records set deleted_at=now(), origin='vps', version=version+1, updated_at=now()
+               where entity_type='attendance_work_days' and record_key=$1`,
+              [wdRow.record_key],
+            );
+            cleanedWorkDays.push(wdRow.record_key);
+          }
+        }
+
+        // 3. Ghi log kiểm toán chi tiết vào app.records (entity_type = 'audit_logs')
+        const auditId = randomUUID();
+        const auditPayload: JsonMap = {
+          id: auditId,
+          action: 'delete_test_request',
+          entity: 'leave_requests',
+          entity_id: current.record_key,
+          actor_id: user.id,
+          actor_employee_code: user.employeeCode,
+          actor_name: user.profile?.full_name || user.employeeCode,
+          actor_role: user.role,
+          reason,
+          request_summary: {
+            id: current.record_key,
+            employee_code: empCode,
+            employee_name: beforePayload.employee_name || empCode,
+            request_type: reqType,
+            from_date: fromDate,
+            to_date: toDate,
+            original_reason: beforePayload.reason || '',
+            status_before: beforePayload.status || 'pending',
+            created_at: beforePayload.created_at || null,
+          },
+          cleanup_attendance: cleanupAttendance,
+          cleaned_attendance_records: cleanedAttendanceRecords,
+          cleaned_work_days: cleanedWorkDays,
+          before: beforePayload,
+          after: null,
+          created_at: nowIso,
+        };
+
+        await client.query(
+          `insert into app.records(entity_type, record_key, payload, origin)
+           values ('audit_logs', $1, $2::jsonb, 'vps')`,
+          [auditId, JSON.stringify(auditPayload)],
+        );
+
+        // 4. Nhật ký kiểm toán đầy đủ đã được lưu an toàn vào app.records (audit_logs) ở trên
+
+        // 5. Cảnh báo Telegram nếu được bật
+        try {
+          const shouldAlert = await this.telegram.shouldNotify('delete_employee', false);
+          if (shouldAlert) {
+            void this.telegram.sendSecurityAlert({
+              eventType: 'server_alert',
+              severity: 'warning',
+              actorCode: user.employeeCode,
+              actorName: String(user.profile?.full_name || 'Admin IT'),
+              actorRole: user.role,
+              branchId: user.branchId,
+              details: {
+                doiTuong: `${reqType} (${empCode})`,
+                hanhDong: 'XÓA ĐƠN LỖI / TEST VÀ THU HỒI DỮ LIỆU',
+                lyDo: reason,
+                thuHoiChamCong: cleanupAttendance ? `Có (${cleanedAttendanceRecords.length} lượt)` : 'Không',
+              },
+            });
+          }
+        } catch {}
+
+        await client.query('commit');
+
+        const tablesToNotify = ['leave_requests', 'audit_logs'];
+        if (cleanedAttendanceRecords.length > 0) tablesToNotify.push('attendance_records', 'attendance_work_days');
+        await this.infrastructure.markDataChanged(tablesToNotify, user.id, user.role);
+
+        return {
+          success: true,
+          deletedId: current.record_key,
+          auditId,
+          cleanedAttendanceCount: cleanedAttendanceRecords.length,
+          cleanedWorkDayCount: cleanedWorkDays.length,
+          message: `Đã xóa đơn ${current.record_key} thành công và lưu nhật ký kiểm toán.`,
+        };
+      } catch (error) {
+        await client.query('rollback');
+        throw error;
+      } finally {
+        client.release();
+      }
     }
     if (name === 'system_update_user_profile') {
 

@@ -59,7 +59,9 @@ shopt -s globstar nullglob
 
 VPS_HOST="${VPS_HOST:-root@31.97.191.177}"
 if [ -z "${VPS_KEY:-}" ] || [ ! -f "$VPS_KEY" ]; then
-  if [ -f "$HOME/.ssh/id_ed25519" ]; then
+  if [ -f "$HOME/.ssh/clinic_hub_deploy_key" ]; then
+    VPS_KEY="$HOME/.ssh/clinic_hub_deploy_key"
+  elif [ -f "$HOME/.ssh/id_ed25519" ]; then
     VPS_KEY="$HOME/.ssh/id_ed25519"
   else
     VPS_KEY="/c/Users/thaibao/Documents/Codex/2026-08-13/https-github-com-hadessispro-clinic-hub/work/clinic-hub-vps-ed25519-v2"

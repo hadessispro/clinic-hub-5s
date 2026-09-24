@@ -41,7 +41,7 @@ const hrWriteTables = new Set([
   'onboarding_docs', 'onboarding_progress', 'recruitment', 'notifications', 'messages',
 ]);
 const staffWriteTables = new Set([
-  'attendance_records', 'leave_requests', 'schedule_requests', 'schedule_assignments', 'messages', 'notifications',
+  'leave_requests', 'schedule_requests', 'messages', 'notifications',
   'push_subscriptions', 'payroll_feedback', 'incidents', 'tasks',
 ]);
 
@@ -131,7 +131,9 @@ export class DataService {
     if (user.role === 'pg_staff') return false;
     if (adminRoles.has(user.role)) return true;
     if (user.role === 'hr') return hrWriteTables.has(table);
-    if (departmentLeaderRoles.has(user.role)) return staffWriteTables.has(table);
+    if (departmentLeaderRoles.has(user.role)) {
+      return staffWriteTables.has(table) || table === 'schedule_assignments';
+    }
     return staffWriteTables.has(table);
   }
 
@@ -175,8 +177,20 @@ export class DataService {
 
   private protectWrite(user: AuthUser, table: string, row: JsonMap) {
     if (!this.canWrite(user, table)) throw new ForbiddenException('Tài khoản không có quyền thay đổi dữ liệu này.');
-    if (!adminRoles.has(user.role) && user.role !== 'hr' && !departmentLeaderRoles.has(user.role)) {
-      if (['attendance_records', 'leave_requests', 'schedule_requests', 'schedule_assignments'].includes(table)) {
+    if (!adminRoles.has(user.role) && user.role !== 'hr') {
+      if (table === 'leave_requests') {
+        // Chống trick lỏ: Nhân viên nộp đơn không được tự duyệt hoặc sửa trạng thái
+        delete row.status;
+        delete row.leader_status;
+        delete row.operations_status;
+        delete row.reviewer_code;
+        delete row.leader_reviewed_at;
+        delete row.operations_reviewed_at;
+        delete row.deleted_at;
+        delete row.deleted_reason;
+        row.employee_code = user.employeeCode;
+      }
+      if (table === 'schedule_requests') {
         row.employee_code = user.employeeCode;
       }
       if (table === 'notifications' || table === 'push_subscriptions') row.user_id = user.id;
@@ -230,6 +244,18 @@ export class DataService {
     }
 
     if (!this.canWrite(user, table)) throw new ForbiddenException('Tài khoản không có quyền thay đổi dữ liệu này.');
+
+    if (operation === 'delete') {
+      const protectedDeleteTables = new Set([
+        'leave_requests', 'attendance_records', 'attendance_work_days',
+        'schedule_assignments', 'schedule_requests', 'profiles', 'employees',
+        'audit_logs', 'phan_quyen'
+      ]);
+      if (protectedDeleteTables.has(table) && !adminRoles.has(user.role)) {
+        throw new ForbiddenException(`Nhân sự không có quyền xóa dữ liệu từ bảng ${table}. Mọi thao tác xóa đơn/chấm công phải do Admin-IT thực hiện và lưu nhật ký kiểm toán.`);
+      }
+    }
+
     if (operation === 'insert' || operation === 'upsert') {
       const inputs = (Array.isArray(request.values) ? request.values : [request.values || {}]).map((value) => this.protectWrite(user, table, { ...value }));
       const output: JsonMap[] = [];
@@ -238,6 +264,13 @@ export class DataService {
       try {
         await client.query('begin');
         for (const input of inputs) {
+          if (table === 'leave_requests' && !adminRoles.has(user.role) && user.role !== 'hr') {
+            input.status = 'pending';
+            input.leader_status = 'pending';
+            input.operations_status = 'pending';
+            input.reviewer_code = null;
+            input.employee_code = user.employeeCode;
+          }
           const now = new Date().toISOString();
           if (!input.id && !input.code && !input.client_event_id) input.id = randomUUID();
           if (!input.created_at) input.created_at = now;
@@ -395,6 +428,14 @@ export class DataService {
     for (const current of selected) {
       if (!this.owns(user, table, current.payload, managedCodes)) throw new ForbiddenException();
       if (operation === 'delete') {
+        const protectedDeleteTables = new Set([
+          'leave_requests', 'attendance_records', 'attendance_work_days',
+          'schedule_assignments', 'schedule_requests', 'profiles', 'employees',
+          'audit_logs', 'phan_quyen'
+        ]);
+        if (protectedDeleteTables.has(table) && !adminRoles.has(user.role)) {
+          throw new ForbiddenException(`Nhân sự không có quyền xóa dữ liệu từ bảng ${table}. Mọi thao tác xóa đơn/chấm công phải do Admin-IT thực hiện và lưu nhật ký kiểm toán.`);
+        }
         await this.infrastructure.postgres.query(
           `update app.records set deleted_at=now(),origin='vps',version=version+1,updated_at=now() where entity_type=$1 and record_key=$2`,
           [table, current.record_key],
@@ -415,6 +456,11 @@ export class DataService {
           }
         }
       } else if (operation === 'update') {
+        if (table === 'leave_requests' && !adminRoles.has(user.role) && user.role !== 'hr') {
+          if (current.payload.status && current.payload.status !== 'pending') {
+            throw new ForbiddenException('Không thể sửa đơn đã được duyệt hoặc đã có kết quả xử lý.');
+          }
+        }
         const patch = this.protectWrite(user, table, { ...(request.values as JsonMap || {}) });
         const next: any = { ...current.payload, ...patch, updated_at: new Date().toISOString() };
         await this.infrastructure.postgres.query(

@@ -8,6 +8,9 @@ import {
   getReminderConfig, saveReminderConfig, sendImmediateReminder,
   getSystemSmtp, saveSystemSmtp, testSystemSmtp,
   getNotificationRules, updateNotificationRule,
+  getGeminiBotConfig, saveGeminiBotConfig, processGeminiBotDemo,
+  approveGeminiBotDemo, sendTelegramTestApproval,
+  deleteSystemRequest, getSystemRequests, getDeletedRequestsAudit,
 } from '../services/system-admin.js';
 import { playChime, CHIME_OPTIONS } from '../services/audio-chime.js';
 import { escapeHTML, formatDateTime } from '../utils.js';
@@ -51,6 +54,15 @@ let ccData = null;
 let reminderConfigData = null;
 let notificationRulesData = [];
 let smtpConfigData = null;
+let geminiBotConfigData = null;
+let geminiDemoCurrentResult = null;
+let geminiStaffFeedback = null;
+let dtSearch = '';
+let dtType = '';
+let dtStatus = '';
+let dtOnlyTest = false;
+let dtRequestsData = [];
+let dtDeletedAuditData = [];
 const TEN_THE = {
   'tai-khoan': 'Tài khoản và phân quyền',
   'phan-quyen': 'Phân quyền màn hình',
@@ -62,6 +74,8 @@ const TEN_THE = {
   log: 'Log lỗi hệ thống',
   audit: 'Lịch sử thay đổi',
   'smtp': 'Cấu hình Mail SMTP',
+  'gemini-bot': 'Trợ lý AI Gemini (Chấm công & Ca trực)',
+  'don-tu': 'Xóa đơn lỗi & Test',
 };
 
 function renderNotificationPolicyPanel(rules) {
@@ -866,6 +880,892 @@ function renderSmtpConfigPanel(data) {
   </section>`;
 }
 
+function renderStaffFeedbackBox(feedback) {
+  if (!feedback) {
+    return `<div style="background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; padding:12px; font-size:12px; color:#64748b; text-align:center;">
+      <i class="ri-feedback-line" style="font-size:20px; display:block; margin-bottom:4px; opacity:0.6;"></i>
+      <span><b>Hộp phản hồi máy chủ cho nhân viên test</b>: Sau khi gửi tin hoặc khi Sếp phê duyệt, thông báo xác nhận gửi về máy chủ và tài khoản nhân viên sẽ hiển thị tại đây.</span>
+    </div>`;
+  }
+
+  if (feedback.status === 'pending') {
+    return `<div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 14px; font-size:13px; color:#1e40af;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <span style="font-weight:700; display:flex; align-items:center; gap:6px; color:#1d4ed8;">
+          <i class="ri-robot-2-line" style="font-size:16px;"></i> Phản hồi tự động từ Trợ lý 5S:
+        </span>
+        <span class="status-pill is-warning" style="font-size:11px;">⏳ Đang chờ Sếp duyệt</span>
+      </div>
+      <p style="margin:0 0 6px 0; line-height:1.5;">
+        "Chào <b>${escapeHTML(feedback.employeeName)}</b> (<code>${escapeHTML(feedback.employeeCode)}</code>), em đã tiếp nhận yêu cầu <b>${escapeHTML(feedback.intentLabel)}</b> ngày <b>${escapeHTML(feedback.workDate)}</b>. Đã chuyển thẻ duyệt chi tiết sang Telegram cho Sếp thẩm định từ xa. Vui lòng chờ thông báo xác nhận nhé!"
+      </p>
+      <div style="font-size:11px; color:#3b82f6; display:flex; align-items:center; gap:4px;">
+        <i class="ri-time-line"></i> Đã gửi lúc: ${escapeHTML(feedback.timeFormatted || new Date().toLocaleTimeString('vi-VN'))} • Kênh: Trợ lý AI Clinic Hub
+      </div>
+    </div>`;
+  }
+
+  if (feedback.status === 'approved') {
+    return `<div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:14px; font-size:13px; color:#166534; box-shadow:0 2px 8px rgba(34,197,94,0.12);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #bbf7d0; padding-bottom:6px;">
+        <span style="font-weight:700; font-size:14px; display:flex; align-items:center; gap:6px; color:#15803d;">
+          <i class="ri-checkbox-circle-fill" style="font-size:18px;"></i> PHẢN HỒI TỪ MÁY CHỦ CHO NHÂN VIÊN (${escapeHTML(feedback.employeeCode)})
+        </span>
+        <span class="status-pill is-success" style="font-size:11px;">✅ ĐÃ DUYỆT XONG</span>
+      </div>
+      <div style="line-height:1.5; margin-bottom:10px;">
+        🎉 <b>Chào ${escapeHTML(feedback.employeeName)}</b>, yêu cầu <b>${escapeHTML(feedback.intentLabel)}</b> ngày <b>${escapeHTML(feedback.workDate)}</b> của bạn đã được <b>${escapeHTML(feedback.approver || 'Admin Sếp')} PHÊ DUYỆT THÀNH CÔNG</b>!
+      </div>
+      <div style="background:#ffffff; border:1px solid #bbf7d0; border-radius:6px; padding:10px; font-size:12px; margin-bottom:10px;">
+        <div style="font-weight:600; color:#15803d; margin-bottom:4px;">📋 Kết quả ghi nhận trên hệ thống máy chủ:</div>
+        <ul style="margin:0; padding-left:18px; color:#374151; line-height:1.6;">
+          ${feedback.intent === 'bo_sung_cham_cong' ? `
+          <li><b>Chấm công GPS (attendance_records):</b> Đã sinh lượt <b>Vào ca (${escapeHTML(feedback.startTime || '08:00')})</b> & <b>Ra ca (${escapeHTML(feedback.endTime || '18:30')})</b> hợp lệ tại chi nhánh <b>${escapeHTML(feedback.branch || 'Phạm Văn Chiêu')}</b>.</li>
+          <li><b>Bảng tính ngày công (attendance_work_days):</b> Ghi nhận hoàn thành <b>1.0 công</b> (540 phút).</li>
+          ` : feedback.intent === 'doi_ca_truc' ? `
+          <li><b>Lịch làm việc (schedule_assignments):</b> Đã cập nhật ca ${escapeHTML(feedback.shift || 'Chiều')} cho đồng nghiệp ${escapeHTML(feedback.targetEmployeeName || 'được bàn giao')}.</li>
+          ` : `
+          <li><b>Đơn nghỉ phép (leave_requests):</b> Đã duyệt chính thức trên hệ thống nhân sự.</li>
+          `}
+          <li><b>Chuông thông báo (notifications):</b> Đã gửi thông báo xác nhận vào tài khoản nhân viên <code>${escapeHTML(feedback.employeeCode)}</code>.</li>
+          <li><b>Thời gian máy chủ ghi nhận:</b> ${escapeHTML(feedback.timeFormatted || new Date().toLocaleTimeString('vi-VN'))}</li>
+        </ul>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="secondary-button compact-button" id="btnGoToAttendanceTab" data-emp="${escapeHTML(feedback.employeeCode)}" style="font-size:12px;">
+          <i class="ri-calendar-check-line"></i> Kiểm tra Bảng Chấm Công (${escapeHTML(feedback.employeeCode)})
+        </button>
+        <button type="button" class="secondary-button compact-button" id="btnGoToAuditTab" style="font-size:12px;">
+          <i class="ri-shield-keyhole-line"></i> Xem Lịch Sử Thay Đổi
+        </button>
+      </div>
+    </div>`;
+  }
+
+  if (feedback.status === 'rejected') {
+    return `<div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:12px 14px; font-size:13px; color:#991b1b;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+        <span style="font-weight:700; display:flex; align-items:center; gap:6px; color:#b91c1c;">
+          <i class="ri-close-circle-fill" style="font-size:16px;"></i> PHẢN HỒI TỪ MÁY CHỦ CHO NHÂN VIÊN (${escapeHTML(feedback.employeeCode)}):
+        </span>
+        <span class="status-pill is-danger" style="font-size:11px;">❌ BỊ TỪ CHỐI</span>
+      </div>
+      <p style="margin:0 0 6px 0; line-height:1.5;">
+        "Chào <b>${escapeHTML(feedback.employeeName)}</b>, rất tiếc yêu cầu <b>${escapeHTML(feedback.intentLabel)}</b> ngày <b>${escapeHTML(feedback.workDate)}</b> của bạn chưa được Sếp chấp thuận. Vui lòng liên hệ trực tiếp Quản lý chi nhánh để được hướng dẫn thêm."
+      </p>
+      <div style="font-size:11px; color:#991b1b;">
+        <i class="ri-time-line"></i> Thời gian phản hồi: ${escapeHTML(feedback.timeFormatted || new Date().toLocaleTimeString('vi-VN'))}
+      </div>
+    </div>`;
+  }
+
+  return '';
+}
+
+function renderAiResultBox(data) {
+  if (!data) return '';
+  return `
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:12px; font-weight:700; color:#2563eb; text-transform:uppercase;">
+            <i class="ri-scan-2-line"></i> Ý định nhận diện:
+          </span>
+          <span class="status-pill is-success" style="font-size:12px; font-weight:700;">
+            ${escapeHTML(data.intentLabel || data.intent)}
+          </span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px; line-height:1.5;">
+          <div><span style="color:#64748b;">Nhân viên:</span> <b>${escapeHTML(data.employeeName)}</b> <small>(${escapeHTML(data.employeeCode)})</small></div>
+          <div><span style="color:#64748b;">Chi nhánh:</span> <b>${escapeHTML(data.branch || 'PVC')}</b></div>
+          <div><span style="color:#64748b;">Ngày áp dụng:</span> <b>${escapeHTML(data.workDate)}</b> ${data.toDate && data.toDate !== data.workDate ? `đến <b>${escapeHTML(data.toDate)}</b>` : ''}</div>
+          <div><span style="color:#64748b;">Ca làm:</span> <b>${escapeHTML(data.shift || '')}</b> ${data.startTime ? `(${escapeHTML(data.startTime)})` : ''}</div>
+          ${data.targetEmployeeName ? `<div style="grid-column:1/-1;"><span style="color:#64748b;">Người đổi/bàn giao:</span> <b>${escapeHTML(data.targetEmployeeName)}</b></div>` : ''}
+          <div style="grid-column:1/-1;"><span style="color:#64748b;">Lý do:</span> <i>${escapeHTML(data.reason || data.summary || '')}</i></div>
+        </div>
+      </div>
+
+      <!-- Khối Kiểm tra logic / Sanity Check -->
+      <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:10px 12px; font-size:12px; color:#065f46;">
+        <strong style="display:block; margin-bottom:4px;"><i class="ri-shield-check-line"></i> Thẩm định logic vận hành:</strong>
+        <span>${escapeHTML(data.sanityCheck || 'Hợp lệ theo quy chuẩn vận hành của hệ thống.')}</span>
+      </div>
+
+      <!-- JSON Raw Accordion -->
+      <details style="border:1px solid #e2e8f0; border-radius:6px; padding:8px; font-size:11px; background:#f8fafc;">
+        <summary style="cursor:pointer; font-weight:600; color:#475569;"><i class="ri-code-box-line"></i> Xem cấu trúc JSON Schema trích xuất</summary>
+        <pre style="margin:6px 0 0 0; background:#0f172a; color:#f8fafc; padding:8px; border-radius:4px; overflow-x:auto; font-size:11px;">${escapeHTML(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function renderTelegramApprovalCard(data) {
+  if (!data) return '';
+  return `
+    <div id="simulatedTelegramCard" style="background:#229ED9; padding:2px; border-radius:12px; box-shadow:0 4px 12px rgba(34,158,217,0.25);">
+      <div style="background:#ffffff; border-radius:10px; padding:14px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <!-- Header Telegram -->
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px; border-bottom:1px solid #e2e8f0; padding-bottom:8px;">
+          <div style="background:#229ED9; color:#fff; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px;">
+            🤖
+          </div>
+          <div style="flex:1;">
+            <div style="display:flex; align-items:center; gap:4px;">
+              <strong style="font-size:13px; color:#0f172a;">Clinic Hub 5S Sentinel</strong>
+              <i class="ri-checkbox-circle-fill" style="color:#229ED9; font-size:14px;"></i>
+            </div>
+            <span style="font-size:11px; color:#64748b;">bot • vừa xong</span>
+          </div>
+        </div>
+
+        <!-- Nội dung tin nhắn -->
+        <div style="font-size:13px; line-height:1.55; color:#1e293b;">
+          <div style="background:#f1f5f9; padding:4px 8px; border-radius:4px; font-weight:700; color:#0369a1; font-size:12px; margin-bottom:8px; display:inline-block;">
+            📌 YÊU CẦU CẦN SẾP DUYỆT TỪ XA
+          </div>
+          <div><b>📋 Loại yêu cầu:</b> ${escapeHTML(data.intentLabel || data.intent)}</div>
+          <div><b>👤 Nhân sự:</b> <b>${escapeHTML(data.employeeName)}</b> (${escapeHTML(data.employeeCode)})</div>
+          <div><b>📅 Ngày:</b> <code>${escapeHTML(data.workDate)}</code> ${data.toDate && data.toDate !== data.workDate ? `đến <code>${escapeHTML(data.toDate)}</code>` : ''}</div>
+          <div><b>⏰ Ca / Giờ:</b> ${escapeHTML(data.shift || '')} ${data.startTime ? `(${escapeHTML(data.startTime)})` : ''}</div>
+          <div><b>🏥 Chi nhánh:</b> ${escapeHTML(data.branch || 'PVC')}</div>
+          ${data.targetEmployeeName ? `<div><b>👥 Đổi với:</b> <b>${escapeHTML(data.targetEmployeeName)}</b></div>` : ''}
+          <div><b>📝 Lý do:</b> <i>${escapeHTML(data.reason || data.summary || '')}</i></div>
+          <div style="margin-top:8px; padding-top:6px; border-top:1px dashed #cbd5e1; font-size:12px; color:#047857;">
+            <b>🔍 Thẩm định:</b> ${escapeHTML(data.sanityCheck || 'Hợp lệ theo tiêu chuẩn')}
+          </div>
+        </div>
+
+        <!-- Trạng thái sau khi bấm duyệt -->
+        <div id="approvalCardStatus" style="display:none; margin-top:12px; padding:10px; border-radius:6px; font-size:12px; font-weight:600; text-align:center;"></div>
+
+        <!-- Nút bấm tương tác của Sếp -->
+        <div id="approvalActionButtons" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;">
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="btnApproveRequest" style="flex:1; background:#16a34a; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:700; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="ri-checkbox-circle-line"></i> Phê duyệt ngay
+            </button>
+            <button type="button" id="btnRejectRequest" style="flex:1; background:#ef4444; color:#fff; border:none; border-radius:6px; padding:9px 12px; font-weight:700; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="ri-close-circle-line"></i> Từ chối
+            </button>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#475569; cursor:pointer; margin-top:2px;">
+            <input type="checkbox" id="chkCommitDb" checked />
+            <span>Tự động cập nhật bảng dữ liệu thật (<code>leave_requests</code> / <code>schedule_assignments</code>)</span>
+          </label>
+
+          <button type="button" class="secondary-button" id="btnSendRealTelegram" style="width:100%; justify-content:center; font-size:12px; margin-top:4px;">
+            <i class="ri-send-plane-fill" style="color:#229ED9;"></i> Bắn thử tin nhắn này vào Telegram thật của tôi
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderGeminiBotStudioPanel(data, profiles) {
+  const cfg = data || {};
+  const isConfigured = cfg.isConfigured;
+  const cur = geminiDemoCurrentResult;
+  const dsNhanSu = Array.isArray(profiles) ? profiles.filter((p) => p.employee_code && p.active !== false) : [];
+
+  return `<section class="panel gemini-bot-panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">AI STUDIO & AUTOMATION</p>
+        <h3>Trợ Lý AI Gemini — Điều Phối Ca Trực & Bổ Sung Công</h3>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="status-pill ${isConfigured ? 'is-success' : 'is-warning'}" style="font-size:12px;">
+          <i class="ri-${isConfigured ? 'sparkling' : 'flashlight'}-line"></i>
+          ${isConfigured ? 'AI Gemini 3.6 Flash Active' : 'Chế độ Bóc tách Tự động'}
+        </span>
+        <button type="button" class="secondary-button compact-button" id="btnToggleGeminiConfig">
+          <i class="ri-settings-4-line"></i> Cấu hình API
+        </button>
+      </div>
+    </div>
+
+    <!-- Khối hướng dẫn tóm tắt -->
+    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 16px; margin-bottom:18px; font-size:13px; line-height:1.5; color:#334155;">
+      <strong style="color:#0f172a;"><i class="ri-lightbulb-flash-line"></i> Quy trình Hoạt động Trợ lý AI (Human-in-the-Loop):</strong>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
+        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
+          <strong style="color:#2563eb;">1. Nhân viên gửi tin</strong>: Nhắn câu lệnh tự nhiên (đổi ca, quên bấm công, xin nghỉ) không cần form cứng nhắc.
+        </div>
+        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
+          <strong style="color:#0891b2;">2. Gemini AI bóc tách</strong>: Trích xuất chuẩn xác Intent, ngày giờ, ca trực, chi nhánh, kiểm tra trùng lịch.
+        </div>
+        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
+          <strong style="color:#16a34a;">3. Sếp kiểm duyệt từ xa</strong>: Xem thẻ tóm tắt trên Telegram và bấm [✅ Duyệt] để ghi nhận tự động vào Database.
+        </div>
+      </div>
+    </div>
+
+    <!-- Khối Cấu hình Gemini & Telegram (mặc định ẩn) -->
+    <div id="geminiConfigBox" style="display:none; background:#f1f5f9; border:1px solid #94a3b8; border-radius:8px; padding:16px; margin-bottom:20px;">
+      <h4 style="margin:0 0 12px 0; font-size:14px; color:#0f172a;"><i class="ri-settings-line"></i> Cài đặt Google Gemini API & Telegram Quản trị</h4>
+      <form id="geminiConfigForm" class="form-grid">
+        <div class="form-field full">
+          <label>Google Gemini API Key</label>
+          <input name="apiKey" id="geminiApiKey" type="password" value="${escapeHTML(cfg.apiKeyMasked || '')}" placeholder="Nhập API Key hoặc để trống dùng key hệ thống" />
+          <small class="subtle" style="font-size:0.75rem;">Đang sử dụng API Key Google Gemini (Được mã hóa an toàn trên hệ thống). Để trống nếu không muốn đổi.</small>
+        </div>
+        <div class="form-field">
+          <label>Mô hình AI (Model)</label>
+          <select name="model" id="geminiModel">
+            <option value="gemini-3.6-flash" ${cfg.model === 'gemini-3.6-flash' || !cfg.model ? 'selected' : ''}>gemini-3.6-flash (Mới nhất, siêu nhanh & chính xác)</option>
+            <option value="gemini-2.5-flash" ${cfg.model === 'gemini-2.5-flash' ? 'selected' : ''}>gemini-2.5-flash</option>
+            <option value="gemini-1.5-pro" ${cfg.model === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Suy luận chuyên sâu)</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Telegram Admin Chat ID (Để nhận tin duyệt thật)</label>
+          <input name="telegramChatId" id="geminiChatId" value="${escapeHTML(cfg.telegramChatId || '')}" placeholder="VD: 5412345678" />
+        </div>
+        <div class="form-field full" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button type="submit" class="primary-button" id="btnSaveGeminiConfig">
+            <i class="ri-save-line"></i> Lưu cấu hình AI
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- STUDIO 3 CỘT -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:18px; align-items:start;">
+      
+      <!-- CỘT 1: GIẢ LẬP NHÂN VIÊN GỬI YÊU CẦU -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; border-bottom:1px solid #f1f5f9; padding-bottom:8px;">
+          <span style="background:#dbeafe; color:#1d4ed8; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;">1</span>
+          <h4 style="margin:0; font-size:14px; color:#1e293b;">Nhân sự gửi yêu cầu tự nhiên</h4>
+        </div>
+
+        <form id="geminiPromptForm" style="display:flex; flex-direction:column; gap:12px;">
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Nhân sự gửi tin:</label>
+            <select id="geminiStaffSelect" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px;">
+              <option value="">— Chọn nhân viên thử nghiệm —</option>
+              ${dsNhanSu.map((p) => `<option value="${escapeHTML(p.employee_code)}" data-name="${escapeHTML(p.full_name)}" data-dept="${escapeHTML(p.department || '')}" data-branch="${escapeHTML(p.branch_id || '')}">${escapeHTML(p.full_name)} (${escapeHTML(p.employee_code)}) · ${escapeHTML(p.branch_id || 'PVC')}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:6px;">Mẫu tình huống thực tế thường gặp:</label>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <button type="button" class="secondary-button compact-button gemini-quick-chip" style="text-align:left; font-size:12px; padding:6px 10px; white-space:normal; line-height:1.4;" data-prompt="Em xin đổi ca chiều thứ 6 (26/09) ở PVC với bạn Lan Anh ca sáng do em bận lịch học đột xuất ạ">
+                🔄 <b>Đổi ca thứ 6 (26/09):</b> Chiều PVC đổi bạn Lan Anh
+              </button>
+              <button type="button" class="secondary-button compact-button gemini-quick-chip" style="text-align:left; font-size:12px; padding:6px 10px; white-space:normal; line-height:1.4;" data-prompt="Hôm qua em quên bấm check-out lúc 18h30 do hỗ trợ bác sĩ phẫu thuật gấp, xin sếp bổ sung công ca chiều ạ">
+                ⏰ <b>Quên chấm công ra:</b> 18h30 hôm qua ca chiều
+              </button>
+              <button type="button" class="secondary-button compact-button gemini-quick-chip" style="text-align:left; font-size:12px; padding:6px 10px; white-space:normal; line-height:1.4;" data-prompt="Tuần sau em xin nghỉ phép 2 ngày từ 29/09 đến 30/09 về quê có việc gia đình, em đã bàn giao việc cho bạn Thu Trang">
+                🏖️ <b>Xin nghỉ phép 2 ngày:</b> 29-30/09 việc gia đình
+              </button>
+              <button type="button" class="secondary-button compact-button gemini-quick-chip" style="text-align:left; font-size:12px; padding:6px 10px; white-space:normal; line-height:1.4;" data-prompt="Em bị sốt xuất huyết đột ngột, xin phép đổi ca trực tối hôm nay ở LVT cho bạn Minh Quân hỗ trợ">
+                🚑 <b>Đổi ca tối khẩn cấp:</b> Tối nay LVT cho Minh Quân
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Nội dung tin nhắn:</label>
+            <textarea id="geminiPromptInput" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; resize:vertical; font-family:inherit;" placeholder="Nhập câu nhắn bằng tiếng Việt tự nhiên... (VD: Em xin đổi ca chiều thứ 6 ở PVC với bạn Lan Anh...)"></textarea>
+          </div>
+
+          <button type="submit" class="primary-button" id="btnRunGeminiProcess" style="justify-content:center; padding:10px;">
+            <i class="ri-sparkling-fill"></i> Gửi Trợ lý AI Phân tích
+          </button>
+        </form>
+
+        <!-- HỘP PHẢN HỒI TỪ MÁY CHỦ CHO NHÂN SỰ TEST -->
+        <div id="geminiStaffFeedbackBox" style="margin-top:14px;">
+          ${renderStaffFeedbackBox(geminiStaffFeedback)}
+        </div>
+      </div>
+
+      <!-- CỘT 2: AI THẨM ĐỊNH & BÓC TÁCH DỮ LIỆU -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; border-bottom:1px solid #f1f5f9; padding-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="background:#e0e7ff; color:#4338ca; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;">2</span>
+            <h4 style="margin:0; font-size:14px; color:#1e293b;">Gemini AI thẩm định & trích xuất</h4>
+          </div>
+          <span id="geminiAiBadge" class="status-pill is-info" style="font-size:11px;">Chờ dữ liệu</span>
+        </div>
+
+        <div id="geminiOutputContainer">
+          ${cur ? renderAiResultBox(cur) : `
+          <div style="text-align:center; padding:40px 10px; color:#94a3b8;">
+            <i class="ri-cpu-line" style="font-size:36px; display:block; margin-bottom:8px; opacity:0.6;"></i>
+            <p style="font-size:13px; margin:0;">Chọn kịch bản bên trái hoặc nhập tin nhắn rồi bấm <b>"Gửi Trợ lý AI Phân tích"</b></p>
+          </div>
+          `}
+        </div>
+      </div>
+
+      <!-- CỘT 3: SẾP DUYỆT TỪ XA (TELEGRAM CARD) -->
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; border-bottom:1px solid #f1f5f9; padding-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="background:#dcfce7; color:#15803d; width:28px; height:28px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;">3</span>
+            <h4 style="margin:0; font-size:14px; color:#1e293b;">Sếp duyệt từ xa (Thẻ Telegram)</h4>
+          </div>
+          <span class="subtle" style="font-size:11px;">Mô phỏng Mobile App</span>
+        </div>
+
+        <div id="geminiApprovalCardContainer">
+          ${cur ? renderTelegramApprovalCard(cur) : `
+          <div style="text-align:center; padding:40px 10px; color:#94a3b8;">
+            <i class="ri-telegram-fill" style="font-size:36px; display:block; margin-bottom:8px; color:#229ED9; opacity:0.5;"></i>
+            <p style="font-size:13px; margin:0;">Thẻ tin nhắn Telegram tương tác sẽ hiển thị tại đây khi AI bóc tách xong.</p>
+          </div>
+          `}
+        </div>
+      </div>
+
+    </div>
+  </section>`;
+}
+
+function bindGeminiBotEvents() {
+  document.getElementById('btnToggleGeminiConfig')?.addEventListener('click', () => {
+    const box = document.getElementById('geminiConfigBox');
+    if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.querySelectorAll('.gemini-quick-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const prompt = btn.getAttribute('data-prompt');
+      const input = document.getElementById('geminiPromptInput');
+      if (input) {
+        input.value = prompt;
+        input.focus();
+      }
+      const staffSelect = document.getElementById('geminiStaffSelect');
+      if (staffSelect && !staffSelect.value && staffSelect.options.length > 1) {
+        staffSelect.selectedIndex = 1;
+      }
+    });
+  });
+
+  document.getElementById('geminiConfigForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btnSaveGeminiConfig');
+    const apiKey = document.getElementById('geminiApiKey')?.value?.trim();
+    const model = document.getElementById('geminiModel')?.value?.trim() || 'gemini-3.6-flash';
+    const telegramChatId = document.getElementById('geminiChatId')?.value?.trim();
+    if (btn) btn.disabled = true;
+    try {
+      await saveGeminiBotConfig({ apiKey, model, telegramChatId });
+      showToast('Đã lưu cấu hình Trợ lý Gemini thành công.');
+      store.notify();
+    } catch (err) {
+      showToast(err.message || 'Lỗi lưu cấu hình Gemini.', true);
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  document.getElementById('geminiPromptForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const staffSelect = document.getElementById('geminiStaffSelect');
+    const employeeCode = staffSelect?.value || 'NV-DEMO';
+    const employeeName = staffSelect?.selectedOptions?.[0]?.getAttribute('data-name') || 'Nhân sự thử nghiệm';
+    const text = document.getElementById('geminiPromptInput')?.value?.trim();
+    if (!text) {
+      showToast('Vui lòng nhập nội dung tin nhắn hoặc chọn mẫu nhanh.', true);
+      return;
+    }
+
+    const btn = document.getElementById('btnRunGeminiProcess');
+    const outBox = document.getElementById('geminiOutputContainer');
+    const cardBox = document.getElementById('geminiApprovalCardContainer');
+    const badge = document.getElementById('geminiAiBadge');
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang bóc tách dữ liệu…';
+    }
+    if (badge) {
+      badge.className = 'status-pill is-warning';
+      badge.textContent = 'AI Đang xử lý...';
+    }
+    if (outBox) {
+      outBox.innerHTML = '<div style="text-align:center; padding:30px 10px; color:#475569;"><i class="ri-loader-4-line ri-spin" style="font-size:30px; display:block; margin-bottom:8px; color:#2563eb;"></i><span>Gemini đang phân tích ngữ cảnh, ý định và thực thể...</span></div>';
+    }
+
+    try {
+      const res = await processGeminiBotDemo({ text, employeeCode, employeeName });
+      if (!res?.data) throw new Error(res?.message || 'Không trích xuất được kết quả.');
+      geminiDemoCurrentResult = res.data;
+
+      if (badge) {
+        badge.className = 'status-pill is-success';
+        badge.textContent = `${res.data.model} (${res.data.processingTimeMs}ms)`;
+      }
+
+      if (outBox) outBox.innerHTML = renderAiResultBox(res.data);
+      if (cardBox) cardBox.innerHTML = renderTelegramApprovalCard(res.data);
+
+      geminiStaffFeedback = {
+        ...res.data,
+        status: 'pending',
+        timeFormatted: new Intl.DateTimeFormat('vi-VN', { timeStyle: 'medium', dateStyle: 'short' }).format(new Date()),
+      };
+      const feedbackBox = document.getElementById('geminiStaffFeedbackBox');
+      if (feedbackBox) {
+        feedbackBox.innerHTML = renderStaffFeedbackBox(geminiStaffFeedback);
+      }
+
+      bindApprovalCardActions();
+      showToast('Trợ lý AI đã bóc tách dữ liệu và sẵn sàng duyệt!');
+    } catch (err) {
+      if (badge) {
+        badge.className = 'status-pill is-danger';
+        badge.textContent = 'Lỗi xử lý';
+      }
+      if (outBox) {
+        outBox.innerHTML = `<div style="background:#fef2f2; color:#b91c1c; padding:12px; border-radius:6px; font-size:13px;"><i class="ri-error-warning-line"></i> ${escapeHTML(err.message || 'Lỗi xử lý yêu cầu.')}</div>`;
+      }
+      showToast(err.message || 'Lỗi bóc tách với AI.', true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ri-sparkling-fill"></i> Gửi Trợ lý AI Phân tích';
+      }
+    }
+  });
+
+  if (geminiDemoCurrentResult) {
+    bindApprovalCardActions();
+  }
+  bindFeedbackBoxActions();
+}
+
+function bindApprovalCardActions() {
+  const statusDiv = document.getElementById('approvalCardStatus');
+  const btnApprove = document.getElementById('btnApproveRequest');
+  const btnReject = document.getElementById('btnRejectRequest');
+  const btnSendTelegram = document.getElementById('btnSendRealTelegram');
+  const chkCommitDb = document.getElementById('chkCommitDb');
+
+  btnApprove?.addEventListener('click', async () => {
+    if (!geminiDemoCurrentResult) return;
+    btnApprove.disabled = true;
+    btnReject.disabled = true;
+    btnApprove.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang duyệt…';
+
+    try {
+      let msg = 'Đã phê duyệt yêu cầu.';
+      let approvalRes = null;
+      if (chkCommitDb?.checked) {
+        approvalRes = await approveGeminiBotDemo(geminiDemoCurrentResult);
+        msg = approvalRes?.message || 'Đã phê duyệt và lưu vào hệ thống thành công.';
+      }
+      if (statusDiv) {
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = '#f0fdf4';
+        statusDiv.style.color = '#15803d';
+        statusDiv.style.border = '1px solid #bbf7d0';
+        const nowStr = new Intl.DateTimeFormat('vi-VN', { timeStyle: 'medium', dateStyle: 'short' }).format(new Date());
+        statusDiv.innerHTML = `✅ <b>ĐÃ PHÊ DUYỆT BỞI SẾP</b><br><small>Thời gian: ${nowStr} • Trạng thái: Đã cập nhật CSDL phòng khám (chấm công & thông báo)</small>`;
+      }
+
+      const feedbackData = approvalRes?.feedbackForEmployee || {
+        ...geminiDemoCurrentResult,
+        status: 'approved',
+        approver: 'Admin Sếp',
+        timeFormatted: new Intl.DateTimeFormat('vi-VN', { timeStyle: 'medium', dateStyle: 'short' }).format(new Date()),
+      };
+      geminiStaffFeedback = { ...feedbackData, status: 'approved' };
+      const feedbackBox = document.getElementById('geminiStaffFeedbackBox');
+      if (feedbackBox) {
+        feedbackBox.innerHTML = renderStaffFeedbackBox(geminiStaffFeedback);
+        bindFeedbackBoxActions();
+      }
+
+      showToast(msg);
+    } catch (err) {
+      showToast(err.message || 'Lỗi khi phê duyệt.', true);
+      btnApprove.disabled = false;
+      btnReject.disabled = false;
+      btnApprove.innerHTML = '<i class="ri-checkbox-circle-line"></i> Phê duyệt ngay';
+    }
+  });
+
+  btnReject?.addEventListener('click', async () => {
+    btnApprove.disabled = true;
+    btnReject.disabled = true;
+    if (statusDiv) {
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = '#fef2f2';
+      statusDiv.style.color = '#b91c1c';
+      statusDiv.style.border = '1px solid #fecaca';
+      const nowStr = new Intl.DateTimeFormat('vi-VN', { timeStyle: 'medium', dateStyle: 'short' }).format(new Date());
+      statusDiv.innerHTML = `❌ <b>ĐÃ TỪ CHỐI BỞI SẾP</b><br><small>Thời gian: ${nowStr} • Yêu cầu không được chấp thuận</small>`;
+    }
+
+    geminiStaffFeedback = {
+      ...geminiDemoCurrentResult,
+      status: 'rejected',
+      approver: 'Admin Sếp',
+      timeFormatted: new Intl.DateTimeFormat('vi-VN', { timeStyle: 'medium', dateStyle: 'short' }).format(new Date()),
+    };
+    const feedbackBox = document.getElementById('geminiStaffFeedbackBox');
+    if (feedbackBox) {
+      feedbackBox.innerHTML = renderStaffFeedbackBox(geminiStaffFeedback);
+    }
+
+    showToast('Đã từ chối yêu cầu.');
+  });
+
+  btnSendTelegram?.addEventListener('click', async () => {
+    if (!geminiDemoCurrentResult) return;
+    const targetChatId = document.getElementById('geminiChatId')?.value?.trim();
+    btnSendTelegram.disabled = true;
+    btnSendTelegram.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang bắn tin nhắn…';
+    try {
+      const res = await sendTelegramTestApproval(geminiDemoCurrentResult, targetChatId);
+      showToast(res?.message || 'Đã gửi thẻ duyệt sang Telegram của Sếp!');
+    } catch (err) {
+      showToast(err.message || 'Chưa gửi được sang Telegram (vui lòng kiểm tra Chat ID).', true);
+    } finally {
+      btnSendTelegram.disabled = false;
+      btnSendTelegram.innerHTML = '<i class="ri-send-plane-fill" style="color:#229ED9;"></i> Bắn thử tin nhắn này vào Telegram thật của tôi';
+    }
+  });
+}
+
+function bindFeedbackBoxActions() {
+  document.getElementById('btnGoToAttendanceTab')?.addEventListener('click', (e) => {
+    const code = e.currentTarget.getAttribute('data-emp') || '';
+    theDangMo = 'cham-cong';
+    ccSearch = code;
+    ccPage = 1;
+    store.notify();
+  });
+
+  document.getElementById('btnGoToAuditTab')?.addEventListener('click', () => {
+    theDangMo = 'audit';
+    store.notify();
+  });
+}
+
+function showSnapshotModal(title, snapshotData) {
+  let modal = document.getElementById('auditSnapshotModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'auditSnapshotModal';
+    modal.className = 'system-dialog-layer is-open';
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <button class="system-dialog-backdrop" type="button" id="closeSnapshotBackdrop"></button>
+    <section class="system-dialog-panel" style="max-width:720px; width:92%; max-height:85vh; display:flex; flex-direction:column; padding:0; overflow:hidden;">
+      <header class="system-dialog-header" style="padding:16px 20px; border-bottom:1px solid #e2e8f0;">
+        <span class="system-dialog-icon info">ℹ</span>
+        <div>
+          <p class="eyebrow">AUDIT TRAIL SNAPSHOT</p>
+          <h3 id="snapshotTitle">${escapeHTML(title)}</h3>
+        </div>
+        <button class="icon-button system-dialog-close" type="button" id="closeSnapshotBtn">×</button>
+      </header>
+      <div style="padding:16px 20px; overflow-y:auto; flex:1; background:#f8fafc;">
+        <p style="margin:0 0 10px 0; font-size:13px; color:#475569;">
+          Dữ liệu JSON lưu trữ nguyên trạng bản ghi trước khi bị xóa (bảo lưu bằng chứng kiểm toán):
+        </p>
+        <pre style="background:#0f172a; color:#38bdf8; padding:14px; border-radius:8px; font-size:12px; line-height:1.5; overflow-x:auto; margin:0; font-family:monospace; border:1px solid #1e293b;">${escapeHTML(JSON.stringify(snapshotData, null, 2))}</pre>
+      </div>
+      <footer class="system-dialog-actions" style="padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end; background:#fff;">
+        <button class="primary-button" type="button" id="closeSnapshotDone">Đóng hộp thoại</button>
+      </footer>
+    </section>
+  `;
+
+  const close = () => { modal.style.display = 'none'; };
+  modal.querySelector('#closeSnapshotBackdrop')?.addEventListener('click', close);
+  modal.querySelector('#closeSnapshotBtn')?.addEventListener('click', close);
+  modal.querySelector('#closeSnapshotDone')?.addEventListener('click', close);
+}
+
+function renderTechnicalAuditPanel(audits) {
+  const dsAudits = Array.isArray(audits) ? audits : [];
+  return `<section class="panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">AUDIT TRAIL HỆ THỐNG</p>
+        <h3>Lịch sử thay đổi và kiểm toán dữ liệu</h3>
+      </div>
+      <span class="subtle">${dsAudits.length} thao tác gần nhất · Đầy đủ Snapshot dữ liệu</span>
+    </div>
+    <div class="system-audit-list" style="display:flex; flex-direction:column; gap:12px;">
+      ${dsAudits.length ? dsAudits.map((item) => {
+        const isDeleteReq = item.action === 'delete_test_request' || item.action === 'delete_request';
+        const isAttAction = String(item.action || '').startsWith('attendance_');
+        const borderColor = isDeleteReq ? '#f87171' : isAttAction ? '#60a5fa' : '#cbd5e1';
+        const bgColor = isDeleteReq ? '#fff5f5' : '#ffffff';
+        const icon = isDeleteReq ? 'ri-delete-bin-line' : isAttAction ? 'ri-calendar-check-line' : 'ri-shield-keyhole-line';
+        const titleLabel = isDeleteReq
+          ? `🗑️ Xóa đơn lỗi/test: ${escapeHTML(item.request_summary?.request_type || item.entity)} (${escapeHTML(item.request_summary?.employee_code || item.entity_id)})`
+          : `${escapeHTML(item.action)} · ${escapeHTML(item.entity)}`;
+
+        return `<article style="border:1px solid ${borderColor}; background:${bgColor}; border-radius:8px; padding:12px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+            <div style="font-weight:700; color:${isDeleteReq ? '#b91c1c' : '#1e293b'}; font-size:14px; display:flex; align-items:center; gap:6px;">
+              <i class="${icon}"></i> ${titleLabel}
+            </div>
+            <small style="color:#64748b; font-size:12px;"><i class="ri-time-line"></i> ${formatDateTime(item.created_at)}</small>
+          </div>
+
+          <div style="font-size:13px; color:#334155; line-height:1.5; margin-bottom:8px;">
+            <div><b>Người thực hiện:</b> ${escapeHTML(item.actor_name || item.actor_employee_code || 'Quản trị viên')} <code>(${escapeHTML(item.actor_employee_code || '—')})</code> · Vai trò: <code>${escapeHTML(item.actor_role || 'admin_it')}</code></div>
+            ${item.reason ? `<div style="margin-top:4px;"><span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">Lý do: ${escapeHTML(item.reason)}</span></div>` : ''}
+          </div>
+
+          ${isDeleteReq && item.request_summary ? `
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; font-size:12px; margin-bottom:8px; line-height:1.6;">
+            <div><b>Mã đơn đã xóa:</b> <code>${escapeHTML(item.request_summary.id)}</code></div>
+            <div><b>Ngày áp dụng:</b> ${escapeHTML(item.request_summary.from_date || '—')} ${item.request_summary.to_date && item.request_summary.to_date !== item.request_summary.from_date ? '→ ' + escapeHTML(item.request_summary.to_date) : ''}</div>
+            <div><b>Lý do gốc của đơn:</b> <i>"${escapeHTML(item.request_summary.original_reason || 'Không có')}"</i></div>
+            ${item.cleaned_attendance_records?.length ? `<div style="color:#15803d; font-weight:600; margin-top:4px;"><i class="ri-checkbox-circle-fill"></i> Đã thu hồi ${item.cleaned_attendance_records.length} lượt chấm công GPS và ${item.cleaned_work_days?.length || 0} ngày công.</div>` : ''}
+          </div>
+          ` : ''}
+
+          ${(item.before || item.after) ? `
+          <div>
+            <button type="button" class="secondary-button compact-button btn-view-audit-snapshot" data-audit-snapshot="${escapeHTML(JSON.stringify(item.before || item.after || item))}" style="font-size:11px; padding:3px 10px;">
+              <i class="ri-file-code-line"></i> Xem chi tiết Snapshot (${item.before ? 'Trước xóa' : 'Dữ liệu'})
+            </button>
+          </div>
+          ` : ''}
+        </article>`;
+      }).join('') : '<p class="subtle" style="text-align:center; padding:24px 0;">Chưa có nhật ký kiểm toán nào.</p>'}
+    </div>
+  </section>`;
+}
+
+function renderDonTuPanel(requests, deletedAudits, profiles) {
+  const dsRequests = Array.isArray(requests) ? requests : [];
+  const dsDeleted = Array.isArray(deletedAudits) ? deletedAudits : [];
+  const empMap = new Map((profiles || []).map((p) => [String(p.employee_code || p.id || '').toLowerCase(), p.full_name || p.name || p.employee_code]));
+
+  const testKeywords = ['test', 'thử', 'demo', 'lỗi', 'nhầm', 'bs01', 'quên', 'sai', 'fake'];
+  const isTestRequest = (req) => {
+    const text = `${req.reason || ''} ${req.employee_code || ''} ${req.id || ''} ${req.note || ''}`.toLowerCase();
+    return testKeywords.some((kw) => text.includes(kw));
+  };
+
+  const countTest = dsRequests.filter(isTestRequest).length;
+
+  const sTerm = dtSearch.trim().toLowerCase();
+  const filtered = dsRequests.filter((req) => {
+    if (dtOnlyTest && !isTestRequest(req)) return false;
+    if (dtType && req.request_type !== dtType) return false;
+    if (dtStatus && req.status !== dtStatus) return false;
+    if (sTerm) {
+      const empName = empMap.get(String(req.employee_code || '').toLowerCase()) || '';
+      const searchable = `${req.id || ''} ${req.employee_code || ''} ${empName} ${req.reason || ''} ${req.request_type || ''}`.toLowerCase();
+      if (!searchable.includes(sTerm)) return false;
+    }
+    return true;
+  });
+
+  const dsLoaiDon = [...new Set(dsRequests.map((r) => r.request_type).filter(Boolean))].sort();
+
+  return `<section class="panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">QUẢN TRỊ DỮ LIỆU & KIỂM TOÁN</p>
+        <h3>Thu hồi & Xóa đơn lỗi / Đơn test (Admin-IT)</h3>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span class="status-pill is-info" style="font-size:12px;">
+          <i class="ri-file-list-3-line"></i> ${filtered.length}/${dsRequests.length} đơn hiện hành
+        </span>
+        ${countTest > 0 ? `
+        <span class="status-pill is-warning" style="font-size:12px; font-weight:700;">
+          <i class="ri-flask-line"></i> ${countTest} đơn Test / Nghi ngờ
+        </span>` : ''}
+        <span class="status-pill is-danger" style="font-size:12px;">
+          <i class="ri-delete-bin-line"></i> ${dsDeleted.length} đơn đã xóa & lưu nhật ký
+        </span>
+      </div>
+    </div>
+
+    <!-- Hướng dẫn an toàn & quy trình -->
+    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:12px 16px; margin-bottom:18px; font-size:13px; line-height:1.6; color:#166534;">
+      <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px; font-size:13px;">
+        <i class="ri-shield-check-line" style="font-size:16px;"></i> Quy trình an toàn tuyệt đối cho Admin-IT:
+      </div>
+      <ul style="margin:0; padding-left:18px; line-height:1.5;">
+        <li><b>Soft-Delete an toàn:</b> Đơn xóa sẽ được ẩn an toàn khỏi hệ thống nhân sự và bảng tính công, không làm đứt gãy quan hệ bảng.</li>
+        <li><b>Tự động thu hồi công:</b> Tùy chọn thu hồi ngay các lượt chấm công GPS và ngày công phát sinh từ đơn test đó.</li>
+        <li><b>Audit Trail bắt buộc:</b> Bắt buộc nhập lý do xóa tối thiểu 5 ký tự. Hệ thống tự động sao lưu toàn bộ Snapshot dữ liệu gốc và hiển thị ở phần Nhật ký bên dưới.</li>
+      </ul>
+    </div>
+
+    <!-- Bộ lọc tìm kiếm -->
+    <form id="dtFilterForm" class="system-filterbar" style="margin-bottom:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <label style="flex:1; min-width:200px;">
+        <span style="display:block; font-size:11px; font-weight:600; margin-bottom:2px; color:#475569;">Tìm kiếm</span>
+        <input type="search" id="dtSearchInput" value="${escapeHTML(dtSearch)}" placeholder="Mã đơn, mã NV, tên, lý do..." style="width:100%;" />
+      </label>
+      <label style="min-width:160px;">
+        <span style="display:block; font-size:11px; font-weight:600; margin-bottom:2px; color:#475569;">Loại đơn</span>
+        <select id="dtTypeSelect" style="width:100%;">
+          <option value="">— Tất cả loại đơn —</option>
+          ${dsLoaiDon.map((t) => `<option value="${escapeHTML(t)}"${dtType === t ? ' selected' : ''}>${escapeHTML(t)}</option>`).join('')}
+        </select>
+      </label>
+      <label style="min-width:140px;">
+        <span style="display:block; font-size:11px; font-weight:600; margin-bottom:2px; color:#475569;">Trạng thái</span>
+        <select id="dtStatusSelect" style="width:100%;">
+          <option value="">— Tất cả —</option>
+          <option value="pending"${dtStatus === 'pending' ? ' selected' : ''}>Chờ duyệt</option>
+          <option value="approved"${dtStatus === 'approved' ? ' selected' : ''}>Đã duyệt</option>
+          <option value="rejected"${dtStatus === 'rejected' ? ' selected' : ''}>Từ chối</option>
+        </select>
+      </label>
+      <div style="display:flex; gap:8px; align-items:flex-end; padding-top:16px;">
+        <button type="button" class="secondary-button ${dtOnlyTest ? 'is-active' : ''}" id="btnDtToggleTest" style="${dtOnlyTest ? 'background:#fef3c7; color:#b45309; border-color:#f59e0b; font-weight:700;' : ''}">
+          <i class="ri-flask-line"></i> ${dtOnlyTest ? 'Đang lọc: Chỉ đơn Test/Lỗi' : 'Lọc nhanh đơn Test/Lỗi'}
+        </button>
+        ${(dtSearch || dtType || dtStatus || dtOnlyTest) ? `
+        <button type="button" class="secondary-button" id="btnDtClearFilter">
+          <i class="ri-close-line"></i> Xóa lọc
+        </button>` : ''}
+      </div>
+    </form>
+
+    <!-- Bảng danh sách đơn hiện hành -->
+    <div style="margin-bottom:28px;">
+      <h4 style="margin:0 0 10px 0; font-size:14px; color:#0f172a; display:flex; align-items:center; gap:6px;">
+        <i class="ri-file-list-line" style="color:#2563eb;"></i> Danh sách đơn từ hiện hành trong hệ thống (${filtered.length})
+      </h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:120px;">Mã đơn</th>
+              <th>Nhân sự</th>
+              <th>Loại đơn</th>
+              <th>Ngày áp dụng</th>
+              <th>Lý do gửi đơn</th>
+              <th>Trạng thái</th>
+              <th style="width:130px; text-align:right;">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.length ? filtered.map((req) => {
+              const empName = empMap.get(String(req.employee_code || '').toLowerCase()) || req.employee_name || req.employee_code;
+              const isTest = isTestRequest(req);
+              const statusPill = req.status === 'approved'
+                ? '<span class="status-pill is-success" style="font-size:11px;">Đã duyệt</span>'
+                : req.status === 'rejected'
+                ? '<span class="status-pill is-danger" style="font-size:11px;">Từ chối</span>'
+                : '<span class="status-pill is-warning" style="font-size:11px;">Chờ duyệt</span>';
+
+              return `<tr style="${isTest ? 'background:#fffbeb;' : ''}">
+                <td><code style="font-size:11px; word-break:break-all;">${escapeHTML(String(req.id || '').slice(0, 16))}…</code></td>
+                <td>
+                  <strong>${escapeHTML(empName)}</strong><br>
+                  <small style="color:#64748b;">${escapeHTML(req.employee_code || '—')}</small>
+                </td>
+                <td>
+                  <span class="status-pill ${req.request_type === 'Bổ sung công' ? 'is-info' : 'neutral'}" style="font-size:11px; white-space:nowrap;">
+                    ${escapeHTML(req.request_type || 'Đơn từ')}
+                  </span>
+                </td>
+                <td style="white-space:nowrap; font-size:12px;">
+                  ${escapeHTML(req.from_date || '—')}
+                  ${req.to_date && req.to_date !== req.from_date ? `<br><small style="color:#64748b;">đến ${escapeHTML(req.to_date)}</small>` : ''}
+                </td>
+                <td style="font-size:12px; line-height:1.4; max-width:280px;">
+                  <div>${escapeHTML(req.reason || '—')}</div>
+                  ${isTest ? '<span class="status-pill is-warning" style="font-size:10px; padding:1px 5px; margin-top:3px; display:inline-block;"><i class="ri-flask-line"></i> Đơn test / nghi ngờ</span>' : ''}
+                </td>
+                <td>${statusPill}</td>
+                <td style="text-align:right;">
+                  <button type="button" class="secondary-button compact-button danger-button btn-delete-request"
+                    data-req-id="${escapeHTML(req.id)}"
+                    data-req-emp="${escapeHTML(req.employee_code || '')}"
+                    data-req-type="${escapeHTML(req.request_type || '')}"
+                    data-req-date="${escapeHTML(req.from_date || '')}"
+                    data-req-reason="${escapeHTML(req.reason || '')}"
+                    style="color:#b91c1c; border-color:#fca5a5; background:#fff1f2; font-size:11px; white-space:nowrap;">
+                    <i class="ri-delete-bin-line"></i> Xóa đơn
+                  </button>
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="7" class="empty-table-cell" style="padding:24px; text-align:center; color:#64748b;">Không có đơn từ nào khớp bộ lọc.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- KHỐI NHẬT KÝ KIỂM TOÁN CÁC ĐƠN ĐÃ XÓA (YÊU CẦU BẮT BUỘC) -->
+    <div style="border-top:2px solid #e2e8f0; padding-top:20px;">
+      <div class="section-title" style="margin-bottom:12px;">
+        <div>
+          <p class="eyebrow" style="color:#b91c1c;">LỊCH SỬ BẢO LƯU KIỂM TOÁN (AUDIT TRAIL)</p>
+          <h4 style="margin:0; font-size:15px; color:#0f172a;">Nhật ký các đơn đã xóa & thu hồi (${dsDeleted.length} bản ghi)</h4>
+        </div>
+        <span class="subtle" style="font-size:12px;">Lưu giữ vĩnh viễn trên máy chủ</span>
+      </div>
+
+      <div class="system-audit-list" style="display:flex; flex-direction:column; gap:10px;">
+        ${dsDeleted.length ? dsDeleted.map((item) => {
+          const reqSum = item.request_summary || item.before || {};
+          const actorStr = `${item.actor_name || item.actor_employee_code || 'Admin IT'} (${item.actor_employee_code || '—'} · ${item.actor_role || 'admin_it'})`;
+
+          return `<article style="border:1px solid #fecaca; background:#fffbfb; border-radius:8px; padding:12px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="status-pill is-danger" style="font-size:11px; font-weight:700;">
+                  <i class="ri-delete-bin-line"></i> ĐÃ XÓA ĐƠN
+                </span>
+                <span style="font-weight:700; color:#1e293b; font-size:13px;">
+                  ${escapeHTML(reqSum.request_type || 'Đơn')} · Mã: <code>${escapeHTML(reqSum.id || item.entity_id)}</code>
+                </span>
+              </div>
+              <small style="color:#64748b; font-size:12px;">
+                <i class="ri-time-line"></i> Xóa lúc: ${formatDateTime(item.created_at)}
+              </small>
+            </div>
+
+            <div style="font-size:13px; color:#334155; line-height:1.5; margin-bottom:8px;">
+              <div><b>Người thực hiện xóa:</b> <span style="color:#0f172a; font-weight:600;">${escapeHTML(actorStr)}</span></div>
+              <div style="margin-top:3px;">
+                <b>Lý do xóa:</b> <span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-weight:700; font-size:12px;">${escapeHTML(item.reason || '—')}</span>
+              </div>
+            </div>
+
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; font-size:12px; line-height:1.6; margin-bottom:8px;">
+              <div style="color:#475569; font-weight:600; margin-bottom:2px;">📋 Chi tiết đơn trước khi xóa:</div>
+              <div>• Nhân sự: <b>${escapeHTML(reqSum.employee_name || reqSum.employee_code || '—')}</b> (<code>${escapeHTML(reqSum.employee_code || '')}</code>)</div>
+              <div>• Ngày áp dụng: <b>${escapeHTML(reqSum.from_date || '—')}</b> ${reqSum.to_date && reqSum.to_date !== reqSum.from_date ? 'đến <b>' + escapeHTML(reqSum.to_date) + '</b>' : ''}</div>
+              <div>• Lý do gửi ban đầu: <i>"${escapeHTML(reqSum.original_reason || reqSum.reason || 'Không có')}"</i></div>
+              ${item.cleaned_attendance_records?.length ? `
+              <div style="color:#15803d; font-weight:600; margin-top:4px;">
+                <i class="ri-checkbox-circle-fill"></i> Đã thu hồi kèm theo: <b>${item.cleaned_attendance_records.length} lượt chấm công GPS</b> và <b>${item.cleaned_work_days?.length || 0} ngày công</b>.
+              </div>` : ''}
+            </div>
+
+            <div style="display:flex; justify-content:flex-end;">
+              <button type="button" class="secondary-button compact-button btn-view-audit-snapshot" data-audit-snapshot="${escapeHTML(JSON.stringify(item.before || item))}" style="font-size:11px;">
+                <i class="ri-code-box-line"></i> Xem toàn bộ Snapshot dữ liệu gốc
+              </button>
+            </div>
+          </article>`;
+        }).join('') : `<p class="subtle" style="text-align:center; padding:18px 0;">Chưa có đơn nào bị xóa trong hệ thống.</p>`}
+      </div>
+    </div>
+  </section>`;
+}
+
 export async function renderView(state) {
   /* Mỗi nguồn tự chịu lỗi của mình.
    *
@@ -906,6 +1806,17 @@ export async function renderView(state) {
   }
   if (theDangMo === 'smtp') {
     try { smtpConfigData = await getSystemSmtp(); } catch { smtpConfigData = null; }
+  }
+  if (theDangMo === 'gemini-bot') {
+    try { geminiBotConfigData = await getGeminiBotConfig(); } catch { geminiBotConfigData = null; }
+  }
+  if (theDangMo === 'don-tu') {
+    const [reqs, delAudits] = await Promise.all([
+      getSystemRequests().catch(() => []),
+      getDeletedRequestsAudit().catch(() => []),
+    ]);
+    dtRequestsData = reqs;
+    dtDeletedAuditData = delAudits;
   }
   const tkTrangThaiMap = new Map(accountStates.map((a) => [String(a.employee_code || '').toLowerCase(), a]));
   tkProfiles = profiles;
@@ -975,9 +1886,11 @@ export async function renderView(state) {
       <div class="system-log-groups" id="systemLogBody">${groupedPanels(errorLogs, errorRows, 'log')}</div>
       <details class="sync-error-details"><summary>Lỗi đồng bộ dữ liệu (${failed.length})</summary>${failed.length ? failed.map((item) => `<article><strong>${escapeHTML(item.entity_type)} · ${escapeHTML(item.entity_id || '')}</strong><span>${escapeHTML(item.last_error || 'Không có mô tả')}</span><small>${formatDateTime(item.created_at)} · thử ${item.attempts || 0} lần</small></article>`).join('') : '<p class="subtle">Không có lỗi đồng bộ.</p>'}</details>
     </section>`,
-    'audit': `<section class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT TRAIL</p><h3>Lịch sử thay đổi hệ thống</h3></div><span class="subtle">${audits.length} thao tác gần nhất</span></div><div class="system-audit-list">${audits.slice(0, 30).map((item) => `<article><strong>${escapeHTML(item.action)} · ${escapeHTML(item.entity)}</strong><span>${escapeHTML(item.entity_id || '')}</span><small>${formatDateTime(item.created_at)}</small></article>`).join('') || '<p class="subtle">Chưa có audit log.</p>'}</div></section>`,
+    'audit': renderTechnicalAuditPanel(audits),
     'thong-bao': renderNotificationPolicyPanel(notificationRulesData),
     'smtp': renderSmtpConfigPanel(smtpConfigData),
+    'gemini-bot': renderGeminiBotStudioPanel(geminiBotConfigData, profiles),
+    'don-tu': renderDonTuPanel(dtRequestsData, dtDeletedAuditData, profiles),
   };
   return `<div class="view-header"><div><p class="eyebrow">TRUNG TÂM QUẢN TRỊ</p><h3>${escapeHTML(TEN_THE[the])}</h3></div><button class="secondary-button" type="button" id="refreshSystem">↻ Làm mới dữ liệu</button></div>
     <section class="system-health-grid">${metric('Database', health.database === 'online' ? 'Đang hoạt động' : 'Có lỗi', `Kiểm tra ${formatDateTime(health.checked_at)}`)}${metric('Tài khoản hoạt động', health.active_profiles, `${health.inactive_profiles || 0} tài khoản bị khóa`)}${metric('Dữ liệu chấm công', health.attendance_records, `Lần cuối ${health.last_attendance_at ? formatDateTime(health.last_attendance_at) : 'chưa có'}`)}${metric('Đồng bộ lỗi', health.failed_sync, `${health.pending_sync || 0} đang chờ`)}${metric('Lỗi ứng dụng', errorLogs.filter((x) => !x.resolved).length, `${errorLogs.filter((x) => x.level === 'critical' && !x.resolved).length} nghiêm trọng`)}</section>
@@ -1075,6 +1988,93 @@ function bindSmtpEvents() {
   });
 }
 
+function bindDonTuEvents() {
+  document.getElementById('dtFilterForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    dtSearch = document.getElementById('dtSearchInput')?.value?.trim() || '';
+    store.notify();
+  });
+
+  document.getElementById('dtSearchInput')?.addEventListener('change', (e) => {
+    dtSearch = e.target.value.trim();
+    store.notify();
+  });
+
+  document.getElementById('dtTypeSelect')?.addEventListener('change', (e) => {
+    dtType = e.target.value;
+    store.notify();
+  });
+
+  document.getElementById('dtStatusSelect')?.addEventListener('change', (e) => {
+    dtStatus = e.target.value;
+    store.notify();
+  });
+
+  document.getElementById('btnDtToggleTest')?.addEventListener('click', () => {
+    dtOnlyTest = !dtOnlyTest;
+    store.notify();
+  });
+
+  document.getElementById('btnDtClearFilter')?.addEventListener('click', () => {
+    dtSearch = '';
+    dtType = '';
+    dtStatus = '';
+    dtOnlyTest = false;
+    store.notify();
+  });
+
+  document.querySelectorAll('.btn-delete-request').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const reqId = btn.dataset.reqId;
+      const emp = btn.dataset.reqEmp || '';
+      const type = btn.dataset.reqType || 'đơn từ';
+      const date = btn.dataset.reqDate || '';
+      const reasonOld = btn.dataset.reqReason || '';
+
+      const reason = await requestInput(
+        `XÓA ĐƠN LỖI / ĐƠN TEST KHỎI HỆ THỐNG:\n\n• Mã đơn: ${reqId}\n• Nhân viên: ${emp}\n• Loại đơn: ${type}\n• Ngày áp dụng: ${date}\n• Lý do nộp đơn: "${reasonOld}"\n\nVui lòng nhập lý do xóa để lưu lại vào Nhật ký Kiểm toán (Audit Trail):`,
+        { title: 'Xóa đơn lỗi / đơn test', label: 'Lý do xóa (bắt buộc, tối thiểu 5 ký tự)', placeholder: 'VD: Dọn dữ liệu test bot Gemini BS01...', confirmText: 'Tiếp tục', tone: 'danger' }
+      );
+
+      if (!reason || String(reason).trim().length < 5) {
+        if (reason !== null) showToast('Lý do xóa phải có ít nhất 5 ký tự.', true);
+        return;
+      }
+
+      const cleanupAtt = await confirmAction(
+        `Bạn có muốn TỰ ĐỘNG THU HỒI các lượt chấm công GPS và ngày công đã phát sinh từ đơn này của ${emp} vào ngày ${date} không?\n\n• Chọn "Có, thu hồi chấm công" để xóa đơn + thu hồi các lượt chấm công GPS phát sinh.\n• Chọn "Chỉ xóa đơn" nếu muốn giữ lại chấm công.`,
+        { title: 'Thu hồi chấm công phát sinh?', confirmText: 'Có, thu hồi chấm công', cancelText: 'Chỉ xóa đơn', tone: 'danger' }
+      );
+
+      btn.disabled = true;
+      try {
+        const res = await deleteSystemRequest({
+          requestId: reqId,
+          reason: String(reason).trim(),
+          cleanupAttendance: cleanupAtt === true,
+        });
+        showToast(res?.message || 'Đã xóa đơn và lưu nhật ký kiểm toán thành công!');
+        store.notify();
+      } catch (err) {
+        showToast(err.message || 'Lỗi khi xóa đơn.', true);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-view-audit-snapshot').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      try {
+        const snapshotStr = btn.getAttribute('data-audit-snapshot') || '{}';
+        const snapshot = JSON.parse(snapshotStr);
+        showSnapshotModal('Snapshot dữ liệu gốc bảo lưu kiểm toán', snapshot);
+      } catch {
+        showToast('Không thể đọc dữ liệu snapshot.', true);
+      }
+    });
+  });
+}
+
 export function initView() {
   document.getElementById('refreshSystem')?.addEventListener('click', () => store.notify());
   document.getElementById('announcementForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const button = event.currentTarget.querySelector('button[type="submit"]'); const data = Object.fromEntries(new FormData(event.currentTarget)); button.disabled = true; button.textContent = 'Đang phát hành…'; try { await publishSystemAnnouncement(data); showToast('Đã phát hành thông báo đến người dùng.'); event.currentTarget.reset(); store.notify(); } catch (error) { button.disabled = false; button.textContent = '🔔 Phát hành thông báo realtime'; showToast(error.message || 'Không thể phát hành thông báo.', true); } });
@@ -1083,6 +2083,8 @@ export function initView() {
   bindReminderActions();
   bindNotificationRuleActions();
   bindSmtpEvents();
+  bindGeminiBotEvents();
+  bindDonTuEvents();
   document.querySelectorAll('[data-the]').forEach((b) => b.addEventListener('click', () => {
     theDangMo = b.dataset.the;
     store.notify();

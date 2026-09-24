@@ -279,3 +279,70 @@ export async function deleteUserAccount(userId, employeeCode) {
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
 }
+
+export async function getGeminiBotConfig() {
+  return dataClient.request('/api/v2/telegram/gemini/config');
+}
+
+export async function saveGeminiBotConfig(config) {
+  return dataClient.request('/api/v2/telegram/gemini/config', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function processGeminiBotDemo(payload) {
+  return dataClient.request('/api/v2/telegram/gemini/process', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function approveGeminiBotDemo(payload) {
+  return dataClient.request('/api/v2/telegram/gemini/approve', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function sendTelegramTestApproval(payload, targetChatId) {
+  return dataClient.request('/api/v2/telegram/gemini/send-telegram-card', {
+    method: 'POST',
+    body: JSON.stringify({ payload, targetChatId }),
+  });
+}
+
+export async function deleteSystemRequest({ requestId, reason, cleanupAttendance = true }) {
+  const { data, error } = await dataClient.rpc('system_delete_request', {
+    p_request_id: requestId,
+    p_reason: reason,
+    p_cleanup_attendance: Boolean(cleanupAttendance),
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}
+
+export async function getSystemRequests() {
+  const { data, error } = await dataClient
+    .from('leave_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getDeletedRequestsAudit() {
+  try {
+    const { data, error } = await dataClient
+      .from('audit_logs')
+      .select('*')
+      .eq('action', 'delete_test_request')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (!error && Array.isArray(data)) return data;
+  } catch {}
+  const all = await getTechnicalAudit().catch(() => []);
+  return all.filter((a) => a.action === 'delete_test_request');
+}
+

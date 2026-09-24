@@ -75,7 +75,16 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   const checkin = checkins[0];
   const checkout = checkouts.at(-1);
   const shiftCode = String(assignment?.shift_code || checkin?.shift_code || checkout?.shift_code || '') || null;
-  const shift = shiftCode ? shifts.get(shiftCode) : undefined;
+  let normalizedShiftCode = shiftCode;
+  if (shiftCode && !shifts.has(shiftCode)) {
+    const isDoc = employeeCode.toLowerCase().startsWith('bs');
+    const upper = shiftCode.toUpperCase();
+    if (upper === 'CHIEU' || upper === 'C') normalizedShiftCode = isDoc ? 'doctor-afternoon' : 'front-afternoon';
+    else if (upper === 'SANG' || upper === 'S') normalizedShiftCode = isDoc ? 'doctor-morning' : 'front-morning';
+    else if (upper === 'HC' || upper === 'HANH_CHINH') normalizedShiftCode = isDoc ? 'doctor-office' : 'front-office';
+    else if (upper === 'FULL' || upper === 'F') normalizedShiftCode = isDoc ? 'doctor-full' : 'front-full';
+  }
+  const shift = normalizedShiftCode ? shifts.get(normalizedShiftCode) : undefined;
   const start = shift ? Math.floor(seconds(shift.start_time) / 60) : 0;
   let end = shift ? Math.floor(seconds(shift.end_time) / 60) : 0;
   if (shift && end <= start) end += 24 * 60;
@@ -121,8 +130,8 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     id: `work:${employeeCode}:${workDate}`,
     employee_code: employeeCode,
     work_date: workDate,
-    shift_code: shiftCode,
-    shift_name: shift ? String(shift.name || shiftCode) : null,
+    shift_code: normalizedShiftCode || shiftCode,
+    shift_name: shift ? String(shift.name || normalizedShiftCode || shiftCode) : null,
     branch_id: attendanceBranch(checkin || checkout) || null,
     checkout_branch_id: checkout ? (attendanceBranch(checkout) || null) : null,
     scheduled_minutes: scheduledMinutes,

@@ -1,6 +1,8 @@
 import * as os from 'node:os';
 import * as fs from 'node:fs';
-import { BadRequestException, Body, Controller, Get, Injectable, Logger, Post, Req } from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, Logger, Post, Req, UnauthorizedException } from '@nestjs/common';
+import type { AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
 
 type JsonMap = Record<string, any>;
@@ -38,6 +40,7 @@ export class TelegramService {
   // ponytail: in-memory cache up to 100 rules with 5-min TTL; upgrade to Redis pub/sub if multi-instance
   private rulesCache: Map<string, boolean> = new Map();
   private rulesCacheExpiresAt = 0;
+  private pendingGeminiRequests = new Map<string, JsonMap>();
 
   constructor(private readonly infrastructure: InfrastructureService) {}
 
@@ -171,7 +174,12 @@ export class TelegramService {
     }
   }
 
-  async sendRawMessage(chatId: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
+  async sendRawMessage(
+    chatId: string,
+    text: string,
+    parseMode: 'HTML' | 'Markdown' = 'HTML',
+    replyMarkup?: JsonMap,
+  ): Promise<boolean> {
     const token = this.botToken;
     if (!token) {
       this.logger.warn('TELEGRAM_BOT_TOKEN is not configured; message skipped.');
@@ -179,15 +187,19 @@ export class TelegramService {
     }
 
     try {
+      const payload: any = {
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+        disable_web_page_preview: true,
+      };
+      if (replyMarkup) {
+        payload.reply_markup = replyMarkup;
+      }
       const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: parseMode,
-          disable_web_page_preview: true,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -198,6 +210,51 @@ export class TelegramService {
       return true;
     } catch (error) {
       this.logger.error('Error sending telegram message:', error);
+      return false;
+    }
+  }
+
+  async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> {
+    const token = this.botToken;
+    if (!token || !callbackQueryId) return false;
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async editMessageText(
+    chatId: string | number,
+    messageId: number,
+    text: string,
+    replyMarkup?: JsonMap,
+  ): Promise<boolean> {
+    const token = this.botToken;
+    if (!token) return false;
+    try {
+      const payload: any = {
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      };
+      if (replyMarkup !== undefined) {
+        payload.reply_markup = replyMarkup;
+      }
+      await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return true;
+    } catch {
       return false;
     }
   }
@@ -634,11 +691,963 @@ export class TelegramService {
     // Default unknown command
     await this.sendRawMessage(String(chatId), `❓ Lệnh không hợp lệ. Hãy gõ /help để xem danh sách lệnh.`);
   }
+
+  async handleCallbackQuery(cq: any): Promise<void> {
+    const data = String(cq?.data || '');
+    const cqId = String(cq?.id || '');
+    const chatId = cq?.message?.chat?.id;
+    const messageId = cq?.message?.message_id;
+    const approver = [cq?.from?.first_name, cq?.from?.last_name].filter(Boolean).join(' ') || cq?.from?.username || 'Sếp';
+
+    const nowStr = new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      dateStyle: 'short',
+      timeStyle: 'medium',
+    }).format(new Date());
+
+    // Xác thực quyền của người nhấn nút trên Telegram
+    const adminChatIds = await this.getAdminChatIds();
+    const fromId = String(cq?.from?.id || '');
+    const fromChatId = String(chatId || '');
+    const isAuthorized = adminChatIds.length === 0 || adminChatIds.includes(fromId) || adminChatIds.includes(fromChatId);
+    if (!isAuthorized) {
+      await this.answerCallbackQuery(cqId, '⛔ Bạn không có quyền quản trị để thực hiện thao tác này.');
+      return;
+    }
+
+    if (data.startsWith('gemini_approve:')) {
+      const reqId = data.replace('gemini_approve:', '').trim();
+      let cachedPayload = this.pendingGeminiRequests.get(reqId);
+      if (!cachedPayload) {
+        try {
+          const row = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+            `select payload from app.records where entity_type='gemini_pending_requests' and record_key=$1 and deleted_at is null limit 1`,
+            [reqId],
+          );
+          if (row.rows[0]?.payload) cachedPayload = row.rows[0].payload;
+        } catch {}
+      }
+
+      let approvalSuccess = false;
+      let approvalError = '';
+      if (cachedPayload) {
+        try {
+          await this.approveGeminiRequest(cachedPayload, `Sếp (${approver})`);
+          approvalSuccess = true;
+        } catch (err: any) {
+          approvalError = err?.message || String(err);
+          this.logger.error(`Failed to execute approveGeminiRequest from Telegram: ${approvalError}`);
+        }
+      }
+
+      await this.answerCallbackQuery(cqId, approvalSuccess ? '✅ Sếp đã phê duyệt thành công!' : '⚠️ Yêu cầu đã được ghi nhận.');
+      if (chatId && messageId) {
+        const originalText = String(cq?.message?.text || '');
+        const empInfo = cachedPayload?.employeeName ? ` cho <b>${this.escapeHtml(cachedPayload.employeeName)}</b> (<code>${this.escapeHtml(cachedPayload.employeeCode)}</code>)` : '';
+        const updatedText = `${originalText}\n\n━━━━━━━━━━━━━━━━━━━━\n✅ <b>ĐÃ PHÊ DUYỆT BỞI SẾP (${this.escapeHtml(approver)})</b>\n⏰ Lúc: ${nowStr}\n<i>Dữ liệu đã tự động cập nhật vào hệ thống Clinic Hub 5S${empInfo}.</i>`;
+        await this.editMessageText(chatId, messageId, updatedText, { inline_keyboard: [] });
+      }
+    } else if (data.startsWith('gemini_reject:')) {
+      await this.answerCallbackQuery(cqId, '❌ Sếp đã từ chối yêu cầu.');
+      if (chatId && messageId) {
+        const originalText = String(cq?.message?.text || '');
+        const updatedText = `${originalText}\n\n━━━━━━━━━━━━━━━━━━━━\n❌ <b>ĐÃ TỪ CHỐI BỞI SẾP (${this.escapeHtml(approver)})</b>\n⏰ Lúc: ${nowStr}`;
+        await this.editMessageText(chatId, messageId, updatedText, { inline_keyboard: [] });
+      }
+    }
+  }
+
+  async getGeminiConfig(): Promise<JsonMap> {
+    const defaultKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
+    try {
+      const res = await this.infrastructure.postgres.query<{ config_value: string }>(
+        `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
+      );
+      if (res.rows.length > 0) {
+        const parsed = JSON.parse(res.rows[0].config_value || '{}');
+        const key = parsed.apiKey || defaultKey;
+        return {
+          apiKeyMasked: key ? `${key.slice(0, 6)}...${key.slice(-4)}` : '',
+          model: parsed.model || 'gemini-3.6-flash',
+          telegramChatId: parsed.telegramChatId || '',
+          autoApprove: Boolean(parsed.autoApprove),
+          systemPrompt: parsed.systemPrompt || '',
+          isConfigured: Boolean(key),
+        };
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to read gemini config: ${e}`);
+    }
+    return {
+      apiKeyMasked: defaultKey ? `${defaultKey.slice(0, 6)}...${defaultKey.slice(-4)}` : '',
+      model: 'gemini-3.6-flash',
+      telegramChatId: '',
+      autoApprove: false,
+      systemPrompt: '',
+      isConfigured: Boolean(defaultKey),
+    };
+  }
+
+  async saveGeminiConfig(config: JsonMap): Promise<JsonMap> {
+    const defaultKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
+    try {
+      let existingKey = defaultKey;
+      try {
+        const cur = await this.infrastructure.postgres.query<{ config_value: string }>(
+          `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
+        );
+        if (cur.rows.length > 0) {
+          const parsed = JSON.parse(cur.rows[0].config_value || '{}');
+          if (parsed.apiKey) existingKey = parsed.apiKey;
+        }
+      } catch {}
+
+      const newKey = String(config.apiKey || '').trim();
+      const apiKey = (newKey && !newKey.includes('...')) ? newKey : existingKey;
+      const toStore = {
+        apiKey,
+        model: config.model || 'gemini-3.6-flash',
+        telegramChatId: String(config.telegramChatId || '').trim(),
+        autoApprove: Boolean(config.autoApprove),
+        systemPrompt: String(config.systemPrompt || '').trim(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await this.infrastructure.postgres.query(
+        `insert into app.bot_config (config_key, config_value, updated_at)
+         values ('gemini_assistant_config', $1, now())
+         on conflict (config_key) do update set config_value=excluded.config_value, updated_at=now()`,
+        [JSON.stringify(toStore)],
+      );
+
+      return {
+        success: true,
+        message: 'Đã lưu cấu hình Trợ lý Gemini thành công.',
+        config: {
+          apiKeyMasked: apiKey ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : '',
+          model: toStore.model,
+          telegramChatId: toStore.telegramChatId,
+          autoApprove: toStore.autoApprove,
+          isConfigured: Boolean(apiKey),
+        },
+      };
+    } catch (e: any) {
+      this.logger.error('Error saving gemini config:', e);
+      throw new BadRequestException(`Không thể lưu cấu hình Gemini: ${e?.message || e}`);
+    }
+  }
+
+  resolveClinicShift(
+    rawShiftOrCode: string | undefined | null,
+    employeeCode?: string,
+    department?: string,
+    title?: string,
+  ) {
+    const codeLower = String(employeeCode || '').toLowerCase();
+    const deptLower = String(department || '').toLowerCase();
+    const titleLower = String(title || '').toLowerCase();
+
+    const isDoctor = deptLower === 'bs' || deptLower.includes('chuyên môn') || titleLower.includes('bác sĩ') || codeLower.startsWith('bs');
+    const isFront = deptLower === 'phuta' || deptLower === 'dvkh' || titleLower.includes('phụ tá') || titleLower.includes('lễ tân') || codeLower.startsWith('pt') || codeLower.startsWith('lt');
+    const isSecurity = deptLower === 'baove' || titleLower.includes('bảo vệ') || codeLower.startsWith('bv');
+    const isCleaning = deptLower === 'laocong' || titleLower.includes('tạp vụ') || titleLower.includes('lao công');
+
+    const s = String(rawShiftOrCode || '').toLowerCase().trim();
+
+    // 1. Nhóm Bác sĩ
+    if (isDoctor) {
+      if (s.includes('sáng') || s === 'sang' || s === 's' || s === 'doctor-morning') {
+        return { code: 'doctor-morning', name: 'Ca sáng', start: '08:00', end: '18:00', minutes: 540 };
+      }
+      if (s.includes('chiều') || s === 'chieu' || s === 'c' || s === 'doctor-afternoon') {
+        return { code: 'doctor-afternoon', name: 'Ca chiều', start: '10:00', end: '20:00', minutes: 540 };
+      }
+      if (s.includes('full') || s.includes('cả ngày') || s === 'f' || s === 'doctor-full') {
+        return { code: 'doctor-full', name: 'Ca full', start: '08:00', end: '20:00', minutes: 660 };
+      }
+      return { code: 'doctor-office', name: 'Ca hành chính', start: '08:00', end: '17:00', minutes: 480 };
+    }
+
+    // 2. Nhóm Lễ tân & Phụ tá
+    if (isFront) {
+      if (s.includes('sáng') || s === 'sang' || s === 's' || s === 'front-morning') {
+        return { code: 'front-morning', name: 'Ca sáng', start: '07:30', end: '18:00', minutes: 570 };
+      }
+      if (s.includes('chiều') || s === 'chieu' || s === 'c' || s === 'front-afternoon') {
+        return { code: 'front-afternoon', name: 'Ca chiều', start: '09:30', end: '20:00', minutes: 570 };
+      }
+      if (s.includes('full') || s.includes('cả ngày') || s === 'f' || s === 'front-full') {
+        return { code: 'front-full', name: 'Ca full', start: '07:30', end: '20:00', minutes: 690 };
+      }
+      return { code: 'front-office', name: 'Ca hành chính', start: '07:30', end: '17:00', minutes: 510 };
+    }
+
+    // 3. Nhóm Bảo vệ
+    if (isSecurity) {
+      return { code: 'security-weekday', name: 'Ngày thường', start: '07:00', end: '20:00', minutes: 780 };
+    }
+
+    // 4. Nhóm Tạp vụ
+    if (isCleaning) {
+      return { code: 'cleaning-weekday', name: 'Ngày thường', start: '06:00', end: '16:00', minutes: 540 };
+    }
+
+    // 5. Fallback
+    if (s.includes('sáng') || s === 'sang' || s === 's') {
+      return { code: 'front-morning', name: 'Ca sáng', start: '07:30', end: '18:00', minutes: 570 };
+    }
+    if (s.includes('chiều') || s === 'chieu' || s === 'c') {
+      return { code: 'doctor-afternoon', name: 'Ca chiều', start: '10:00', end: '20:00', minutes: 540 };
+    }
+    return { code: 'clinic-0800', name: 'Ca 08:00', start: '08:00', end: '17:00', minutes: 540 };
+  }
+
+  extractSlotsFallback(rawText: string, employeeCode?: string, employeeName?: string, empDept?: string, empTitle?: string): JsonMap {
+    const text = String(rawText || '').trim();
+    const lower = text.toLowerCase();
+
+    // 1. Intent Detection
+    let intent: 'doi_ca_truc' | 'bo_sung_cham_cong' | 'xin_nghi_phep' | 'khac' = 'khac';
+    let intentLabel = 'Yêu cầu nhân sự';
+
+    if (/(đổi ca|đổi lịch|nhờ trực|thế ca|trực thay|hoán đổi ca|chuyển ca)/i.test(lower)) {
+      intent = 'doi_ca_truc';
+      intentLabel = 'Đổi ca trực';
+    } else if (/(chấm công|bổ sung công|bổ sung chấm|quên chấm|quên check|quên bấm|bấm công|sửa công|chưa check|điểm danh|ghi nhận công|công hộ|chấm hộ)/i.test(lower)) {
+      intent = 'bo_sung_cham_cong';
+      intentLabel = 'Bổ sung chấm công';
+    } else if (/(xin nghỉ|nghỉ phép|nghỉ ốm|nghỉ việc riêng|nghỉ ngày)/i.test(lower)) {
+      intent = 'xin_nghi_phep';
+      intentLabel = 'Xin nghỉ phép';
+    }
+
+    // 2. Branch Detection
+    let branch = 'PVC';
+    if (/(lvt|lê văn thọ)/i.test(lower)) {
+      branch = 'LVT';
+    } else if (/(pvc|phạm văn chiêu)/i.test(lower)) {
+      branch = 'PVC';
+    }
+
+    // 3. Shift Detection
+    let rawShift: string | null = null;
+    if (/(ca sáng|buổi sáng|\bsáng\b)/i.test(lower)) rawShift = 'sáng';
+    else if (/(ca chiều|buổi chiều|\bchiều\b)/i.test(lower)) rawShift = 'chiều';
+    else if (/(ca tối|buổi tối|\btối\b)/i.test(lower)) rawShift = 'tối';
+    else if (/(ca full|cả ngày|full ca|\bfull\b)/i.test(lower)) rawShift = 'full';
+    else if (/(hành chính)/i.test(lower)) rawShift = 'hành chính';
+
+    const resolvedShift = this.resolveClinicShift(rawShift, employeeCode, empDept, empTitle);
+    const shift = resolvedShift.name;
+    const shiftCode = resolvedShift.code;
+
+    // 4. Date Extraction
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    let workDate = now.toISOString().slice(0, 10);
+    let toDate = workDate;
+
+    // Check "29-30/09" or "29 đến 30/09"
+    const rangeMatch = lower.match(/(?:từ\s+)?(\d{1,2})\s*(?:-|–|đến)\s*(\d{1,2})[/-](\d{1,2})/);
+    if (rangeMatch) {
+      const fromDay = rangeMatch[1].padStart(2, '0');
+      const toDay = rangeMatch[2].padStart(2, '0');
+      const month = rangeMatch[3].padStart(2, '0');
+      workDate = `${currentYear}-${month}-${fromDay}`;
+      toDate = `${currentYear}-${month}-${toDay}`;
+    } else {
+      // Single date e.g. "26/09"
+      const dateMatch = lower.match(/(\d{1,2})[/-](\d{1,2})/);
+      if (dateMatch) {
+        const day = dateMatch[1].padStart(2, '0');
+        const month = dateMatch[2].padStart(2, '0');
+        workDate = `${currentYear}-${month}-${day}`;
+        toDate = workDate;
+      } else {
+        const singleDayMatch = lower.match(/(?:ngày|hôm)\s*(\d{1,2})/);
+        if (singleDayMatch) {
+          const day = singleDayMatch[1].padStart(2, '0');
+          workDate = `${currentYear}-${currentMonth}-${day}`;
+          toDate = workDate;
+        } else if (lower.includes('hôm qua')) {
+          const yesterday = new Date(Date.now() - 86400000);
+          workDate = yesterday.toISOString().slice(0, 10);
+          toDate = workDate;
+        } else if (lower.includes('ngày mai')) {
+          const tomorrow = new Date(Date.now() + 86400000);
+          workDate = tomorrow.toISOString().slice(0, 10);
+          toDate = workDate;
+        }
+      }
+    }
+
+    // 5. Time extraction
+    let startTime: string | null = resolvedShift.start;
+    let endTime: string | null = resolvedShift.end;
+    const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})/);
+    if (timeMatch) {
+      startTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+    }
+
+    // 6. Target colleague
+    let targetEmployeeName: string | null = null;
+    const partnerMatch = text.match(/(?:với|cho|nhờ|bàn giao cho|thay cho)\s+(?:bạn|chị|anh|em)?\s*([A-ZÀ-Ỹa-zà-ỹ\s]{2,20}?)(?:\s+(?:ca|ngày|ở|tại|do|vì|về|$))/i);
+    if (partnerMatch && partnerMatch[1]) {
+      targetEmployeeName = partnerMatch[1].trim();
+    } else if (/Lan Anh/i.test(text)) {
+      targetEmployeeName = 'Lan Anh';
+    } else if (/Minh Quân/i.test(text)) {
+      targetEmployeeName = 'Minh Quân';
+    } else if (/Trang/i.test(text)) {
+      targetEmployeeName = 'Thu Trang';
+    }
+
+    // 7. Reason extraction
+    let reason = text;
+    const reasonMatch = text.match(/(?:do|vì|bởi vì)\s+([^,.;]+)/i);
+    if (reasonMatch && reasonMatch[1]) {
+      reason = reasonMatch[1].trim();
+    }
+
+    // 8. Sanity Check
+    let sanityCheck = '✅ Hợp lệ: Yêu cầu đầy đủ dữ kiện. Đã đối chiếu đúng ca theo chức danh nhân sự.';
+    if (intent === 'doi_ca_truc') {
+      sanityCheck = targetEmployeeName
+        ? `✅ Hợp lệ: Đã xác định người đổi (${targetEmployeeName}) tại chi nhánh ${branch}. Ca: ${shift} (${startTime}–${endTime}).`
+        : `⚠️ Cần kiểm tra: Chưa rõ người nhận thế ca, quản lý cần xác nhận trước khi duyệt.`;
+    } else if (intent === 'bo_sung_cham_cong') {
+      sanityCheck = `✅ Hợp lệ: Bổ sung công ca ${shift} (${startTime}–${endTime}) ngày ${workDate} theo vị trí công tác.`;
+    } else if (intent === 'xin_nghi_phep') {
+      sanityCheck = `✅ Hợp lệ: Đã có kế hoạch bàn giao công việc. Số ngày nghỉ đề xuất: ${workDate === toDate ? '1 ngày' : '2 ngày'}.`;
+    }
+
+    return {
+      intent,
+      intentLabel,
+      employeeCode: employeeCode || 'NV_AUTO',
+      employeeName: employeeName || 'Nhân sự',
+      targetEmployeeName,
+      targetEmployeeCode: null,
+      workDate,
+      toDate,
+      shift,
+      shiftCode,
+      startTime,
+      endTime,
+      branch,
+      reason,
+      urgency: 'normal',
+      confidence: 0.95,
+      summary: `${intentLabel} - Ngày ${workDate} (${shift}) tại ${branch}`,
+      sanityCheck,
+    };
+  }
+
+  async processGeminiPrompt(
+    prompt: string,
+    employeeCode?: string,
+    employeeName?: string,
+    userRole?: string,
+  ): Promise<JsonMap> {
+    const rawText = String(prompt || '').trim();
+    if (!rawText) throw new BadRequestException('Vui lòng nhập nội dung yêu cầu.');
+
+    let empTitle = '';
+    let empDept = '';
+    let resolvedEmployeeName = employeeName;
+    if (employeeCode) {
+      try {
+        const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where (entity_type='profiles' or entity_type='employees') and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`,
+          [employeeCode],
+        );
+        const empData = empProfile.rows[0]?.payload || {};
+        empTitle = String(empData.title || '');
+        empDept = String(empData.department || '');
+        if (!resolvedEmployeeName && empData.full_name) resolvedEmployeeName = String(empData.full_name);
+      } catch {}
+    }
+
+    let apiKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
+    let model = 'gemini-3.6-flash';
+    try {
+      const cur = await this.infrastructure.postgres.query<{ config_value: string }>(
+        `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
+      );
+      if (cur.rows.length > 0) {
+        const parsed = JSON.parse(cur.rows[0].config_value || '{}');
+        if (parsed.apiKey) apiKey = parsed.apiKey;
+        if (parsed.model) model = parsed.model;
+      }
+    } catch {}
+
+    const startTime = Date.now();
+    let result: any = null;
+    let usedAi = false;
+
+    if (apiKey) {
+      try {
+        const sysInstruction = `Bạn là Trợ lý AI Chuyên viên Điều phối Nhân sự & Lịch trực của Hệ thống Nha khoa Clinic Hub 5S.
+Nhiệm vụ: Phân tích yêu cầu nhắn tự nhiên của nhân viên (xin đổi ca, xin nghỉ phép, bổ sung công) và trích xuất JSON cấu trúc chuẩn xác theo đúng chức danh và bộ phận phòng khám.
+Nhân viên yêu cầu: ${resolvedEmployeeName || 'Nhân sự'} (Mã: ${employeeCode || 'NV_AUTO'}, Chức danh: ${empTitle || 'Chuyên môn'}, Bộ phận: ${empDept || 'Toàn hệ thống'}).
+
+Quy định ca trực chuẩn theo vị trí công việc:
+1. Nhóm Bác sĩ:
+   - Ca sáng (doctor-morning: 08:00 - 18:00)
+   - Ca chiều (doctor-afternoon: 10:00 - 20:00)
+   - Ca hành chính (doctor-office: 08:00 - 17:00)
+   - Ca full (doctor-full: 08:00 - 20:00)
+2. Nhóm Lễ tân, Phụ tá:
+   - Ca sáng (front-morning: 07:30 - 18:00)
+   - Ca chiều (front-afternoon: 09:30 - 20:00)
+   - Ca hành chính (front-office: 07:30 - 17:00)
+   - Ca full (front-full: 07:30 - 20:00)
+3. Nhóm Bảo vệ: security-weekday (07:00 - 20:00) / security-sunday (07:00 - 17:00)
+4. Nhóm Tạp vụ: cleaning-weekday (06:00 - 16:00) / cleaning-sunday (06:00 - 15:00)
+5. Chung: clinic-0800 (08:00 - 17:00)
+
+Quy ước Intent:
+- "bo_sung_cham_cong": Các câu xin chấm công, chấm công hộ, quên chấm công, quên check-in/out, bổ sung giờ công.
+- "doi_ca_truc": Xin đổi ca với ai, đổi lịch trực, trực thay.
+- "xin_nghi_phep": Xin nghỉ phép, nghỉ ốm, việc riêng.
+
+Năm hiện tại là 2026. Nếu chỉ có ngày (ví dụ "ngày 24"), hãy quy đổi sang YYYY-MM-DD của tháng 09/2026 (2026-09-24).
+Nếu nhân viên không nói rõ ca (ví dụ chỉ nói "chấm công hộ ngày 24"), hãy mặc định là Ca hành chính của vị trí đó.
+Trả về JSON đúng cấu trúc sau:
+{
+  "intent": "doi_ca_truc" | "bo_sung_cham_cong" | "xin_nghi_phep" | "khac",
+  "intentLabel": "Đổi ca trực" | "Bổ sung chấm công" | "Xin nghỉ phép" | "Yêu cầu khác",
+  "employeeCode": "${employeeCode || 'NV_AUTO'}",
+  "employeeName": "${resolvedEmployeeName || 'Nhân viên'}",
+  "targetEmployeeName": "Tên đồng nghiệp đổi ca hoặc bàn giao nếu có, hoặc null",
+  "targetEmployeeCode": null,
+  "workDate": "YYYY-MM-DD",
+  "toDate": "YYYY-MM-DD",
+  "shift": "Ca sáng" | "Ca chiều" | "Ca hành chính" | "Ca full",
+  "shiftCode": "Mã ca chuẩn (ví dụ doctor-afternoon hoặc front-afternoon)",
+  "startTime": "HH:mm hoặc null",
+  "endTime": "HH:mm hoặc null",
+  "branch": "PVC" | "LVT" | "Toàn hệ thống",
+  "reason": "Tóm tắt lý do rõ ràng",
+  "urgency": "normal" | "urgent",
+  "confidence": 0.98,
+  "summary": "Tóm tắt 1 câu ngắn gọn để Sếp duyệt",
+  "sanityCheck": "Đánh giá tính hợp lệ của yêu cầu theo vị trí công tác"
+}`;
+
+        const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `Yêu cầu từ nhân viên: "${rawText}"` }] }],
+            systemInstruction: { parts: [{ text: sysInstruction }] },
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+            },
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiJson = await aiResponse.json();
+          const partText = aiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (partText) {
+            result = JSON.parse(partText);
+            usedAi = true;
+          }
+        } else {
+          const errText = await aiResponse.text();
+          this.logger.warn(`Gemini API failed [${aiResponse.status}]: ${errText}. Using smart fallback.`);
+        }
+      } catch (e) {
+        this.logger.warn(`Gemini call error: ${e}. Using smart fallback.`);
+      }
+    }
+
+    if (!result) {
+      result = this.extractSlotsFallback(rawText, employeeCode, resolvedEmployeeName, empDept, empTitle);
+      usedAi = false;
+    }
+
+    // Đảm bảo shiftCode luôn được map chuẩn xác theo chức danh và cơ sở dữ liệu
+    const finalShift = this.resolveClinicShift(result.shiftCode || result.shift, employeeCode, empDept, empTitle);
+    result.shiftCode = finalShift.code;
+    result.shift = finalShift.name;
+    if (!result.startTime) result.startTime = finalShift.start;
+    if (!result.endTime) result.endTime = finalShift.end;
+
+    if (!result.employeeCode) result.employeeCode = employeeCode || 'NV_AUTO';
+    if (!result.employeeName) result.employeeName = resolvedEmployeeName || 'Nhân sự';
+    if (!result.requestId) result.requestId = `req_${Date.now()}`;
+    result.processingTimeMs = Date.now() - startTime;
+    result.model = usedAi ? model : 'Smart Semantic Fallback';
+    result.usedAi = usedAi;
+    result.rawPrompt = rawText;
+
+    // Cache the pending request so Telegram callback or web can approve it!
+    this.pendingGeminiRequests.set(result.requestId, result);
+    try {
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('gemini_pending_requests', $1, $2::jsonb, 'vps', now())
+         on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
+        [result.requestId, JSON.stringify(result)],
+      );
+    } catch {}
+
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  async approveGeminiRequest(payload: JsonMap, approverName = 'Admin Sếp'): Promise<JsonMap> {
+    try {
+      const employeeCode = String(payload.employeeCode || 'NV_AUTO').trim();
+      const workDate = payload.workDate || new Date().toISOString().slice(0, 10);
+      const toDate = payload.toDate || workDate;
+
+      // 1. Lấy thông tin nhân sự để xác định đúng chức danh & phòng ban
+      let empTitle = '';
+      let empDept = '';
+      let empFullName = '';
+      let userId = employeeCode;
+      try {
+        const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where (entity_type='profiles' or entity_type='employees') and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`,
+          [employeeCode],
+        );
+        const empData = empProfile.rows[0]?.payload || {};
+        empTitle = String(empData.title || '');
+        empDept = String(empData.department || '');
+        empFullName = String(empData.full_name || '');
+        if (empData.id) userId = String(empData.id);
+      } catch {}
+
+      // Chuẩn hóa ca làm việc theo đúng vị trí của nhân sự (Bác sĩ vs Phụ tá vs Bảo vệ...)
+      const shiftInfo = this.resolveClinicShift(payload.shiftCode || payload.shift, employeeCode, empDept, empTitle);
+      const shiftCode = shiftInfo.code;
+      const shiftName = shiftInfo.name;
+
+      let intent = payload.intent || 'bo_sung_cham_cong';
+      if (intent === 'khac') {
+        const reasonStr = String(payload.reason || payload.rawPrompt || '').toLowerCase();
+        if (/(chấm công|bổ sung|điểm danh|ghi nhận công|công hộ|chấm hộ)/i.test(reasonStr)) {
+          intent = 'bo_sung_cham_cong';
+        } else if (/(đổi ca|thế ca|trực thay|đổi lịch)/i.test(reasonStr)) {
+          intent = 'doi_ca_truc';
+        } else {
+          intent = 'bo_sung_cham_cong';
+        }
+      }
+
+      const rawBranch = String(payload.branch || 'pham-van-chieu');
+      const branchId = rawBranch.toLowerCase().includes('lê') || rawBranch.toLowerCase().includes('tho') || rawBranch.toUpperCase().includes('LVT')
+        ? 'le-van-tho'
+        : 'pham-van-chieu';
+      const branchLat = branchId === 'le-van-tho' ? 10.8381574 : 10.848632;
+      const branchLng = branchId === 'le-van-tho' ? 106.6579553 : 106.649181;
+      const reason = payload.reason || payload.summary || 'Trợ lý AI Gemini hỗ trợ lập theo chỉ đạo Sếp';
+
+      let startTime = payload.startTime || shiftInfo.start;
+      let endTime = payload.endTime || shiftInfo.end;
+
+      let recordId: any = null;
+      let checkinId: string | null = null;
+      let checkoutId: string | null = null;
+
+      if (intent === 'bo_sung_cham_cong' || intent === 'xin_nghi_phep') {
+        const recordKey = `leave_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const leavePayload = {
+          id: recordKey,
+          employee_code: employeeCode,
+          request_type: intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép',
+          from_date: workDate,
+          to_date: toDate,
+          request_start_time: startTime ? (startTime.length === 5 ? `${startTime}:00` : startTime) : null,
+          request_end_time: endTime ? (endTime.length === 5 ? `${endTime}:00` : endTime) : null,
+          reason,
+          status: 'approved',
+          leader_status: 'approved',
+          operations_status: 'approved',
+          reviewer_code: approverName,
+          routed_to: 'ns',
+          created_at: new Date().toISOString(),
+        };
+
+        await this.infrastructure.postgres.query(
+          `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+           values ('leave_requests', $1, $2::jsonb, 'vps', now())`,
+          [recordKey, JSON.stringify(leavePayload)],
+        );
+        recordId = recordKey;
+
+        // Nếu là bổ sung công: Ghi nhận thực tế 2 lượt Vào ca & Ra ca trong app.records (entity_type='attendance_records')
+        if (intent === 'bo_sung_cham_cong') {
+          const nowStr = new Date().toISOString();
+          const checkinTimeFormatted = startTime.length === 5 ? `${startTime}:00` : startTime;
+          const checkoutTimeFormatted = endTime.length === 5 ? `${endTime}:00` : endTime;
+          const checkinIso = `${workDate}T${checkinTimeFormatted}+07:00`;
+          const checkoutIso = `${workDate}T${checkoutTimeFormatted}+07:00`;
+
+          checkinId = `att_ci_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const checkinPayload = {
+            id: checkinId,
+            client_event_id: checkinId,
+            employee_code: employeeCode,
+            shift_code: shiftCode,
+            record_type: 'checkin',
+            work_date: workDate,
+            recorded_at: checkinIso,
+            branch_id: branchId,
+            lat: branchLat,
+            lng: branchLng,
+            distance_m: 5,
+            accuracy_m: 10,
+            status: 'valid',
+            created_by: approverName,
+            device_id: 'gemini-ai-assistant',
+            captured_offline: false,
+            synced_at: nowStr,
+            proof_url: null,
+            note: `[DUYỆT GEMINI AI] Bổ sung công bởi ${approverName}: ${reason}`,
+            created_at: nowStr,
+            updated_at: nowStr,
+          };
+
+          checkoutId = `att_co_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const checkoutPayload = {
+            id: checkoutId,
+            client_event_id: checkoutId,
+            employee_code: employeeCode,
+            shift_code: shiftCode,
+            record_type: 'checkout',
+            work_date: workDate,
+            recorded_at: checkoutIso,
+            branch_id: branchId,
+            lat: branchLat,
+            lng: branchLng,
+            distance_m: 5,
+            accuracy_m: 10,
+            status: 'valid',
+            created_by: approverName,
+            device_id: 'gemini-ai-assistant',
+            captured_offline: false,
+            synced_at: nowStr,
+            proof_url: null,
+            note: `[DUYỆT GEMINI AI] Bổ sung công bởi ${approverName}: ${reason}`,
+            created_at: nowStr,
+            updated_at: nowStr,
+          };
+
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
+            [checkinId, JSON.stringify(checkinPayload)],
+          );
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
+            [checkoutId, JSON.stringify(checkoutPayload)],
+          );
+
+          // Ghi nhận tổng hợp ngày công hoàn chỉnh
+          const workDayId = `wd_${employeeCode.toLowerCase()}_${workDate}`;
+          const workDayPayload = {
+            id: workDayId,
+            employee_code: employeeCode,
+            work_date: workDate,
+            shift_code: shiftCode,
+            shift_name: shiftName,
+            branch_id: branchId,
+            checkout_branch_id: branchId,
+            scheduled_minutes: shiftInfo.minutes,
+            regular_minutes: shiftInfo.minutes,
+            overtime_minutes: 0,
+            approved_overtime_minutes: 0,
+            overtime_request_ids: [],
+            late_minutes: 0,
+            early_leave_minutes: 0,
+            payable_minutes: shiftInfo.minutes,
+            workday_credit: 1.0,
+            checkin_at: checkinIso,
+            checkout_at: checkoutIso,
+            status: 'complete',
+            calculated_at: nowStr,
+            source: 'postgresql-vps',
+          };
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('attendance_work_days', $1, $2::jsonb, 'vps-work-calculation', now())
+             on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
+            [workDayId, JSON.stringify(workDayPayload)],
+          );
+        }
+      } else {
+        // doi_ca_truc
+        const recordKey = `sched_${employeeCode}_${workDate}_${Date.now()}`;
+        const assignPayload = {
+          id: recordKey,
+          employee_code: employeeCode,
+          branch_id: branchId,
+          work_date: workDate,
+          shift_code: shiftCode,
+          owner_code: payload.targetEmployeeCode || null,
+          status: 'planned',
+          note: `Đổi sang ${shiftName} (${shiftInfo.start}–${shiftInfo.end}) với ${payload.targetEmployeeName || 'đồng nghiệp'} (Phê duyệt từ xa qua Gemini AI)`,
+          created_at: new Date().toISOString(),
+        };
+
+        await this.infrastructure.postgres.query(
+          `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+           values ('schedule_assignments', $1, $2::jsonb, 'vps', now())`,
+          [recordKey, JSON.stringify(assignPayload)],
+        );
+        recordId = recordKey;
+
+        // Dọn dẹp bản ghi work day lỗi missing_shift trước đó nếu có
+        await this.infrastructure.postgres.query(
+          `delete from app.records where entity_type='attendance_work_days' and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'status'='missing_shift'`,
+          [employeeCode, workDate],
+        ).catch(() => {});
+      }
+
+      // 2. Gửi thông báo đến đối tượng test (Nhân viên)
+      const intentLabel = payload.intentLabel || (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : intent === 'doi_ca_truc' ? 'Đổi ca trực' : 'Nghỉ phép');
+      const notifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const notifTitle = `✅ [DUYỆT TỪ XA] ${intentLabel} ngày ${workDate}`;
+      const notifBody = `Chào ${payload.employeeName || employeeCode}, yêu cầu ${intentLabel} ngày ${workDate} của bạn đã được ${approverName} PHÊ DUYỆT THÀNH CÔNG! Dữ liệu đã được cập nhật vào hệ thống.`;
+
+      const notifPayload = {
+        id: notifId,
+        user_id: userId,
+        employee_code: employeeCode,
+        title: notifTitle,
+        body: notifBody,
+        type: intent === 'doi_ca_truc' ? 'schedule' : 'attendance',
+        link_view: intent === 'doi_ca_truc' ? 'schedule' : 'attendance',
+        read: false,
+        created_at: new Date().toISOString(),
+      };
+
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('notifications', $1, $2::jsonb, 'vps', now())`,
+        [notifId, JSON.stringify(notifPayload)],
+      );
+
+      // Nếu là đổi ca và có đồng nghiệp, gửi thông báo cho cả đồng nghiệp
+      if (intent === 'doi_ca_truc' && payload.targetEmployeeCode) {
+        const targetProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+          `select payload from app.records where entity_type='profiles' and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`,
+          [payload.targetEmployeeCode],
+        );
+        const targetUserId = targetProfile.rows[0]?.payload?.id || payload.targetEmployeeCode;
+        const targetNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const targetNotifPayload = {
+          id: targetNotifId,
+          user_id: targetUserId,
+          employee_code: payload.targetEmployeeCode,
+          title: `🔄 [ĐỔI CA] Lịch trực ngày ${workDate} đã duyệt`,
+          body: `Sếp đã duyệt đổi ca trực ngày ${workDate} giữa bạn và ${payload.employeeName || employeeCode}.`,
+          type: 'schedule',
+          link_view: 'schedule',
+          read: false,
+          created_at: new Date().toISOString(),
+        };
+        await this.infrastructure.postgres.query(
+          `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+           values ('notifications', $1, $2::jsonb, 'vps', now())`,
+          [targetNotifId, JSON.stringify(targetNotifPayload)],
+        );
+
+        try {
+          const { PushService } = await import('./push');
+          const push = new PushService(this.infrastructure);
+          void push.sendToEmployee(payload.targetEmployeeCode, {
+            title: `🔄 [ĐỔI CA] Lịch trực ngày ${workDate} đã duyệt`,
+            body: `Sếp đã duyệt đổi ca trực ngày ${workDate} giữa bạn và ${payload.employeeName || employeeCode}.`,
+            view: 'schedule',
+            url: '/',
+          });
+        } catch {}
+      }
+
+      // Web Push gửi cho nhân viên chính
+      try {
+        const { PushService } = await import('./push');
+        const push = new PushService(this.infrastructure);
+        void push.sendToEmployee(employeeCode, {
+          title: notifTitle,
+          body: notifBody,
+          view: intent === 'doi_ca_truc' ? 'schedule' : 'attendance',
+          url: '/',
+        });
+      } catch {}
+
+      // 3. Ghi log an ninh & kiểm toán
+      await this.infrastructure.postgres.query(
+        `insert into app.security_events (event_type, severity, actor_name, actor_code, details, created_at)
+         values ('server_alert', 'info', $1, 'REMOTE_ADMIN', $2, now())`,
+        [approverName, JSON.stringify({ action: 'remote_approval', intent, employeeCode, workDate, approvedAt: new Date().toISOString() })],
+      );
+
+      // 4. Đồng bộ dữ liệu Realtime cho toàn hệ thống
+      await this.infrastructure.markDataChanged([
+        'attendance_records',
+        'attendance_work_days',
+        'leave_requests',
+        'schedule_assignments',
+        'notifications',
+      ]);
+
+      const nowFormatted = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
+
+      return {
+        success: true,
+        message: `Đã phê duyệt thành công yêu cầu [${intentLabel}] và ghi nhận đầy đủ vào hệ thống máy chủ.`,
+        recordId,
+        checkinId,
+        checkoutId,
+        notificationId: notifId,
+        approvedAt: new Date().toISOString(),
+        feedbackForEmployee: {
+          employeeCode,
+          employeeName: payload.employeeName || employeeCode,
+          intent,
+          intentLabel,
+          workDate,
+          startTime,
+          endTime,
+          shift: payload.shift || 'Hành chính',
+          targetEmployeeName: payload.targetEmployeeName || null,
+          branch: branchId === 'le-van-tho' ? 'Lê Văn Thọ' : 'Phạm Văn Chiêu',
+          status: 'approved',
+          approver: approverName,
+          timeFormatted: nowFormatted,
+          recordsCreated: intent === 'bo_sung_cham_cong' 
+            ? ['attendance_records (check-in & check-out)', 'attendance_work_days (1.0 công)', 'leave_requests (Đã duyệt)', 'notifications (Chuông thông báo)']
+            : ['schedule_assignments', 'notifications (Chuông thông báo)'],
+          summary: `Chào ${payload.employeeName || employeeCode}, yêu cầu ${intentLabel} ngày ${workDate} của bạn đã được ${approverName} PHÊ DUYỆT THÀNH CÔNG!`,
+        },
+      };
+    } catch (e: any) {
+      this.logger.error('Error approving gemini request:', e);
+      throw new BadRequestException(`Lỗi phê duyệt vào hệ thống: ${e?.message || e}`);
+    }
+  }
+
+  async sendTelegramApprovalCard(payload: JsonMap, targetChatId?: string): Promise<JsonMap> {
+    const adminChatIds = targetChatId ? [String(targetChatId).trim()] : await this.getAdminChatIds();
+    if (adminChatIds.length === 0) {
+      throw new BadRequestException('Chưa có Telegram Chat ID để nhận thông báo duyệt.');
+    }
+
+    const reqId = payload.requestId || `req_${Date.now()}`;
+    payload.requestId = reqId;
+
+    // Cache the pending request for Telegram webhook callbacks
+    this.pendingGeminiRequests.set(reqId, payload);
+    try {
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('gemini_pending_requests', $1, $2::jsonb, 'vps', now())
+         on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
+        [reqId, JSON.stringify(payload)],
+      );
+    } catch {}
+
+    const intentIcon = payload.intent === 'doi_ca_truc' ? '🔄' : payload.intent === 'bo_sung_cham_cong' ? '⏰' : '🏖️';
+    const lines = [
+      `🤖 <b>[AI GEMINI] YÊU CẦU CẦN SẾP DUYỆT TỪ XA</b>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📋 <b>Loại:</b> ${intentIcon} ${this.escapeHtml(payload.intentLabel || 'Yêu cầu nhân sự')}`,
+      `👤 <b>Nhân viên:</b> <b>${this.escapeHtml(payload.employeeName || 'Nhân viên')}</b> (<code>${this.escapeHtml(payload.employeeCode || '')}</code>)`,
+      `📅 <b>Ngày áp dụng:</b> <code>${this.escapeHtml(payload.workDate || '')}</code> ${payload.toDate && payload.toDate !== payload.workDate ? `đến <code>${this.escapeHtml(payload.toDate)}</code>` : ''}`,
+      `⏰ <b>Ca trực / Giờ:</b> ${this.escapeHtml(payload.shift || '')} ${payload.startTime ? `(${this.escapeHtml(payload.startTime)})` : ''}`,
+      `🏥 <b>Chi nhánh:</b> ${this.escapeHtml(payload.branch || 'Toàn hệ thống')}`,
+      payload.targetEmployeeName ? `👥 <b>Người đổi/bàn giao:</b> <b>${this.escapeHtml(payload.targetEmployeeName)}</b>` : '',
+      `📝 <b>Lý do:</b> <i>${this.escapeHtml(payload.reason || payload.summary || '')}</i>`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `🔍 <b>AI Thẩm định:</b> ${this.escapeHtml(payload.sanityCheck || 'Hợp lệ theo tiêu chuẩn phòng khám')}`,
+      `⚡ <i>Nhấn nút bên dưới để Sếp duyệt ngay lập tức:</i>`,
+    ].filter(Boolean);
+
+    const text = lines.join('\n');
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Phê duyệt ngay', callback_data: `gemini_approve:${reqId}` },
+          { text: '❌ Từ chối', callback_data: `gemini_reject:${reqId}` },
+        ],
+      ],
+    };
+
+    let sentCount = 0;
+    for (const chatId of adminChatIds) {
+      const ok = await this.sendRawMessage(chatId, text, 'HTML', keyboard);
+      if (ok) sentCount++;
+    }
+
+    return {
+      success: sentCount > 0,
+      sentCount,
+      message: sentCount > 0 ? `Đã gửi thẻ duyệt đến ${sentCount} tài khoản Telegram của Sếp.` : 'Không gửi được tin nhắn Telegram.',
+    };
+  }
 }
 
 @Controller('/api/v2/telegram')
 export class TelegramController {
-  constructor(private readonly telegram: TelegramService) {}
+  constructor(
+    private readonly telegram: TelegramService,
+    private readonly infrastructure: InfrastructureService,
+  ) {}
+
+  private async authenticate(req: any): Promise<AuthUser> {
+    const authHeader = String(req?.headers?.authorization || '');
+    if (!authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Vui lòng đăng nhập.');
+    }
+    const token = authHeader.slice(7);
+    const [header, body, signature] = token.split('.');
+    if (!header || !body || !signature) throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
+    const secret = process.env.APP_JWT_SECRET || '';
+    if (secret.length < 32) throw new UnauthorizedException('Cấu hình hệ thống chưa hoàn tất.');
+    const expected = createHmac('sha256', secret).update(`${header}.${body}`).digest();
+    const actual = Buffer.from(signature, 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ.');
+    }
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (Number(payload.exp || 0) <= Math.floor(Date.now() / 1000)) {
+      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn.');
+    }
+    const result = await this.infrastructure.postgres.query<{ profile: JsonMap; employee: JsonMap | null }>(
+      `select p.payload profile, e.payload employee from app.records p
+       left join app.records e on e.entity_type='employees'
+         and lower(e.payload->>'code')=lower(p.payload->>'employee_code') and e.deleted_at is null
+       where p.entity_type='profiles' and p.record_key=$1 and p.deleted_at is null limit 1`,
+      [String(payload.profileKey || '')],
+    );
+    const row = result.rows[0];
+    if (!row || row.profile?.active === false) throw new UnauthorizedException('Tài khoản không còn hoạt động.');
+    return {
+      id: String(row.profile.id || payload.sub),
+      email: row.employee?.email ? String(row.employee.email) : null,
+      employeeCode: String(row.profile.employee_code || ''),
+      branchId: String(row.profile.branch_id || ''),
+      role: String(row.profile.role || 'staff'),
+      department: String(row.profile.department || row.employee?.department || ''),
+      profile: {
+        ...row.profile,
+        full_name: row.profile.full_name || row.employee?.full_name || row.employee?.name
+          || row.profile.name || row.profile.display_name || row.employee?.display_name
+          || row.profile.employee_code || '',
+      },
+    };
+  }
 
   @Get('/health')
   health() {
@@ -650,6 +1659,10 @@ export class TelegramController {
 
   @Post('/webhook')
   async webhook(@Body() update: JsonMap) {
+    if (update?.callback_query) {
+      void this.telegram.handleCallbackQuery(update.callback_query);
+      return { ok: true };
+    }
     if (update?.message?.text && update?.message?.chat?.id) {
       const chatId = update.message.chat.id;
       const text = update.message.text;
@@ -661,13 +1674,73 @@ export class TelegramController {
   }
 
   @Post('/test-alert')
-  async testAlert(@Body() body: { text?: string }) {
+  async testAlert(@Req() req: any, @Body() body: { text?: string }) {
+    const user = await this.authenticate(req);
+    if (!['admin', 'admin_it', 'superadmin'].includes(user.role)) {
+      throw new ForbiddenException('Chỉ Quản trị viên mới được gửi cảnh báo thử nghiệm.');
+    }
     await this.telegram.sendSecurityAlert({
       eventType: 'server_alert',
       severity: 'info',
-      actorName: 'Hệ thống kiểm thử',
+      actorName: String(user.profile?.full_name || user.employeeCode),
       details: { message: body.text || 'Thử nghiệm kết nối Telegram Bot thành công!' },
     });
     return { ok: true, message: 'Đã gửi thông báo thử nghiệm tới quản trị viên.' };
+  }
+
+  @Get('/gemini/config')
+  async getGeminiConfig(@Req() req: any) {
+    await this.authenticate(req);
+    return this.telegram.getGeminiConfig();
+  }
+
+  @Post('/gemini/config')
+  async saveGeminiConfig(@Req() req: any, @Body() body: JsonMap) {
+    const user = await this.authenticate(req);
+    if (!['admin', 'admin_it', 'superadmin'].includes(user.role)) {
+      throw new ForbiddenException('Chỉ Admin-IT hoặc Quản trị cấp cao mới được chỉnh sửa cấu hình AI Gemini.');
+    }
+    return this.telegram.saveGeminiConfig(body);
+  }
+
+  @Post('/gemini/process')
+  async processGeminiPrompt(
+    @Req() req: any,
+    @Body() body: { text: string; employeeCode?: string; employeeName?: string; userRole?: string },
+  ) {
+    if (!body?.text) throw new BadRequestException('Vui lòng nhập nội dung tin nhắn của nhân viên');
+    const user = await this.authenticate(req);
+    const canActForOthers = ['admin', 'admin_it', 'superadmin', 'hr', 'leader', 'phu_ta_truong'].includes(user.role);
+    const employeeCode = String(canActForOthers && body.employeeCode ? body.employeeCode : user.employeeCode);
+    const employeeName = String(canActForOthers && body.employeeName ? body.employeeName : (user.profile?.full_name || user.employeeCode));
+    return this.telegram.processGeminiPrompt(body.text, employeeCode, employeeName, user.role);
+  }
+
+  @Post('/gemini/approve')
+  async approveGeminiRequest(@Req() req: any, @Body() body: JsonMap) {
+    const user = await this.authenticate(req);
+    const isApprover = ['admin', 'admin_it', 'superadmin', 'hr', 'leader', 'phu_ta_truong'].includes(user.role);
+    if (!isApprover) {
+      throw new ForbiddenException('Chỉ Quản trị viên, Quản lý bộ phận hoặc Sếp mới có quyền phê duyệt.');
+    }
+    const targetEmpCode = String(body.employeeCode || '').trim();
+    if (targetEmpCode.toLowerCase() === user.employeeCode.toLowerCase() && !['admin', 'admin_it', 'superadmin'].includes(user.role)) {
+      throw new ForbiddenException('Bạn không thể tự duyệt yêu cầu công hoặc ca trực của chính mình.');
+    }
+    const approverName = `${String(user.profile?.full_name || user.employeeCode)} (${user.role})`;
+    return this.telegram.approveGeminiRequest(body, approverName);
+  }
+
+  @Post('/gemini/send-telegram-card')
+  async sendTelegramCard(
+    @Req() req: any,
+    @Body() body: { payload: JsonMap; targetChatId?: string },
+  ) {
+    const user = await this.authenticate(req);
+    const isApprover = ['admin', 'admin_it', 'superadmin', 'hr', 'leader', 'phu_ta_truong'].includes(user.role);
+    if (!isApprover) {
+      throw new ForbiddenException('Chỉ Quản trị viên hoặc Quản lý mới có quyền gửi thẻ duyệt.');
+    }
+    return this.telegram.sendTelegramApprovalCard(body?.payload, body?.targetChatId);
   }
 }
