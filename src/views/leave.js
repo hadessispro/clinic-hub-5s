@@ -579,8 +579,9 @@ export async function renderView(state) {
             <input id="leaveEndTime" name="endTime" type="time" />
           </div>
           <div class="form-field" data-request-fields="advance" hidden>
-            <label for="leaveAmount">Số tiền ứng</label>
-            <input id="leaveAmount" name="amount" type="number" min="1" step="1000" />
+            <label for="leaveAmount">Số tiền ứng (VNĐ)</label>
+            <input id="leaveAmount" name="amount" type="number" min="1000" step="any" inputmode="numeric" placeholder="VD: 5000000" />
+            <small id="leaveAmountHint" class="subtle" style="font-size: 0.75rem; color: #0f766e; margin-top: 3px; display: none; font-weight: 600;"></small>
           </div>
           <div class="form-field" data-request-fields="advance" hidden>
             <label for="leaveBankAccount">Tài khoản nhận tiền</label>
@@ -763,6 +764,20 @@ export function initView() {
     };
     typeSelect.addEventListener('change', syncRequestFields);
     syncRequestFields();
+
+    amountInput?.addEventListener('input', () => {
+      const val = Number(amountInput.value);
+      const hintEl = document.getElementById('leaveAmountHint');
+      if (hintEl) {
+        if (val >= 1000) {
+          hintEl.textContent = `Số tiền: ${val.toLocaleString('vi-VN')} đ`;
+          hintEl.style.display = 'block';
+        } else {
+          hintEl.textContent = '';
+          hintEl.style.display = 'none';
+        }
+      }
+    });
 
     leaveForm.addEventListener('submit', async (e) => {
       e.preventDefault();
