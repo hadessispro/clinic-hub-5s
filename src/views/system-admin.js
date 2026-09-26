@@ -10,6 +10,7 @@ import {
   getNotificationRules, updateNotificationRule,
   getGeminiBotConfig, saveGeminiBotConfig, processGeminiBotDemo,
   approveGeminiBotDemo, sendTelegramTestApproval,
+  getGeminiActivities, testGeminiKeys,
   deleteSystemRequest, getSystemRequests, getDeletedRequestsAudit,
 } from '../services/system-admin.js';
 import { playChime, CHIME_OPTIONS } from '../services/audio-chime.js';
@@ -55,8 +56,11 @@ let reminderConfigData = null;
 let notificationRulesData = [];
 let smtpConfigData = null;
 let geminiBotConfigData = null;
+let geminiActivitiesData = null;
+let geminiKeyTestResults = null;
 let geminiDemoCurrentResult = null;
 let geminiStaffFeedback = null;
+
 let dtSearch = '';
 let dtType = '';
 let dtStatus = '';
@@ -1068,53 +1072,126 @@ function renderTelegramApprovalCard(data) {
   `;
 }
 
-function renderGeminiBotStudioPanel(data, profiles) {
+function renderGeminiBotStudioPanel(data, actData, profiles) {
   const cfg = data || {};
   const isConfigured = cfg.isConfigured;
   const cur = geminiDemoCurrentResult;
   const dsNhanSu = Array.isArray(profiles) ? profiles.filter((p) => p.employee_code && p.active !== false) : [];
 
+  const stats = actData?.stats || {
+    totalToday: 0,
+    dailyLimit: cfg.dailyLimit || 1000,
+    keysCount: cfg.apiKeysCount || 1,
+    activeKeyIndex: 0,
+    successAiCount: 0,
+    fallbackCount: 0,
+    rateLimitHits: 0,
+  };
+  const activities = Array.isArray(actData?.activities) ? actData.activities : [];
+
+  const quotaPercent = Math.min(100, Math.round((stats.totalToday / Math.max(1, stats.dailyLimit)) * 100));
+  const aiSuccessPercent = Math.round((stats.successAiCount / Math.max(1, stats.totalToday || 1)) * 100);
+
   return `<section class="panel gemini-bot-panel">
     <div class="section-title">
       <div>
         <p class="eyebrow">AI STUDIO & AUTOMATION</p>
-        <h3>Trợ Lý AI Gemini — Điều Phối Ca Trực & Bổ Sung Công</h3>
+        <h3>Trợ Lý AI Gemini — Điều Phối Ca Trực, Bổ Sung Công & Giám Sát Usage</h3>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
         <span class="status-pill ${isConfigured ? 'is-success' : 'is-warning'}" style="font-size:12px;">
           <i class="ri-${isConfigured ? 'sparkling' : 'flashlight'}-line"></i>
-          ${isConfigured ? 'AI Gemini 3.6 Flash Active' : 'Chế độ Bóc tách Tự động'}
+          ${isConfigured ? `${cfg.model || 'Gemini'} Active (${stats.keysCount} Keys)` : 'Chế độ Bóc tách Tự động'}
         </span>
         <button type="button" class="secondary-button compact-button" id="btnToggleGeminiConfig">
-          <i class="ri-settings-4-line"></i> Cấu hình API
+          <i class="ri-settings-4-line"></i> Cấu hình Multi-Key & Quota
         </button>
       </div>
     </div>
 
-    <!-- Khối hướng dẫn tóm tắt -->
-    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px 16px; margin-bottom:18px; font-size:13px; line-height:1.5; color:#334155;">
-      <strong style="color:#0f172a;"><i class="ri-lightbulb-flash-line"></i> Quy trình Hoạt động Trợ lý AI (Human-in-the-Loop):</strong>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
-        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
-          <strong style="color:#2563eb;">1. Nhân viên gửi tin</strong>: Nhắn câu lệnh tự nhiên (đổi ca, quên bấm công, xin nghỉ) không cần form cứng nhắc.
+    <!-- 4 THẺ THỐNG KÊ USAGE & RATE LIMIT TRỰC QUAN -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+          <span style="font-size:12px; font-weight:600; color:#64748b;">LƯỢT GỌI HÔM NAY</span>
+          <i class="ri-dashboard-3-line" style="color:#0284c7; font-size:18px;"></i>
         </div>
-        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
-          <strong style="color:#0891b2;">2. Gemini AI bóc tách</strong>: Trích xuất chuẩn xác Intent, ngày giờ, ca trực, chi nhánh, kiểm tra trùng lịch.
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">
+          ${stats.totalToday} <span style="font-size:13px; font-weight:500; color:#64748b;">/ ${stats.dailyLimit} limit</span>
         </div>
-        <div style="background:#fff; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
-          <strong style="color:#16a34a;">3. Sếp kiểm duyệt từ xa</strong>: Xem thẻ tóm tắt trên Telegram và bấm [✅ Duyệt] để ghi nhận tự động vào Database.
+        <div style="background:#f1f5f9; height:6px; border-radius:3px; margin-top:8px; overflow:hidden;">
+          <div style="background:${quotaPercent > 85 ? '#ef4444' : quotaPercent > 60 ? '#f59e0b' : '#0284c7'}; width:${quotaPercent}%; height:100%; border-radius:3px;"></div>
         </div>
+        <span style="font-size:11px; color:#64748b; margin-top:4px; display:block;">Đã dùng ${quotaPercent}% quota ngày</span>
+      </div>
+
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+          <span style="font-size:12px; font-weight:600; color:#64748b;">KEY POOL (FAILOVER)</span>
+          <i class="ri-key-2-line" style="color:#10b981; font-size:18px;"></i>
+        </div>
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">
+          ${stats.keysCount} <span style="font-size:13px; font-weight:500; color:#64748b;">API Keys</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; margin-top:6px;">
+          <span class="status-pill is-success" style="font-size:11px; padding:2px 8px;">
+            <i class="ri-checkbox-circle-fill"></i> Đang chạy: Key #${stats.activeKeyIndex + 1}
+          </span>
+        </div>
+        <span style="font-size:11px; color:#64748b; margin-top:4px; display:block;">Tự động nhảy key khi gặp 429</span>
+      </div>
+
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+          <span style="font-size:12px; font-weight:600; color:#64748b;">TỶ LỆ AI THÀNH CÔNG</span>
+          <i class="ri-sparkling-fill" style="color:#8b5cf6; font-size:18px;"></i>
+        </div>
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">
+          ${stats.successAiCount} <span style="font-size:13px; font-weight:500; color:#64748b;">(${aiSuccessPercent}%)</span>
+        </div>
+        <div style="font-size:11px; color:#64748b; margin-top:6px;">
+          <b>${stats.fallbackCount}</b> lượt Fallback rule dự phòng
+        </div>
+        <span style="font-size:11px; color:#10b981; margin-top:4px; display:block;">Hoạt động liên tục 24/7</span>
+      </div>
+
+      <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+          <span style="font-size:12px; font-weight:600; color:#64748b;">FAILOVER RATE LIMIT</span>
+          <i class="ri-shield-flash-line" style="color:#f59e0b; font-size:18px;"></i>
+        </div>
+        <div style="font-size:20px; font-weight:800; color:#0f172a;">
+          ${stats.rateLimitHits} <span style="font-size:13px; font-weight:500; color:#64748b;">lần hoán đổi</span>
+        </div>
+        <div style="font-size:11px; color:#64748b; margin-top:6px;">
+          Tự đổi key khi hết lượt gọi API
+        </div>
+        <span style="font-size:11px; color:#0284c7; margin-top:4px; display:block;">Bảo vệ trải nghiệm người dùng</span>
       </div>
     </div>
 
-    <!-- Khối Cấu hình Gemini & Telegram (mặc định ẩn) -->
-    <div id="geminiConfigBox" style="display:none; background:#f1f5f9; border:1px solid #94a3b8; border-radius:8px; padding:16px; margin-bottom:20px;">
-      <h4 style="margin:0 0 12px 0; font-size:14px; color:#0f172a;"><i class="ri-settings-line"></i> Cài đặt Google Gemini API & Telegram Quản trị</h4>
+    <!-- Khối Cấu hình Gemini Multi-Key & Quota (mặc định ẩn) -->
+    <div id="geminiConfigBox" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:18px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+        <h4 style="margin:0; font-size:14px; color:#0f172a; display:flex; align-items:center; gap:6px;">
+          <i class="ri-settings-line" style="color:#0284c7;"></i> Cài đặt Google Gemini Multi-Key Pool & Telegram Quản trị
+        </h4>
+        <button type="button" class="secondary-button compact-button" id="btnTestGeminiKeys">
+          <i class="ri-heart-pulse-line" style="color:#10b981;"></i> Kiểm tra sức khỏe Key Pool
+        </button>
+      </div>
+
+      <div id="geminiKeyTestResultsBox" style="display:none; margin-bottom:14px;"></div>
+
       <form id="geminiConfigForm" class="form-grid">
         <div class="form-field full">
-          <label>Google Gemini API Key</label>
-          <input name="apiKey" id="geminiApiKey" type="password" value="${escapeHTML(cfg.apiKeyMasked || '')}" placeholder="Nhập API Key hoặc để trống dùng key hệ thống" />
-          <small class="subtle" style="font-size:0.75rem;">Đang sử dụng API Key Google Gemini (Được mã hóa an toàn trên hệ thống). Để trống nếu không muốn đổi.</small>
+          <label>Google Gemini API Keys (Hỗ trợ nhập nhiều key — Mỗi dòng 1 key để tự động đổi khi gặp 429)</label>
+          <textarea name="apiKeysRaw" id="geminiApiKeysRaw" rows="3" style="width:100%; font-family:monospace; font-size:12px; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px;" placeholder="Nhập 1 hoặc nhiều API Key Gemini (mỗi dòng 1 key)...">${escapeHTML(cfg.apiKeysMasked && cfg.apiKeysMasked.length ? cfg.apiKeysMasked.join('\n') : (cfg.apiKeyMasked || ''))}</textarea>
+          <small class="subtle" style="font-size:0.75rem;">Khi 1 key chạm giới hạn Rate Limit (HTTP 429 / Quota exhausted), hệ thống lập tức tự nhảy sang key tiếp theo mà không làm gián đoạn nhân viên.</small>
+        </div>
+        <div class="form-field">
+          <label>Giới hạn lượt gọi AI / ngày (Daily Limit)</label>
+          <input type="number" name="dailyLimit" id="geminiDailyLimit" min="50" max="100000" value="${escapeHTML(String(cfg.dailyLimit || 1000))}" />
         </div>
         <div class="form-field">
           <label>Mô hình AI (Model)</label>
@@ -1124,19 +1201,19 @@ function renderGeminiBotStudioPanel(data, profiles) {
             <option value="gemini-1.5-pro" ${cfg.model === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Suy luận chuyên sâu)</option>
           </select>
         </div>
-        <div class="form-field">
-          <label>Telegram Admin Chat ID (Để nhận tin duyệt thật)</label>
+        <div class="form-field full">
+          <label>Telegram Admin Chat ID (Để nhận tin duyệt thật trên điện thoại của Sếp)</label>
           <input name="telegramChatId" id="geminiChatId" value="${escapeHTML(cfg.telegramChatId || '')}" placeholder="VD: 5412345678" />
         </div>
         <div class="form-field full" style="display:flex; justify-content:flex-end; gap:8px;">
           <button type="submit" class="primary-button" id="btnSaveGeminiConfig">
-            <i class="ri-save-line"></i> Lưu cấu hình AI
+            <i class="ri-save-line"></i> Lưu cấu hình Multi-Key & Hạn mức
           </button>
         </div>
       </form>
     </div>
 
-    <!-- STUDIO 3 CỘT -->
+    <!-- STUDIO 3 CỘT (GIẢ LẬP NHÂN VIÊN & THẺ TELEGRAM DUYỆT TỪ XA) -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:18px; align-items:start;">
       
       <!-- CỘT 1: GIẢ LẬP NHÂN VIÊN GỬI YÊU CẦU -->
@@ -1183,7 +1260,6 @@ function renderGeminiBotStudioPanel(data, profiles) {
           </button>
         </form>
 
-        <!-- HỘP PHẢN HỒI TỪ MÁY CHỦ CHO NHÂN SỰ TEST -->
         <div id="geminiStaffFeedbackBox" style="margin-top:14px;">
           ${renderStaffFeedbackBox(geminiStaffFeedback)}
         </div>
@@ -1230,6 +1306,95 @@ function renderGeminiBotStudioPanel(data, profiles) {
       </div>
 
     </div>
+
+    <!-- BẢNG GIÁM SÁT THỜI GIAN THỰC: AI ĐANG LÀM GÌ & ĐẦU RA -->
+    <div style="margin-top:24px; background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h4 style="margin:0; font-size:15px; color:#0f172a; display:flex; align-items:center; gap:6px;">
+            <i class="ri-radar-line" style="color:#0284c7;"></i> Bảng Giám Sát Hoạt Động & Đầu Ra AI Thời Gian Thực
+          </h4>
+          <p style="margin:3px 0 0 0; font-size:12px; color:#64748b;">Theo dõi yêu cầu của nhân viên, quyết định của AI, tốc độ xử lý và trạng thái duyệt</p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" class="secondary-button compact-button" id="btnRefreshGeminiActivities">
+            <i class="ri-refresh-line"></i> Làm mới nhật ký (${activities.length})
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="max-height:480px; overflow-y:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+          <thead>
+            <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0; color:#475569; text-align:left;">
+              <th style="padding:10px 12px; width:120px;">Thời gian</th>
+              <th style="padding:10px 12px; width:160px;">Nhân sự</th>
+              <th style="padding:10px 12px; width:220px;">Tin nhắn nhân viên</th>
+              <th style="padding:10px 12px; width:140px;">Ý định</th>
+              <th style="padding:10px 12px; width:170px;">Model & Key</th>
+              <th style="padding:10px 12px;">AI Trả lời / Hành động</th>
+              <th style="padding:10px 12px; text-align:center; width:90px;">Telegram</th>
+              <th style="padding:10px 12px; text-align:center; width:110px;">Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activities.length ? activities.map((act) => {
+              const isPending = act.approval_status === 'pending';
+              const isApproved = act.approval_status === 'approved';
+              const statusBadge = isApproved
+                ? '<span class="status-pill is-success" style="font-size:11px;"><i class="ri-checkbox-circle-fill"></i> Đã duyệt</span>'
+                : isPending
+                ? '<span class="status-pill is-warning" style="font-size:11px;"><i class="ri-time-line"></i> Chờ duyệt</span>'
+                : '<span class="status-pill is-info" style="font-size:11px;">ℹ️ Thông tin</span>';
+
+              const intentBadge = act.intent === 'doi_ca_truc'
+                ? '<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-weight:600; font-size:11px;">🔄 Đổi ca</span>'
+                : act.intent === 'bo_sung_cham_cong'
+                ? '<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:4px; font-weight:600; font-size:11px;">⏰ Bổ sung công</span>'
+                : act.intent === 'xin_nghi_phep'
+                ? '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-weight:600; font-size:11px;">🏖️ Nghỉ phép</span>'
+                : '<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:4px; font-weight:600; font-size:11px;">❓ Hỏi đáp</span>';
+
+              return `<tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:10px 12px; color:#64748b; font-size:11px; white-space:nowrap;">
+                  ${formatDateTime(act.created_at)}
+                </td>
+                <td style="padding:10px 12px;">
+                  <strong style="color:#0f172a;">${escapeHTML(act.employee_name || act.employee_code)}</strong>
+                  <div style="font-size:11px; color:#64748b;">${escapeHTML(act.employee_code)} · ${escapeHTML(act.branch || 'PVC')}</div>
+                </td>
+                <td style="padding:10px 12px;">
+                  <span style="color:#334155; font-style:italic;">"${escapeHTML(act.raw_prompt || '')}"</span>
+                </td>
+                <td style="padding:10px 12px;">
+                  ${intentBadge}
+                </td>
+                <td style="padding:10px 12px;">
+                  <div style="font-weight:600; font-size:11px; color:#0284c7;">
+                    ${escapeHTML(act.model || 'Gemini')}
+                    ${act.key_index ? `<span style="color:#64748b;">[Key #${act.key_index}]</span>` : ''}
+                  </div>
+                  <div style="font-size:10px; color:#94a3b8;">${act.latency_ms ? `${act.latency_ms}ms` : ''} ${act.used_ai ? '• AI' : '• Smart Fallback'}</div>
+                </td>
+                <td style="padding:10px 12px;">
+                  <div style="font-size:12px; color:#1e293b; max-height:48px; overflow:hidden; text-overflow:ellipsis;">
+                    ${escapeHTML(act.ai_reply || act.details?.summary || '')}
+                  </div>
+                </td>
+                <td style="padding:10px 12px; text-align:center;">
+                  ${act.telegram_notified 
+                    ? '<i class="ri-telegram-fill" style="color:#229ED9; font-size:16px;" title="Đã gửi thông báo Telegram cho Sếp"></i>' 
+                    : '<span style="color:#cbd5e1;">—</span>'}
+                </td>
+                <td style="padding:10px 12px; text-align:center;">
+                  ${statusBadge}
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="8" style="text-align:center; padding:30px 10px; color:#94a3b8;">Chưa có hoạt động AI nào được ghi nhận. Hãy gửi tin nhắn thử nghiệm ở trên hoặc trong mục Chat.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>`;
 }
 
@@ -1237,6 +1402,73 @@ function bindGeminiBotEvents() {
   document.getElementById('btnToggleGeminiConfig')?.addEventListener('click', () => {
     const box = document.getElementById('geminiConfigBox');
     if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('btnTestGeminiKeys')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnTestGeminiKeys');
+    const box = document.getElementById('geminiKeyTestResultsBox');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang ping Key Pool...';
+    }
+    if (box) {
+      box.style.display = 'block';
+      box.innerHTML = '<div style="background:#eff6ff; color:#1e40af; padding:10px 14px; border-radius:6px; font-size:12px;"><i class="ri-loader-4-line ri-spin"></i> Đang kiểm tra lần lượt từng API Key trong hệ thống...</div>';
+    }
+    try {
+      const res = await testGeminiKeys();
+      if (box) {
+        if (res?.keys && res.keys.length > 0) {
+          box.innerHTML = `<div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:12px; font-size:12px;">
+            <div style="font-weight:700; margin-bottom:8px; color:#0f172a; display:flex; align-items:center; gap:6px;">
+              <i class="ri-shield-check-line" style="color:#10b981;"></i> Kết quả kiểm tra ${res.keys.length} API Key:
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              ${res.keys.map((k) => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:${k.status === 'healthy' ? '#f0fdf4' : k.status === 'rate_limited' ? '#fef3c7' : '#fef2f2'}; border-radius:6px; border:1px solid ${k.status === 'healthy' ? '#bbf7d0' : k.status === 'rate_limited' ? '#fde68a' : '#fecaca'};">
+                  <div>
+                    <b>Key #${k.index + 1}</b> (<code>${escapeHTML(k.keyMasked)}</code>)
+                    <span style="margin-left:8px; color:#64748b;">${escapeHTML(k.message)}</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-weight:600; font-size:11px; color:#475569;">${k.latencyMs}ms</span>
+                    <span class="status-pill ${k.status === 'healthy' ? 'is-success' : k.status === 'rate_limited' ? 'is-warning' : 'is-danger'}" style="font-size:10px; padding:1px 6px;">
+                      ${k.status === 'healthy' ? 'Hoạt động' : k.status === 'rate_limited' ? 'Hết Quota (429)' : 'Lỗi'}
+                    </span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+        } else {
+          box.innerHTML = `<div style="background:#fef2f2; color:#b91c1c; padding:10px; border-radius:6px; font-size:12px;">${escapeHTML(res?.message || 'Không có key để kiểm tra.')}</div>`;
+        }
+      }
+    } catch (err) {
+      if (box) box.innerHTML = `<div style="background:#fef2f2; color:#b91c1c; padding:10px; border-radius:6px; font-size:12px;">Lỗi: ${escapeHTML(err.message || 'Không kiểm tra được')}</div>`;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ri-heart-pulse-line" style="color:#10b981;"></i> Kiểm tra sức khỏe Key Pool';
+      }
+    }
+  });
+
+  document.getElementById('btnRefreshGeminiActivities')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnRefreshGeminiActivities');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang tải...';
+    }
+    try {
+      geminiActivitiesData = await getGeminiActivities();
+      showToast('Đã làm mới dữ liệu giám sát AI.');
+      store.notify();
+    } catch (err) {
+      showToast(err.message || 'Lỗi cập nhật nhật ký AI.', true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   document.querySelectorAll('.gemini-quick-chip').forEach((btn) => {
@@ -1257,13 +1489,14 @@ function bindGeminiBotEvents() {
   document.getElementById('geminiConfigForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btnSaveGeminiConfig');
-    const apiKey = document.getElementById('geminiApiKey')?.value?.trim();
+    const apiKeysRaw = document.getElementById('geminiApiKeysRaw')?.value?.trim();
+    const dailyLimit = Number(document.getElementById('geminiDailyLimit')?.value || 1000);
     const model = document.getElementById('geminiModel')?.value?.trim() || 'gemini-3.6-flash';
     const telegramChatId = document.getElementById('geminiChatId')?.value?.trim();
     if (btn) btn.disabled = true;
     try {
-      await saveGeminiBotConfig({ apiKey, model, telegramChatId });
-      showToast('Đã lưu cấu hình Trợ lý Gemini thành công.');
+      await saveGeminiBotConfig({ apiKeysRaw, dailyLimit, model, telegramChatId });
+      showToast('Đã lưu cấu hình Multi-Key & Hạn mức Gemini thành công.');
       store.notify();
     } catch (err) {
       showToast(err.message || 'Lỗi lưu cấu hình Gemini.', true);
@@ -1811,7 +2044,12 @@ export async function renderView(state) {
     try { smtpConfigData = await getSystemSmtp(); } catch { smtpConfigData = null; }
   }
   if (theDangMo === 'gemini-bot') {
-    try { geminiBotConfigData = await getGeminiBotConfig(); } catch { geminiBotConfigData = null; }
+    const [cfgRes, actRes] = await Promise.all([
+      getGeminiBotConfig().catch(() => null),
+      getGeminiActivities().catch(() => null),
+    ]);
+    geminiBotConfigData = cfgRes;
+    geminiActivitiesData = actRes;
   }
   if (theDangMo === 'don-tu') {
     const [reqs, delAudits] = await Promise.all([
@@ -1892,7 +2130,7 @@ export async function renderView(state) {
     'audit': renderTechnicalAuditPanel(audits),
     'thong-bao': renderNotificationPolicyPanel(notificationRulesData),
     'smtp': renderSmtpConfigPanel(smtpConfigData),
-    'gemini-bot': renderGeminiBotStudioPanel(geminiBotConfigData, profiles),
+    'gemini-bot': renderGeminiBotStudioPanel(geminiBotConfigData, geminiActivitiesData, profiles),
     'don-tu': renderDonTuPanel(dtRequestsData, dtDeletedAuditData, profiles),
   };
   return `<div class="view-header"><div><p class="eyebrow">TRUNG TÂM QUẢN TRỊ</p><h3>${escapeHTML(TEN_THE[the])}</h3></div><button class="secondary-button" type="button" id="refreshSystem">↻ Làm mới dữ liệu</button></div>

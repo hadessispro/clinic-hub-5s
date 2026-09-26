@@ -16,6 +16,7 @@ export function mapMessageToUI(db) {
     scope: db.message_scope || 'direct',
     author: db.author_code,
     text: db.body,
+    actionData: db.action_data || null,
     time: db.created_at,
   };
 }

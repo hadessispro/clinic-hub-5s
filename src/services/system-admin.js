@@ -312,6 +312,24 @@ export async function sendTelegramTestApproval(payload, targetChatId) {
   });
 }
 
+export async function sendGeminiChatMessage(text) {
+  return dataClient.request('/api/v2/telegram/gemini/chat', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function getGeminiActivities() {
+  return dataClient.request('/api/v2/telegram/gemini/activities');
+}
+
+export async function testGeminiKeys() {
+  return dataClient.request('/api/v2/telegram/gemini/test-keys', {
+    method: 'POST',
+  });
+}
+
+
 export async function deleteSystemRequest({ requestId, reason, cleanupAttendance = true }) {
   const { data, error } = await dataClient.rpc('system_delete_request', {
     p_request_id: requestId,

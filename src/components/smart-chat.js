@@ -6,6 +6,7 @@ import {
   conversationChannel,
   getRecentIncomingMessages,
 } from '../services/messages.js';
+import { sendGeminiChatMessage } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime, departmentName } from '../utils.js';
 import { showToast } from './toast.js';
 
@@ -27,6 +28,7 @@ function persistUnread() {
 }
 
 function meta(contact) {
+  if (contact.isAi) return 'Hỗ trợ xin nghỉ, đổi ca, công 24/7';
   if (contact.userId === 'global') return 'Thông báo từ admin';
   const role = contact.role === 'admin' ? 'Admin' : contact.role === 'leader' ? 'Trưởng bộ phận' : 'Nhân viên';
   return [role, departmentName(contact.department), contact.title].filter(Boolean).join(' · ');
@@ -54,6 +56,8 @@ function renderContacts() {
   if (!list) return;
   list.classList.remove('is-conversation');
   const orderedContacts = [...contacts].sort((a, b) => {
+    if (a.isAi) return -1;
+    if (b.isAi) return 1;
     const unreadDifference = Number(unread.get(b.userId) || 0) - Number(unread.get(a.userId) || 0);
     if (unreadDifference) return unreadDifference;
     return Number(recentActivity.get(b.userId) || 0) - Number(recentActivity.get(a.userId) || 0);
@@ -62,9 +66,9 @@ function renderContacts() {
     <div class="smart-chat-contact-list" data-smart-chat-contacts>${orderedContacts.map((contact) => {
       const count = unread.get(contact.userId) || 0;
       return `<button type="button" class="smart-chat-contact" data-smart-chat-contact="${escapeHTML(contact.userId)}" data-search="${escapeHTML(`${contact.name} ${meta(contact)}`.toLowerCase())}">
-        <span class="smart-chat-avatar">${escapeHTML(contact.name.trim().charAt(0).toUpperCase())}</span>
-        <span class="smart-chat-contact-copy"><strong>${escapeHTML(contact.name)}</strong><small>${escapeHTML(meta(contact))}</small></span>
-        ${count ? `<b>${count}</b>` : ''}
+        <span class="smart-chat-avatar" style="${contact.isAi ? 'overflow:hidden; padding:0;' : ''}">${contact.isAi ? `<img src="${escapeHTML(contact.avatar)}" alt="AI" style="width:100%;height:100%;object-fit:cover;" />` : escapeHTML(contact.name.trim().charAt(0).toUpperCase())}</span>
+        <span class="smart-chat-contact-copy"><strong style="${contact.isAi ? 'color:#0284c7;' : ''}">${escapeHTML(contact.name)}</strong><small>${escapeHTML(meta(contact))}</small></span>
+        ${contact.isAi ? '<b style="background:#0284c7;font-size:10px;">AI</b>' : (count ? `<b>${count}</b>` : '')}
       </button>`;
     }).join('')}</div>`;
 
@@ -81,8 +85,10 @@ function renderContacts() {
 
 function renderMessage(message, contact) {
   const mine = message.senderId === session.user.id;
-  return `<article class="smart-chat-message${mine ? ' is-own' : ''}">
-    <strong>${mine ? 'Bạn' : escapeHTML(contact?.name || 'Admin')}</strong>
+  const isAi = !mine && (message.senderId === 'ai_assistant' || contact?.userId === 'ai_assistant' || contact?.isAi);
+  const name = mine ? 'Bạn' : (isAi ? '✦ Trợ lý AI 5S' : escapeHTML(contact?.name || 'Admin'));
+  return `<article class="smart-chat-message${mine ? ' is-own' : ''}${isAi ? ' is-ai' : ''}">
+    <strong style="${isAi ? 'color:#0284c7;' : ''}">${name}</strong>
     <p>${escapeHTML(message.text)}</p><small>${formatDateTime(message.time)}</small>
   </article>`;
 }
@@ -111,6 +117,27 @@ async function openConversation(contactId) {
       const text = input.value.trim();
       if (!text) return;
       input.disabled = true;
+
+      if (contactId === 'ai_assistant') {
+        const userMsg = { senderId: session.user.id, text, time: new Date().toISOString() };
+        messageList.querySelector('.smart-chat-empty')?.remove();
+        messageList.insertAdjacentHTML('beforeend', renderMessage(userMsg, activeContact));
+        input.value = '';
+        messageList.scrollTop = messageList.scrollHeight;
+        try {
+          const res = await sendGeminiChatMessage(text);
+          const aiMsg = { senderId: 'ai_assistant', text: res?.reply || 'Em đã ghi nhận yêu cầu của anh/chị rồi ạ!', time: new Date().toISOString() };
+          messageList.insertAdjacentHTML('beforeend', renderMessage(aiMsg, activeContact));
+          messageList.scrollTop = messageList.scrollHeight;
+        } catch (err) {
+          showToast(err.message || 'Lỗi trợ lý AI', true);
+        } finally {
+          input.disabled = false;
+          input.focus();
+        }
+        return;
+      }
+
       try {
         const sent = await sendMessage({ contactId, userId: session.user.id, author: session.profile.employee_code, text });
         messageList.querySelector('.smart-chat-empty')?.remove();
@@ -150,7 +177,17 @@ export async function initSmartChat(authInfo) {
   session = authInfo;
   const allowed = await getMessageContacts().catch(() => []);
   if (generation !== initGeneration) return;
-  contacts = [{ userId: 'global', name: 'Thông báo toàn hệ thống', role: 'admin', department: '', title: '' }, ...allowed];
+  const aiContact = {
+    userId: 'ai_assistant',
+    name: '✦ Trợ lý AI 5S',
+    role: 'ai',
+    department: 'Clinic Hub 5S',
+    title: 'Hỗ trợ xin nghỉ, đổi ca, bổ sung công 24/7',
+    avatar: '/images/ai-bot-avatar.jpg',
+    isAi: true,
+  };
+  contacts = [aiContact, { userId: 'global', name: 'Thông báo toàn hệ thống', role: 'admin', department: '', title: '' }, ...allowed];
+
   try {
     unread = new Map(Object.entries(JSON.parse(localStorage.getItem(unreadKey()) || '{}')));
     recentActivity = new Map(Object.entries(JSON.parse(localStorage.getItem(activityKey()) || '{}')));

@@ -1,6 +1,6 @@
 import * as os from 'node:os';
 import * as fs from 'node:fs';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, Logger, Post, Req, UnauthorizedException } from '@nestjs/common';
 import type { AuthUser } from './auth';
 import { InfrastructureService } from './infrastructure';
@@ -41,6 +41,14 @@ export class TelegramService {
   private rulesCache: Map<string, boolean> = new Map();
   private rulesCacheExpiresAt = 0;
   private pendingGeminiRequests = new Map<string, JsonMap>();
+  private geminiKeyIndex = 0;
+  private geminiUsageStats = {
+    date: new Date().toISOString().slice(0, 10),
+    totalToday: 0,
+    successAi: 0,
+    fallback: 0,
+    rateLimitSwitches: 0,
+  };
 
   constructor(private readonly infrastructure: InfrastructureService) {}
 
@@ -757,59 +765,90 @@ export class TelegramService {
     }
   }
 
-  async getGeminiConfig(): Promise<JsonMap> {
+  private async getGeminiRawConfig(): Promise<JsonMap> {
     const defaultKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
     try {
       const res = await this.infrastructure.postgres.query<{ config_value: string }>(
         `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
       );
       if (res.rows.length > 0) {
-        const parsed = JSON.parse(res.rows[0].config_value || '{}');
-        const key = parsed.apiKey || defaultKey;
-        return {
-          apiKeyMasked: key ? `${key.slice(0, 6)}...${key.slice(-4)}` : '',
-          model: parsed.model || 'gemini-3.6-flash',
-          telegramChatId: parsed.telegramChatId || '',
-          autoApprove: Boolean(parsed.autoApprove),
-          systemPrompt: parsed.systemPrompt || '',
-          isConfigured: Boolean(key),
-        };
+        return JSON.parse(res.rows[0].config_value || '{}');
       }
-    } catch (e) {
-      this.logger.warn(`Failed to read gemini config: ${e}`);
+    } catch {}
+    return { apiKey: defaultKey, apiKeys: [defaultKey], model: 'gemini-3.6-flash', dailyLimit: 1000 };
+  }
+
+  async getGeminiConfig(): Promise<JsonMap> {
+    const defaultKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
+    const parsed = await this.getGeminiRawConfig();
+    const keys: string[] = [];
+    if (Array.isArray(parsed.apiKeys)) {
+      for (const k of parsed.apiKeys) {
+        const trimmed = String(k || '').trim();
+        if (trimmed) keys.push(trimmed);
+      }
     }
+    if (keys.length === 0 && parsed.apiKey) {
+      const trimmed = String(parsed.apiKey).trim();
+      if (trimmed) keys.push(trimmed);
+    }
+    if (keys.length === 0 && defaultKey) {
+      keys.push(defaultKey);
+    }
+    const primaryKey = keys[0] || '';
     return {
-      apiKeyMasked: defaultKey ? `${defaultKey.slice(0, 6)}...${defaultKey.slice(-4)}` : '',
-      model: 'gemini-3.6-flash',
-      telegramChatId: '',
-      autoApprove: false,
-      systemPrompt: '',
-      isConfigured: Boolean(defaultKey),
+      apiKeyMasked: primaryKey ? `${primaryKey.slice(0, 6)}...${primaryKey.slice(-4)}` : '',
+      apiKeysMasked: keys.map((k) => `${k.slice(0, 6)}...${k.slice(-4)}`),
+      apiKeysCount: keys.length,
+      activeKeyIndex: this.geminiKeyIndex % Math.max(1, keys.length),
+      model: parsed.model || 'gemini-3.6-flash',
+      telegramChatId: parsed.telegramChatId || '',
+      autoApprove: Boolean(parsed.autoApprove),
+      systemPrompt: parsed.systemPrompt || '',
+      dailyLimit: Number(parsed.dailyLimit || 1000),
+      isConfigured: keys.length > 0,
     };
   }
 
   async saveGeminiConfig(config: JsonMap): Promise<JsonMap> {
     const defaultKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
     try {
-      let existingKey = defaultKey;
-      try {
-        const cur = await this.infrastructure.postgres.query<{ config_value: string }>(
-          `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
-        );
-        if (cur.rows.length > 0) {
-          const parsed = JSON.parse(cur.rows[0].config_value || '{}');
-          if (parsed.apiKey) existingKey = parsed.apiKey;
-        }
-      } catch {}
+      const existing = await this.getGeminiRawConfig();
+      let existingKeys: string[] = [defaultKey];
+      if (Array.isArray(existing.apiKeys) && existing.apiKeys.length > 0) {
+        existingKeys = existing.apiKeys;
+      } else if (existing.apiKey) {
+        existingKeys = [existing.apiKey];
+      }
 
-      const newKey = String(config.apiKey || '').trim();
-      const apiKey = (newKey && !newKey.includes('...')) ? newKey : existingKey;
+      // Hỗ trợ nhập nhiều key qua apiKeysRaw (mỗi dòng hoặc dấu phẩy) hoặc mảng apiKeys
+      const incomingRaw = String(config.apiKeysRaw || config.apiKey || '').trim();
+      let updatedKeys: string[] = [];
+      if (incomingRaw) {
+        const lines = incomingRaw.split(/[\n,;]+/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          if (line.includes('...')) {
+            if (existingKeys[i]) updatedKeys.push(existingKeys[i]);
+          } else {
+            updatedKeys.push(line);
+          }
+        }
+      } else if (Array.isArray(config.apiKeys)) {
+        updatedKeys = config.apiKeys.map((k: any) => String(k || '').trim()).filter(Boolean);
+      }
+
+      if (updatedKeys.length === 0) updatedKeys = existingKeys;
+
       const toStore = {
-        apiKey,
+        apiKey: updatedKeys[0] || defaultKey,
+        apiKeys: updatedKeys,
         model: config.model || 'gemini-3.6-flash',
         telegramChatId: String(config.telegramChatId || '').trim(),
         autoApprove: Boolean(config.autoApprove),
         systemPrompt: String(config.systemPrompt || '').trim(),
+        dailyLimit: Number(config.dailyLimit || 1000),
         updatedAt: new Date().toISOString(),
       };
 
@@ -820,21 +859,162 @@ export class TelegramService {
         [JSON.stringify(toStore)],
       );
 
+      this.geminiKeyIndex = 0; // Đặt lại về key đầu tiên sau khi lưu
+
       return {
         success: true,
-        message: 'Đã lưu cấu hình Trợ lý Gemini thành công.',
+        message: `Đã lưu cấu hình Trợ lý Gemini thành công (${updatedKeys.length} API Key).`,
         config: {
-          apiKeyMasked: apiKey ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : '',
+          apiKeyMasked: toStore.apiKey ? `${toStore.apiKey.slice(0, 6)}...${toStore.apiKey.slice(-4)}` : '',
+          apiKeysMasked: updatedKeys.map((k) => `${k.slice(0, 6)}...${k.slice(-4)}`),
+          apiKeysCount: updatedKeys.length,
+          activeKeyIndex: 0,
           model: toStore.model,
           telegramChatId: toStore.telegramChatId,
           autoApprove: toStore.autoApprove,
-          isConfigured: Boolean(apiKey),
+          dailyLimit: toStore.dailyLimit,
+          isConfigured: Boolean(toStore.apiKey),
         },
       };
     } catch (e: any) {
       this.logger.error('Error saving gemini config:', e);
       throw new BadRequestException(`Không thể lưu cấu hình Gemini: ${e?.message || e}`);
     }
+  }
+
+  async testGeminiKeys(): Promise<JsonMap> {
+    const config = await this.getGeminiRawConfig();
+    const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
+      ? config.apiKeys
+      : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
+
+    if (keys.length === 0) {
+      return { success: false, message: 'Chưa cấu hình API Key nào trong hệ thống.' };
+    }
+
+    const results = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const start = Date.now();
+      const masked = `${key.slice(0, 6)}...${key.slice(-4)}`;
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'hi' }] }],
+            generationConfig: { maxOutputTokens: 5 },
+          }),
+        });
+        const latencyMs = Date.now() - start;
+        if (res.ok) {
+          results.push({ index: i, keyMasked: masked, status: 'healthy', latencyMs, message: 'Kết nối tốt' });
+        } else if (res.status === 429) {
+          results.push({ index: i, keyMasked: masked, status: 'rate_limited', latencyMs, message: 'Rate Limit (429) - Hết quota' });
+        } else {
+          results.push({ index: i, keyMasked: masked, status: 'error', latencyMs, message: `Lỗi HTTP ${res.status}` });
+        }
+      } catch (err: any) {
+        results.push({ index: i, keyMasked: masked, status: 'error', latencyMs: Date.now() - start, message: err?.message || 'Lỗi mạng' });
+      }
+    }
+    return { success: true, keys: results };
+  }
+
+  private async callGeminiWithFailover(
+    keys: string[],
+    model: string,
+    prompt: string,
+    systemInstruction: string,
+  ): Promise<{ text: string; usedKeyIndex: number; usedModel: string }> {
+    if (!keys || keys.length === 0) throw new Error('Không có API Key trong hệ thống.');
+    const maxAttempts = keys.length;
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const keyIndex = (this.geminiKeyIndex + attempt) % keys.length;
+      const key = keys[keyIndex];
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.1,
+            },
+          }),
+        });
+
+        if (res.ok) {
+          const aiJson = await res.json();
+          const partText = aiJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (partText) {
+            this.geminiKeyIndex = keyIndex; // Khoá lại vào key đang hoạt động tốt
+            return { text: partText, usedKeyIndex: keyIndex, usedModel: model };
+          }
+        }
+
+        const errText = await res.text();
+        this.logger.warn(`Gemini key #${keyIndex + 1} HTTP ${res.status}: ${errText.slice(0, 150)}`);
+
+        if (res.status === 429 || res.status === 403 || errText.includes('RESOURCE_EXHAUSTED')) {
+          this.geminiUsageStats.rateLimitSwitches++;
+          this.logger.warn(`[Gemini Failover] Key #${keyIndex + 1} bị rate limit / quota. Tự động đổi sang Key tiếp theo...`);
+          lastError = new Error(`Key #${keyIndex + 1} bị Rate Limit (429)`);
+          continue;
+        }
+
+        lastError = new Error(`Gemini HTTP ${res.status}: ${errText.slice(0, 100)}`);
+      } catch (err: any) {
+        this.logger.warn(`Key #${keyIndex + 1} exception: ${err.message}`);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('Tất cả API keys trong pool đều không thể kết nối.');
+  }
+
+  async getGeminiActivities(): Promise<JsonMap> {
+    const config = await this.getGeminiRawConfig();
+    const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
+      ? config.apiKeys
+      : (config.apiKey ? [config.apiKey] : []);
+
+    let activities: JsonMap[] = [];
+    try {
+      const res = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records
+         where entity_type = 'gemini_activity_logs' and deleted_at is null
+         order by created_at desc limit 60`,
+      );
+      activities = res.rows.map((r) => r.payload);
+    } catch (e) {
+      this.logger.warn('Error reading gemini activity logs:', e);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayLogs = activities.filter((a) => String(a.created_at || '').startsWith(today));
+    const totalToday = Math.max(this.geminiUsageStats.totalToday, todayLogs.length);
+    const successAiCount = todayLogs.filter((a) => a.used_ai).length;
+    const fallbackCount = todayLogs.filter((a) => !a.used_ai).length;
+    const rateLimitHits = this.geminiUsageStats.rateLimitSwitches;
+
+    return {
+      success: true,
+      stats: {
+        date: today,
+        totalToday,
+        dailyLimit: Number(config.dailyLimit || 1000),
+        successAiCount,
+        fallbackCount,
+        rateLimitHits,
+        activeKeyIndex: this.geminiKeyIndex % Math.max(1, keys.length),
+        keysCount: keys.length,
+      },
+      activities,
+    };
   }
 
   resolveClinicShift(
@@ -1596,6 +1776,275 @@ Trả về JSON đúng cấu trúc sau:
       message: sentCount > 0 ? `Đã gửi thẻ duyệt đến ${sentCount} tài khoản Telegram của Sếp.` : 'Không gửi được tin nhắn Telegram.',
     };
   }
+
+  async processGeminiChat(user: AuthUser, promptText: string): Promise<JsonMap> {
+    const rawText = String(promptText || '').trim();
+    if (!rawText) throw new BadRequestException('Vui lòng nhập nội dung.');
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.geminiUsageStats.date !== today) {
+      this.geminiUsageStats = { date: today, totalToday: 0, successAi: 0, fallback: 0, rateLimitSwitches: 0 };
+    }
+    this.geminiUsageStats.totalToday++;
+
+    const config = await this.getGeminiRawConfig();
+    const dailyLimit = Number(config.dailyLimit || 1000);
+    if (this.geminiUsageStats.totalToday > dailyLimit) {
+      this.logger.warn(`Gemini daily limit reached (${this.geminiUsageStats.totalToday}/${dailyLimit})`);
+    }
+
+    const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
+      ? config.apiKeys
+      : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
+    const model = config.model || 'gemini-3.6-flash';
+
+    const empName = String(user.profile?.full_name || user.employeeCode);
+    const empCode = user.employeeCode;
+    const empDept = user.department || '';
+    const empTitle = String(user.profile?.title || '');
+    const startTime = Date.now();
+
+    const sysInstruction = `Bạn là Trợ lý AI Thông minh & Thân thiện của Hệ thống Nha khoa Clinic Hub 5S.
+Nhiệm vụ: Trò chuyện tự nhiên, chuyên nghiệp với nhân viên; giải đáp thắc mắc nội quy, hỗ trợ làm đơn từ (xin nghỉ phép, bổ sung công, đổi ca trực).
+Nhân viên đang trò chuyện: ${empName} (Mã NV: ${empCode}, Bộ phận: ${empDept}, Vị trí: ${empTitle}).
+Hôm nay là: ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}. Năm hiện tại là 2026.
+
+Quy định ca trực tại 5S:
+1. Bác sĩ: Ca sáng (doctor-morning: 08:00 - 18:00), Ca chiều (doctor-afternoon: 10:00 - 20:00), Ca hành chính (doctor-office: 08:00 - 17:00), Ca full (doctor-full: 08:00 - 20:00).
+2. Lễ tân & Phụ tá: Ca sáng (front-morning: 07:30 - 18:00), Ca chiều (front-afternoon: 09:30 - 20:00), Ca hành chính (front-office: 07:30 - 17:00), Ca full (front-full: 07:30 - 20:00).
+3. Bảo vệ: security-weekday (07:00 - 20:00) / security-sunday (07:00 - 17:00).
+4. Tạp vụ: cleaning-weekday (06:00 - 16:00) / cleaning-sunday (06:00 - 15:00).
+
+Quy tắc phản hồi:
+- Luôn trả về định dạng JSON thuần túy (không kèm markdown code fence):
+{
+  "type": "action" | "qa",
+  "reply": "Câu trả lời tiếng Việt ấm áp, tự nhiên, rõ ràng gửi trực tiếp cho nhân viên trong chat. Nếu là yêu cầu đơn/công, hãy xác nhận rõ thông tin ngày, ca, lý do và thông báo đã gửi Sếp duyệt.",
+  "intent": "xin_nghi_phep" | "bo_sung_cham_cong" | "doi_ca_truc" | "hoi_dap" | "khac",
+  "intentLabel": "Xin nghỉ phép" | "Bổ sung chấm công" | "Đổi ca trực" | "Hỏi đáp nội quy" | "Trò chuyện",
+  "workDate": "YYYY-MM-DD hoặc null",
+  "toDate": "YYYY-MM-DD hoặc null",
+  "shift": "Ca sáng | Ca chiều | Ca hành chính | Ca full | null",
+  "shiftCode": "Mã ca chuẩn hoặc null",
+  "startTime": "HH:mm hoặc null",
+  "endTime": "HH:mm hoặc null",
+  "branch": "PVC" | "LVT" | "Toàn hệ thống",
+  "targetEmployeeName": "Tên đồng nghiệp nếu đổi ca hoặc bàn giao, null nếu không có",
+  "reason": "Lý do tóm tắt ngắn gọn",
+  "summary": "1 câu tóm tắt để gửi thẻ duyệt Telegram cho Sếp",
+  "sanityCheck": "Đánh giá tính hợp lý của yêu cầu"
+}`;
+
+    let parsedResult: any = null;
+    let usedAi = false;
+    let usedKeyIndex = 0;
+
+    if (keys.length > 0) {
+      try {
+        const { text, usedKeyIndex: kIdx } = await this.callGeminiWithFailover(keys, model, `Tin nhắn nhân viên: "${rawText}"`, sysInstruction);
+        parsedResult = JSON.parse(text);
+        usedAi = true;
+        usedKeyIndex = kIdx;
+        this.geminiUsageStats.successAi++;
+      } catch (err: any) {
+        this.logger.warn(`Gemini AI chat call failed: ${err.message}. Using smart fallback.`);
+        this.geminiUsageStats.fallback++;
+      }
+    }
+
+    if (!parsedResult) {
+      parsedResult = this.extractSlotsFallback(rawText, empCode, empName, empDept, empTitle);
+      const isAction = parsedResult.intent !== 'khac' && parsedResult.intent !== 'hoi_dap';
+      parsedResult.type = isAction ? 'action' : 'qa';
+      parsedResult.reply = isAction
+        ? `Dạ em đã nhận được yêu cầu ${parsedResult.intentLabel} của anh/chị (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.shift || 'ca làm'}). Em đã tự động tạo phiếu và chuyển thông báo đến Sếp duyệt qua Telegram rồi ạ!`
+        : `Dạ em chào anh/chị ${empName}! Em là Trợ lý AI Clinic Hub 5S. Anh/chị cần em hỗ trợ xin nghỉ phép, đổi ca trực, bổ sung giờ công hay kiểm tra quy chế nào ạ?`;
+      usedAi = false;
+    }
+
+    if (parsedResult.shiftCode || parsedResult.shift) {
+      const shiftObj = this.resolveClinicShift(parsedResult.shiftCode || parsedResult.shift, empCode, empDept, empTitle);
+      parsedResult.shiftCode = shiftObj.code;
+      parsedResult.shift = shiftObj.name;
+      if (!parsedResult.startTime) parsedResult.startTime = shiftObj.start;
+      if (!parsedResult.endTime) parsedResult.endTime = shiftObj.end;
+    }
+
+    parsedResult.requestId = `req_${Date.now()}`;
+    parsedResult.processingTimeMs = Date.now() - startTime;
+    parsedResult.model = usedAi ? model : 'Smart Semantic Fallback';
+    parsedResult.usedAi = usedAi;
+    parsedResult.keyIndex = usedKeyIndex + 1;
+    parsedResult.employeeCode = empCode;
+    parsedResult.employeeName = empName;
+    parsedResult.branch = parsedResult.branch || user.branchId || 'pham-van-chieu';
+
+    this.pendingGeminiRequests.set(parsedResult.requestId, parsedResult);
+
+    let telegramSent = false;
+    let createdRecordId = '';
+
+    if (parsedResult.type === 'action' && ['xin_nghi_phep', 'bo_sung_cham_cong', 'doi_ca_truc'].includes(parsedResult.intent)) {
+      try {
+        if (parsedResult.intent === 'xin_nghi_phep') {
+          createdRecordId = randomUUID();
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('leave_requests', $1, $2::jsonb, 'vps', now())`,
+            [createdRecordId, JSON.stringify({
+              id: createdRecordId,
+              employee_code: empCode,
+              request_type: parsedResult.intentLabel || 'Nghỉ phép',
+              from_date: parsedResult.workDate || today,
+              to_date: parsedResult.toDate || parsedResult.workDate || today,
+              reason: parsedResult.reason || rawText,
+              status: 'pending',
+              leader_status: 'pending',
+              operations_status: 'pending',
+              routed_to: 'leader',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              ai_assisted: true,
+              ai_request_id: parsedResult.requestId,
+            })],
+          );
+          await this.infrastructure.markDataChanged(['leave_requests'], user.id, user.role);
+        } else if (parsedResult.intent === 'doi_ca_truc') {
+          createdRecordId = randomUUID();
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('schedule_requests', $1, $2::jsonb, 'vps', now())`,
+            [createdRecordId, JSON.stringify({
+              id: createdRecordId,
+              employee_code: empCode,
+              target_employee_name: parsedResult.targetEmployeeName || null,
+              target_date: parsedResult.workDate || today,
+              shift_code: parsedResult.shiftCode || null,
+              reason: parsedResult.reason || rawText,
+              status: 'pending',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              ai_assisted: true,
+              ai_request_id: parsedResult.requestId,
+            })],
+          );
+          await this.infrastructure.markDataChanged(['schedule_requests'], user.id, user.role);
+        } else {
+          createdRecordId = parsedResult.requestId;
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('gemini_pending_requests', $1, $2::jsonb, 'vps', now())
+             on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
+            [createdRecordId, JSON.stringify(parsedResult)],
+          );
+        }
+
+        const targetChatId = config.telegramChatId || undefined;
+        const tgRes = await this.sendTelegramApprovalCard(parsedResult, targetChatId);
+        if (tgRes?.sentCount > 0) telegramSent = true;
+      } catch (err: any) {
+        this.logger.error('Failed to create action record or notify Telegram:', err);
+      }
+    }
+
+    try {
+      const logId = randomUUID();
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('gemini_activity_logs', $1, $2::jsonb, 'vps', now())`,
+        [logId, JSON.stringify({
+          id: logId,
+          request_id: parsedResult.requestId,
+          created_at: new Date().toISOString(),
+          employee_code: empCode,
+          employee_name: empName,
+          department: empDept,
+          branch: parsedResult.branch,
+          raw_prompt: rawText,
+          intent: parsedResult.intent,
+          intent_label: parsedResult.intentLabel,
+          details: {
+            work_date: parsedResult.workDate,
+            to_date: parsedResult.toDate,
+            shift: parsedResult.shift,
+            shift_code: parsedResult.shiftCode,
+            target_employee: parsedResult.targetEmployeeName,
+            reason: parsedResult.reason,
+            summary: parsedResult.summary,
+            created_record_id: createdRecordId || null,
+          },
+          ai_reply: parsedResult.reply,
+          used_ai: parsedResult.usedAi,
+          model: parsedResult.model,
+          latency_ms: parsedResult.processingTimeMs,
+          key_index: parsedResult.keyIndex,
+          telegram_notified: telegramSent,
+          approval_status: parsedResult.type === 'action' ? 'pending' : 'info',
+        })],
+      );
+    } catch (e) {
+      this.logger.warn('Failed to log gemini activity:', e);
+    }
+
+    const channel = `dm:${[user.id, 'ai_assistant'].sort().join(':')}`;
+    const userMsgId = randomUUID();
+    const aiMsgId = randomUUID();
+    const nowIso = new Date().toISOString();
+    const aiTimeIso = new Date(Date.now() + 500).toISOString();
+
+    try {
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('messages', $1, $2::jsonb, 'vps', now())`,
+        [userMsgId, JSON.stringify({
+          id: userMsgId,
+          channel,
+          sender_id: user.id,
+          recipient_id: 'ai_assistant',
+          message_scope: 'direct',
+          author_code: empCode,
+          body: rawText,
+          created_at: nowIso,
+        })],
+      );
+
+      await this.infrastructure.postgres.query(
+        `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+         values ('messages', $1, $2::jsonb, 'vps', now())`,
+        [aiMsgId, JSON.stringify({
+          id: aiMsgId,
+          channel,
+          sender_id: 'ai_assistant',
+          recipient_id: user.id,
+          message_scope: 'direct',
+          author_code: 'AI_5S',
+          body: parsedResult.reply,
+          action_data: parsedResult.type === 'action' ? {
+            intent: parsedResult.intent,
+            intentLabel: parsedResult.intentLabel,
+            workDate: parsedResult.workDate,
+            shift: parsedResult.shift,
+            status: 'pending',
+            createdRecordId,
+            telegramSent,
+          } : null,
+          created_at: aiTimeIso,
+        })],
+      );
+
+      await this.infrastructure.markDataChanged(['messages'], user.id, user.role);
+    } catch (e) {
+      this.logger.warn('Failed to persist chat messages to DB:', e);
+    }
+
+    return {
+      success: true,
+      reply: parsedResult.reply,
+      action: parsedResult.type === 'action' ? parsedResult : null,
+      telegramSent,
+      data: parsedResult,
+    };
+  }
 }
 
 @Controller('/api/v2/telegram')
@@ -1743,4 +2192,29 @@ export class TelegramController {
     }
     return this.telegram.sendTelegramApprovalCard(body?.payload, body?.targetChatId);
   }
+
+  @Post('/gemini/chat')
+  async chatWithGemini(@Req() req: any, @Body() body: { text: string }) {
+    const user = await this.authenticate(req);
+    return this.telegram.processGeminiChat(user, body?.text);
+  }
+
+  @Get('/gemini/activities')
+  async getGeminiActivities(@Req() req: any) {
+    const user = await this.authenticate(req);
+    if (!['admin', 'admin_it', 'superadmin', 'hr', 'leader'].includes(user.role)) {
+      throw new ForbiddenException('Chỉ Quản trị viên và Quản lý mới có quyền xem nhật ký AI.');
+    }
+    return this.telegram.getGeminiActivities();
+  }
+
+  @Post('/gemini/test-keys')
+  async testGeminiKeys(@Req() req: any) {
+    const user = await this.authenticate(req);
+    if (!['admin', 'admin_it', 'superadmin'].includes(user.role)) {
+      throw new ForbiddenException('Chỉ Quản trị viên mới được kiểm tra Key AI.');
+    }
+    return this.telegram.testGeminiKeys();
+  }
 }
+
