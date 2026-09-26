@@ -844,7 +844,7 @@ export class TelegramService {
       const toStore = {
         apiKey: updatedKeys[0] || defaultKey,
         apiKeys: updatedKeys,
-        model: config.model || 'gemini-3.6-flash',
+        model: (config.model && config.model !== 'gemini-2.5-flash') ? config.model : 'gemini-3.6-flash',
         telegramChatId: String(config.telegramChatId || '').trim(),
         autoApprove: Boolean(config.autoApprove),
         systemPrompt: String(config.systemPrompt || '').trim(),
@@ -882,11 +882,27 @@ export class TelegramService {
     }
   }
 
-  async testGeminiKeys(): Promise<JsonMap> {
+  async testGeminiKeys(body?: { apiKeysRaw?: string; model?: string }): Promise<JsonMap> {
     const config = await this.getGeminiRawConfig();
-    const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
-      ? config.apiKeys
-      : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
+    let keys: string[] = [];
+
+    if (body?.apiKeysRaw && typeof body.apiKeysRaw === 'string') {
+      const lines = body.apiKeysRaw.split('\n').map((l) => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (!line.includes('...')) {
+          keys.push(line);
+        }
+      }
+    }
+
+    if (keys.length === 0) {
+      keys = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
+        ? config.apiKeys
+        : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
+    }
+
+    let testModel = body?.model || config.model || 'gemini-3.6-flash';
+    if (testModel === 'gemini-2.5-flash') testModel = 'gemini-3.6-flash';
 
     if (keys.length === 0) {
       return { success: false, message: 'Chưa cấu hình API Key nào trong hệ thống.' };
@@ -898,7 +914,7 @@ export class TelegramService {
       const start = Date.now();
       const masked = `${key.slice(0, 6)}...${key.slice(-4)}`;
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(testModel)}:generateContent?key=${key}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -908,17 +924,30 @@ export class TelegramService {
         });
         const latencyMs = Date.now() - start;
         if (res.ok) {
-          results.push({ index: i, keyMasked: masked, status: 'healthy', latencyMs, message: 'Kết nối tốt' });
-        } else if (res.status === 429) {
-          results.push({ index: i, keyMasked: masked, status: 'rate_limited', latencyMs, message: 'Rate Limit (429) - Hết quota' });
+          results.push({ index: i, keyMasked: masked, status: 'healthy', latencyMs, message: `Hoạt động tốt (${testModel})` });
         } else {
-          results.push({ index: i, keyMasked: masked, status: 'error', latencyMs, message: `Lỗi HTTP ${res.status}` });
+          let errDetail = '';
+          try {
+            const errJson = await res.json();
+            errDetail = errJson?.error?.message || '';
+          } catch {
+            // ignore
+          }
+          if (res.status === 429) {
+            results.push({ index: i, keyMasked: masked, status: 'rate_limited', latencyMs, message: 'Rate Limit (429) - Hết quota' });
+          } else if (res.status === 400 || res.status === 401 || res.status === 403) {
+            results.push({ index: i, keyMasked: masked, status: 'error', latencyMs, message: errDetail ? `Lỗi (${res.status}): ${errDetail.slice(0, 80)}` : `Key không hợp lệ / Hết hạn (${res.status})` });
+          } else if (res.status === 404) {
+            results.push({ index: i, keyMasked: masked, status: 'error', latencyMs, message: `Model '${testModel}' không khả dụng (404)` });
+          } else {
+            results.push({ index: i, keyMasked: masked, status: 'error', latencyMs, message: `Lỗi HTTP ${res.status}${errDetail ? `: ${errDetail.slice(0, 60)}` : ''}` });
+          }
         }
       } catch (err: any) {
         results.push({ index: i, keyMasked: masked, status: 'error', latencyMs: Date.now() - start, message: err?.message || 'Lỗi mạng' });
       }
     }
-    return { success: true, keys: results };
+    return { success: true, keys: results, model: testModel };
   }
 
   private async callGeminiWithFailover(
@@ -1853,7 +1882,7 @@ Trả về JSON đúng cấu trúc sau:
     const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
       ? config.apiKeys
       : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
-    const model = config.model || 'gemini-3.6-flash';
+    const model = (config.model && config.model !== 'gemini-2.5-flash') ? config.model : 'gemini-3.6-flash';
 
     const empName = String(user.profile?.full_name || user.employeeCode);
     const empCode = user.employeeCode;
@@ -2271,12 +2300,12 @@ export class TelegramController {
   }
 
   @Post('/gemini/test-keys')
-  async testGeminiKeys(@Req() req: any) {
+  async testGeminiKeys(@Req() req: any, @Body() body: any) {
     const user = await this.authenticate(req);
     if (!['admin', 'admin_it', 'superadmin'].includes(user.role)) {
       throw new ForbiddenException('Chỉ Quản trị viên mới được kiểm tra Key AI.');
     }
-    return this.telegram.testGeminiKeys();
+    return this.telegram.testGeminiKeys(body);
   }
 }
 

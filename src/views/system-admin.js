@@ -1197,8 +1197,9 @@ function renderGeminiBotStudioPanel(data, actData, profiles) {
           <label>Mô hình AI (Model)</label>
           <select name="model" id="geminiModel">
             <option value="gemini-3.6-flash" ${cfg.model === 'gemini-3.6-flash' || !cfg.model ? 'selected' : ''}>gemini-3.6-flash (Mới nhất, siêu nhanh & chính xác)</option>
-            <option value="gemini-2.5-flash" ${cfg.model === 'gemini-2.5-flash' ? 'selected' : ''}>gemini-2.5-flash</option>
-            <option value="gemini-1.5-pro" ${cfg.model === 'gemini-1.5-pro' ? 'selected' : ''}>gemini-1.5-pro (Suy luận chuyên sâu)</option>
+            <option value="gemini-3.8-flash" ${cfg.model === 'gemini-3.8-flash' ? 'selected' : ''}>gemini-3.8-flash (Tốc độ cao & thông minh nhất)</option>
+            <option value="gemini-flash-latest" ${cfg.model === 'gemini-flash-latest' ? 'selected' : ''}>gemini-flash-latest (Tự động cập nhật)</option>
+            <option value="gemini-pro-latest" ${cfg.model === 'gemini-pro-latest' ? 'selected' : ''}>gemini-pro-latest (Suy luận chuyên sâu)</option>
           </select>
         </div>
         <div class="form-field full">
@@ -1416,7 +1417,9 @@ function bindGeminiBotEvents() {
       box.innerHTML = '<div style="background:#eff6ff; color:#1e40af; padding:10px 14px; border-radius:6px; font-size:12px;"><i class="ri-loader-4-line ri-spin"></i> Đang kiểm tra lần lượt từng API Key trong hệ thống...</div>';
     }
     try {
-      const res = await testGeminiKeys();
+      const apiKeysRaw = document.getElementById('geminiApiKeysRaw')?.value || '';
+      const model = document.getElementById('geminiModel')?.value || 'gemini-3.6-flash';
+      const res = await testGeminiKeys({ apiKeysRaw, model });
       if (box) {
         if (res?.keys && res.keys.length > 0) {
           box.innerHTML = `<div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:12px; font-size:12px;">

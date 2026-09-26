@@ -323,9 +323,10 @@ export async function getGeminiActivities() {
   return dataClient.request('/api/v2/telegram/gemini/activities');
 }
 
-export async function testGeminiKeys() {
+export async function testGeminiKeys(payload = {}) {
   return dataClient.request('/api/v2/telegram/gemini/test-keys', {
     method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
