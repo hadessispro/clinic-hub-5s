@@ -4,11 +4,13 @@ const sent = new Map();
 const TTL = 60_000;
 
 function isKnownExternalNoise(event) {
-  const message = cleanMessage(event?.error || event?.message);
-  const isZaloWebViewInjection = message === "Can't find variable: zaloJSV2"
-    && Number(event?.lineno) === 1
-    && (String(location.href).includes('utm_source=zalo') || String(location.href).includes('zarsrc='));
-  return isZaloWebViewInjection;
+  const message = cleanMessage(event?.error || event?.message || event?.reason);
+  const lower = message.toLowerCase();
+  return lower.includes('zaloj')
+    || lower.includes('zalo')
+    || lower.includes('isrecreate')
+    || lower.includes('fb_xd_fragment')
+    || (lower.includes('script error') && !event?.filename);
 }
 
 function cleanMessage(value) {
@@ -46,6 +48,7 @@ export function initErrorMonitoring() {
     });
   });
   window.addEventListener('unhandledrejection', (event) => {
+    if (isKnownExternalNoise(event)) return;
     reportClientError(event.reason, { source: 'unhandledrejection' });
   });
 }

@@ -3517,7 +3517,7 @@ tr:last-child td {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-.action-card-header {
+.chat-action-card .action-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3527,12 +3527,12 @@ tr:last-child td {
   padding-bottom: 6px;
 }
 
-.action-title {
+.chat-action-card .action-title {
   font-weight: 700;
   color: #0f172a;
 }
 
-.action-status-pill {
+.chat-action-card .action-status-pill {
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
@@ -3542,24 +3542,24 @@ tr:last-child td {
   gap: 4px;
 }
 
-.action-status-pill.pending {
+.chat-action-card .action-status-pill.pending {
   background: #fef3c7;
   color: #b45309;
 }
 
-.action-status-pill.approved {
+.chat-action-card .action-status-pill.approved {
   background: #dcfce7;
   color: #15803d;
 }
 
-.action-card-details {
+.chat-action-card .action-card-details {
   display: flex;
   flex-direction: column;
   gap: 4px;
   color: #475569;
 }
 
-.action-tg-note {
+.chat-action-card .action-tg-note {
   margin-top: 4px;
   padding-top: 4px;
   border-top: 1px dashed #e2e8f0;

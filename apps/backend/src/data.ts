@@ -41,7 +41,7 @@ const hrWriteTables = new Set([
   'onboarding_docs', 'onboarding_progress', 'recruitment', 'notifications', 'messages',
 ]);
 const staffWriteTables = new Set([
-  'leave_requests', 'schedule_requests', 'messages', 'notifications',
+  'attendance_records', 'leave_requests', 'schedule_requests', 'messages', 'notifications',
   'push_subscriptions', 'payroll_feedback', 'incidents', 'tasks',
 ]);
 
@@ -169,6 +169,7 @@ export class DataService {
       return String(row.employee_code || '').toLowerCase() === employee;
     }
     if (table === 'messages') {
+      if (row.message_scope === 'global' || row.channel === 'global' || row.recipient_id === 'global') return true;
       return [row.author_code, row.sender_id, row.recipient_id].some((value) => String(value || '').toLowerCase() === employee || String(value || '') === user.id);
     }
     if (table === 'notifications' || table === 'push_subscriptions') return String(row.user_id || '') === user.id;
@@ -178,17 +179,42 @@ export class DataService {
   private protectWrite(user: AuthUser, table: string, row: JsonMap) {
     if (!this.canWrite(user, table)) throw new ForbiddenException('Tài khoản không có quyền thay đổi dữ liệu này.');
     if (!adminRoles.has(user.role) && user.role !== 'hr') {
-      if (table === 'leave_requests') {
-        // Chống trick lỏ: Nhân viên nộp đơn không được tự duyệt hoặc sửa trạng thái
+      if (table === 'attendance_records') {
+        // Bảo vệ toàn vẹn dữ liệu chấm công GPS:
+        // Nhân viên chỉ được cập nhật ảnh minh chứng chụp từ camera, cấm can thiệp dữ liệu công/GPS
+        delete row.recorded_at;
+        delete row.work_date;
+        delete row.shift_code;
+        delete row.record_type;
+        delete row.lat;
+        delete row.lng;
+        delete row.distance_m;
         delete row.status;
-        delete row.leader_status;
-        delete row.operations_status;
-        delete row.reviewer_code;
-        delete row.leader_reviewed_at;
-        delete row.operations_reviewed_at;
         delete row.deleted_at;
-        delete row.deleted_reason;
         row.employee_code = user.employeeCode;
+      }
+      if (table === 'leave_requests') {
+        if (departmentLeaderRoles.has(user.role)) {
+          // Trưởng bộ phận duyệt đơn cấp 1: Cho phép cập nhật leader_status, rejection_reason, reviewer_code
+          delete row.operations_status;
+          delete row.deleted_at;
+          delete row.deleted_reason;
+          if (row.leader_status) {
+            row.reviewer_code = user.employeeCode;
+            row.leader_reviewed_at = new Date().toISOString();
+          }
+        } else {
+          // Chống trick lỏ: Nhân viên nộp đơn không được tự duyệt hoặc sửa trạng thái
+          delete row.status;
+          delete row.leader_status;
+          delete row.operations_status;
+          delete row.reviewer_code;
+          delete row.leader_reviewed_at;
+          delete row.operations_reviewed_at;
+          delete row.deleted_at;
+          delete row.deleted_reason;
+          row.employee_code = user.employeeCode;
+        }
       }
       if (table === 'schedule_requests') {
         row.employee_code = user.employeeCode;
@@ -264,6 +290,9 @@ export class DataService {
       try {
         await client.query('begin');
         for (const input of inputs) {
+          if (table === 'attendance_records' && !adminRoles.has(user.role) && user.role !== 'hr') {
+            throw new ForbiddenException('Chấm công trực tiếp bị vô hiệu. Vui lòng chấm công qua giao diện Chấm công GPS.');
+          }
           if (table === 'leave_requests' && !adminRoles.has(user.role) && user.role !== 'hr') {
             input.status = 'pending';
             input.leader_status = 'pending';
