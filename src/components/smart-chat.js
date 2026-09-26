@@ -88,7 +88,7 @@ function renderMessage(message, contact) {
   const mine = message.senderId === session.user.id;
   const isAi = !mine && (message.senderId === 'ai_assistant' || contact?.userId === 'ai_assistant' || contact?.isAi);
   const name = mine ? 'Bạn' : (isAi ? '✦ Trợ lý AI 5S' : escapeHTML(contact?.name || 'Admin'));
-  return `<article class="smart-chat-message${mine ? ' is-own' : ''}${isAi ? ' is-ai' : ''}">
+  return `<article class="smart-chat-message${mine ? ' is-own' : ''}${isAi ? ' is-ai' : ''}" data-msg-id="${escapeHTML(message.id || '')}">
     <strong style="${isAi ? 'color:#0284c7;' : ''}">${name}</strong>
     <p>${escapeHTML(message.text)}</p><small>${formatDateTime(message.time)}</small>
   </article>`;
@@ -106,7 +106,16 @@ async function openConversation(contactId) {
   title.textContent = activeContact.name;
   body.innerHTML = '<div class="smart-chat-loading">Đang tải hội thoại...</div>';
   try {
-    const messages = await getMessages(contactId, session.user.id);
+    const rawMessages = await getMessages(contactId, session.user.id);
+    const messages = [];
+    const seenIds = new Set();
+    for (const m of rawMessages) {
+      if (!m || !m.id || seenIds.has(m.id)) continue;
+      seenIds.add(m.id);
+      const prev = messages[messages.length - 1];
+      if (prev && prev.senderId === m.senderId && prev.text?.trim() === m.text?.trim()) continue;
+      messages.push(m);
+    }
     const canSend = contactId !== 'global' || session.profile.role === 'admin';
     body.innerHTML = `<div class="smart-chat-messages" data-smart-chat-messages>${messages.length ? messages.map((message) => renderMessage(message, activeContact)).join('') : '<div class="smart-chat-empty">Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.</div>'}</div>
       ${canSend ? '<form class="smart-chat-form" data-smart-chat-form><input required maxlength="2000" placeholder="Nhập tin nhắn..." autocomplete="off"><button type="submit">Gửi</button></form>' : '<div class="smart-chat-readonly">Chỉ admin được gửi thông báo toàn hệ thống.</div>'}`;
@@ -120,15 +129,29 @@ async function openConversation(contactId) {
       input.disabled = true;
 
       if (contactId === 'ai_assistant') {
-        const userMsg = { senderId: session.user.id, text, time: new Date().toISOString() };
+        const tempId = `temp_${Date.now()}`;
+        const userMsg = { id: tempId, senderId: session.user.id, text, time: new Date().toISOString() };
         messageList.querySelector('.smart-chat-empty')?.remove();
         messageList.insertAdjacentHTML('beforeend', renderMessage(userMsg, activeContact));
         input.value = '';
         messageList.scrollTop = messageList.scrollHeight;
         try {
           const res = await sendGeminiChatMessage(text);
-          const aiMsg = { senderId: 'ai_assistant', text: res?.reply || 'Em đã ghi nhận yêu cầu của anh/chị rồi ạ!', time: new Date().toISOString() };
-          messageList.insertAdjacentHTML('beforeend', renderMessage(aiMsg, activeContact));
+          const aiMsgId = res?.aiMessageId || `ai_${Date.now()}`;
+          if (res?.userMessageId) {
+            const tempNode = messageList.querySelector(`[data-msg-id="${tempId}"]`);
+            if (tempNode) tempNode.setAttribute('data-msg-id', res.userMessageId);
+          }
+          const aiMsg = { id: aiMsgId, senderId: 'ai_assistant', text: res?.reply || 'Em đã ghi nhận yêu cầu của anh/chị rồi ạ!', time: new Date().toISOString() };
+          if (!messageList.querySelector(`[data-msg-id="${aiMsgId}"]`)) {
+            const lastMsg = messageList.querySelector('.smart-chat-message:last-child');
+            const lastText = lastMsg?.querySelector('p')?.textContent?.trim();
+            if (!lastText || lastText !== aiMsg.text.trim()) {
+              messageList.insertAdjacentHTML('beforeend', renderMessage(aiMsg, activeContact));
+            } else if (lastMsg) {
+              lastMsg.setAttribute('data-msg-id', aiMsgId);
+            }
+          }
           messageList.scrollTop = messageList.scrollHeight;
         } catch (err) {
           showToast(err.message || 'Lỗi trợ lý AI', true);
@@ -245,9 +268,21 @@ export async function initSmartChat(authInfo) {
 
     if (isOpenConversation) {
       const list = root.querySelector('[data-smart-chat-messages]');
-      list?.querySelector('.smart-chat-empty')?.remove();
-      list?.insertAdjacentHTML('beforeend', renderMessage(message, contact));
-      if (list) list.scrollTop = list.scrollHeight;
+      if (!list) return;
+      if (message.id && list.querySelector(`[data-msg-id="${message.id}"]`)) return;
+      const lastMsg = list.querySelector('.smart-chat-message:last-child');
+      if (lastMsg) {
+        const lastText = lastMsg.querySelector('p')?.textContent?.trim();
+        const isAiSender = message.senderId === 'ai_assistant';
+        const lastIsAi = lastMsg.classList.contains('is-ai');
+        if (lastText && lastText === message.text?.trim() && (isAiSender === lastIsAi)) {
+          if (message.id) lastMsg.setAttribute('data-msg-id', message.id);
+          return;
+        }
+      }
+      list.querySelector('.smart-chat-empty')?.remove();
+      list.insertAdjacentHTML('beforeend', renderMessage(message, contact));
+      list.scrollTop = list.scrollHeight;
     } else {
       unread.set(contact.userId, (unread.get(contact.userId) || 0) + 1);
       persistUnread();
