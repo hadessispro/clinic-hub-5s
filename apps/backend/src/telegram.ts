@@ -1438,30 +1438,57 @@ Trả về JSON đúng cấu trúc sau:
       let checkoutId: string | null = null;
 
       if (intent === 'bo_sung_cham_cong' || intent === 'xin_nghi_phep') {
-        const recordKey = `leave_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const leavePayload = {
-          id: recordKey,
-          employee_code: employeeCode,
-          request_type: intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép',
-          from_date: workDate,
-          to_date: toDate,
-          request_start_time: startTime ? (startTime.length === 5 ? `${startTime}:00` : startTime) : null,
-          request_end_time: endTime ? (endTime.length === 5 ? `${endTime}:00` : endTime) : null,
-          reason,
-          status: 'approved',
-          leader_status: 'approved',
-          operations_status: 'approved',
-          reviewer_code: approverName,
-          routed_to: 'ns',
-          created_at: new Date().toISOString(),
-        };
+        let leaveRecordKey = String(payload.createdRecordId || '').trim();
+        if (!leaveRecordKey && payload.requestId) {
+          const existing = await this.infrastructure.postgres.query<{ record_key: string }>(
+            `select record_key from app.records where entity_type='leave_requests' and deleted_at is null and payload->>'ai_request_id'=$1 limit 1`,
+            [payload.requestId],
+          );
+          if (existing.rows[0]?.record_key) leaveRecordKey = existing.rows[0].record_key;
+        }
 
-        await this.infrastructure.postgres.query(
-          `insert into app.records (entity_type, record_key, payload, origin, updated_at)
-           values ('leave_requests', $1, $2::jsonb, 'vps', now())`,
-          [recordKey, JSON.stringify(leavePayload)],
-        );
-        recordId = recordKey;
+        if (leaveRecordKey) {
+          await this.infrastructure.postgres.query(
+            `update app.records
+             set payload = payload || $2::jsonb, updated_at = now()
+             where entity_type = 'leave_requests' and record_key = $1`,
+            [leaveRecordKey, JSON.stringify({
+              status: 'approved',
+              leader_status: 'approved',
+              operations_status: 'approved',
+              reviewer_code: approverName,
+              routed_to: 'ns',
+              updated_at: new Date().toISOString(),
+            })],
+          );
+          recordId = leaveRecordKey;
+        } else {
+          const recordKey = `leave_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const leavePayload = {
+            id: recordKey,
+            employee_code: employeeCode,
+            request_type: intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép',
+            from_date: workDate,
+            to_date: toDate,
+            request_start_time: startTime ? (startTime.length === 5 ? `${startTime}:00` : startTime) : null,
+            request_end_time: endTime ? (endTime.length === 5 ? `${endTime}:00` : endTime) : null,
+            reason,
+            status: 'approved',
+            leader_status: 'approved',
+            operations_status: 'approved',
+            reviewer_code: approverName,
+            routed_to: 'ns',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          await this.infrastructure.postgres.query(
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+             values ('leave_requests', $1, $2::jsonb, 'vps', now())`,
+            [recordKey, JSON.stringify(leavePayload)],
+          );
+          recordId = recordKey;
+        }
 
         // Nếu là bổ sung công: Ghi nhận thực tế 2 lượt Vào ca & Ra ca trong app.records (entity_type='attendance_records')
         if (intent === 'bo_sung_cham_cong') {
@@ -1566,6 +1593,26 @@ Trả về JSON đúng cấu trúc sau:
         }
       } else {
         // doi_ca_truc
+        let schedReqKey = String(payload.createdRecordId || '').trim();
+        if (!schedReqKey && payload.requestId) {
+          const existing = await this.infrastructure.postgres.query<{ record_key: string }>(
+            `select record_key from app.records where entity_type='schedule_requests' and deleted_at is null and payload->>'ai_request_id'=$1 limit 1`,
+            [payload.requestId],
+          );
+          if (existing.rows[0]?.record_key) schedReqKey = existing.rows[0].record_key;
+        }
+        if (schedReqKey) {
+          await this.infrastructure.postgres.query(
+            `update app.records
+             set payload = payload || $2::jsonb, updated_at = now()
+             where entity_type = 'schedule_requests' and record_key = $1`,
+            [schedReqKey, JSON.stringify({
+              status: 'approved',
+              updated_at: new Date().toISOString(),
+            })],
+          );
+        }
+
         const recordKey = `sched_${employeeCode}_${workDate}_${Date.now()}`;
         const assignPayload = {
           id: recordKey,
@@ -1593,11 +1640,21 @@ Trả về JSON đúng cấu trúc sau:
         ).catch(() => {});
       }
 
-      // 2. Gửi thông báo đến đối tượng test (Nhân viên)
-      const intentLabel = payload.intentLabel || (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : intent === 'doi_ca_truc' ? 'Đổi ca trực' : 'Nghỉ phép');
+      // Update action card status in messages table to approved
+      try {
+        await this.infrastructure.postgres.query(
+          `update app.records
+           set payload = jsonb_set(payload, '{action_data,status}', '"approved"'), updated_at = now()
+           where entity_type = 'messages' and (payload->'action_data'->>'createdRecordId' = $1 or payload->'action_data'->>'workDate' = $2)`,
+          [String(recordId || payload.createdRecordId || payload.requestId || ''), workDate],
+        );
+      } catch {}
+
+      // 2. Gửi thông báo đến đối tượng test (Nhân viên) — ngắn gọn, súc tích
+      const intentLabel = payload.intentLabel || (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : intent === 'doi_ca_truc' ? 'Đổi ca' : 'Nghỉ phép');
       const notifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const notifTitle = `✅ [DUYỆT TỪ XA] ${intentLabel} ngày ${workDate}`;
-      const notifBody = `Chào ${payload.employeeName || employeeCode}, yêu cầu ${intentLabel} ngày ${workDate} của bạn đã được ${approverName} PHÊ DUYỆT THÀNH CÔNG! Dữ liệu đã được cập nhật vào hệ thống.`;
+      const notifTitle = `✅ Duyệt ${intentLabel}`;
+      const notifBody = `Sếp đã duyệt: ${workDate}${shiftName ? ` (${shiftName})` : ''}.`;
 
       const notifPayload = {
         id: notifId,
@@ -1629,8 +1686,8 @@ Trả về JSON đúng cấu trúc sau:
           id: targetNotifId,
           user_id: targetUserId,
           employee_code: payload.targetEmployeeCode,
-          title: `🔄 [ĐỔI CA] Lịch trực ngày ${workDate} đã duyệt`,
-          body: `Sếp đã duyệt đổi ca trực ngày ${workDate} giữa bạn và ${payload.employeeName || employeeCode}.`,
+          title: `🔄 Duyệt đổi ca ${workDate}`,
+          body: `Đã duyệt đổi ca ngày ${workDate} với ${payload.employeeName || employeeCode}.`,
           type: 'schedule',
           link_view: 'schedule',
           read: false,
@@ -1857,8 +1914,8 @@ Quy tắc phản hồi:
       const isAction = parsedResult.intent !== 'khac' && parsedResult.intent !== 'hoi_dap';
       parsedResult.type = isAction ? 'action' : 'qa';
       parsedResult.reply = isAction
-        ? `Dạ em đã nhận được yêu cầu ${parsedResult.intentLabel} của anh/chị (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.shift || 'ca làm'}). Em đã tự động tạo phiếu và chuyển thông báo đến Sếp duyệt qua Telegram rồi ạ!`
-        : `Dạ em chào anh/chị ${empName}! Em là Trợ lý AI Clinic Hub 5S. Anh/chị cần em hỗ trợ xin nghỉ phép, đổi ca trực, bổ sung giờ công hay kiểm tra quy chế nào ạ?`;
+        ? `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) đến Sếp duyệt qua Telegram rồi ạ!`
+        : `Chào anh/chị ${empName}! Em là Trợ lý AI 5S. Em có thể hỗ trợ xin nghỉ, đổi ca hay bổ sung công ạ?`;
       usedAi = false;
     }
 
@@ -1878,8 +1935,6 @@ Quy tắc phản hồi:
     parsedResult.employeeCode = empCode;
     parsedResult.employeeName = empName;
     parsedResult.branch = parsedResult.branch || user.branchId || 'pham-van-chieu';
-
-    this.pendingGeminiRequests.set(parsedResult.requestId, parsedResult);
 
     let telegramSent = false;
     let createdRecordId = '';
@@ -1939,12 +1994,17 @@ Quy tắc phản hồi:
           );
         }
 
+        parsedResult.createdRecordId = createdRecordId;
+        this.pendingGeminiRequests.set(parsedResult.requestId, parsedResult);
+
         const targetChatId = config.telegramChatId || undefined;
         const tgRes = await this.sendTelegramApprovalCard(parsedResult, targetChatId);
         if (tgRes?.sentCount > 0) telegramSent = true;
       } catch (err: any) {
         this.logger.error('Failed to create action record or notify Telegram:', err);
       }
+    } else {
+      this.pendingGeminiRequests.set(parsedResult.requestId, parsedResult);
     }
 
     try {
@@ -2039,6 +2099,8 @@ Quy tắc phản hồi:
 
     return {
       success: true,
+      userMessageId: userMsgId,
+      aiMessageId: aiMsgId,
       reply: parsedResult.reply,
       action: parsedResult.type === 'action' ? parsedResult : null,
       telegramSent,

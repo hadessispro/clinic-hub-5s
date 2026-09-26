@@ -300,13 +300,15 @@ async function bootstrap() {
         notifSub = subscribeToNotifications(authInfo.user.id, (newNotif) => {
           store.addNotification(newNotif);
           playChime(newNotif.sound || 'crystal');
-          showToast(`🔔 ${newNotif.title}: ${newNotif.body}`);
+          const summary = newNotif.body ? `${newNotif.title}: ${newNotif.body}` : newNotif.title;
+          showToast(summary);
         });
 
         if (leaveSub) leaveSub.unsubscribe();
         leaveSub = subscribeToLeaveRequests((payload) => {
           const currentState = store.getState();
-          if (payload.eventType === 'INSERT' && ['admin', 'hr', 'leader', 'admin_it'].includes(currentState.role)) {
+          const authorCode = payload.new?.employee_code || payload.new?.employeeCode;
+          if (payload.eventType === 'INSERT' && ['admin', 'hr', 'leader', 'admin_it'].includes(currentState.role) && authorCode !== currentState.employeeCode) {
             showToast('Có đơn mới cần kiểm tra.');
           }
           if (currentState.currentView === 'leave') store.notify();

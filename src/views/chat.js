@@ -55,7 +55,7 @@ function renderMessage(msg, state, selectedContact) {
   const isPending = action?.status === 'pending';
   const intentIcon = action?.intent === 'doi_ca_truc' ? '🔄' : action?.intent === 'bo_sung_cham_cong' ? '⏰' : '🏖️';
 
-  return `<div class="chat-message-row${mine ? ' is-own' : ''}${isAi ? ' is-ai' : ''}">
+  return `<div class="chat-message-row${mine ? ' is-own' : ''}${isAi ? ' is-ai' : ''}" data-msg-id="${escapeHTML(msg.id || '')}">
     ${!mine ? `
       <div class="chat-avatar-wrap">
         ${avatarUrl ? `<img src="${avatarUrl}" alt="${escapeHTML(authorName)}" class="chat-avatar-img" />` : `<div class="chat-avatar-fallback">${escapeHTML(initial)}</div>`}
@@ -243,8 +243,9 @@ export function initView() {
 
     if (isAi) {
       // 1. Optimistic append user message
+      const tempId = `temp_${Date.now()}`;
       const userMessage = {
-        id: `temp_${Date.now()}`,
+        id: tempId,
         senderId: state.user.id,
         text,
         time: new Date().toISOString(),
@@ -266,8 +267,15 @@ export function initView() {
         const res = await sendGeminiChatMessage(text);
         document.getElementById('aiTypingIndicator')?.remove();
 
+        // Update optimistic user message's data-msg-id so subscription doesn't re-insert it
+        if (res?.userMessageId) {
+          const tempNode = list?.querySelector(`[data-msg-id="${tempId}"]`);
+          if (tempNode) tempNode.setAttribute('data-msg-id', res.userMessageId);
+        }
+
+        const aiMsgId = res?.aiMessageId || `ai_${Date.now()}`;
         const aiMessage = {
-          id: `ai_${Date.now()}`,
+          id: aiMsgId,
           senderId: 'ai_assistant',
           text: res?.reply || 'Em đã ghi nhận yêu cầu của anh/chị rồi ạ!',
           actionData: res?.action ? {

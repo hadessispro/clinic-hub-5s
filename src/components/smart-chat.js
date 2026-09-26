@@ -9,6 +9,7 @@ import {
 import { sendGeminiChatMessage } from '../services/system-admin.js';
 import { escapeHTML, formatDateTime, departmentName } from '../utils.js';
 import { showToast } from './toast.js';
+import { store } from '../store.js';
 
 let root = null;
 let inboxSubscription = null;
@@ -231,10 +232,17 @@ export async function initSmartChat(authInfo) {
     localStorage.setItem(checkedKey(), new Date().toISOString());
     recentActivity.set(contact.userId, new Date(message.time).getTime());
     localStorage.setItem(activityKey(), JSON.stringify(Object.fromEntries(recentActivity)));
-    showToast(`💬 ${contact.name}: ${message.text.length > 80 ? `${message.text.slice(0, 80)}…` : message.text}`, false, 'chat');
-    const isOpenConversation = !root.querySelector('[data-smart-chat-panel]').hidden
+
+    const isChatView = store.getState()?.currentView === 'chat';
+    const isOpenConversation = !root.querySelector('[data-smart-chat-panel]')?.hidden
       && activeContact?.userId === contact.userId
       && conversationChannel(session.user.id, contact.userId) === message.channel;
+
+    // Never toast if viewing chat, or if panel is open with this contact, or if message is from AI
+    if (!isChatView && !isOpenConversation && message.senderId !== 'ai_assistant' && contact.userId !== 'ai_assistant') {
+      showToast(`💬 ${contact.name}: ${message.text.length > 60 ? `${message.text.slice(0, 60)}…` : message.text}`, false, 'chat');
+    }
+
     if (isOpenConversation) {
       const list = root.querySelector('[data-smart-chat-messages]');
       list?.querySelector('.smart-chat-empty')?.remove();
@@ -245,7 +253,7 @@ export async function initSmartChat(authInfo) {
       persistUnread();
       updateBadge();
       if (!root.querySelector('[data-smart-chat-panel]').hidden && !activeContact) renderContacts();
-      if (message.scope === 'direct') {
+      if (message.scope === 'direct' && !isChatView && contact.userId !== 'ai_assistant') {
         setOpen(true);
         openConversation(contact.userId);
       }

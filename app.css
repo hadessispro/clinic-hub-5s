@@ -4493,6 +4493,21 @@ tr:last-child td {
 .notif-item {
   position: relative;
 }
+.notif-item-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-item-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
 
 /* --- Offline Attendance Banner --- */
 .offline-banner {
@@ -8051,7 +8066,17 @@ body.dialog-open {
 .toast.error .toast-status-icon { background: #c74439; }
 .toast-copy { display: grid; gap: 2px; min-width: 0; }
 .toast-copy strong { color: #173b34; font-size: .78rem; }
-.toast-copy span { color: #536b65; font-size: .82rem; line-height: 1.38; overflow-wrap: anywhere; }
+.toast-copy span {
+  color: #536b65;
+  font-size: .82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .toast.error .toast-copy strong, .toast.error .toast-copy span { color: #8f302c; }
 .toast-close { display: grid; width: 30px; height: 30px; min-height: 30px; padding: 0; place-items: center; border: 0; border-radius: 9px; color: #61736e; background: #eef4f2; font-size: 1rem; }
 .toast-progress { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: #20a294; transform-origin: left; animation: toast-progress 3.8s linear both; }
@@ -8228,10 +8253,13 @@ body.dialog-open {
 @media (max-width: 760px) { .lead-server-pager { align-items: stretch; flex-direction: column; }.lead-server-pager>div { justify-content: space-between; }.lead-server-pager .secondary-button { padding: 0 9px; }.lead-server-pager .secondary-button i { margin: 0; } }
 @media (max-width: 760px) {
   .toast:not(.chat-toast) {
-    bottom: calc(90px + env(safe-area-inset-bottom)) !important;
-    width: calc(100vw - 24px);
-    grid-template-columns: 36px minmax(0, 1fr) 28px;
-    padding: 10px 10px 13px;
+    bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+    width: min(400px, calc(100vw - 20px));
+    max-width: 100%;
+    grid-template-columns: 32px minmax(0, 1fr) 26px;
+    gap: 8px;
+    padding: 9px 10px 11px;
+    border-radius: 12px;
   }
 }
 /* Telesale leader control center */
