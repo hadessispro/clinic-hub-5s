@@ -111,7 +111,18 @@ export async function renderView(state) {
   }
 
   const selectedContact = contactsList.find((item) => item.userId === selectedContactId) || aiContact;
-  const messages = await getMessages(selectedContactId, state.user.id).catch(() => []);
+  const rawMessages = await getMessages(selectedContactId, state.user.id).catch(() => []);
+  const messages = [];
+  const seenIds = new Set();
+  for (const m of rawMessages) {
+    if (!m || !m.id || seenIds.has(m.id)) continue;
+    seenIds.add(m.id);
+    const prev = messages[messages.length - 1];
+    if (prev && prev.senderId === m.senderId && prev.text?.trim() === m.text?.trim()) {
+      continue;
+    }
+    messages.push(m);
+  }
   const canCompose = selectedContactId !== 'global' || state.role === 'admin';
   const isAiChat = selectedContact.userId === 'ai_assistant' || selectedContact.isAi;
 
@@ -288,7 +299,15 @@ export function initView() {
           } : null,
           time: new Date().toISOString(),
         };
-        list?.insertAdjacentHTML('beforeend', renderMessage(aiMessage, state, { userId: 'ai_assistant', isAi: true }));
+        if (list && !list.querySelector(`[data-msg-id="${aiMsgId}"]`)) {
+          const lastRow = list.querySelector('.chat-message-row:last-child');
+          const lastText = lastRow?.querySelector('.chat-text')?.textContent?.trim();
+          if (!lastText || lastText !== aiMessage.text.trim()) {
+            list.insertAdjacentHTML('beforeend', renderMessage(aiMessage, state, { userId: 'ai_assistant', isAi: true }));
+          } else if (lastRow) {
+            lastRow.setAttribute('data-msg-id', aiMsgId);
+          }
+        }
         if (list) list.scrollTop = list.scrollHeight;
         promoteContact('ai_assistant');
       } catch (err) {
@@ -319,8 +338,19 @@ export function initView() {
   activeSubscription = subscribeToMessages(selectedContactId, state.user.id, (message) => {
     const list = document.getElementById('messageList');
     if (!list) return;
-    // Avoid duplicate if already optimistically inserted
+    // Avoid duplicate if already in DOM by ID
     if (list.querySelector(`[data-msg-id="${message.id}"]`)) return;
+    // Avoid duplicate if last message in list has identical text from same sender
+    const lastRow = list.querySelector('.chat-message-row:last-child');
+    if (lastRow) {
+      const lastText = lastRow.querySelector('.chat-text')?.textContent?.trim();
+      const isAiSender = message.senderId === 'ai_assistant';
+      const lastIsAi = lastRow.classList.contains('is-ai');
+      if (lastText && lastText === message.text?.trim() && (isAiSender === lastIsAi)) {
+        lastRow.setAttribute('data-msg-id', message.id);
+        return;
+      }
+    }
     list.querySelector('.empty-state')?.remove();
     const contact = contactsList.find((item) => item.userId === selectedContactId);
     list.insertAdjacentHTML('beforeend', renderMessage(message, state, contact));
