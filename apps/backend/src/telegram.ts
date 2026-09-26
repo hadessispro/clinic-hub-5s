@@ -748,11 +748,13 @@ export class TelegramService {
         }
       }
 
-      await this.answerCallbackQuery(cqId, approvalSuccess ? '✅ Sếp đã phê duyệt thành công!' : '⚠️ Yêu cầu đã được ghi nhận.');
+      await this.answerCallbackQuery(cqId, approvalSuccess ? '✅ Sếp đã phê duyệt thành công!' : '⚠️ Phê duyệt thất bại.');
       if (chatId && messageId) {
         const originalText = String(cq?.message?.text || '');
         const empInfo = cachedPayload?.employeeName ? ` cho <b>${this.escapeHtml(cachedPayload.employeeName)}</b> (<code>${this.escapeHtml(cachedPayload.employeeCode)}</code>)` : '';
-        const updatedText = `${originalText}\n\n━━━━━━━━━━━━━━━━━━━━\n✅ <b>ĐÃ PHÊ DUYỆT BỞI SẾP (${this.escapeHtml(approver)})</b>\n⏰ Lúc: ${nowStr}\n<i>Dữ liệu đã tự động cập nhật vào hệ thống Clinic Hub 5S${empInfo}.</i>`;
+        const updatedText = approvalSuccess
+          ? `${originalText}\n\n━━━━━━━━━━━━━━━━━━━━\n✅ <b>ĐÃ PHÊ DUYỆT BỞI SẾP (${this.escapeHtml(approver)})</b>\n⏰ Lúc: ${nowStr}\n<i>Dữ liệu đã tự động cập nhật vào hệ thống Clinic Hub 5S${empInfo}.</i>`
+          : `${originalText}\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>LỖI PHÊ DUYỆT BỞI SẾP (${this.escapeHtml(approver)})</b>\n⏰ Lúc: ${nowStr}\n<i>Lỗi: ${this.escapeHtml(approvalError || 'Không tìm thấy dữ liệu yêu cầu.')}</i>`;
         await this.editMessageText(chatId, messageId, updatedText, { inline_keyboard: [] });
       }
     } else if (data.startsWith('gemini_reject:')) {
@@ -1116,13 +1118,16 @@ export class TelegramService {
     const lower = text.toLowerCase();
 
     // 1. Intent Detection
-    let intent: 'doi_ca_truc' | 'bo_sung_cham_cong' | 'xin_nghi_phep' | 'khac' = 'khac';
+    let intent: 'doi_ca_truc' | 'bo_sung_cham_cong' | 'tang_ca' | 'xin_nghi_phep' | 'khac' = 'khac';
     let intentLabel = 'Yêu cầu nhân sự';
 
     if (/(đổi ca|đổi lịch|nhờ trực|thế ca|trực thay|hoán đổi ca|chuyển ca)/i.test(lower)) {
       intent = 'doi_ca_truc';
       intentLabel = 'Đổi ca trực';
-    } else if (/(chấm công|bổ sung công|bổ sung chấm|quên chấm|quên check|quên bấm|bấm công|sửa công|chưa check|điểm danh|ghi nhận công|công hộ|chấm hộ)/i.test(lower)) {
+    } else if (/(tăng ca|làm thêm|overtime|\bot\b)/i.test(lower)) {
+      intent = 'tang_ca';
+      intentLabel = 'Đơn tăng ca';
+    } else if (/(chấm công|bổ sung công|bổ sung chấm|quên chấm|quên check|quên bấm|bấm công|sửa công|chưa check|điểm danh|ghi nhận công)/i.test(lower)) {
       intent = 'bo_sung_cham_cong';
       intentLabel = 'Bổ sung chấm công';
     } else if (/(xin nghỉ|nghỉ phép|nghỉ ốm|nghỉ việc riêng|nghỉ ngày)/i.test(lower)) {
@@ -1191,25 +1196,36 @@ export class TelegramService {
       }
     }
 
-    // 5. Time extraction
+    // 5. Time extraction (hỗ trợ dạng 20h đến 20h12 hoặc 20:00 - 20:12)
     let startTime: string | null = resolvedShift.start;
     let endTime: string | null = resolvedShift.end;
-    const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})/);
-    if (timeMatch) {
-      startTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+    const rangeTimeMatch = lower.match(/(?:từ\s+|lúc\s+)?(\d{1,2})[h:](\d{0,2})\s*(?:đến|-|–|tới)\s*(\d{1,2})[h:](\d{0,2})/);
+    if (rangeTimeMatch) {
+      startTime = `${rangeTimeMatch[1].padStart(2, '0')}:${(rangeTimeMatch[2] || '00').padEnd(2, '0')}`;
+      endTime = `${rangeTimeMatch[3].padStart(2, '0')}:${(rangeTimeMatch[4] || '00').padEnd(2, '0')}`;
+    } else {
+      const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})/);
+      if (timeMatch) {
+        startTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+      }
     }
 
-    // 6. Target colleague
+    let overtimeMinutes = 0;
+    if (startTime && endTime) {
+      const [sh, sm] = startTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
+      if (Number.isFinite(sh) && Number.isFinite(eh)) {
+        overtimeMinutes = Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
+      }
+    }
+
+    // 6. Target colleague (chỉ áp dụng cho đổi ca)
     let targetEmployeeName: string | null = null;
-    const partnerMatch = text.match(/(?:với|cho|nhờ|bàn giao cho|thay cho)\s+(?:bạn|chị|anh|em)?\s*([A-ZÀ-Ỹa-zà-ỹ\s]{2,20}?)(?:\s+(?:ca|ngày|ở|tại|do|vì|về|$))/i);
-    if (partnerMatch && partnerMatch[1]) {
-      targetEmployeeName = partnerMatch[1].trim();
-    } else if (/Lan Anh/i.test(text)) {
-      targetEmployeeName = 'Lan Anh';
-    } else if (/Minh Quân/i.test(text)) {
-      targetEmployeeName = 'Minh Quân';
-    } else if (/Trang/i.test(text)) {
-      targetEmployeeName = 'Thu Trang';
+    if (intent === 'doi_ca_truc') {
+      const partnerMatch = text.match(/(?:với|nhờ|bàn giao cho|thay cho|đổi với)\s+(?:bạn|chị|anh|em)?\s*([A-ZÀ-Ỹa-zà-ỹ\s]{2,20}?)(?:\s+(?:ca|ngày|ở|tại|do|vì|về|$))/i);
+      if (partnerMatch && partnerMatch[1]) {
+        targetEmployeeName = partnerMatch[1].trim();
+      }
     }
 
     // 7. Reason extraction
@@ -1225,6 +1241,8 @@ export class TelegramService {
       sanityCheck = targetEmployeeName
         ? `✅ Hợp lệ: Đã xác định người đổi (${targetEmployeeName}) tại chi nhánh ${branch}. Ca: ${shift} (${startTime}–${endTime}).`
         : `⚠️ Cần kiểm tra: Chưa rõ người nhận thế ca, quản lý cần xác nhận trước khi duyệt.`;
+    } else if (intent === 'tang_ca') {
+      sanityCheck = `✅ Hợp lệ: Đơn tăng ca ${startTime}–${endTime} ngày ${workDate} (${overtimeMinutes} phút).`;
     } else if (intent === 'bo_sung_cham_cong') {
       sanityCheck = `✅ Hợp lệ: Bổ sung công ca ${shift} (${startTime}–${endTime}) ngày ${workDate} theo vị trí công tác.`;
     } else if (intent === 'xin_nghi_phep') {
@@ -1244,6 +1262,7 @@ export class TelegramService {
       shiftCode,
       startTime,
       endTime,
+      overtimeMinutes,
       branch,
       reason,
       urgency: 'normal',
@@ -1317,16 +1336,19 @@ Quy định ca trực chuẩn theo vị trí công việc:
 5. Chung: clinic-0800 (08:00 - 17:00)
 
 Quy ước Intent:
-- "bo_sung_cham_cong": Các câu xin chấm công, chấm công hộ, quên chấm công, quên check-in/out, bổ sung giờ công.
+- "tang_ca": Đơn xin tăng ca, làm thêm giờ, báo về trễ (ví dụ tăng ca từ 20h đến 20h12).
+- "bo_sung_cham_cong": Các câu xin bổ sung công cho bản thân, quên chấm công, quên check-in/out.
 - "doi_ca_truc": Xin đổi ca với ai, đổi lịch trực, trực thay.
 - "xin_nghi_phep": Xin nghỉ phép, nghỉ ốm, việc riêng.
 
+QUY TẮC BẢO MẬT: Mỗi nhân sự chỉ được làm đơn cho chính mình, tuyệt đối không làm hộ người khác (trừ đổi ca).
+
 Năm hiện tại là 2026. Nếu chỉ có ngày (ví dụ "ngày 24"), hãy quy đổi sang YYYY-MM-DD của tháng 09/2026 (2026-09-24).
-Nếu nhân viên không nói rõ ca (ví dụ chỉ nói "chấm công hộ ngày 24"), hãy mặc định là Ca hành chính của vị trí đó.
+Nếu nhân viên không nói rõ ca, hãy mặc định là Ca hành chính của vị trí đó.
 Trả về JSON đúng cấu trúc sau:
 {
-  "intent": "doi_ca_truc" | "bo_sung_cham_cong" | "xin_nghi_phep" | "khac",
-  "intentLabel": "Đổi ca trực" | "Bổ sung chấm công" | "Xin nghỉ phép" | "Yêu cầu khác",
+  "intent": "doi_ca_truc" | "bo_sung_cham_cong" | "tang_ca" | "xin_nghi_phep" | "khac",
+  "intentLabel": "Đổi ca trực" | "Bổ sung chấm công" | "Đơn tăng ca" | "Xin nghỉ phép" | "Yêu cầu khác",
   "employeeCode": "${employeeCode || 'NV_AUTO'}",
   "employeeName": "${resolvedEmployeeName || 'Nhân viên'}",
   "targetEmployeeName": "Tên đồng nghiệp đổi ca hoặc bàn giao nếu có, hoặc null",
@@ -1337,6 +1359,7 @@ Trả về JSON đúng cấu trúc sau:
   "shiftCode": "Mã ca chuẩn (ví dụ doctor-afternoon hoặc front-afternoon)",
   "startTime": "HH:mm hoặc null",
   "endTime": "HH:mm hoặc null",
+  "overtimeMinutes": 12 hoặc null,
   "branch": "PVC" | "LVT" | "Toàn hệ thống",
   "reason": "Tóm tắt lý do rõ ràng",
   "urgency": "normal" | "urgent",
@@ -1466,7 +1489,17 @@ Trả về JSON đúng cấu trúc sau:
       let checkinId: string | null = null;
       let checkoutId: string | null = null;
 
-      if (intent === 'bo_sung_cham_cong' || intent === 'xin_nghi_phep') {
+      const isOvertime = intent === 'tang_ca' || /(tăng ca|overtime)/i.test(String(payload.request_type || payload.reason || payload.intentLabel || ''));
+      let overtimeMinutes = Number(payload.overtimeMinutes || 0);
+      if (isOvertime && !overtimeMinutes && startTime && endTime) {
+        const [sh, sm] = startTime.split(':').map(Number);
+        const [eh, em] = endTime.split(':').map(Number);
+        if (Number.isFinite(sh) && Number.isFinite(eh)) {
+          overtimeMinutes = Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
+        }
+      }
+
+      if (intent === 'bo_sung_cham_cong' || intent === 'xin_nghi_phep' || isOvertime) {
         let leaveRecordKey = String(payload.createdRecordId || '').trim();
         if (!leaveRecordKey && payload.requestId) {
           const existing = await this.infrastructure.postgres.query<{ record_key: string }>(
@@ -1475,6 +1508,8 @@ Trả về JSON đúng cấu trúc sau:
           );
           if (existing.rows[0]?.record_key) leaveRecordKey = existing.rows[0].record_key;
         }
+
+        const requestType = isOvertime ? 'Đơn tăng ca' : (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép');
 
         if (leaveRecordKey) {
           await this.infrastructure.postgres.query(
@@ -1486,6 +1521,7 @@ Trả về JSON đúng cấu trúc sau:
               leader_status: 'approved',
               operations_status: 'approved',
               reviewer_code: approverName,
+              overtime_minutes: isOvertime ? overtimeMinutes : 0,
               routed_to: 'ns',
               updated_at: new Date().toISOString(),
             })],
@@ -1496,11 +1532,12 @@ Trả về JSON đúng cấu trúc sau:
           const leavePayload = {
             id: recordKey,
             employee_code: employeeCode,
-            request_type: intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép',
+            request_type: requestType,
             from_date: workDate,
             to_date: toDate,
             request_start_time: startTime ? (startTime.length === 5 ? `${startTime}:00` : startTime) : null,
             request_end_time: endTime ? (endTime.length === 5 ? `${endTime}:00` : endTime) : null,
+            overtime_minutes: isOvertime ? overtimeMinutes : 0,
             reason,
             status: 'approved',
             leader_status: 'approved',
@@ -1519,14 +1556,113 @@ Trả về JSON đúng cấu trúc sau:
           recordId = recordKey;
         }
 
-        // Nếu là bổ sung công: Ghi nhận thực tế 2 lượt Vào ca & Ra ca trong app.records (entity_type='attendance_records')
-        if (intent === 'bo_sung_cham_cong') {
-          const nowStr = new Date().toISOString();
-          const checkinTimeFormatted = startTime.length === 5 ? `${startTime}:00` : startTime;
-          const checkoutTimeFormatted = endTime.length === 5 ? `${endTime}:00` : endTime;
-          const checkinIso = `${workDate}T${checkinTimeFormatted}+07:00`;
-          const checkoutIso = `${workDate}T${checkoutTimeFormatted}+07:00`;
+        const nowStr = new Date().toISOString();
+        const checkinTimeFormatted = startTime.length === 5 ? `${startTime}:00` : startTime;
+        const checkoutTimeFormatted = endTime.length === 5 ? `${endTime}:00` : endTime;
+        const checkinIso = `${workDate}T${checkinTimeFormatted}+07:00`;
+        const checkoutIso = `${workDate}T${checkoutTimeFormatted}+07:00`;
+        const workDayId = `work:${employeeCode}:${workDate}`;
 
+        if (isOvertime) {
+          // Xử lý đơn tăng ca: cập nhật checkout và bảng công
+          const existingCheckout = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+            `select record_key, payload from app.records where entity_type='attendance_records' and deleted_at is null
+             and lower(payload->>'employee_code')=lower($1) and payload->>'work_date'=$2 and payload->>'record_type'='checkout' limit 1`,
+            [employeeCode, workDate],
+          );
+
+          if (existingCheckout.rows[0]) {
+            const coKey = existingCheckout.rows[0].record_key;
+            const coPayload = existingCheckout.rows[0].payload;
+            coPayload.recorded_at = checkoutIso;
+            coPayload.note = `${coPayload.note || ''} [Tăng ca ${overtimeMinutes}p duyệt bởi ${approverName}]`.trim();
+            await this.infrastructure.postgres.query(
+              `update app.records set payload=$2::jsonb, updated_at=now() where entity_type='attendance_records' and record_key=$1`,
+              [coKey, JSON.stringify(coPayload)],
+            );
+            checkoutId = coKey;
+          } else {
+            checkoutId = `att_co_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            const checkoutPayload = {
+              id: checkoutId,
+              client_event_id: checkoutId,
+              employee_code: employeeCode,
+              shift_code: shiftCode,
+              record_type: 'checkout',
+              work_date: workDate,
+              recorded_at: checkoutIso,
+              branch_id: branchId,
+              lat: branchLat,
+              lng: branchLng,
+              distance_m: 5,
+              accuracy_m: 10,
+              status: 'valid',
+              created_by: approverName,
+              device_id: 'gemini-ai-assistant',
+              captured_offline: false,
+              synced_at: nowStr,
+              proof_url: null,
+              note: `[DUYỆT GEMINI AI] Tăng ca ${overtimeMinutes}p bởi ${approverName}: ${reason}`,
+              created_at: nowStr,
+              updated_at: nowStr,
+            };
+            await this.infrastructure.postgres.query(
+              `insert into app.records (entity_type, record_key, payload, origin, updated_at) values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
+              [checkoutId, JSON.stringify(checkoutPayload)],
+            );
+          }
+
+          // Cập nhật attendance_work_days chuẩn
+          const existingWorkDay = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+            `select payload from app.records where entity_type='attendance_work_days' and record_key=$1 and deleted_at is null limit 1`,
+            [workDayId],
+          );
+
+          if (existingWorkDay.rows[0]?.payload) {
+            const wp = existingWorkDay.rows[0].payload;
+            wp.overtime_minutes = overtimeMinutes;
+            wp.approved_overtime_minutes = overtimeMinutes;
+            wp.payable_minutes = (Number(wp.regular_minutes) || shiftInfo.minutes) + overtimeMinutes;
+            wp.checkout_at = checkoutIso;
+            wp.status = 'complete';
+            wp.calculated_at = nowStr;
+            await this.infrastructure.postgres.query(
+              `update app.records set payload=$2::jsonb, updated_at=now() where entity_type='attendance_work_days' and record_key=$1`,
+              [workDayId, JSON.stringify(wp)],
+            );
+          } else {
+            const workDayPayload = {
+              id: workDayId,
+              employee_code: employeeCode,
+              work_date: workDate,
+              shift_code: shiftCode,
+              shift_name: shiftName,
+              branch_id: branchId,
+              checkout_branch_id: branchId,
+              scheduled_minutes: shiftInfo.minutes,
+              regular_minutes: shiftInfo.minutes,
+              overtime_minutes: overtimeMinutes,
+              approved_overtime_minutes: overtimeMinutes,
+              overtime_request_ids: [recordId],
+              late_minutes: 0,
+              early_leave_minutes: 0,
+              payable_minutes: shiftInfo.minutes + overtimeMinutes,
+              workday_credit: 1.0,
+              checkin_at: `${workDate}T${shiftInfo.start}:00+07:00`,
+              checkout_at: checkoutIso,
+              status: 'complete',
+              calculated_at: nowStr,
+              source: 'postgresql-vps',
+            };
+            await this.infrastructure.postgres.query(
+              `insert into app.records (entity_type, record_key, payload, origin, updated_at)
+               values ('attendance_work_days', $1, $2::jsonb, 'vps-work-calculation', now())
+               on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
+              [workDayId, JSON.stringify(workDayPayload)],
+            );
+          }
+        } else if (intent === 'bo_sung_cham_cong') {
+          // Bổ sung công thường (checkin + checkout)
           checkinId = `att_ci_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           const checkinPayload = {
             id: checkinId,
@@ -1578,18 +1714,14 @@ Trả về JSON đúng cấu trúc sau:
           };
 
           await this.infrastructure.postgres.query(
-            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
-             values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at) values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
             [checkinId, JSON.stringify(checkinPayload)],
           );
           await this.infrastructure.postgres.query(
-            `insert into app.records (entity_type, record_key, payload, origin, updated_at)
-             values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
+            `insert into app.records (entity_type, record_key, payload, origin, updated_at) values ('attendance_records', $1, $2::jsonb, 'vps', now())`,
             [checkoutId, JSON.stringify(checkoutPayload)],
           );
 
-          // Ghi nhận tổng hợp ngày công hoàn chỉnh
-          const workDayId = `wd_${employeeCode.toLowerCase()}_${workDate}`;
           const workDayPayload = {
             id: workDayId,
             employee_code: employeeCode,
@@ -1824,16 +1956,21 @@ Trả về JSON đúng cấu trúc sau:
       );
     } catch {}
 
-    const intentIcon = payload.intent === 'doi_ca_truc' ? '🔄' : payload.intent === 'bo_sung_cham_cong' ? '⏰' : '🏖️';
+    const isOvertime = payload.intent === 'tang_ca' || String(payload.intentLabel || '').toLowerCase().includes('tăng ca');
+    const intentIcon = payload.intent === 'doi_ca_truc' ? '🔄' : payload.intent === 'bo_sung_cham_cong' ? '⏰' : isOvertime ? '⏳' : '🏖️';
+    const timeDetail = isOvertime && payload.overtimeMinutes
+      ? `${payload.overtimeMinutes} phút (${payload.startTime || ''} ➔ ${payload.endTime || ''})`
+      : `${payload.shift || ''} ${payload.startTime ? `(${payload.startTime}${payload.endTime ? ` – ${payload.endTime}` : ''})` : ''}`.trim();
+
     const lines = [
       `🤖 <b>[AI GEMINI] YÊU CẦU CẦN SẾP DUYỆT TỪ XA</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `📋 <b>Loại:</b> ${intentIcon} ${this.escapeHtml(payload.intentLabel || 'Yêu cầu nhân sự')}`,
+      `📋 <b>Loại:</b> ${intentIcon} ${this.escapeHtml(payload.intentLabel || (isOvertime ? 'Đơn tăng ca' : 'Yêu cầu nhân sự'))}`,
       `👤 <b>Nhân viên:</b> <b>${this.escapeHtml(payload.employeeName || 'Nhân viên')}</b> (<code>${this.escapeHtml(payload.employeeCode || '')}</code>)`,
       `📅 <b>Ngày áp dụng:</b> <code>${this.escapeHtml(payload.workDate || '')}</code> ${payload.toDate && payload.toDate !== payload.workDate ? `đến <code>${this.escapeHtml(payload.toDate)}</code>` : ''}`,
-      `⏰ <b>Ca trực / Giờ:</b> ${this.escapeHtml(payload.shift || '')} ${payload.startTime ? `(${this.escapeHtml(payload.startTime)})` : ''}`,
+      `⏰ <b>Thời gian:</b> ${this.escapeHtml(timeDetail)}`,
       `🏥 <b>Chi nhánh:</b> ${this.escapeHtml(payload.branch || 'Toàn hệ thống')}`,
-      payload.targetEmployeeName ? `👥 <b>Người đổi/bàn giao:</b> <b>${this.escapeHtml(payload.targetEmployeeName)}</b>` : '',
+      payload.intent === 'doi_ca_truc' && payload.targetEmployeeName ? `👥 <b>Người đổi ca:</b> <b>${this.escapeHtml(payload.targetEmployeeName)}</b>` : '',
       `📝 <b>Lý do:</b> <i>${this.escapeHtml(payload.reason || payload.summary || '')}</i>`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `🔍 <b>AI Thẩm định:</b> ${this.escapeHtml(payload.sanityCheck || 'Hợp lệ theo tiêu chuẩn phòng khám')}`,
@@ -1891,9 +2028,18 @@ Trả về JSON đúng cấu trúc sau:
     const startTime = Date.now();
 
     const sysInstruction = `Bạn là Trợ lý AI Thông minh & Thân thiện của Hệ thống Nha khoa Clinic Hub 5S.
-Nhiệm vụ: Trò chuyện tự nhiên, chuyên nghiệp với nhân viên; giải đáp thắc mắc nội quy, hỗ trợ làm đơn từ (xin nghỉ phép, bổ sung công, đổi ca trực).
+Nhiệm vụ: Trò chuyện tự nhiên, chuyên nghiệp với nhân viên; giải đáp thắc mắc nội quy, hỗ trợ làm đơn từ (xin nghỉ phép, bổ sung công, tăng ca, đổi ca trực).
 Nhân viên đang trò chuyện: ${empName} (Mã NV: ${empCode}, Bộ phận: ${empDept}, Vị trí: ${empTitle}).
 Hôm nay là: ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}. Năm hiện tại là 2026.
+
+QUY TẮC BẢO MẬT & NGUYÊN TẮC CHÍNH CHỦ (BẮT BUỘC TUÂN THỦ 100%):
+- Mỗi tài khoản nhân sự CHỈ ĐƯỢC PHÉP tạo yêu cầu cho CHÍNH BẢN THÂN MÌNH (${empName} - ${empCode}).
+- TUYỆT ĐỐI KHÔNG ĐƯỢC tạo đơn, chấm công hộ, báo tăng ca hộ hay xin nghỉ hộ cho bất kỳ nhân sự nào khác trong hệ thống!
+- Ngoại lệ duy nhất: Đơn đổi ca trực ("doi_ca_truc") thì được phép nêu tên đồng nghiệp muốn đổi ca cùng vào trường "targetEmployeeName".
+- Nếu nhân viên yêu cầu xin nghỉ, chấm công, tăng ca cho người khác (ví dụ: "Huỳnh tăng ca...", "chấm công hộ Lan", "xin nghỉ cho Tuấn"):
+  -> BẮT BUỘC đặt "type": "qa", "intent": "hoi_dap", "intentLabel": "Từ chối làm hộ".
+  -> "reply": "Dạ theo quy định bảo mật của hệ thống 5S, mỗi tài khoản nhân sự chỉ phục vụ quản lý và ghi nhận dữ liệu cho chính mình, không được tạo đơn thay hoặc can thiệp dữ liệu của người khác để đảm bảo tính minh bạch. Nhờ anh/chị báo bạn [Tên đồng nghiệp] tự đăng nhập tài khoản của bạn ấy để gửi yêu cầu nhé ạ!".
+  -> TUYỆT ĐỐI KHÔNG tạo action và KHÔNG gửi thẻ duyệt Telegram!
 
 Quy định ca trực tại 5S:
 1. Bác sĩ: Ca sáng (doctor-morning: 08:00 - 18:00), Ca chiều (doctor-afternoon: 10:00 - 20:00), Ca hành chính (doctor-office: 08:00 - 17:00), Ca full (doctor-full: 08:00 - 20:00).
@@ -1906,14 +2052,15 @@ Quy tắc phản hồi:
 {
   "type": "action" | "qa",
   "reply": "Câu trả lời tiếng Việt ấm áp, tự nhiên, rõ ràng gửi trực tiếp cho nhân viên trong chat. Nếu là yêu cầu đơn/công, hãy xác nhận rõ thông tin ngày, ca, lý do và thông báo đã gửi Sếp duyệt.",
-  "intent": "xin_nghi_phep" | "bo_sung_cham_cong" | "doi_ca_truc" | "hoi_dap" | "khac",
-  "intentLabel": "Xin nghỉ phép" | "Bổ sung chấm công" | "Đổi ca trực" | "Hỏi đáp nội quy" | "Trò chuyện",
+  "intent": "xin_nghi_phep" | "bo_sung_cham_cong" | "tang_ca" | "doi_ca_truc" | "hoi_dap" | "khac",
+  "intentLabel": "Xin nghỉ phép" | "Bổ sung chấm công" | "Đơn tăng ca" | "Đổi ca trực" | "Hỏi đáp nội quy" | "Trò chuyện",
   "workDate": "YYYY-MM-DD hoặc null",
   "toDate": "YYYY-MM-DD hoặc null",
   "shift": "Ca sáng | Ca chiều | Ca hành chính | Ca full | null",
   "shiftCode": "Mã ca chuẩn hoặc null",
   "startTime": "HH:mm hoặc null",
   "endTime": "HH:mm hoặc null",
+  "overtimeMinutes": 12 hoặc null,
   "branch": "PVC" | "LVT" | "Toàn hệ thống",
   "targetEmployeeName": "Tên đồng nghiệp nếu đổi ca hoặc bàn giao, null nếu không có",
   "reason": "Lý do tóm tắt ngắn gọn",
@@ -1943,9 +2090,57 @@ Quy tắc phản hồi:
       const isAction = parsedResult.intent !== 'khac' && parsedResult.intent !== 'hoi_dap';
       parsedResult.type = isAction ? 'action' : 'qa';
       parsedResult.reply = isAction
-        ? `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) đến Sếp duyệt qua Telegram rồi ạ!`
+        ? (parsedResult.intent === 'tang_ca'
+          ? `Em đã gửi yêu cầu Đơn tăng ca (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.overtimeMinutes || 0} phút: ${parsedResult.startTime || ''}–${parsedResult.endTime || ''}) đến Sếp duyệt qua Telegram rồi ạ!`
+          : `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) đến Sếp duyệt qua Telegram rồi ạ!`)
         : `Chào anh/chị ${empName}! Em là Trợ lý AI 5S. Em có thể hỗ trợ xin nghỉ, đổi ca hay bổ sung công ạ?`;
       usedAi = false;
+    }
+
+    // Guardrail nghiêm ngặt: Tuyệt đối không cho phép tạo đơn hộ (chấm công hộ, tăng ca hộ, nghỉ phép hộ).
+    // Mỗi tài khoản chỉ phục vụ dữ liệu của chính người đó.
+    if (parsedResult.type === 'action' && ['xin_nghi_phep', 'bo_sung_cham_cong', 'tang_ca'].includes(parsedResult.intent)) {
+      const targetName = String(parsedResult.targetEmployeeName || '').trim();
+      const currentName = empName.toLowerCase();
+      const currentCode = empCode.toLowerCase();
+
+      let isProxy = Boolean(targetName && !currentName.includes(targetName.toLowerCase()) && !currentCode.includes(targetName.toLowerCase()));
+
+      if (!isProxy) {
+        const lowerPrompt = rawText.toLowerCase();
+        const proxyPatterns = ['chấm hộ', 'chấm công hộ', 'tăng ca hộ', 'xin nghỉ hộ', 'nghỉ hộ', 'báo tăng ca hộ', 'đăng ký hộ'];
+        if (proxyPatterns.some((pat) => lowerPrompt.includes(pat))) {
+          isProxy = true;
+        } else {
+          try {
+            const allProfiles = await this.infrastructure.postgres.query<{ name: string; code: string }>(
+              `select payload->>'full_name' as name, payload->>'employee_code' as code from app.records where (entity_type='profiles' or entity_type='employees') and deleted_at is null`,
+            );
+            for (const row of allProfiles.rows) {
+              const pCode = String(row.code || '').trim().toLowerCase();
+              const pName = String(row.name || '').trim().toLowerCase();
+              const pLastName = pName.split(/\s+/).pop() || '';
+              if (pCode && pCode !== currentCode && pLastName.length >= 2 && !currentName.includes(pLastName)) {
+                const regexStart = new RegExp(`^(nhân sự\\s+|bạn\\s+|chị\\s+|anh\\s+|em\\s+)?(${pLastName}|${pCode})\\s+(tăng ca|nghỉ|chấm công|đi làm|vào ca|ra ca)`, 'i');
+                const regexFor = new RegExp(`(tăng ca|nghỉ|chấm công|bổ sung công)\\s+(cho|hộ|giúp)\\s+(${pLastName}|${pCode})`, 'i');
+                if (regexStart.test(lowerPrompt) || regexFor.test(lowerPrompt)) {
+                  isProxy = true;
+                  parsedResult.targetEmployeeName = row.name;
+                  break;
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+
+      if (isProxy) {
+        parsedResult.type = 'qa';
+        parsedResult.intent = 'hoi_dap';
+        parsedResult.intentLabel = 'Từ chối làm hộ';
+        const otherPerson = parsedResult.targetEmployeeName ? ` cho ${parsedResult.targetEmployeeName}` : ' hộ nhân sự khác';
+        parsedResult.reply = `Dạ theo quy tắc bảo mật và quản trị dữ liệu của hệ thống Nha khoa 5S, mỗi tài khoản chỉ phục vụ ghi nhận dữ liệu cho chính nhân sự đó, không được phép tạo đơn hay can thiệp dữ liệu${otherPerson} ạ. Nhờ anh/chị nhắn đồng nghiệp tự đăng nhập tài khoản của bạn ấy để gửi yêu cầu nhé!`;
+      }
     }
 
     if (parsedResult.shiftCode || parsedResult.shift) {
@@ -1968,9 +2163,11 @@ Quy tắc phản hồi:
     let telegramSent = false;
     let createdRecordId = '';
 
-    if (parsedResult.type === 'action' && ['xin_nghi_phep', 'bo_sung_cham_cong', 'doi_ca_truc'].includes(parsedResult.intent)) {
+    if (parsedResult.type === 'action' && ['xin_nghi_phep', 'bo_sung_cham_cong', 'tang_ca', 'doi_ca_truc'].includes(parsedResult.intent)) {
       try {
-        if (parsedResult.intent === 'xin_nghi_phep') {
+        if (parsedResult.intent === 'xin_nghi_phep' || parsedResult.intent === 'tang_ca') {
+          const isTangCa = parsedResult.intent === 'tang_ca';
+          const overtimeMins = Number(parsedResult.overtimeMinutes) || 0;
           createdRecordId = randomUUID();
           await this.infrastructure.postgres.query(
             `insert into app.records (entity_type, record_key, payload, origin, updated_at)
@@ -1978,9 +2175,12 @@ Quy tắc phản hồi:
             [createdRecordId, JSON.stringify({
               id: createdRecordId,
               employee_code: empCode,
-              request_type: parsedResult.intentLabel || 'Nghỉ phép',
+              request_type: isTangCa ? 'Đơn tăng ca' : (parsedResult.intentLabel || 'Nghỉ phép'),
               from_date: parsedResult.workDate || today,
               to_date: parsedResult.toDate || parsedResult.workDate || today,
+              request_start_time: parsedResult.startTime ? (parsedResult.startTime.length === 5 ? `${parsedResult.startTime}:00` : parsedResult.startTime) : null,
+              request_end_time: parsedResult.endTime ? (parsedResult.endTime.length === 5 ? `${parsedResult.endTime}:00` : parsedResult.endTime) : null,
+              overtime_minutes: overtimeMins,
               reason: parsedResult.reason || rawText,
               status: 'pending',
               leader_status: 'pending',
