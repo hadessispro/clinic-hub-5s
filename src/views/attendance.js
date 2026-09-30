@@ -340,7 +340,7 @@ function renderHistory(records, employees, ops) {
     const offset = (attendanceHistoryPage - 1) * ATTENDANCE_PAGE_SIZE;
     const rows = filtered.slice(offset, offset + ATTENDANCE_PAGE_SIZE);
     return `<div class="attendance-table-filters attendance-history-filters">
-      <label>Tháng<input id="attendanceHistoryMonth" type="month" min="2026-09" value="${escapeHTML(attendanceHistoryMonth)}"></label>
+      <label><span>Tháng:</span><span style="display:inline-flex; gap:6px;">${renderVietnameseMonthYearSelects('attendanceHistoryMonthSelect', 'attendanceHistoryYearSelect', attendanceHistoryMonth)}</span></label>
       <label>Chi nhánh<select id="attendanceHistoryBranch"><option value="all">Tất cả</option>${Object.values(BRANCHES).map((branch) => `<option value="${branch.id}" ${attendanceHistoryBranch === branch.id ? 'selected' : ''}>${escapeHTML(branch.shortName)}</option>`).join('')}</select></label>
       <label>Loại lượt chấm<select id="attendanceHistoryType"><option value="all">Vào và ra ca</option><option value="checkin" ${attendanceHistoryType === 'checkin' ? 'selected' : ''}>Vào ca</option><option value="checkout" ${attendanceHistoryType === 'checkout' ? 'selected' : ''}>Ra ca</option></select></label>
     </div>
@@ -604,6 +604,30 @@ function renderScheduleAdjustmentDialog(employee, allowedShifts) {
   </div>`;
 }
 
+function renderVietnameseMonthYearSelects(monthId, yearId, selectedISO) {
+  const [yStr, mStr] = String(selectedISO || todayISO().slice(0, 7)).split('-');
+  const curY = Number(yStr) || new Date().getFullYear();
+  const curM = Number(mStr) || (new Date().getMonth() + 1);
+  const years = [2025, 2026, 2027];
+
+  const mOptions = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1;
+    const val = String(m).padStart(2, '0');
+    return `<option value="${val}" ${curM === m ? 'selected' : ''}>Tháng ${m}</option>`;
+  }).join('');
+
+  const yOptions = years.map((y) => `<option value="${y}" ${curY === y ? 'selected' : ''}>Năm ${y}</option>`).join('');
+
+  return `
+    <select id="${monthId}" style="flex:1; min-width:96px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:500; font-size:0.85rem; background:#fff;">
+      ${mOptions}
+    </select>
+    <select id="${yearId}" style="width:105px; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-weight:500; font-size:0.85rem; background:#fff;">
+      ${yOptions}
+    </select>
+  `;
+}
+
 function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
   if (!canEdit) return '';
   const hasDirPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
@@ -619,17 +643,19 @@ function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
           <button class="icon-button" type="button" data-action="close-company-split-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
         </div>
 
-        <div style="padding:16px 20px; font-size:0.88rem; color:#334155; line-height:1.5;">
+        <div style="font-size:0.88rem; color:#334155; line-height:1.5;">
           <p style="margin:0 0 14px 0;">Xuất dữ liệu bảng công chi tiết toàn bộ nhân viên trong tháng, phân tách rõ ràng từng người để nhân sự có thể tự tra cứu, kiểm tra ngày công, giờ vào/ra và các lượt trễ sớm.</p>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
             <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
               <span>Tháng tính công:</span>
-              <input type="month" id="companySplitMonth" min="2026-08" value="${escapeHTML(workMonth || attendanceWorkMonth)}" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px;">
+              <div style="display:flex; gap:6px;">
+                ${renderVietnameseMonthYearSelects('companySplitMonth', 'companySplitYear', workMonth || attendanceWorkMonth)}
+              </div>
             </label>
             <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
               <span>Chi nhánh:</span>
-              <select id="companySplitBranch" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px;">
+              <select id="companySplitBranch" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; height:36px; background:#fff;">
                 <option value="all">Tất cả chi nhánh (PVC &amp; LVT)</option>
                 <option value="pham-van-chieu">Phạm Văn Chiêu</option>
                 <option value="le-van-tho">Lê Văn Thọ</option>
@@ -676,10 +702,10 @@ function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
           </div>
         </div>
 
-        <div class="attendance-adjust-actions">
-          <button class="secondary-button" type="button" data-action="close-company-split-modal" id="companySplitCancelBtn">Hủy</button>
-          <button class="primary-button" type="button" id="btnExecuteCompanySplit">
-            <i class="ri-download-cloud-2-line"></i> Bắt đầu xuất file
+        <div class="attendance-adjust-actions" style="margin-top:16px;">
+          <button class="secondary-button" type="button" data-action="close-company-split-modal" id="companySplitCancelBtn">Đóng</button>
+          <button class="primary-button" type="button" id="btnExecuteCompanySplit" style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; padding:8px 16px;">
+            <i class="ri-download-2-line"></i> Bắt đầu xuất file
           </button>
         </div>
       </section>
@@ -1020,7 +1046,9 @@ export async function renderView(state) {
         ${renderAdminEmployeePicker(scopedEmployees, targetEmployee)}
         <label>
           <span>Tháng tính công:</span>
-          <input id="attendanceWorkMonth" type="month" min="2026-09" value="${escapeHTML(attendanceWorkMonth)}">
+          <span style="display:inline-flex; gap:6px;">
+            ${renderVietnameseMonthYearSelects('attendanceWorkMonthSelect', 'attendanceWorkYearSelect', attendanceWorkMonth)}
+          </span>
         </label>
         <label>
           <span>Chi nhánh:</span>
@@ -1703,7 +1731,8 @@ function makeSafeSheetName(code, name, existingNames) {
 }
 
 async function executeCompanySplitExport() {
-  const monthInput = document.getElementById('companySplitMonth');
+  const monthSelect = document.getElementById('companySplitMonth');
+  const yearSelect = document.getElementById('companySplitYear');
   const branchSelect = document.getElementById('companySplitBranch');
   const formatRadios = document.getElementsByName('companySplitFormat');
   const progressBox = document.getElementById('companySplitProgressBox');
@@ -1711,7 +1740,9 @@ async function executeCompanySplitExport() {
   const executeBtn = document.getElementById('btnExecuteCompanySplit');
   const cancelBtn = document.getElementById('companySplitCancelBtn');
 
-  const month = monthInput?.value || attendanceWorkMonth || todayISO().slice(0, 7);
+  const month = monthSelect && yearSelect
+    ? `${yearSelect.value}-${monthSelect.value}`
+    : (attendanceWorkMonth || todayISO().slice(0, 7));
   const branch = branchSelect?.value || 'all';
   let chosenFormat = 'multi_sheet';
   for (const r of formatRadios) {
@@ -2013,6 +2044,33 @@ export function initView() {
     const empty = document.querySelector('.attendance-employee-no-result');
     if (empty) empty.hidden = visibleCount > 0;
   });
+
+  const handleWorkMonthSelect = () => {
+    const mSelect = document.getElementById('attendanceWorkMonthSelect');
+    const ySelect = document.getElementById('attendanceWorkYearSelect');
+    if (!mSelect || !ySelect) return;
+    const month = `${ySelect.value}-${mSelect.value}`;
+    if (month < '2026-08') {
+      showToast('Bảng công mới bắt đầu từ tháng 08/2026.', true);
+      return;
+    }
+    attendanceWorkMonth = month;
+    attendanceWorkPage = 1;
+    navigateTo('attendance');
+  };
+  document.getElementById('attendanceWorkMonthSelect')?.addEventListener('change', handleWorkMonthSelect);
+  document.getElementById('attendanceWorkYearSelect')?.addEventListener('change', handleWorkMonthSelect);
+
+  const handleHistoryMonthSelect = () => {
+    const mSelect = document.getElementById('attendanceHistoryMonthSelect');
+    const ySelect = document.getElementById('attendanceHistoryYearSelect');
+    if (!mSelect || !ySelect) return;
+    attendanceHistoryMonth = `${ySelect.value}-${mSelect.value}`;
+    attendanceHistoryPage = 1;
+    refreshAttendanceFilters();
+  };
+  document.getElementById('attendanceHistoryMonthSelect')?.addEventListener('change', handleHistoryMonthSelect);
+  document.getElementById('attendanceHistoryYearSelect')?.addEventListener('change', handleHistoryMonthSelect);
 
   document.getElementById('attendanceWorkMonth')?.addEventListener('change', (event) => {
     const month = String(event.target.value || '');
