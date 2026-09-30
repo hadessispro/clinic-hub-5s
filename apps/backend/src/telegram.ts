@@ -1025,7 +1025,9 @@ export class TelegramService {
       this.logger.warn('Error reading gemini activity logs:', e);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
     const todayLogs = activities.filter((a) => String(a.created_at || '').startsWith(today));
     const totalToday = Math.max(this.geminiUsageStats.totalToday, todayLogs.length);
     const successAiCount = todayLogs.filter((a) => a.used_ai).length;
@@ -1157,9 +1159,11 @@ export class TelegramService {
 
     // 4. Date Extraction
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
-    let workDate = now.toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now);
+    const [currentYear, currentMonth] = today.split('-');
+    let workDate = today;
     let toDate = workDate;
 
     // Check "29-30/09" or "29 đến 30/09"
@@ -1185,11 +1189,13 @@ export class TelegramService {
           workDate = `${currentYear}-${currentMonth}-${day}`;
           toDate = workDate;
         } else if (lower.includes('hôm qua')) {
-          const yesterday = new Date(Date.now() - 86400000);
+          const yesterday = new Date(`${today}T00:00:00.000Z`);
+          yesterday.setUTCDate(yesterday.getUTCDate() - 1);
           workDate = yesterday.toISOString().slice(0, 10);
           toDate = workDate;
         } else if (lower.includes('ngày mai')) {
-          const tomorrow = new Date(Date.now() + 86400000);
+          const tomorrow = new Date(`${today}T00:00:00.000Z`);
+          tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
           workDate = tomorrow.toISOString().slice(0, 10);
           toDate = workDate;
         }
@@ -1199,12 +1205,12 @@ export class TelegramService {
     // 5. Time extraction (hỗ trợ dạng 20h đến 20h12 hoặc 20:00 - 20:12)
     let startTime: string | null = resolvedShift.start;
     let endTime: string | null = resolvedShift.end;
-    const rangeTimeMatch = lower.match(/(?:từ\s+|lúc\s+)?(\d{1,2})[h:](\d{0,2})\s*(?:đến|-|–|tới)\s*(\d{1,2})[h:](\d{0,2})/);
+    const rangeTimeMatch = lower.match(/(?:từ\s+|lúc\s+)?(\d{1,2})\s*(?:h|:|giờ)\s*(\d{0,2})\s*(?:phút)?\s*(?:đến|-|–|tới)\s*(\d{1,2})\s*(?:h|:|giờ)\s*(\d{0,2})\s*(?:phút)?/);
     if (rangeTimeMatch) {
       startTime = `${rangeTimeMatch[1].padStart(2, '0')}:${(rangeTimeMatch[2] || '00').padEnd(2, '0')}`;
       endTime = `${rangeTimeMatch[3].padStart(2, '0')}:${(rangeTimeMatch[4] || '00').padEnd(2, '0')}`;
     } else {
-      const timeMatch = lower.match(/(\d{1,2})[h:](\d{2})/);
+      const timeMatch = lower.match(/(\d{1,2})\s*(?:h|:|giờ)\s*(\d{2})/);
       if (timeMatch) {
         startTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
       }
@@ -1280,6 +1286,9 @@ export class TelegramService {
   ): Promise<JsonMap> {
     const rawText = String(prompt || '').trim();
     if (!rawText) throw new BadRequestException('Vui lòng nhập nội dung yêu cầu.');
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
 
     let empTitle = '';
     let empDept = '';
@@ -1343,7 +1352,7 @@ Quy ước Intent:
 
 QUY TẮC BẢO MẬT: Mỗi nhân sự chỉ được làm đơn cho chính mình, tuyệt đối không làm hộ người khác (trừ đổi ca).
 
-Năm hiện tại là 2026. Nếu chỉ có ngày (ví dụ "ngày 24"), hãy quy đổi sang YYYY-MM-DD của tháng 09/2026 (2026-09-24).
+Hôm nay là ${today}. Nếu chỉ có ngày (ví dụ "ngày 24"), hãy dùng tháng và năm của ngày hôm nay.
 Nếu nhân viên không nói rõ ca, hãy mặc định là Ca hành chính của vị trí đó.
 Trả về JSON đúng cấu trúc sau:
 {
@@ -2004,7 +2013,9 @@ Trả về JSON đúng cấu trúc sau:
     const rawText = String(promptText || '').trim();
     if (!rawText) throw new BadRequestException('Vui lòng nhập nội dung.');
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
     if (this.geminiUsageStats.date !== today) {
       this.geminiUsageStats = { date: today, totalToday: 0, successAi: 0, fallback: 0, rateLimitSwitches: 0 };
     }
@@ -2026,11 +2037,34 @@ Trả về JSON đúng cấu trúc sau:
     const empDept = user.department || '';
     const empTitle = String(user.profile?.title || '');
     const startTime = Date.now();
+    const channel = `dm:${[user.id, 'ai_assistant'].sort().join(':')}`;
+    let recentContext = '';
+    let pendingClarification = false;
+    let previousRequestText = '';
+    try {
+      const history = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where entity_type='messages' and deleted_at is null
+         and payload->>'channel'=$1 order by payload->>'created_at' desc limit 6`,
+        [channel],
+      );
+      const latest = history.rows[0]?.payload;
+      const previous = history.rows[1]?.payload;
+      previousRequestText = String(previous?.body || '');
+      pendingClarification = latest?.sender_id === 'ai_assistant'
+        && String(latest.body || '').includes('Em chưa gửi đơn để tránh ghi sai')
+        && previous?.sender_id === user.id
+        && /(xin|đăng ký|báo|gửi đơn|tạo đơn|bổ sung|quên chấm|quên check|đổi ca|đổi lịch|trực thay|tăng ca|làm thêm|nghỉ phép|nghỉ ốm)/i.test(previousRequestText);
+      recentContext = history.rows.reverse().map(({ payload }) =>
+        `${payload.sender_id === 'ai_assistant' ? 'Trợ lý' : 'Nhân viên'}: ${String(payload.body || '').slice(0, 500)}`,
+      ).join('\n');
+    } catch {
+      // Continue without conversation context if history is unavailable.
+    }
 
     const sysInstruction = `Bạn là Trợ lý AI Thông minh & Thân thiện của Hệ thống Nha khoa Clinic Hub 5S.
-Nhiệm vụ: Trò chuyện tự nhiên, chuyên nghiệp với nhân viên; giải đáp thắc mắc nội quy, hỗ trợ làm đơn từ (xin nghỉ phép, bổ sung công, tăng ca, đổi ca trực).
+Nhiệm vụ: Chỉ hỗ trợ hỏi đáp nhân sự và yêu cầu xin nghỉ phép, bổ sung chấm công, tăng ca, đổi ca trực. Từ chối ngắn gọn câu hỏi ngoài phạm vi.
 Nhân viên đang trò chuyện: ${empName} (Mã NV: ${empCode}, Bộ phận: ${empDept}, Vị trí: ${empTitle}).
-Hôm nay là: ${new Date().toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}. Năm hiện tại là 2026.
+Hôm nay là ${today} theo giờ Việt Nam. Chỉ tiếp tục tạo đơn từ tin nhắn ngắn nếu tin nhắn ngay trước đó của trợ lý đã hỏi bổ sung dữ kiện cho một yêu cầu rõ ràng.
 
 QUY TẮC BẢO MẬT & NGUYÊN TẮC CHÍNH CHỦ (BẮT BUỘC TUÂN THỦ 100%):
 - Mỗi tài khoản nhân sự CHỈ ĐƯỢC PHÉP tạo yêu cầu cho CHÍNH BẢN THÂN MÌNH (${empName} - ${empCode}).
@@ -2048,10 +2082,13 @@ Quy định ca trực tại 5S:
 4. Tạp vụ: cleaning-weekday (06:00 - 16:00) / cleaning-sunday (06:00 - 15:00).
 
 Quy tắc phản hồi:
+- Trả lời tối đa 2 câu, ngắn gọn, đúng trọng tâm; nếu thiếu dữ kiện thì chỉ hỏi phần còn thiếu.
+- Câu hỏi về quy định không phải là yêu cầu tạo đơn. Không suy đoán ngày, giờ hoặc ca.
+- Không nói đã lưu, gửi hoặc chuyển duyệt; máy chủ sẽ xác nhận sau khi ghi dữ liệu thành công.
 - Luôn trả về định dạng JSON thuần túy (không kèm markdown code fence):
 {
   "type": "action" | "qa",
-  "reply": "Câu trả lời tiếng Việt ấm áp, tự nhiên, rõ ràng gửi trực tiếp cho nhân viên trong chat. Nếu là yêu cầu đơn/công, hãy xác nhận rõ thông tin ngày, ca, lý do và thông báo đã gửi Sếp duyệt.",
+  "reply": "Câu trả lời tiếng Việt ngắn gọn, tối đa 2 câu. Với yêu cầu đơn/công, chỉ tóm tắt dữ kiện; không nói đã lưu hoặc gửi duyệt.",
   "intent": "xin_nghi_phep" | "bo_sung_cham_cong" | "tang_ca" | "doi_ca_truc" | "hoi_dap" | "khac",
   "intentLabel": "Xin nghỉ phép" | "Bổ sung chấm công" | "Đơn tăng ca" | "Đổi ca trực" | "Hỏi đáp nội quy" | "Trò chuyện",
   "workDate": "YYYY-MM-DD hoặc null",
@@ -2074,8 +2111,12 @@ Quy tắc phản hồi:
 
     if (keys.length > 0) {
       try {
-        const { text, usedKeyIndex: kIdx } = await this.callGeminiWithFailover(keys, model, `Tin nhắn nhân viên: "${rawText}"`, sysInstruction);
+        const input = `${recentContext ? `Lịch sử gần đây:\n${recentContext}\n\n` : ''}Tin nhắn mới nhất của nhân viên: ${JSON.stringify(rawText)}`;
+        const { text, usedKeyIndex: kIdx } = await this.callGeminiWithFailover(keys, model, input, sysInstruction);
         parsedResult = JSON.parse(text);
+        if (!parsedResult || typeof parsedResult !== 'object' || Array.isArray(parsedResult)) {
+          throw new Error('Gemini returned an invalid response object');
+        }
         usedAi = true;
         usedKeyIndex = kIdx;
         this.geminiUsageStats.successAi++;
@@ -2086,15 +2127,65 @@ Quy tắc phản hồi:
     }
 
     if (!parsedResult) {
-      parsedResult = this.extractSlotsFallback(rawText, empCode, empName, empDept, empTitle);
+      parsedResult = this.extractSlotsFallback(pendingClarification ? `${previousRequestText} ${rawText}` : rawText, empCode, empName, empDept, empTitle);
       const isAction = parsedResult.intent !== 'khac' && parsedResult.intent !== 'hoi_dap';
       parsedResult.type = isAction ? 'action' : 'qa';
       parsedResult.reply = isAction
         ? (parsedResult.intent === 'tang_ca'
           ? `Em đã gửi yêu cầu Đơn tăng ca (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.overtimeMinutes || 0} phút: ${parsedResult.startTime || ''}–${parsedResult.endTime || ''}) đến Sếp duyệt qua Telegram rồi ạ!`
           : `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) đến Sếp duyệt qua Telegram rồi ạ!`)
-        : `Chào anh/chị ${empName}! Em là Trợ lý AI 5S. Em có thể hỗ trợ xin nghỉ, đổi ca hay bổ sung công ạ?`;
+        : `Em hỗ trợ hỏi đáp nhân sự, xin nghỉ, đổi ca, bổ sung công và tăng ca. Anh/chị cần hỗ trợ nội dung nào ạ?`;
       usedAi = false;
+    }
+
+    const isActionIntent = ['xin_nghi_phep', 'bo_sung_cham_cong', 'tang_ca', 'doi_ca_truc'].includes(parsedResult.intent);
+    const requestDetailsText = pendingClarification ? `${previousRequestText} ${rawText}` : rawText;
+    const asksForInformation = /(quy định|như thế nào|thế nào|là gì|hướng dẫn|bao nhiêu|có được|được không)/i.test(rawText);
+    const directRequest = /(xin|đăng ký|báo|gửi đơn|tạo đơn|bổ sung|quên chấm|quên check|đổi ca|đổi lịch|trực thay|tăng ca|làm thêm|nghỉ phép|nghỉ ốm)/i.test(rawText);
+    const explicitRequest = !asksForInformation && (directRequest || pendingClarification);
+    const explicitDate = /(hôm nay|hôm qua|ngày mai|ngày mốt|ngày\s*\d{1,2}\b|\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b)/i.test(requestDetailsText);
+    const explicitTimes = requestDetailsText.match(/\b(?:[01]?\d|2[0-3])\s*(?::\s*[0-5]\d|h(?:\s*[0-5]?\d)?|giờ(?:\s*[0-5]?\d)?)/gi) || [];
+    const validDate = (value: unknown) => {
+      const date = String(value || '');
+      return /^20\d{2}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/.test(date)
+        && new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) === date;
+    };
+    const validTime = (value: unknown) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
+    const missing: string[] = [];
+    if (parsedResult.type === 'action') {
+      if (!isActionIntent || !explicitRequest) missing.push('nêu rõ yêu cầu cần gửi');
+      if (!explicitDate || !validDate(parsedResult.workDate)) missing.push('ngày cần áp dụng');
+      if (parsedResult.intent === 'tang_ca' || parsedResult.intent === 'bo_sung_cham_cong') {
+        if (explicitTimes.length < 2 || !validTime(parsedResult.startTime) || !validTime(parsedResult.endTime)) {
+          missing.push('đầy đủ giờ bắt đầu và kết thúc');
+        } else {
+          const [startHour, startMinute] = parsedResult.startTime.split(':').map(Number);
+          const [endHour, endMinute] = parsedResult.endTime.split(':').map(Number);
+          const duration = endHour * 60 + endMinute - startHour * 60 - startMinute;
+          if (duration <= 0) missing.push('khoảng giờ bắt đầu và kết thúc hợp lệ');
+          else if (parsedResult.intent === 'tang_ca') {
+            if (duration > 16 * 60) missing.push('khoảng giờ tăng ca hợp lệ');
+            else parsedResult.overtimeMinutes = duration;
+          }
+        }
+      }
+      if (parsedResult.intent === 'xin_nghi_phep' && parsedResult.toDate
+        && (!validDate(parsedResult.toDate) || parsedResult.toDate < parsedResult.workDate)) {
+        missing.push('ngày kết thúc hợp lệ sau ngày bắt đầu');
+      }
+      if (parsedResult.intent === 'doi_ca_truc'
+        && (!parsedResult.targetEmployeeName || !(parsedResult.shiftCode || parsedResult.shift))) {
+        missing.push('tên người đổi ca và ca muốn đổi');
+      }
+    }
+    if (parsedResult.type === 'action' && missing.length) {
+      parsedResult.type = 'qa';
+      parsedResult.intent = 'hoi_dap';
+      parsedResult.intentLabel = 'Cần bổ sung thông tin';
+      parsedResult.reply = `Em chưa gửi đơn để tránh ghi sai. Vui lòng bổ sung ${[...new Set(missing)].join(', ')} trong một tin nhắn nhé.`;
+    } else if (parsedResult.type !== 'action' || !isActionIntent) {
+      parsedResult.type = 'qa';
+      parsedResult.intent = isActionIntent ? parsedResult.intent : 'hoi_dap';
     }
 
     // Guardrail nghiêm ngặt: Tuyệt đối không cho phép tạo đơn hộ (chấm công hộ, tăng ca hộ, nghỉ phép hộ).
@@ -2107,7 +2198,7 @@ Quy tắc phản hồi:
       let isProxy = Boolean(targetName && !currentName.includes(targetName.toLowerCase()) && !currentCode.includes(targetName.toLowerCase()));
 
       if (!isProxy) {
-        const lowerPrompt = rawText.toLowerCase();
+        const lowerPrompt = requestDetailsText.toLowerCase();
         const proxyPatterns = ['chấm hộ', 'chấm công hộ', 'tăng ca hộ', 'xin nghỉ hộ', 'nghỉ hộ', 'báo tăng ca hộ', 'đăng ký hộ'];
         if (proxyPatterns.some((pat) => lowerPrompt.includes(pat))) {
           isProxy = true;
@@ -2168,12 +2259,12 @@ Quy tắc phản hồi:
         if (parsedResult.intent === 'xin_nghi_phep' || parsedResult.intent === 'tang_ca') {
           const isTangCa = parsedResult.intent === 'tang_ca';
           const overtimeMins = Number(parsedResult.overtimeMinutes) || 0;
-          createdRecordId = randomUUID();
+          const recordId = randomUUID();
           await this.infrastructure.postgres.query(
             `insert into app.records (entity_type, record_key, payload, origin, updated_at)
              values ('leave_requests', $1, $2::jsonb, 'vps', now())`,
-            [createdRecordId, JSON.stringify({
-              id: createdRecordId,
+            [recordId, JSON.stringify({
+              id: recordId,
               employee_code: empCode,
               request_type: isTangCa ? 'Đơn tăng ca' : (parsedResult.intentLabel || 'Nghỉ phép'),
               from_date: parsedResult.workDate || today,
@@ -2192,14 +2283,15 @@ Quy tắc phản hồi:
               ai_request_id: parsedResult.requestId,
             })],
           );
+          createdRecordId = recordId;
           await this.infrastructure.markDataChanged(['leave_requests'], user.id, user.role);
         } else if (parsedResult.intent === 'doi_ca_truc') {
-          createdRecordId = randomUUID();
+          const recordId = randomUUID();
           await this.infrastructure.postgres.query(
             `insert into app.records (entity_type, record_key, payload, origin, updated_at)
              values ('schedule_requests', $1, $2::jsonb, 'vps', now())`,
-            [createdRecordId, JSON.stringify({
-              id: createdRecordId,
+            [recordId, JSON.stringify({
+              id: recordId,
               employee_code: empCode,
               target_employee_name: parsedResult.targetEmployeeName || null,
               target_date: parsedResult.workDate || today,
@@ -2212,15 +2304,16 @@ Quy tắc phản hồi:
               ai_request_id: parsedResult.requestId,
             })],
           );
+          createdRecordId = recordId;
           await this.infrastructure.markDataChanged(['schedule_requests'], user.id, user.role);
         } else {
-          createdRecordId = parsedResult.requestId;
           await this.infrastructure.postgres.query(
             `insert into app.records (entity_type, record_key, payload, origin, updated_at)
              values ('gemini_pending_requests', $1, $2::jsonb, 'vps', now())
              on conflict (entity_type, record_key) do update set payload = excluded.payload, updated_at = now()`,
-            [createdRecordId, JSON.stringify(parsedResult)],
+            [parsedResult.requestId, JSON.stringify(parsedResult)],
           );
+          createdRecordId = parsedResult.requestId;
         }
 
         parsedResult.createdRecordId = createdRecordId;
@@ -2234,6 +2327,19 @@ Quy tắc phản hồi:
       }
     } else {
       this.pendingGeminiRequests.set(parsedResult.requestId, parsedResult);
+    }
+
+    if (parsedResult.type === 'action') {
+      if (!createdRecordId) {
+        parsedResult.type = 'qa';
+        parsedResult.intent = 'hoi_dap';
+        parsedResult.reply = 'Hệ thống chưa lưu được yêu cầu. Anh/chị vui lòng thử lại sau hoặc báo quản lý.';
+      } else {
+        const label = parsedResult.intentLabel || 'yêu cầu nhân sự';
+        parsedResult.reply = telegramSent
+          ? `Đã ghi nhận ${label.toLowerCase()} và gửi quản lý duyệt.`
+          : `Đã lưu ${label.toLowerCase()}, nhưng chưa gửi được Telegram cho quản lý. Vui lòng báo quản lý kiểm tra.`;
+      }
     }
 
     try {
@@ -2275,7 +2381,6 @@ Quy tắc phản hồi:
       this.logger.warn('Failed to log gemini activity:', e);
     }
 
-    const channel = `dm:${[user.id, 'ai_assistant'].sort().join(':')}`;
     const userMsgId = randomUUID();
     const aiMsgId = randomUUID();
     const nowIso = new Date().toISOString();

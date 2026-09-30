@@ -44,8 +44,9 @@ export class SecurityService {
       this.logger.error('Failed to insert security event:', error);
     }
 
-    // Dispatch warnings and critical events to Telegram if permitted by rules
-    if (event.severity === 'critical' || event.severity === 'warning') {
+    // Client DevTools signals are noisy on desktop and mobile; keep the audit row but don't page Telegram.
+    if (!['f12_opened', 'console_tamper'].includes(event.eventType)
+      && (event.severity === 'critical' || event.severity === 'warning')) {
       const allowed = await this.telegram.shouldNotify(event.eventType, true);
       if (allowed) {
         void this.telegram.sendSecurityAlert(event);
