@@ -963,7 +963,7 @@ async function moChungTu(id) {
 
 /* ── Form thêm sửa chứng từ ────────────────────────────────────────────── */
 
-async function moFormChungTu(v) {
+async function moFormChungTu(v, preset = null) {
   const [dsTk, dsDt, dsKm] = await Promise.all([
     goi('/tai-khoan'), goi('/doi-tac'), goi('/khoan-muc'),
   ]);
@@ -975,11 +975,11 @@ async function moFormChungTu(v) {
     ...dsKm.map((a) => el('option', { value: a.code }, `${a.code} · ${a.name}`)));
 
   const bao = el('div', { class: 'an' });
-  const oSo = el('input', { value: v?.voucher_no || '', placeholder: 'PT001/2026_08' });
+  const oSo = el('input', { value: v?.voucher_no || preset?.voucher_no || '', placeholder: 'PT001/2026_08' });
   const oNgay = el('input', { type: 'date', value: ngayISO(v?.posting_date) || new Date().toISOString().slice(0, 10) });
   const oNgayCT = el('input', { type: 'date', value: ngayISO(v?.voucher_date) || '' });
   const oHD = el('input', { value: v?.invoice_no || '', placeholder: 'số hóa đơn' });
-  const oDG = el('input', { value: v?.description || '', placeholder: 'diễn giải chung của chứng từ' });
+  const oDG = el('input', { value: v?.description || preset?.description || '', placeholder: 'diễn giải chung của chứng từ' });
   const oNhom = el('input', { value: v?.balance_group || '', placeholder: 'để trống nếu chứng từ tự cân' });
 
   const thanDong = el('div', {});
@@ -1003,8 +1003,8 @@ async function moFormChungTu(v) {
     const oTk = el('input', { list: 'ds-tk', class: 'ma', value: d?.account_code || '', placeholder: 'TK' });
     const oDu = el('input', { list: 'ds-tk', class: 'ma', value: d?.contra_account_code || '', placeholder: 'đối ứng' });
     const oMo = el('input', { value: d?.description || '', placeholder: 'diễn giải dòng' });
-    const oNo = el('input', { type: 'number', step: '0.01', 'data-o': 'no', value: Number(d?.debit) || '', oninput: tinhTong });
-    const oCo = el('input', { type: 'number', step: '0.01', 'data-o': 'co', value: Number(d?.credit) || '', oninput: tinhTong });
+    const oNo = el('input', { type: 'number', step: '0.01', 'data-o': 'no', value: Number(d?.debit) || (d?.debit === '' ? '' : (d?.no || '')), oninput: tinhTong });
+    const oCo = el('input', { type: 'number', step: '0.01', 'data-o': 'co', value: Number(d?.credit) || (d?.credit === '' ? '' : (d?.co || '')), oninput: tinhTong });
     const oDoiTac = el('input', { list: 'ds-dt', class: 'ma', value: d?.partner_code || '', placeholder: 'đối tượng' });
     const oKM = el('input', { list: 'ds-km', class: 'ma', value: d?.cost_item_code || '', placeholder: 'khoản mục' });
     const oHopLy = el('input', { type: 'checkbox', checked: d ? d.is_deductible !== false : true });
@@ -1033,12 +1033,13 @@ async function moFormChungTu(v) {
   };
 
   if (v?.dong?.length) v.dong.forEach(themDong);
+  else if (preset?.dong?.length) preset.dong.forEach(themDong);
   else { themDong(); themDong(); }
 
   const nutLuu = el('button', { class: 'nut chinh' }, v ? 'Lưu thay đổi' : 'Ghi vào sổ');
 
   const dongNgan = moNgan({
-    tieuDe: v ? `Sửa chứng từ ${v.voucher_no}` : 'Thêm chứng từ mới',
+    tieuDe: v ? `Sửa chứng từ ${v.voucher_no}` : (preset?.tieuDe || 'Thêm chứng từ mới'),
     phuDe: 'Một chứng từ cần ít nhất hai dòng, một bên Nợ một bên Có. Kỳ kế toán suy từ ngày hạch toán.',
     than: el('div', {},
       listTk, listDt, listKm, bao,
@@ -1083,6 +1084,74 @@ async function moFormChungTu(v) {
       bao.className = 'bao am';
       bao.textContent = err.message;
     } finally { nutLuu.disabled = false; }
+  });
+}
+
+async function xoaChungTuNhanh(voucherId, voucherNo) {
+  if (!confirm(`Xóa chứng từ ${voucherNo}? Mọi dòng bút toán của chứng từ này sẽ bị xóa khỏi sổ.`)) return;
+  try {
+    await goi(`/chung-tu/${encodeURIComponent(voucherId)}`, { method: 'DELETE' });
+    ve();
+  } catch (err) {
+    alert(err.message || 'Lỗi xóa chứng từ.');
+  }
+}
+
+function moFormPhieuThu() {
+  const d = new Date().toISOString().slice(2, 7).replace('-', '');
+  const rand = Math.floor(100 + Math.random() * 900);
+  moFormChungTu(null, {
+    tieuDe: 'Lập Phiếu Thu tiền mặt (TK 1111)',
+    voucher_no: `PT${d}-${rand}`,
+    description: 'Thu tiền mặt vào quỹ',
+    dong: [
+      { account_code: '1111', contra_account_code: '', debit: '', credit: 0, description: 'Thu tiền mặt vào quỹ' },
+      { account_code: '', contra_account_code: '1111', debit: 0, credit: '', description: 'Thu tiền mặt vào quỹ' },
+    ],
+  });
+}
+
+function moFormPhieuChi() {
+  const d = new Date().toISOString().slice(2, 7).replace('-', '');
+  const rand = Math.floor(100 + Math.random() * 900);
+  moFormChungTu(null, {
+    tieuDe: 'Lập Phiếu Chi tiền mặt (TK 1111)',
+    voucher_no: `PC${d}-${rand}`,
+    description: 'Chi tiền mặt từ quỹ',
+    dong: [
+      { account_code: '', contra_account_code: '1111', debit: '', credit: 0, description: 'Chi tiền mặt từ quỹ' },
+      { account_code: '1111', contra_account_code: '', debit: 0, credit: '', description: 'Chi tiền mặt từ quỹ' },
+    ],
+  });
+}
+
+function moFormGiayBaoCo(tk) {
+  const d = new Date().toISOString().slice(2, 7).replace('-', '');
+  const rand = Math.floor(100 + Math.random() * 900);
+  const maTk = tk || '11211';
+  moFormChungTu(null, {
+    tieuDe: `Lập Giấy Báo Có (Thu chuyển khoản ${maTk})`,
+    voucher_no: `GBC${d}-${rand}`,
+    description: 'Thu tiền gửi ngân hàng',
+    dong: [
+      { account_code: maTk, contra_account_code: '', debit: '', credit: 0, description: 'Thu tiền gửi ngân hàng' },
+      { account_code: '', contra_account_code: maTk, debit: 0, credit: '', description: 'Thu tiền gửi ngân hàng' },
+    ],
+  });
+}
+
+function moFormGiayBaoNo(tk) {
+  const d = new Date().toISOString().slice(2, 7).replace('-', '');
+  const rand = Math.floor(100 + Math.random() * 900);
+  const maTk = tk || '11211';
+  moFormChungTu(null, {
+    tieuDe: `Lập Giấy Báo Nợ (Chi chuyển khoản ${maTk})`,
+    voucher_no: `GBN${d}-${rand}`,
+    description: 'Chi tiền gửi ngân hàng',
+    dong: [
+      { account_code: '', contra_account_code: maTk, debit: '', credit: 0, description: 'Chi tiền gửi ngân hàng' },
+      { account_code: maTk, contra_account_code: '', debit: 0, credit: '', description: 'Chi tiền gửi ngân hàng' },
+    ],
   });
 }
 
@@ -2546,6 +2615,7 @@ const SQ = { tu_ngay: '', den_ngay: '', bo_qua: 0, so_dong: 100 };
 VE['bc-so-quy'] = async (than) => {
   const p = new URLSearchParams();
   if (S.ky) p.set('ky', S.ky);
+  if (S.chiNhanh) p.set('chi_nhanh', S.chiNhanh);
   if (SQ.tu_ngay) p.set('tu_ngay', SQ.tu_ngay);
   if (SQ.den_ngay) p.set('den_ngay', SQ.den_ngay);
   p.set('so_dong', SQ.so_dong);
@@ -2557,49 +2627,115 @@ VE['bc-so-quy'] = async (than) => {
   const cuoiKy = Number(d.dau_ky) + Number(d.tong_thu) - Number(d.tong_chi);
 
   than.replaceChildren(
-    dauTrang('Sổ kế toán chi tiết quỹ tiền mặt',
-      'Toàn bộ tiền mặt vào ra trong kỳ, kèm số tồn sau mỗi lần. Tài khoản 111.',
+    dauTrang('SỔ KẾ TOÁN CHI TIẾT QUỸ TIỀN MẶT',
+      `Tài khoản: 1111 · ${S.ky ? `Kỳ: ${S.ky}` : 'Toàn bộ kỳ'}${S.chiNhanh ? ` · Cơ sở: ${S.chiNhanh}` : ''}`,
       chonKy(() => ve()),
+      chonChiNhanh(() => ve()),
       el('label', { class: 'o' }, el('span', {}, 'Từ ngày'), oTu),
       el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
       el('button', {
-        class: 'nut chinh',
-        onclick: () => { SQ.tu_ngay = oTu.value; SQ.den_ngay = oDen.value; ve(); },
-      }, 'Lọc')),
+        class: 'nut',
+        onclick: () => { SQ.tu_ngay = oTu.value; SQ.den_ngay = oDen.value; SQ.bo_qua = 0; ve(); },
+      }, 'Lọc'),
+      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: moFormPhieuThu }, '+ Lập Phiếu Thu') : null,
+      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: moFormPhieuChi }, '+ Lập Phiếu Chi') : null,
+      el('button', { class: 'nut', onclick: () => { S.man = 'nhap-excel'; ve(); } }, 'Nhập từ Excel'),
+    ),
 
     nhanNguon('So_ke_toan_chi_tiet_quy_tien_mat.xlsx'),
 
     el('div', { class: 'luoi luoi-4 cach-duoi' },
       theChiSo('Tồn đầu kỳ', tien(d.dau_ky),
         Number(d.dau_ky) ? 'đồng' : 'chưa nạp số dư đầu kỳ', Number(d.dau_ky) ? '' : 'vang'),
-      theChiSo('Tổng thu', tien(d.tong_thu), `${dinhDangSo.format(d.so_dong)} lượt`, 'duong'),
-      theChiSo('Tổng chi', tien(d.tong_chi), '', 'am'),
+      theChiSo('Tổng thu (Phát sinh Nợ)', tien(d.tong_thu), `${dinhDangSo.format(d.so_dong)} lượt`, 'duong'),
+      theChiSo('Tổng chi (Phát sinh Có)', tien(d.tong_chi), '', 'am'),
       theChiSo('Tồn cuối kỳ', tien(cuoiKy),
         cuoiKy >= 0 ? 'đồng' : 'quỹ âm, cần kiểm tra', cuoiKy >= 0 ? '' : 'am'),
     ),
 
-    bang(
-      [{ ten: 'Ngày' }, { ten: 'Phiếu thu' }, { ten: 'Phiếu chi' }, { ten: 'Đối tượng' },
-       { ten: 'Diễn giải' }, { ten: 'TK đối ứng' },
-       { ten: 'Thu', tien: true }, { ten: 'Chi', tien: true }, { ten: 'Tồn', tien: true }],
-      d.dong.map((r) => el('tr', {},
-        el('td', { class: 'ma' }, ngay(r.posting_date)),
-        el('td', { class: 'ma' }, Number(r.thu) ? r.voucher_no : '—'),
-        el('td', { class: 'ma' }, Number(r.chi) ? r.voucher_no : '—'),
-        el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
-        el('td', {}, r.description || '—'),
-        el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
-        el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
-        el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
-        el('td', { class: 'tien mo' }, tien(r.ton)),
-      )),
-      el('tr', {},
-        el('td', { colspan: '6' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
-        el('td', { class: 'tien' }, tien(d.tong_thu)),
-        el('td', { class: 'tien' }, tien(d.tong_chi)),
-        el('td', { class: 'tien' }, tien(cuoiKy)),
+    el('div', { class: 'the' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
+      el('thead', {},
+        el('tr', {},
+          el('th', { rowspan: '2', class: 'giua' }, 'Ngày hạch toán'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Ngày chứng từ'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Số phiếu thu'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Số phiếu chi'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Mã đối tượng'),
+          el('th', { rowspan: '2', class: 'trai' }, 'Người nhận/Người nộp'),
+          el('th', { rowspan: '2', class: 'trai' }, 'Diễn giải'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Tài khoản'),
+          el('th', { rowspan: '2', class: 'giua' }, 'TK đối ứng'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số phát sinh'),
+          el('th', { rowspan: '2', class: 'tien giua' }, 'Số tồn'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Thao tác'),
+        ),
+        el('tr', {},
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+        ),
       ),
-    ),
+      el('tbody', {},
+        el('tr', { class: 'dong-cha' },
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'trai mo' }, '—'),
+          el('td', { class: 'trai' }, el('strong', {}, 'Số dư đầu kỳ')),
+          el('td', { class: 'giua ma' }, '1111'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'tien mo' }, '—'),
+          el('td', { class: 'tien mo' }, '—'),
+          el('td', { class: 'tien' }, el('strong', {}, tien(d.dau_ky))),
+          el('td', { class: 'giua' }, '—'),
+        ),
+        ...d.dong.map((r) => {
+          const laThu = Number(r.thu) > 0 || String(r.voucher_no || '').startsWith('PT');
+          const laChi = Number(r.chi) > 0 || String(r.voucher_no || '').startsWith('PC');
+          return el('tr', {
+            class: 'bam-duoc',
+            onclick: () => moChungTu(r.voucher_id),
+          },
+            el('td', { class: 'ma giua' }, ngay(r.posting_date)),
+            el('td', { class: 'ma mo giua' }, r.voucher_date ? ngay(r.voucher_date) : '—'),
+            el('td', { class: 'ma giua' }, laThu ? r.voucher_no : '—'),
+            el('td', { class: 'ma giua' }, laChi && !laThu ? r.voucher_no : (laChi && Number(r.chi) > 0 ? r.voucher_no : '—')),
+            el('td', { class: 'ma giua' }, r.partner_code || '—'),
+            el('td', { class: 'trai mo' }, r.partner_name || '—'),
+            el('td', { class: 'trai' }, r.description || '—'),
+            el('td', { class: 'ma giua' }, r.account_code || '1111'),
+            el('td', { class: 'ma mo giua' }, r.contra_account_code || '—'),
+            el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
+            el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
+            el('td', { class: `tien ${Number(r.ton) < 0 ? 'chu-am' : ''}` }, tien(r.ton)),
+            el('td', { class: 'giua', onclick: (e) => e.stopPropagation() },
+              el('div', { class: 'dong-thanh' },
+                el('button', {
+                  class: 'nut nho',
+                  title: 'Xem và sửa chứng từ',
+                  onclick: () => moChungTu(r.voucher_id),
+                }, 'Sửa'),
+                ghiSoDuoc() ? el('button', {
+                  class: 'nut nho nguy',
+                  title: 'Xóa chứng từ khỏi sổ',
+                  onclick: () => xoaChungTuNhanh(r.voucher_id, r.voucher_no),
+                }, 'Xóa') : null,
+              ),
+            ),
+          );
+        }),
+      ),
+      el('tfoot', {},
+        el('tr', {},
+          el('td', { colspan: '9', class: 'trai' }, `Cộng phát sinh (${dinhDangSo.format(d.dong.length)} dòng)`),
+          el('td', { class: 'tien' }, tien(d.tong_thu)),
+          el('td', { class: 'tien' }, tien(d.tong_chi)),
+          el('td', { class: 'tien' }, tien(cuoiKy)),
+          el('td', {}, ''),
+        ),
+      ),
+    ))),
 
     thanhPhanTrang(SQ, d.so_dong, ve),
   );
@@ -2607,13 +2743,14 @@ VE['bc-so-quy'] = async (than) => {
 
 /* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────── */
 
-const SNH = { tai_khoan: '', bo_qua: 0, so_dong: 100 };
+const SNH = { tai_khoan: '1121', bo_qua: 0, so_dong: 100 };
 
 VE['bc-so-ngan-hang'] = async (than) => {
   const ds = await goi('/bc/tai-khoan-ngan-hang');
   if (!SNH.tai_khoan && ds.length) SNH.tai_khoan = ds[0].code;
-  const p = new URLSearchParams({ tai_khoan: SNH.tai_khoan || '112' });
+  const p = new URLSearchParams({ tai_khoan: SNH.tai_khoan || '1121' });
   if (S.ky) p.set('ky', S.ky);
+  if (S.chiNhanh) p.set('chi_nhanh', S.chiNhanh);
   p.set('so_dong', SNH.so_dong);
   p.set('bo_qua', SNH.bo_qua);
   const d = await goi(`/bc/so-ngan-hang?${p}`);
@@ -2621,14 +2758,18 @@ VE['bc-so-ngan-hang'] = async (than) => {
   const dangChon = ds.find((x) => x.code === SNH.tai_khoan);
 
   than.replaceChildren(
-    dauTrang('Sổ tiền gửi ngân hàng',
-      'Một sổ cho mỗi tài khoản ngân hàng. Tài khoản 112.',
+    dauTrang('SỔ TIỀN GỬI NGÂN HÀNG',
+      `Tài khoản: ${SNH.tai_khoan}${dangChon ? ` · ${dangChon.name}` : ''}${S.chiNhanh ? ` · Cơ sở: ${S.chiNhanh}` : ''}`,
       chonKy(() => ve()),
+      chonChiNhanh(() => ve()),
       el('label', { class: 'o' }, el('span', {}, 'Tài khoản ngân hàng'),
         el('select', { onchange: (e) => { SNH.tai_khoan = e.target.value; ve(); } },
           ...ds.map((x) => el('option', {
             value: x.code, selected: SNH.tai_khoan === x.code || null,
           }, `${x.code} · ${x.name}`)))),
+      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: () => moFormGiayBaoCo(SNH.tai_khoan) }, '+ Giấy Báo Có (Thu)') : null,
+      ghiSoDuoc() ? el('button', { class: 'nut chinh', onclick: () => moFormGiayBaoNo(SNH.tai_khoan) }, '+ Giấy Báo Nợ (Chi)') : null,
+      el('button', { class: 'nut', onclick: () => { S.man = 'nhap-excel'; ve(); } }, 'Nhập từ Excel'),
     ),
 
     nhanNguon('So_tien_gui_ngan_hang.xlsx'),
@@ -2650,27 +2791,76 @@ VE['bc-so-ngan-hang'] = async (than) => {
         ], cao: 200,
       })) : null,
 
-    el('div', { class: 'cach-tren' }, bang(
-      [{ ten: 'Ngày' }, { ten: 'Chứng từ' }, { ten: 'Đối tượng' }, { ten: 'Diễn giải' },
-       { ten: 'TK đối ứng' }, { ten: 'Thu', tien: true }, { ten: 'Chi', tien: true },
-       { ten: 'Tồn', tien: true }],
-      d.dong.map((r) => el('tr', {},
-        el('td', { class: 'ma' }, ngay(r.posting_date)),
-        el('td', { class: 'ma' }, r.voucher_no),
-        el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
-        el('td', {}, r.description || '—'),
-        el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
-        el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
-        el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
-        el('td', { class: 'tien mo' }, tien(r.ton)),
-      )),
-      el('tr', {},
-        el('td', { colspan: '5' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
-        el('td', { class: 'tien' }, tien(d.tong_thu)),
-        el('td', { class: 'tien' }, tien(d.tong_chi)),
-        el('td', { class: 'tien' }, tien(cuoiKy)),
+    el('div', { class: 'the cach-tren' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
+      el('thead', {},
+        el('tr', {},
+          el('th', { class: 'giua' }, 'Ngày hạch toán'),
+          el('th', { class: 'giua' }, 'Ngày chứng từ'),
+          el('th', { class: 'giua' }, 'Số chứng từ'),
+          el('th', { class: 'giua' }, 'Mã đối tượng'),
+          el('th', { class: 'trai' }, 'Tên đối tượng'),
+          el('th', { class: 'trai' }, 'Diễn giải'),
+          el('th', { class: 'giua' }, 'TK đối ứng'),
+          el('th', { class: 'tien giua' }, 'Thu'),
+          el('th', { class: 'tien giua' }, 'Chi'),
+          el('th', { class: 'tien giua' }, 'Tồn'),
+          el('th', { class: 'giua' }, 'Thao tác'),
+        ),
       ),
-    )),
+      el('tbody', {},
+        el('tr', { class: 'dong-cha' },
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'trai mo' }, '—'),
+          el('td', { class: 'trai' }, el('strong', {}, 'Số dư đầu kỳ')),
+          el('td', { class: 'giua mo' }, '—'),
+          el('td', { class: 'tien mo' }, '—'),
+          el('td', { class: 'tien mo' }, '—'),
+          el('td', { class: 'tien' }, el('strong', {}, tien(d.dau_ky))),
+          el('td', { class: 'giua' }, '—'),
+        ),
+        ...d.dong.map((r) => el('tr', {
+          class: 'bam-duoc',
+          onclick: () => moChungTu(r.voucher_id),
+        },
+          el('td', { class: 'ma giua' }, ngay(r.posting_date)),
+          el('td', { class: 'ma mo giua' }, r.voucher_date ? ngay(r.voucher_date) : '—'),
+          el('td', { class: 'ma giua' }, r.voucher_no),
+          el('td', { class: 'ma giua' }, r.partner_code || '—'),
+          el('td', { class: 'trai mo' }, r.partner_name || '—'),
+          el('td', { class: 'trai' }, r.description || '—'),
+          el('td', { class: 'ma mo giua' }, r.contra_account_code || '—'),
+          el('td', { class: 'tien' }, Number(r.thu) ? tien(r.thu) : '—'),
+          el('td', { class: 'tien' }, Number(r.chi) ? tien(r.chi) : '—'),
+          el('td', { class: `tien ${Number(r.ton) < 0 ? 'chu-am' : ''}` }, tien(r.ton)),
+          el('td', { class: 'giua', onclick: (e) => e.stopPropagation() },
+            el('div', { class: 'dong-thanh' },
+              el('button', {
+                class: 'nut nho',
+                title: 'Xem và sửa chứng từ',
+                onclick: () => moChungTu(r.voucher_id),
+              }, 'Sửa'),
+              ghiSoDuoc() ? el('button', {
+                class: 'nut nho nguy',
+                title: 'Xóa chứng từ',
+                onclick: () => xoaChungTuNhanh(r.voucher_id, r.voucher_no),
+              }, 'Xóa') : null,
+            ),
+          ),
+        )),
+      ),
+      el('tfoot', {},
+        el('tr', {},
+          el('td', { colspan: '7', class: 'trai' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
+          el('td', { class: 'tien' }, tien(d.tong_thu)),
+          el('td', { class: 'tien' }, tien(d.tong_chi)),
+          el('td', { class: 'tien' }, tien(cuoiKy)),
+          el('td', {}, ''),
+        ),
+      ),
+    ))),
 
     thanhPhanTrang(SNH, d.so_dong, ve),
   );
@@ -2686,65 +2876,93 @@ VE['bc-tong-hop-cong-no'] = async (than) => {
   if (S.ky) p.set('ky', S.ky);
   if (S.chiNhanh) p.set('chi_nhanh', S.chiNhanh);
   const d = await goi(`/bc/tong-hop-cong-no?${p}`);
-  const tongCuoi = d.reduce((s, r) => s + Number(r.cuoi_ky), 0);
+  const tongDauNo = d.reduce((s, r) => s + Number(r.dk_no || 0), 0);
+  const tongDauCo = d.reduce((s, r) => s + Number(r.dk_co || 0), 0);
+  const tongPsNo = d.reduce((s, r) => s + Number(r.ps_no || 0), 0);
+  const tongPsCo = d.reduce((s, r) => s + Number(r.ps_co || 0), 0);
+  const tongCkNo = d.reduce((s, r) => s + Number(r.ck_no || 0), 0);
+  const tongCkCo = d.reduce((s, r) => s + Number(r.ck_co || 0), 0);
 
   than.replaceChildren(
-    dauTrang(`Tổng hợp công nợ ${TEN_CN[THCN.loai]}`,
-      `${S.chiNhanh ? `Cơ sở: ${S.chiNhanh} · ` : ''}Số dư đầu kỳ, phát sinh trong kỳ, số dư cuối kỳ của từng đối tượng. `
-      + `Tài khoản ${THCN.loai === 'phai_thu' ? '131' : '331'}.`,
+    dauTrang(`TỔNG HỢP CÔNG NỢ ${THCN.loai === 'phai_thu' ? 'PHẢI THU KHÁCH HÀNG' : 'PHẢI TRẢ NHÀ CUNG CẤP'}`,
+      `${S.chiNhanh ? `Cơ sở: ${S.chiNhanh} · ` : ''}Tài khoản ${THCN.loai === 'phai_thu' ? '131' : '331'} · Chuẩn biểu mẫu 6 cột đối chiếu: Đầu kỳ, Phát sinh, Cuối kỳ.`,
       chonKy(() => ve()),
       chonChiNhanh(() => ve()),
-      el('label', { class: 'o' }, el('span', {}, 'Loại'),
+      el('label', { class: 'o' }, el('span', {}, 'Loại công nợ'),
         el('select', { onchange: (e) => { THCN.loai = e.target.value; ve(); } },
           el('option', { value: 'phai_thu', selected: THCN.loai === 'phai_thu' || null },
-            'Phải thu khách hàng'),
+            '131 · Phải thu khách hàng'),
           el('option', { value: 'phai_tra', selected: THCN.loai === 'phai_tra' || null },
-            'Phải trả nhà cung cấp'))),
+            '331 · Phải trả nhà cung cấp'))),
     ),
 
     nhanNguon(THCN.loai === 'phai_thu'
-      ? 'Tong_hop_cong_no_phai_thu_khach_hang.xlsx'
-      : 'Tong_hop_cong_no_phai_tra_nha_cung_cap.xlsx'),
+      ? 'Tong_hop_cong_no_phai_thu_khach_hang (4).xlsx'
+      : 'Tong_hop_cong_no_phai_tra_nha_cung_cap (5).xlsx'),
 
-    el('div', { class: 'luoi luoi-3 cach-duoi' },
+    el('div', { class: 'luoi luoi-4 cach-duoi' },
       theChiSo('Số đối tượng', dinhDangSo.format(d.length)),
-      theChiSo('Tổng phát sinh Nợ', tien(d.reduce((s, r) => s + Number(r.ps_no), 0))),
-      theChiSo('Tổng dư cuối kỳ', tien(tongCuoi), 'đồng', tongCuoi >= 0 ? 'duong' : 'am'),
+      theChiSo('Tổng phát sinh Nợ', tien(tongPsNo)),
+      theChiSo('Tổng phát sinh Có', tien(tongPsCo)),
+      theChiSo('Tổng dư cuối kỳ', tien(tongCkNo - tongCkCo), 'đồng', tongCkNo >= tongCkCo ? 'duong' : 'am'),
     ),
 
     canhBaoCatBot(d.length, 500),
 
     theBieuDo('Mười đối tượng dư lớn nhất', null,
       window.BD.thanhNgang({
-        muc: d.slice(0, 10).map((r) => ({ ten: r.name, giaTri: Math.abs(Number(r.cuoi_ky)) })),
+        muc: d.slice(0, 10).map((r) => ({ ten: r.name, giaTri: Math.max(Number(r.ck_no || 0), Number(r.ck_co || 0)) })),
       })),
 
-    el('div', { class: 'cach-tren' }, bang(
-      [{ ten: 'Mã' }, { ten: 'Tên' }, { ten: 'TK' }, { ten: 'Dư đầu kỳ', tien: true },
-       { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
-       { ten: 'Dư cuối kỳ', tien: true }, { ten: '' }],
-      d.map((r) => el('tr', {},
-        el('td', { class: 'ma' }, r.code),
-        el('td', {}, r.name),
-        el('td', { class: 'ma mo' }, r.tk_cong_no),
-        el('td', { class: 'tien mo' }, tien(r.dau_ky)),
-        el('td', { class: 'tien' }, tien(r.ps_no)),
-        el('td', { class: 'tien' }, tien(r.ps_co)),
-        el('td', { class: `tien ${Number(r.cuoi_ky) >= 0 ? 'chu-duong' : 'chu-am'}` },
-          tien(r.cuoi_ky)),
-        el('td', {}, el('button', {
-          class: 'nut nho', onclick: () => moChiTietCongNo(THCN.loai, r.code, r.name),
-        }, 'Chi tiết')),
-      )),
-      el('tr', {},
-        el('td', { colspan: '3' }, `Cộng ${dinhDangSo.format(d.length)} đối tượng`),
-        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.dau_ky), 0))),
-        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.ps_no), 0))),
-        el('td', { class: 'tien' }, tien(d.reduce((s, r) => s + Number(r.ps_co), 0))),
-        el('td', { class: 'tien' }, tien(tongCuoi)),
-        el('td', {}, ''),
+    el('div', { class: 'the cach-tren' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
+      el('thead', {},
+        el('tr', {},
+          el('th', { rowspan: '2', class: 'giua' }, THCN.loai === 'phai_thu' ? 'Mã khách hàng' : 'Mã nhà cung cấp'),
+          el('th', { rowspan: '2', class: 'trai' }, THCN.loai === 'phai_thu' ? 'Tên khách hàng' : 'Tên nhà cung cấp'),
+          el('th', { rowspan: '2', class: 'giua' }, 'TK công nợ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số dư đầu kỳ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số phát sinh trong kỳ'),
+          el('th', { colspan: '2', class: 'giua' }, 'Số dư cuối kỳ'),
+          el('th', { rowspan: '2', class: 'giua' }, 'Thao tác'),
+        ),
+        el('tr', {},
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+          el('th', { class: 'tien giua' }, 'Nợ'),
+          el('th', { class: 'tien giua' }, 'Có'),
+        ),
       ),
-    )),
+      el('tbody', {},
+        ...d.map((r) => el('tr', {},
+          el('td', { class: 'ma giua' }, r.code),
+          el('td', { class: 'trai' }, r.name),
+          el('td', { class: 'ma mo giua' }, r.tk_cong_no),
+          el('td', { class: 'tien mo' }, Number(r.dk_no) ? tien(r.dk_no) : ''),
+          el('td', { class: 'tien mo' }, Number(r.dk_co) ? tien(r.dk_co) : ''),
+          el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : ''),
+          el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : ''),
+          el('td', { class: 'tien' }, Number(r.ck_no) ? tien(r.ck_no) : ''),
+          el('td', { class: 'tien' }, Number(r.ck_co) ? tien(r.ck_co) : ''),
+          el('td', { class: 'giua' }, el('button', {
+            class: 'nut nho', onclick: () => moChiTietCongNo(THCN.loai, r.code, r.name),
+          }, 'Chi tiết')),
+        )),
+      ),
+      el('tfoot', {},
+        el('tr', {},
+          el('td', { colspan: '3', class: 'trai' }, `Cộng ${dinhDangSo.format(d.length)} đối tượng`),
+          el('td', { class: 'tien' }, tien(tongDauNo)),
+          el('td', { class: 'tien' }, tien(tongDauCo)),
+          el('td', { class: 'tien' }, tien(tongPsNo)),
+          el('td', { class: 'tien' }, tien(tongPsCo)),
+          el('td', { class: 'tien' }, tien(tongCkNo)),
+          el('td', { class: 'tien' }, tien(tongCkCo)),
+          el('td', {}, ''),
+        ),
+      ),
+    ))),
   );
 };
 
@@ -2757,31 +2975,55 @@ async function moChiTietCongNo(loai, ma, ten) {
     phuDe: `${ma}${d.doi_tac?.tax_code ? ` · MST ${d.doi_tac.tax_code}` : ''} · `
       + `${dinhDangSo.format(d.dong.length)} dòng · dựng từ Sổ nhật ký chung`,
     than: el('div', {},
-      el('div', { class: 'cuon' }, el('table', {},
+      el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
         el('thead', {}, el('tr', {},
-          el('th', {}, 'Ngày HT'), el('th', {}, 'Ngày CT'), el('th', {}, 'Số chứng từ'),
-          el('th', {}, 'Số hóa đơn'), el('th', {}, 'Diễn giải'),
-          el('th', {}, 'TK công nợ'), el('th', {}, 'TK đối ứng'),
-          el('th', { class: 'tien' }, 'Phát sinh Nợ'),
-          el('th', { class: 'tien' }, 'Phát sinh Có'),
-          el('th', { class: 'tien' }, 'Số dư'))),
-        el('tbody', {}, ...d.dong.map((r) => el('tr', {},
-          el('td', { class: 'ma' }, ngay(r.posting_date)),
-          el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
-          el('td', { class: 'ma' }, r.voucher_no),
-          el('td', { class: 'ma mo' }, r.invoice_no || '—'),
-          el('td', {}, r.description || '—'),
-          el('td', { class: 'ma mo' }, r.tk_cong_no),
-          el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
+          el('th', { class: 'giua' }, 'Ngày HT'),
+          el('th', { class: 'giua' }, 'Ngày CT'),
+          el('th', { class: 'giua' }, 'Số chứng từ'),
+          el('th', { class: 'giua' }, 'Số hóa đơn'),
+          el('th', { class: 'trai' }, 'Diễn giải'),
+          el('th', { class: 'giua' }, 'TK công nợ'),
+          el('th', { class: 'giua' }, 'TK đối ứng'),
+          el('th', { class: 'tien giua' }, 'Phát sinh Nợ'),
+          el('th', { class: 'tien giua' }, 'Phát sinh Có'),
+          el('th', { class: 'tien giua' }, 'Số dư'),
+          el('th', { class: 'giua' }, 'Thao tác'),
+        )),
+        el('tbody', {}, ...d.dong.map((r) => el('tr', {
+          class: 'bam-duoc',
+          onclick: () => moChungTu(r.voucher_id),
+        },
+          el('td', { class: 'ma giua' }, ngay(r.posting_date)),
+          el('td', { class: 'ma mo giua' }, ngay(r.voucher_date)),
+          el('td', { class: 'ma giua' }, r.voucher_no),
+          el('td', { class: 'ma mo giua' }, r.invoice_no || '—'),
+          el('td', { class: 'trai' }, r.description || '—'),
+          el('td', { class: 'ma mo giua' }, r.tk_cong_no),
+          el('td', { class: 'ma mo giua' }, r.contra_account_code || '—'),
           el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
           el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
           el('td', { class: 'tien mo' }, tien(r.so_du)),
+          el('td', { class: 'giua', onclick: (e) => e.stopPropagation() },
+            el('div', { class: 'dong-thanh' },
+              el('button', {
+                class: 'nut nho',
+                title: 'Xem và sửa chứng từ',
+                onclick: () => moChungTu(r.voucher_id),
+              }, 'Sửa'),
+              ghiSoDuoc() ? el('button', {
+                class: 'nut nho nguy',
+                title: 'Xóa chứng từ',
+                onclick: () => xoaChungTuNhanh(r.voucher_id, r.voucher_no),
+              }, 'Xóa') : null,
+            ),
+          ),
         ))),
         el('tfoot', {}, el('tr', {},
-          el('td', { colspan: '7' }, 'Cộng'),
+          el('td', { colspan: '7', class: 'trai' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
           el('td', { class: 'tien' }, tien(d.tong_no)),
           el('td', { class: 'tien' }, tien(d.tong_co)),
           el('td', { class: 'tien' }, tien(Number(d.tong_no) - Number(d.tong_co))),
+          el('td', {}, ''),
         )),
       )),
     ),
@@ -2963,6 +3205,7 @@ VE['bc-so-chi-tiet'] = async (than) => {
   try {
     const p = new URLSearchParams({ gom_con: String(SCT.gom_con) });
     if (S.ky) p.set('ky', S.ky);
+    if (S.chiNhanh) p.set('chi_nhanh', S.chiNhanh);
     if (SCT.tu_ngay) p.set('tu_ngay', SCT.tu_ngay);
     if (SCT.den_ngay) p.set('den_ngay', SCT.den_ngay);
     p.set('so_dong', SCT.so_dong);
@@ -2984,18 +3227,24 @@ VE['bc-so-chi-tiet'] = async (than) => {
     : Number(d.dau_ky) + Number(d.tong_no) - Number(d.tong_co);
 
   than.replaceChildren(
-    dauTrang('Sổ chi tiết các tài khoản',
-      'Toàn bộ bút toán của một tài khoản, kèm số dư sau mỗi dòng. Chọn tài khoản ở danh '
-      + 'sách bên trái.',
+    dauTrang('SỔ CHI TIẾT CÁC TÀI KHOẢN',
+      `Tài khoản: ${d.code || SCT.tai_khoan}${d.name ? ` · ${d.name}` : ''}${S.chiNhanh ? ` · Cơ sở: ${S.chiNhanh}` : ''}`,
       chonKy(() => ve()),
+      chonChiNhanh(() => ve()),
       el('label', { class: 'o' }, el('span', {}, 'Từ ngày'), oTu),
       el('label', { class: 'o' }, el('span', {}, 'Đến ngày'), oDen),
       el('button', {
         class: 'nut chinh',
         onclick: () => { SCT.tu_ngay = oTu.value; SCT.den_ngay = oDen.value; SCT.bo_qua = 0; ve(); },
-      }, 'Lọc')),
+      }, 'Lọc'),
+      ghiSoDuoc() ? el('button', {
+        class: 'nut',
+        onclick: () => moFormChungTu(null, { lines: [{ account_code: SCT.tai_khoan }] }),
+      }, `+ Thêm bút toán (${SCT.tai_khoan})`) : null,
+      el('button', { class: 'nut', onclick: () => { S.man = 'nhap-excel'; ve(); } }, 'Nhập từ Excel'),
+    ),
 
-    nhanNguon('So_chi_tiet_cac_tai_khoan.xlsx'),
+    nhanNguon('So_chi_tiet_cac_tai_khoan (1).xlsx'),
 
     el('div', { class: 'tk-khung' },
       el('div', { class: 'the tk-canh' },
@@ -3067,36 +3316,95 @@ VE['bc-so-chi-tiet'] = async (than) => {
             )),
           ) : null,
 
-          d.dong.length ? bang(
-            [{ ten: 'Ngày HT' }, { ten: 'Ngày CT' }, { ten: 'Số chứng từ' },
-             { ten: 'Số hóa đơn' }, d.gom_con && d.co_con ? { ten: 'Tài khoản' } : null,
-             { ten: 'Diễn giải' }, { ten: 'TK đối ứng' }, { ten: 'Đối tượng' },
-             { ten: 'Khoản mục' },
-             { ten: 'Phát sinh Nợ', tien: true }, { ten: 'Phát sinh Có', tien: true },
-             { ten: 'Số dư', tien: true }].filter(Boolean),
-            d.dong.map((r) => el('tr', {},
-              el('td', { class: 'ma' }, ngay(r.posting_date)),
-              el('td', { class: 'ma mo' }, ngay(r.voucher_date)),
-              el('td', { class: 'ma' }, r.voucher_no),
-              el('td', { class: 'ma mo' }, r.invoice_no || '—'),
-              d.gom_con && d.co_con ? el('td', { class: 'ma' }, r.account_code) : null,
-              el('td', {}, r.description || '—',
-                r.is_deductible === false
-                  ? el('span', { class: 'the-nhan am cach-trai' }, 'không hợp lý') : null),
-              el('td', { class: 'ma mo' }, r.contra_account_code || '—'),
-              el('td', { class: 'mo' }, r.partner_name || r.partner_code || '—'),
-              el('td', { class: 'ma mo' }, r.cost_item_code || '—'),
-              el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
-              el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
-              el('td', { class: 'tien mo' }, tien(r.so_du)),
-            )),
-            el('tr', {},
-              el('td', { colspan: String(d.gom_con && d.co_con ? 9 : 8) }, 'Cộng phát sinh'),
-              el('td', { class: 'tien' }, tien(d.tong_no)),
-              el('td', { class: 'tien' }, tien(d.tong_co)),
-              el('td', { class: 'tien' }, tien(cuoiKy)),
+          d.dong.length ? el('div', { class: 'the cach-tren' }, el('div', { class: 'cuon' }, el('table', { class: 'ke-o' },
+            el('thead', {},
+              el('tr', {},
+                el('th', { class: 'giua' }, 'Ngày HT'),
+                el('th', { class: 'giua' }, 'Ngày CT'),
+                el('th', { class: 'giua' }, 'Số chứng từ'),
+                el('th', { class: 'giua' }, 'Số hóa đơn'),
+                el('th', { class: 'trai' }, 'Diễn giải'),
+                el('th', { class: 'giua' }, 'TK đối ứng'),
+                el('th', { class: 'tien giua' }, 'Phát sinh Nợ'),
+                el('th', { class: 'tien giua' }, 'Phát sinh Có'),
+                el('th', { class: 'tien giua' }, 'Dư Nợ'),
+                el('th', { class: 'tien giua' }, 'Dư Có'),
+                el('th', { class: 'giua' }, 'Loại CT'),
+                el('th', { class: 'giua' }, 'Mã đối tượng'),
+                el('th', { class: 'trai' }, 'Tên đối tượng'),
+                el('th', { class: 'giua' }, 'Khoản mục'),
+                el('th', { class: 'giua' }, 'Hợp lý'),
+                el('th', { class: 'giua' }, 'Thao tác'),
+              ),
             ),
-          ) : el('div', { class: 'the' }, el('div', { class: 'trong' },
+            el('tbody', {},
+              el('tr', { class: 'dong-cha' },
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'trai' }, el('strong', {}, 'Số dư đầu kỳ')),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'tien mo' }, '—'),
+                el('td', { class: 'tien mo' }, '—'),
+                el('td', { class: 'tien' }, Number(d.dau_ky) > 0 ? el('strong', {}, tien(d.dau_ky)) : '—'),
+                el('td', { class: 'tien' }, Number(d.dau_ky) < 0 ? el('strong', {}, tien(Math.abs(Number(d.dau_ky)))) : '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'trai mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua mo' }, '—'),
+                el('td', { class: 'giua' }, '—'),
+              ),
+              ...d.dong.map((r) => el('tr', {
+                class: 'bam-duoc',
+                onclick: () => moChungTu(r.voucher_id),
+              },
+                el('td', { class: 'ma giua' }, ngay(r.posting_date)),
+                el('td', { class: 'ma mo giua' }, r.voucher_date ? ngay(r.voucher_date) : '—'),
+                el('td', { class: 'ma giua' }, r.voucher_no),
+                el('td', { class: 'ma mo giua' }, r.invoice_no || '—'),
+                el('td', { class: 'trai' }, r.description || '—'),
+                el('td', { class: 'ma mo giua' }, r.contra_account_code || '—'),
+                el('td', { class: 'tien' }, Number(r.ps_no) ? tien(r.ps_no) : '—'),
+                el('td', { class: 'tien' }, Number(r.ps_co) ? tien(r.ps_co) : '—'),
+                el('td', { class: 'tien' }, Number(r.so_du) > 0 ? tien(r.so_du) : '—'),
+                el('td', { class: 'tien' }, Number(r.so_du) < 0 ? tien(Math.abs(Number(r.so_du))) : '—'),
+                el('td', { class: 'mo giua' }, r.voucher_type || '—'),
+                el('td', { class: 'ma giua' }, r.partner_code || '—'),
+                el('td', { class: 'trai mo' }, r.partner_name || '—'),
+                el('td', { class: 'ma mo giua' }, r.cost_item_code || '—'),
+                el('td', { class: 'giua' },
+                  r.is_deductible === false
+                    ? el('span', { class: 'the-nhan am' }, 'Không hợp lý')
+                    : el('span', { class: 'the-nhan' }, 'Hợp lý')),
+                el('td', { class: 'giua', onclick: (e) => e.stopPropagation() },
+                  el('div', { class: 'dong-thanh' },
+                    el('button', {
+                      class: 'nut nho',
+                      title: 'Xem và sửa chứng từ',
+                      onclick: () => moChungTu(r.voucher_id),
+                    }, 'Sửa'),
+                    ghiSoDuoc() ? el('button', {
+                      class: 'nut nho nguy',
+                      title: 'Xóa chứng từ',
+                      onclick: () => xoaChungTuNhanh(r.voucher_id, r.voucher_no),
+                    }, 'Xóa') : null,
+                  ),
+                ),
+              )),
+            ),
+            el('tfoot', {},
+              el('tr', {},
+                el('td', { colspan: '6', class: 'trai' }, `Cộng ${dinhDangSo.format(d.dong.length)} dòng`),
+                el('td', { class: 'tien' }, tien(d.tong_no)),
+                el('td', { class: 'tien' }, tien(d.tong_co)),
+                el('td', { class: 'tien' }, cuoiKy > 0 ? tien(cuoiKy) : '—'),
+                el('td', { class: 'tien' }, cuoiKy < 0 ? tien(Math.abs(cuoiKy)) : '—'),
+                el('td', { colspan: '6' }, ''),
+              ),
+            ),
+          ))) : el('div', { class: 'the' }, el('div', { class: 'trong' },
             `Tài khoản ${d.code} chưa có bút toán nào`
             + (S.ky ? ` trong kỳ ${S.ky}` : '')
             + (SCT.tu_ngay || SCT.den_ngay ? ' trong khoảng ngày đang lọc' : '')

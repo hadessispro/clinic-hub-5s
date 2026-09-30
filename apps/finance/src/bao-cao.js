@@ -52,78 +52,50 @@ function phanTrang(f) {
   };
 }
 
+function sqlBranchFilter(paramIdx) {
+  return `($${paramIdx}::text is null
+    or ($${paramIdx} = 'PVC' and (p.branch_hint = 'PVC' or p.code like 'PVC%' or ci.branch_code = 'PVC' or v.voucher_no like '%PVC%' or l.description ilike '%PVC%' or l.description ilike '%Phạm Văn Chiêu%'))
+    or ($${paramIdx} = 'LVT' and (p.branch_hint = 'LVT' or p.code like 'LVT%' or p.code like 'APC%' or ci.branch_code = 'LVT' or v.voucher_no like '%LVT%' or l.description ilike '%LVT%' or l.description ilike '%Lê Văn Thọ%'))
+    or ($${paramIdx} = 'CHUNG' and (p.branch_hint is null or p.branch_hint = 'CHUNG') and p.code not like 'PVC%' and p.code not like 'LVT%' and p.code not like 'APC%'))`;
+}
+
 /* ── Sổ kế toán chi tiết quỹ tiền mặt ──────────────────────────────────────
    Nguồn Excel: So_ke_toan_chi_tiet_quy_tien_mat.xlsx
-   Cột gốc: Ngày, Số phiếu thu, Số phiếu chi, Diễn giải, TK đối ứng, Số tồn */
+   Cột gốc: Ngày hạch toán, Ngày chứng từ, Số phiếu thu, Số phiếu chi, Mã đối tượng,
+   Người nhận/Người nộp, Diễn giải, Tài khoản, TK đối ứng, Phát sinh Nợ/Có, Số tồn */
 
-async function soQuyTienMat({ period, from, to, gioiHan, boQua }) {
-  const dauKy = await one(
-    `select coalesce(sum(o.debit - o.credit), 0)::text as so_du
-     from finance.opening_balances o where o.account_code like '111%'`,
-  );
-  const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
-  const dong = await rows(
-    `select * from (
-       select v.posting_date, v.voucher_no, v.voucher_type, v.invoice_no,
-              l.description, l.account_code, l.contra_account_code,
-              l.partner_code, p.name as partner_name,
-              l.debit::text as thu, l.credit::text as chi,
-              ($4::numeric + sum(l.debit - l.credit)
-                 over (order by v.posting_date, v.voucher_no, l.id))::text as ton,
-              row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
+async function soQuyTienMat({ period, from, to, branch, gioiHan, boQua }) {
+  const [dauNam, psTruoc] = await Promise.all([
+    one(
+      `select coalesce(sum(o.debit - o.credit), 0)::numeric as du
+       from finance.opening_balances o where o.account_code like '111%'`,
+    ),
+    one(
+      `select coalesce(sum(l.debit - l.credit), 0)::numeric as ps
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
        left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
        where l.account_code like '111%'
-         and ($1::text is null or v.period_code = $1)
-         and ($2::date is null or v.posting_date >= $2)
-         and ($3::date is null or v.posting_date <= $3)
-     ) t order by stt limit ${limit} offset ${offset}`,
-    [period || null, from || null, to || null, Number(dauKy.so_du) || 0],
-  );
-  const tong = await one(
-    `select coalesce(sum(l.debit), 0)::text  as tong_thu,
-            coalesce(sum(l.credit), 0)::text as tong_chi,
-            count(*)::int as so_dong
-     from finance.journal_lines l
-     join finance.vouchers v on v.id = l.voucher_id
-     where l.account_code like '111%'
-       and ($1::text is null or v.period_code = $1)
-       and ($2::date is null or v.posting_date >= $2)
-       and ($3::date is null or v.posting_date <= $3)`,
-    [period || null, from || null, to || null],
-  );
-  return { dau_ky: dauKy.so_du, dong, ...tong, limit, offset };
-}
+         and (
+           case
+             when $1::date is not null then v.posting_date < $1::date
+             when $2::text is not null then v.period_code < $2::text
+             else false
+           end
+         )
+         and ${sqlBranchFilter(3)}`,
+      [from || null, period || null, branch || null],
+    ),
+  ]);
+  const dauKySo = Number(dauNam?.du || 0) + Number(psTruoc?.ps || 0);
 
-/* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────────
-   Nguồn Excel: So_tien_gui_ngan_hang.xlsx · một sổ cho mỗi tài khoản ngân hàng */
-
-async function taiKhoanNganHang() {
-  return rows(
-    `select a.code, a.name,
-            coalesce(sum(l.debit), 0)::text  as tong_thu,
-            coalesce(sum(l.credit), 0)::text as tong_chi,
-            count(l.id)::int as so_dong
-     from finance.accounts a
-     left join finance.journal_lines l on l.account_code = a.code
-     where a.code like '112%' and length(a.code) >= 5
-     group by a.code, a.name
-     order by a.code`,
-  );
-}
-
-async function soNganHang({ account, period, from, to, gioiHan, boQua }) {
-  const ma = account || '112';
-  const dauKy = await one(
-    `select coalesce(sum(debit - credit), 0)::text as so_du
-     from finance.opening_balances where account_code like $1 || '%'`, [ma],
-  );
   const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
   const dong = await rows(
     `select * from (
-       select v.posting_date, v.voucher_no, v.voucher_type, l.description,
-              l.contra_account_code, l.partner_code, p.name as partner_name,
+       select v.id as voucher_id, v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type, v.invoice_no,
+              l.description, l.account_code, l.contra_account_code,
+              l.partner_code, p.name as partner_name,
               l.debit::text as thu, l.credit::text as chi,
               ($5::numeric + sum(l.debit - l.credit)
                  over (order by v.posting_date, v.voucher_no, l.id))::text as ton,
@@ -131,12 +103,14 @@ async function soNganHang({ account, period, from, to, gioiHan, boQua }) {
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
        left join finance.partners p on p.code = l.partner_code
-       where l.account_code like $1 || '%'
-         and ($2::text is null or v.period_code = $2)
-         and ($3::date is null or v.posting_date >= $3)
-         and ($4::date is null or v.posting_date <= $4)
+       left join finance.cost_items ci on ci.code = l.cost_item_code
+       where l.account_code like '111%'
+         and ($1::text is null or v.period_code = $1)
+         and ($2::date is null or v.posting_date >= $2)
+         and ($3::date is null or v.posting_date <= $3)
+         and ${sqlBranchFilter(4)}
      ) t order by stt limit ${limit} offset ${offset}`,
-    [ma, period || null, from || null, to || null, Number(dauKy.so_du) || 0],
+    [period || null, from || null, to || null, branch || null, dauKySo],
   );
   const tong = await one(
     `select coalesce(sum(l.debit), 0)::text  as tong_thu,
@@ -144,11 +118,100 @@ async function soNganHang({ account, period, from, to, gioiHan, boQua }) {
             count(*)::int as so_dong
      from finance.journal_lines l
      join finance.vouchers v on v.id = l.voucher_id
-     where l.account_code like $1 || '%'
-       and ($2::text is null or v.period_code = $2)`,
-    [ma, period || null],
+     left join finance.partners p on p.code = l.partner_code
+     left join finance.cost_items ci on ci.code = l.cost_item_code
+     where l.account_code like '111%'
+       and ($1::text is null or v.period_code = $1)
+       and ($2::date is null or v.posting_date >= $2)
+       and ($3::date is null or v.posting_date <= $3)
+       and ${sqlBranchFilter(4)}`,
+    [period || null, from || null, to || null, branch || null],
   );
-  return { tai_khoan: ma, dau_ky: dauKy.so_du, dong, ...tong, limit, offset };
+  return { dau_ky: String(dauKySo), dong, ...tong, limit, offset };
+}
+
+/* ── Sổ tiền gửi ngân hàng ─────────────────────────────────────────────────
+   Nguồn Excel: So_tien_gui_ngan_hang.xlsx · một sổ cho mỗi tài khoản ngân hàng */
+
+async function taiKhoanNganHang() {
+  return rows(
+    `select a.code,
+            case when a.code = '1121' then 'Tổng hợp tiền gửi ngân hàng (VND)' else a.name end as name,
+            coalesce(sum(l.debit), 0)::text  as tong_thu,
+            coalesce(sum(l.credit), 0)::text as tong_chi,
+            count(l.id)::int as so_dong
+     from finance.accounts a
+     left join finance.journal_lines l on l.account_code like a.code || '%'
+     where a.code = '1121' or (a.code like '112%' and length(a.code) >= 5)
+     group by a.code, a.name
+     order by a.code`,
+  );
+}
+
+async function soNganHang({ account, period, from, to, branch, gioiHan, boQua }) {
+  const ma = account || '112';
+  const [dauNam, psTruoc] = await Promise.all([
+    one(
+      `select coalesce(sum(debit - credit), 0)::numeric as du
+       from finance.opening_balances where account_code like $1 || '%'`, [ma],
+    ),
+    one(
+      `select coalesce(sum(l.debit - l.credit), 0)::numeric as ps
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
+       where l.account_code like $1 || '%'
+         and (
+           case
+             when $2::date is not null then v.posting_date < $2::date
+             when $3::text is not null then v.period_code < $3::text
+             else false
+           end
+         )
+         and ${sqlBranchFilter(4)}`,
+      [ma, from || null, period || null, branch || null],
+    ),
+  ]);
+  const dauKySo = Number(dauNam?.du || 0) + Number(psTruoc?.ps || 0);
+
+  const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
+  const dong = await rows(
+    `select * from (
+       select v.id as voucher_id, v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type, v.invoice_no,
+              l.description, l.account_code, l.contra_account_code, l.partner_code, p.name as partner_name,
+              l.debit::text as thu, l.credit::text as chi,
+              ($6::numeric + sum(l.debit - l.credit)
+                 over (order by v.posting_date, v.voucher_no, l.id))::text as ton,
+              row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
+       where l.account_code like $1 || '%'
+         and ($2::text is null or v.period_code = $2)
+         and ($3::date is null or v.posting_date >= $3)
+         and ($4::date is null or v.posting_date <= $4)
+         and ${sqlBranchFilter(5)}
+     ) t order by stt limit ${limit} offset ${offset}`,
+    [ma, period || null, from || null, to || null, branch || null, dauKySo],
+  );
+  const tong = await one(
+    `select coalesce(sum(l.debit), 0)::text  as tong_thu,
+            coalesce(sum(l.credit), 0)::text as tong_chi,
+            count(*)::int as so_dong
+     from finance.journal_lines l
+     join finance.vouchers v on v.id = l.voucher_id
+     left join finance.partners p on p.code = l.partner_code
+     left join finance.cost_items ci on ci.code = l.cost_item_code
+     where l.account_code like $1 || '%'
+       and ($2::text is null or v.period_code = $2)
+       and ($3::date is null or v.posting_date >= $3)
+       and ($4::date is null or v.posting_date <= $4)
+       and ${sqlBranchFilter(5)}`,
+    [ma, period || null, from || null, to || null, branch || null],
+  );
+  return { tai_khoan: ma, dau_ky: String(dauKySo), dong, ...tong, limit, offset };
 }
 
 /* ── Tổng hợp công nợ ──────────────────────────────────────────────────────
@@ -179,9 +242,15 @@ async function tongHopCongNo({ loai, period, branch }) {
        group by 1
      )
      select p.code, p.name, $1 as tk_cong_no,
-            coalesce(t.du, 0)::text                         as dau_ky,
-            coalesce(ps.ps_no, 0)::text                     as ps_no,
-            coalesce(ps.ps_co, 0)::text                     as ps_co,
+            case when coalesce(t.du, 0) > 0 then coalesce(t.du, 0) else 0 end::text as dk_no,
+            case when coalesce(t.du, 0) < 0 then abs(coalesce(t.du, 0)) else 0 end::text as dk_co,
+            coalesce(ps.ps_no, 0)::text as ps_no,
+            coalesce(ps.ps_co, 0)::text as ps_co,
+            case when (coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0)) > 0
+                 then (coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0)) else 0 end::text as ck_no,
+            case when (coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0)) < 0
+                 then abs(coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0)) else 0 end::text as ck_co,
+            coalesce(t.du, 0)::text as dau_ky,
             (coalesce(t.du, 0) + coalesce(ps.ps_no, 0) - coalesce(ps.ps_co, 0))::text as cuoi_ky
      from ps
      join finance.partners p on p.code = ps.partner_code
@@ -205,7 +274,7 @@ async function chiTietCongNo({ loai, partner, period }) {
   if (!partner) return { doi_tac: null, dong: [] };
   const dt = await one('select code, name, kind, tax_code, address from finance.partners where code = $1', [partner]);
   const dong = await rows(
-    `select v.posting_date, v.voucher_date, v.voucher_no, v.invoice_no,
+    `select v.id as voucher_id, v.posting_date, v.voucher_date, v.voucher_no, v.invoice_no,
             l.description, l.account_code as tk_cong_no, l.contra_account_code,
             l.debit::text as ps_no, l.credit::text as ps_co,
             sum(l.debit - l.credit) over (order by v.posting_date, v.voucher_no, l.id)::text as so_du
@@ -577,7 +646,7 @@ async function cayTaiKhoan() {
    khoản 111" là gồm cả 1111, 1112, 1113. Nên mặc định gộp con, và vẫn cho tắt
    khi cần soi riêng một cấp. */
 
-async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true, gioiHan, boQua }) {
+async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true, branch, gioiHan, boQua }) {
   const tk = await one(
     `select a.code, a.name, a.nature, a.depth,
             exists (select 1 from finance.accounts b
@@ -602,32 +671,53 @@ async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true, gio
          group by a.code, a.name order by a.code`, [account])
     : [];
 
-  const dauRow = await one(
-    `select coalesce(sum(debit - credit), 0)::float8 as dau
-     from finance.opening_balances where account_code ${phepSo} $1`, [loc],
-  );
-  const dauKy = dauRow.dau || 0;
+  const [dauRow, psTruoc] = await Promise.all([
+    one(
+      `select coalesce(sum(debit - credit), 0)::float8 as dau
+       from finance.opening_balances where account_code ${phepSo} $1`, [loc],
+    ),
+    one(
+      `select coalesce(sum(l.debit - l.credit), 0)::float8 as ps
+       from finance.journal_lines l
+       join finance.vouchers v on v.id = l.voucher_id
+       left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
+       where l.account_code ${phepSo} $1
+         and (
+           case
+             when $2::date is not null then v.posting_date < $2::date
+             when $3::text is not null then v.period_code < $3::text
+             else false
+           end
+         )
+         and ${sqlBranchFilter(4)}`,
+      [loc, from || null, period || null, branch || null],
+    ),
+  ]);
+  const dauKy = (dauRow?.dau || 0) + (psTruoc?.ps || 0);
 
   const { limit, offset } = phanTrang({ limit: gioiHan, offset: boQua });
   const dong = await rows(
     `select * from (
-       select v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type,
+       select v.id as voucher_id, v.posting_date, v.voucher_date, v.voucher_no, v.voucher_type,
               v.invoice_no, l.invoice_date, l.account_code, l.description,
               l.contra_account_code, l.partner_code, p.name as partner_name,
               l.cost_item_code, l.is_deductible,
               l.debit::text as ps_no, l.credit::text as ps_co,
-              ($5::numeric + sum(l.debit - l.credit)
+              ($6::numeric + sum(l.debit - l.credit)
                  over (order by v.posting_date, v.voucher_no, l.id))::text as so_du,
               row_number() over (order by v.posting_date, v.voucher_no, l.id) as stt
        from finance.journal_lines l
        join finance.vouchers v on v.id = l.voucher_id
        left join finance.partners p on p.code = l.partner_code
+       left join finance.cost_items ci on ci.code = l.cost_item_code
        where l.account_code ${phepSo} $1
          and ($2::text is null or v.period_code = $2)
          and ($3::date is null or v.posting_date >= $3)
          and ($4::date is null or v.posting_date <= $4)
+         and ${sqlBranchFilter(5)}
      ) t order by stt limit ${limit} offset ${offset}`,
-    [loc, period || null, from || null, to || null, dauKy],
+    [loc, period || null, from || null, to || null, branch || null, dauKy],
   );
 
   const tong = await one(
@@ -635,11 +725,14 @@ async function soChiTietTaiKhoan({ account, period, from, to, gomCon = true, gio
             coalesce(sum(l.credit), 0)::text as tong_co, count(*)::int as so_dong
      from finance.journal_lines l
      join finance.vouchers v on v.id = l.voucher_id
+     left join finance.partners p on p.code = l.partner_code
+     left join finance.cost_items ci on ci.code = l.cost_item_code
      where l.account_code ${phepSo} $1
        and ($2::text is null or v.period_code = $2)
        and ($3::date is null or v.posting_date >= $3)
-       and ($4::date is null or v.posting_date <= $4)`,
-    [loc, period || null, from || null, to || null],
+       and ($4::date is null or v.posting_date <= $4)
+       and ${sqlBranchFilter(5)}`,
+    [loc, period || null, from || null, to || null, branch || null],
   );
 
   return { ...tk, gom_con: gom, tai_khoan_con: con, dau_ky: String(dauKy),

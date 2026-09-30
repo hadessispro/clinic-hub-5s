@@ -701,6 +701,7 @@ app.get(`${BASE}/api/nhap-lieu/:id`, guard, async (req, reply) => {
 
 app.get(`${BASE}/api/bc/so-quy`, guard, doc('xem_so_quy_tien_mat', (req) =>
   bc.soQuyTienMat({ period: req.query.ky, from: req.query.tu_ngay, to: req.query.den_ngay,
+                    branch: req.query.chi_nhanh || req.query.branch,
                     gioiHan: req.query.so_dong, boQua: req.query.bo_qua })));
 
 app.get(`${BASE}/api/bc/tai-khoan-ngan-hang`, guard, async () => bc.taiKhoanNganHang());
@@ -708,6 +709,7 @@ app.get(`${BASE}/api/bc/tai-khoan-ngan-hang`, guard, async () => bc.taiKhoanNgan
 app.get(`${BASE}/api/bc/so-ngan-hang`, guard, doc('xem_so_ngan_hang', (req) =>
   bc.soNganHang({ account: req.query.tai_khoan, period: req.query.ky,
                   from: req.query.tu_ngay, to: req.query.den_ngay,
+                  branch: req.query.chi_nhanh || req.query.branch,
                   gioiHan: req.query.so_dong, boQua: req.query.bo_qua })));
 
 app.get(`${BASE}/api/bc/tong-hop-cong-no`, guard, doc('xem_tong_hop_cong_no', (req) =>
@@ -728,6 +730,7 @@ app.get(`${BASE}/api/bc/so-chi-tiet/:code`, guard, doc('xem_so_chi_tiet_tai_khoa
   const r = await bc.soChiTietTaiKhoan({
     account: req.params.code, period: req.query.ky,
     from: req.query.tu_ngay, to: req.query.den_ngay,
+    branch: req.query.chi_nhanh || req.query.branch,
     gomCon: req.query.gom_con !== 'false',
     gioiHan: req.query.so_dong, boQua: req.query.bo_qua,
   });
