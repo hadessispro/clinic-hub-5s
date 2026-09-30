@@ -52,40 +52,81 @@ export function playBeepSound(type = 'success') {
   } catch {}
 }
 
+let zxingLoadingPromise = null;
+
 /**
- * Nạp động bộ giải mã ZXing từ tệp tĩnh cục bộ nếu chưa có trong bộ nhớ
+ * Nạp động bộ giải mã ZXing từ tệp tĩnh cục bộ (tự động chuyển CDN dự phòng nếu mạng chậm)
  */
 export async function ensureZXing() {
   if (typeof window === 'undefined') return null;
   if (window.ZXing) return window.ZXing;
+  if (zxingLoadingPromise) return zxingLoadingPromise;
 
-  return new Promise((resolve, reject) => {
-    // Nếu script tag đã được nạp trên DOM
-    const existing = document.querySelector('script[src*="zxing"]');
-    if (existing) {
-      let count = 0;
-      const check = setInterval(() => {
-        if (window.ZXing) {
-          clearInterval(check);
-          resolve(window.ZXing);
-        } else if (++count > 40) {
-          clearInterval(check);
-          reject(new Error('Hết thời gian chờ nạp thư viện quét mã ZXing.'));
+  zxingLoadingPromise = (async () => {
+    if (window.ZXing) return window.ZXing;
+
+    function loadScript(src, timeoutMs = 15000) {
+      return new Promise((resolve, reject) => {
+        const cleanSrc = src.split('?')[0];
+        let s = document.querySelector(`script[src*="${cleanSrc}"]`);
+        if (s && window.ZXing) return resolve(window.ZXing);
+
+        let timer = null;
+        let pollTimer = null;
+
+        const cleanup = () => {
+          if (timer) clearTimeout(timer);
+          if (pollTimer) clearInterval(pollTimer);
+        };
+
+        timer = setTimeout(() => {
+          cleanup();
+          reject(new Error(`Quá thời gian tải script (${Math.round(timeoutMs / 1000)}s): ${src}`));
+        }, timeoutMs);
+
+        if (!s) {
+          s = document.createElement('script');
+          s.src = src;
+          s.async = true;
+          document.head.appendChild(s);
         }
-      }, 50);
-      return;
+
+        s.addEventListener('load', () => {
+          cleanup();
+          if (window.ZXing) resolve(window.ZXing);
+          else reject(new Error('Thư viện ZXing không khởi tạo được đối tượng toàn cục window.ZXing.'));
+        }, { once: true });
+
+        s.addEventListener('error', () => {
+          cleanup();
+          reject(new Error(`Không thể kết nối tải tệp ${src}`));
+        }, { once: true });
+
+        pollTimer = setInterval(() => {
+          if (window.ZXing) {
+            cleanup();
+            resolve(window.ZXing);
+          }
+        }, 80);
+      });
     }
 
-    const s = document.createElement('script');
-    s.src = '/libs/zxing.min.js';
-    s.async = true;
-    s.onload = () => {
-      if (window.ZXing) resolve(window.ZXing);
-      else reject(new Error('Thư viện ZXing nạp không thành công.'));
-    };
-    s.onerror = () => reject(new Error('Không thể tải tệp thư viện quét mã vạch /libs/zxing.min.js.'));
-    document.head.appendChild(s);
-  });
+    try {
+      // 1. Ưu tiên nạp từ tệp nội bộ tĩnh (nhanh, offline, bảo mật)
+      return await loadScript('/libs/zxing.min.js?v=20260930_zx1', 12000);
+    } catch (localErr) {
+      console.warn('[BarcodeScanner] Nạp ZXing nội bộ không kịp hoặc lỗi, chuyển sang CDN dự phòng:', localErr);
+      try {
+        // 2. Dự phòng CDN jsDelivr chính thức nếu PWA/máy trạm chưa tải được tệp tĩnh
+        return await loadScript('https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js', 15000);
+      } catch (cdnErr) {
+        zxingLoadingPromise = null; // Cho phép bấm thử lại
+        throw new Error('Không thể tải thư viện giải mã mã vạch ZXing. Vui lòng kiểm tra lại kết nối mạng hoặc bấm thử lại.');
+      }
+    }
+  })();
+
+  return zxingLoadingPromise;
 }
 
 /**
@@ -138,8 +179,12 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
 
   stopBarcodeScanner();
 
+  // 1. Đảm bảo động cơ quét mã ZXing đã sẵn sàng TRƯỚC khi bật camera
+  const reader = await createReaderInstance();
+  activeReader = reader;
+
   try {
-    // Ưu tiên camera sau (environment), độ phân giải cao để nhận diện rõ nét vạch 1D nhỏ
+    // 2. Ưu tiên camera sau (environment), độ phân giải cao để nhận diện rõ nét vạch 1D nhỏ
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -196,11 +241,8 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
       }
     }
 
-    // Khởi tạo đầu đọc ZXing và quét liên tục trên luồng video
-    const reader = await createReaderInstance();
-    activeReader = reader;
-
-    reader.decodeFromVideoElementContinuously(videoElement, (result, err) => {
+    // Bắt đầu quét liên tục trên luồng video
+    activeReader.decodeFromVideoElementContinuously(videoElement, (result, err) => {
       if (!result) return;
       const code = String(result.getText() || '').trim();
       if (!code) return;

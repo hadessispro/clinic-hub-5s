@@ -31,7 +31,7 @@ import {
   xoaPhienKiemKe, chotPhienKiemKe, layLichSuKiemKe,
 } from '../services/kho-hang.js';
 import {
-  startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound, scanBarcodeFromImage,
+  startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound, scanBarcodeFromImage, ensureZXing,
 } from '../services/barcode-scanner.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -3518,6 +3518,9 @@ export function initView() {
 /* ── Sự kiện Tab Kiểm Kho Barcode ───────────────────────────────────────── */
 
 function bindKiemKhoEvents(g, toi, maToi) {
+  // Nạp ngầm trước thư viện quét mã ZXing để khi người dùng nhấn Bật Camera là mở tức thì
+  ensureZXing().catch(() => {});
+
   // Chuyển đổi tab con
   document.querySelectorAll('[data-kk-sub]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3684,7 +3687,15 @@ function bindKiemKhoEvents(g, toi, maToi) {
         if (placeholder) {
           placeholder.style.display = 'flex';
           const p = placeholder.querySelector('p');
-          if (p) p.innerHTML = `<span style="color:#ef4444;font-weight:600;">${escapeHTML(err.message || 'Lỗi mở camera')}</span>`;
+          if (p) {
+            p.innerHTML = `<span style="color:#ef4444;font-weight:600;display:block;margin-bottom:8px;">${escapeHTML(err.message || 'Lỗi mở camera')}</span>
+              <button type="button" class="primary-button" id="btnKkRetryFromPlaceholder" style="font-size:0.8rem;padding:6px 14px;min-height:34px;margin-top:6px;">
+                <i class="ri-refresh-line"></i> Bấm để thử lại
+              </button>`;
+            placeholder.querySelector('#btnKkRetryFromPlaceholder')?.addEventListener('click', () => {
+              btn?.click();
+            });
+          }
         }
         showToast(err.message || 'Không thể khởi động camera.', true);
       }
