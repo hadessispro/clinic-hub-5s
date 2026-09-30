@@ -1798,12 +1798,15 @@ function veTheKetQuaQuet() {
       <p style="margin: 6px 0 10px; font-size: 0.82rem;">
         Mã vạch <code>${escapeHTML(kkVatTuVuaQuet.maVach)}</code> chưa liên kết với vật tư nào. Bạn có muốn gán mã này vào một vật tư có sẵn không?
       </p>
+      <div style="margin-bottom: 8px;">
+        <input type="text" id="kkGanMaFilter" placeholder="🔍 Gõ tìm nhanh tên hoặc mã SKU..." style="width: 100%; min-height: 34px; padding: 4px 10px; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box;">
+      </div>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <select id="kkGanMaSelect" style="flex: 1; min-width: 180px; min-height: 34px; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1;">
-          <option value="">— Chọn vật tư để gán —</option>
+        <select id="kkGanMaSelect" style="flex: 1; min-width: 180px; min-height: 36px; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1;">
+          <option value="">— Chọn vật tư để gán (${dsVatTu.length}) —</option>
           ${dsVatTu.map((v) => `<option value="${v.id}">${escapeHTML(v.ma)} · ${escapeHTML(v.ten)}</option>`).join('')}
         </select>
-        <button type="button" class="primary-button" id="btnKkXacNhanGanMa" style="min-height: 34px; font-size: 0.82rem; white-space: nowrap;">
+        <button type="button" class="primary-button" id="btnKkXacNhanGanMa" style="min-height: 36px; font-size: 0.82rem; white-space: nowrap;">
           <i class="ri-link"></i> Gán mã này
         </button>
       </div>
@@ -3760,6 +3763,19 @@ function bindKiemKhoEvents(g, toi, maToi) {
         capNhatTheKetQua();
       }
     });
+
+    const filterInput = g('kkGanMaFilter');
+    const ganMaSelect = g('kkGanMaSelect');
+    if (filterInput && ganMaSelect) {
+      filterInput.addEventListener('input', (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        const filtered = q
+          ? dsVatTu.filter((v) => (v.ma || '').toLowerCase().includes(q) || (v.ten || '').toLowerCase().includes(q))
+          : dsVatTu;
+        ganMaSelect.innerHTML = `<option value="">— Chọn vật tư để gán (${filtered.length}) —</option>` +
+          filtered.map((v) => `<option value="${v.id}">${escapeHTML(v.ma)} · ${escapeHTML(v.ten)}</option>`).join('');
+      });
+    }
 
     g('btnKkXacNhanGanMa')?.addEventListener('click', () => {
       const sel = g('kkGanMaSelect');
