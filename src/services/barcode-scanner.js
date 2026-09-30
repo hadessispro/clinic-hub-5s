@@ -291,7 +291,25 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
 export async function scanBarcodeFromImage(fileOrBlob, onDetected) {
   if (!fileOrBlob) throw new Error('Chưa chọn ảnh để quét.');
   const ZXing = await ensureZXing();
-  const reader = new ZXing.BrowserMultiFormatReader();
+
+  const hints = new Map();
+  const formats = [
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.CODE_93,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR,
+    ZXing.BarcodeFormat.QR_CODE,
+    ZXing.BarcodeFormat.DATA_MATRIX,
+  ];
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  const reader = new ZXing.BrowserMultiFormatReader(hints);
   const url = URL.createObjectURL(fileOrBlob);
 
   try {
@@ -308,10 +326,10 @@ export async function scanBarcodeFromImage(fileOrBlob, onDetected) {
       return { code, format: formatName };
     }
   } catch (err) {
-    throw new Error('Không nhận diện được mã vạch trong ảnh. Hãy chụp rõ nét phần mã vạch và thử lại.');
+    throw new Error('Không nhận diện được mã vạch trong ảnh. Hãy chụp gần và rõ nét phần mã vạch.');
   } finally {
     URL.revokeObjectURL(url);
-    reader.reset();
+    try { reader.reset(); } catch {}
   }
 }
 
