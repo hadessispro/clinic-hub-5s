@@ -118,23 +118,58 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
   stopBarcodeScanner();
 
   try {
-    activeStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+    } catch {
+      // Fallback constraints nếu thiết bị không hỗ trợ width/height ideal
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: 'environment' },
+      });
+    }
 
-    videoElement.srcObject = activeStream;
+    activeStream = stream;
+
+    videoElement.setAttribute('autoplay', '');
+    videoElement.setAttribute('muted', '');
+    videoElement.setAttribute('playsinline', '');
+    videoElement.setAttribute('webkit-playsinline', '');
     videoElement.muted = true;
     videoElement.playsInline = true;
-    await videoElement.play();
+    videoElement.srcObject = activeStream;
+
+    // Chờ metadata sẵn sàng trước khi play() để tránh AbortError trên iOS WebKit
+    await new Promise((resolve) => {
+      if (videoElement.readyState >= 1) {
+        resolve();
+      } else {
+        videoElement.onloadedmetadata = () => resolve();
+        setTimeout(resolve, 300);
+      }
+    });
+
+    try {
+      await videoElement.play();
+    } catch (playErr) {
+      if (playErr.name !== 'AbortError') {
+        console.warn('video.play notice:', playErr);
+      }
+    }
   } catch (err) {
     stopBarcodeScanner();
     if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
-      throw new Error('Vui lòng cấp quyền sử dụng Camera trong cài đặt trình duyệt.');
+      throw new Error('Vui lòng cấp quyền sử dụng Camera trong Cài đặt Safari/Chrome trên điện thoại.');
+    }
+    if (err.name === 'NotFoundError') {
+      throw new Error('Không tìm thấy camera phù hợp trên thiết bị.');
     }
     throw new Error(err.message || 'Không thể khởi động camera.');
   }
