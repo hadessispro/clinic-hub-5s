@@ -10,6 +10,7 @@ let activeReader = null;
 let lastScannedCode = null;
 let lastScannedTimestamp = 0;
 let isTorchOn = false;
+let currentZoomLevel = 1;
 
 /**
  * Phát âm thanh Beep điện tử bằng Web Audio API
@@ -312,21 +313,81 @@ export async function scanBarcodeFromImage(fileOrBlob, onDetected) {
   const reader = new ZXing.BrowserMultiFormatReader(hints);
   const url = URL.createObjectURL(fileOrBlob);
 
-  try {
-    const result = await reader.decodeFromImageUrl(url);
-    if (result) {
-      const code = String(result.getText() || '').trim();
-      const formatIndex = result.getBarcodeFormat();
-      const formatName = (ZXing.BarcodeFormat && ZXing.BarcodeFormat[formatIndex]) || 'BARCODE';
+  const handleResult = (result) => {
+    const code = String(result.getText() || '').trim();
+    const formatIndex = result.getBarcodeFormat();
+    const formatName = (ZXing.BarcodeFormat && ZXing.BarcodeFormat[formatIndex]) || 'BARCODE';
 
-      playBeepSound('success');
-      if (typeof onDetected === 'function') {
-        onDetected({ code, format: formatName });
-      }
-      return { code, format: formatName };
+    playBeepSound('success');
+    if (typeof onDetected === 'function') {
+      onDetected({ code, format: formatName });
     }
-  } catch (err) {
-    throw new Error('Không nhận diện được mã vạch trong ảnh. Hãy chụp gần và rõ nét phần mã vạch.');
+    return { code, format: formatName };
+  };
+
+  const loadImage = (src) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+
+  try {
+    // LẦN 1: Quét trực tiếp ảnh gốc
+    try {
+      const result = await reader.decodeFromImageUrl(url);
+      if (result) return handleResult(result);
+    } catch {}
+
+    // LẦN 2: Cắt vùng trung tâm 75% x 65% (ROI) và nén về khổ chuẩn 1280px
+    // Giúp phát hiện mã vạch nhỏ trên ảnh độ phân giải cao của điện thoại
+    try {
+      const img = await loadImage(url);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (ctx && img.width && img.height) {
+        const cropW = Math.round(img.width * 0.75);
+        const cropH = Math.round(img.height * 0.65);
+        const cropX = Math.round((img.width - cropW) / 2);
+        const cropY = Math.round((img.height - cropH) / 2);
+        canvas.width = Math.min(1280, cropW);
+        canvas.height = Math.round(canvas.width * (cropH / cropW));
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+        try {
+          const croppedUrl = canvas.toDataURL('image/jpeg', 0.92);
+          const result = await reader.decodeFromImageUrl(croppedUrl);
+          if (result) return handleResult(result);
+        } catch {}
+
+        // LẦN 3: Tăng cường độ tương phản (Adaptive Thresholding)
+        // Biến các sọc mờ thành màu đen rõ rệt, loại bỏ chói sáng trên vỏ hộp
+        try {
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+          let lumSum = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            lumSum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          }
+          const avgLum = lumSum / (d.length / 4);
+          const threshold = avgLum * 0.92;
+          for (let i = 0; i < d.length; i += 4) {
+            const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            const v = lum < threshold ? 0 : 255;
+            d[i] = v;
+            d[i + 1] = v;
+            d[i + 2] = v;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          const binarizedUrl = canvas.toDataURL('image/jpeg', 0.95);
+          const result = await reader.decodeFromImageUrl(binarizedUrl);
+          if (result) return handleResult(result);
+        } catch {}
+      }
+    } catch {}
+
+    throw new Error('Không nhận diện được mã vạch trong ảnh. Bạn có thể gõ trực tiếp dãy số in dưới mã vạch vào ô "Tra / Gán mã vạch".');
   } finally {
     URL.revokeObjectURL(url);
     try { reader.reset(); } catch {}
@@ -342,6 +403,46 @@ export function checkTorchSupport() {
   if (!track || !track.getCapabilities) return false;
   const caps = track.getCapabilities();
   return Boolean(caps.torch);
+}
+
+/**
+ * Lấy mức Zoom hiện tại
+ */
+export function getCameraZoomLevel() {
+  return currentZoomLevel;
+}
+
+/**
+ * Bật / tắt chế độ Zoom 2X
+ * Kết hợp zoom phần cứng WebRTC (nếu thiết bị hỗ trợ) và CSS scale để giữ cự ly chụp 20cm không bị mờ nét
+ */
+export async function toggleCameraZoom(videoElement) {
+  currentZoomLevel = currentZoomLevel === 1 ? 2 : 1;
+
+  if (activeStream) {
+    const track = activeStream.getVideoTracks()[0];
+    if (track && track.getCapabilities) {
+      try {
+        const caps = track.getCapabilities();
+        if (caps.zoom) {
+          const targetZoom = currentZoomLevel === 2 ? Math.min(caps.zoom.max || 2, 2) : (caps.zoom.min || 1);
+          await track.applyConstraints({
+            advanced: [{ zoom: targetZoom }],
+          });
+        }
+      } catch (e) {
+        console.warn('[BarcodeScanner] Hardware zoom not available:', e);
+      }
+    }
+  }
+
+  if (videoElement) {
+    videoElement.style.transition = 'transform 0.25s ease';
+    videoElement.style.transformOrigin = 'center center';
+    videoElement.style.transform = currentZoomLevel === 2 ? 'scale(1.8)' : 'scale(1)';
+  }
+
+  return currentZoomLevel;
 }
 
 /**
@@ -367,7 +468,7 @@ export async function toggleTorch(forceState = null) {
 /**
  * Dừng camera và giải phóng tài nguyên
  */
-export function stopBarcodeScanner() {
+export function stopBarcodeScanner(videoElement = null) {
   if (activeReader) {
     try {
       activeReader.reset();
@@ -380,7 +481,11 @@ export function stopBarcodeScanner() {
     } catch {}
     activeStream = null;
   }
+  if (videoElement) {
+    videoElement.style.transform = 'scale(1)';
+  }
   isTorchOn = false;
+  currentZoomLevel = 1;
   lastScannedCode = null;
   lastScannedTimestamp = 0;
 }

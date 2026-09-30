@@ -32,11 +32,12 @@ import {
 } from '../services/kho-hang.js';
 import {
   startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound, scanBarcodeFromImage, ensureZXing,
+  toggleCameraZoom, getCameraZoomLevel,
 } from '../services/barcode-scanner.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { exportTableToExcel } from '../services/excel-export.js';
-import { confirmAction } from '../components/app-dialog.js';
+import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { nenWebp } from '../components/nen-anh.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
@@ -1796,8 +1797,12 @@ function veTheKetQuaQuet() {
         <i class="ri-error-warning-line"></i> Mã vạch mới chưa khai báo!
       </strong>
       <p style="margin: 6px 0 10px; font-size: 0.82rem;">
-        Mã vạch <code>${escapeHTML(kkVatTuVuaQuet.maVach)}</code> chưa liên kết với vật tư nào. Bạn có muốn gán mã này vào một vật tư có sẵn không?
+        Mã vạch <code style="background: #fef3c7; padding: 2px 6px; border-radius: 4px; font-weight: 700;">${escapeHTML(kkVatTuVuaQuet.maVach)}</code> chưa liên kết với vật tư nào trong hệ thống.
       </p>
+
+      <div style="font-size: 0.78rem; font-weight: 700; color: #78350f; margin-bottom: 6px;">
+        Cách 1: Gán vào vật tư đã có trong danh mục kho:
+      </div>
       <div style="margin-bottom: 8px;">
         <input type="text" id="kkGanMaFilter" placeholder="🔍 Gõ tìm nhanh tên hoặc mã SKU..." style="width: 100%; min-height: 34px; padding: 4px 10px; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box;">
       </div>
@@ -1808,6 +1813,13 @@ function veTheKetQuaQuet() {
         </select>
         <button type="button" class="primary-button" id="btnKkXacNhanGanMa" style="min-height: 36px; font-size: 0.82rem; white-space: nowrap;">
           <i class="ri-link"></i> Gán mã này
+        </button>
+      </div>
+
+      <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed #fcd34d; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span style="font-size: 0.78rem; color: #78350f; font-weight: 600;">Cách 2: Nếu đây là món hàng mới hoàn toàn:</span>
+        <button type="button" class="secondary-button" id="btnKkTaoNhanhVatTu" style="min-height: 32px; font-size: 0.8rem; background: #fef3c7; border-color: #f59e0b; color: #92400e; font-weight: 700;">
+          <i class="ri-add-circle-line"></i> + Tạo mới vật tư & Gán mã ngay
         </button>
       </div>
     </div>`;
@@ -2042,6 +2054,10 @@ function veKiemKho() {
           <i class="ri-flashlight-${kkDenFlash ? 'fill' : 'line'}"></i> ${kkDenFlash ? 'Tắt Flash' : 'Bật Flash'}
         </button>
 
+        <button type="button" class="secondary-button" id="btnKkToggleZoom" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem;" title="Phóng to 2X để giữ cự ly 20cm lấy nét sắc bén, không bị mờ macro">
+          <i class="ri-zoom-in-line"></i> <span id="lblKkZoom">Zoom 2X</span>
+        </button>
+
         <button type="button" class="secondary-button" id="btnKkUploadAnh" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem;" title="Chụp ảnh bằng camera gốc hoặc chọn ảnh mã vạch từ máy">
           <i class="ri-image-add-line"></i> Chụp/Chọn ảnh
         </button>
@@ -2085,11 +2101,14 @@ function veKiemKho() {
 
           <!-- Nhập thủ công dự phòng nếu mã vạch rách/mờ -->
           <div style="margin-top: 16px; border-top: 1px dashed #cbd5e1; padding-top: 14px;">
-            <label style="font-size: 0.78rem; font-weight: 700; color: #64748b; margin-bottom: 6px; display: block;">
-              <i class="ri-keyboard-line"></i> Tìm nhanh hoặc đếm tay (Nếu mã vạch bị rách/mờ):
+            <label style="font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: block;">
+              <i class="ri-keyboard-line"></i> Tra mã vạch / Tìm nhanh vật tư (Nếu camera khó lấy nét):
             </label>
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="kkManualInput" placeholder="Gõ tên hoặc mã SKU..." style="flex: 1; min-height: 36px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.82rem;">
+              <input type="text" id="kkManualInput" placeholder="Nhập số in dưới mã vạch (ví dụ 2030202...) hoặc tên/SKU..." style="flex: 1; min-height: 36px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.82rem;">
+              <button type="button" class="primary-button" id="btnKkTraMaVach" style="min-height: 36px; font-size: 0.82rem; white-space: nowrap; padding: 0 12px;">
+                <i class="ri-search-eye-line"></i> Tra / Gán mã
+              </button>
             </div>
             <div id="kkManualDropdown" style="display: none; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
           </div>
@@ -3624,7 +3643,7 @@ function bindKiemKhoEvents(g, toi, maToi) {
     const pill = g('kkStatusPill');
 
     if (kkDangQuet) {
-      stopBarcodeScanner();
+      stopBarcodeScanner(vid);
       kkDangQuet = false;
       kkDenFlash = false;
       if (btn) {
@@ -3643,6 +3662,14 @@ function bindKiemKhoEvents(g, toi, maToi) {
         bFlash.innerHTML = '<i class="ri-flashlight-line"></i> Bật Flash';
         bFlash.style.background = '';
         bFlash.style.color = '';
+      }
+      const bZoom = g('btnKkToggleZoom');
+      if (bZoom) {
+        bZoom.style.background = '';
+        bZoom.style.borderColor = '';
+        bZoom.style.color = '';
+        const lbl = g('lblKkZoom');
+        if (lbl) lbl.textContent = 'Zoom 2X';
       }
     } else {
       if (!vid) {
@@ -3713,6 +3740,21 @@ function bindKiemKhoEvents(g, toi, maToi) {
       b.style.background = bat ? '#fef08a' : '';
       b.style.color = bat ? '#854d0e' : '';
     }
+  });
+
+  // Bật / tắt Zoom 2X
+  g('btnKkToggleZoom')?.addEventListener('click', async () => {
+    const vid = g('kkVideo');
+    const zoom = await toggleCameraZoom(vid);
+    const lbl = g('lblKkZoom');
+    const btn = g('btnKkToggleZoom');
+    if (lbl) lbl.textContent = zoom === 2 ? 'Zoom 1X' : 'Zoom 2X';
+    if (btn) {
+      btn.style.background = zoom === 2 ? '#ecfdf5' : '';
+      btn.style.borderColor = zoom === 2 ? '#10b981' : '';
+      btn.style.color = zoom === 2 ? '#065f46' : '';
+    }
+    showToast(zoom === 2 ? 'Đã bật Zoom 2X (giữ cự ly 20cm để hình ảnh sắc nét)' : 'Đã về chế độ góc nhìn chuẩn 1X');
   });
 
   // Chụp ảnh bằng camera gốc hoặc chọn ảnh mã vạch từ máy
@@ -3799,6 +3841,48 @@ function bindKiemKhoEvents(g, toi, maToi) {
       showToast(`Đã gán mã vạch ${kkVatTuVuaQuet.maVach} thành công!`);
       onBarcodeDetected({ code: kkVatTuVuaQuet.maVach, format: 'BARCODE' });
     });
+
+    g('btnKkTaoNhanhVatTu')?.addEventListener('click', async () => {
+      if (!kkVatTuVuaQuet?.maVach) return;
+      const tenMoi = await requestInput(
+        `Nhập tên vật tư / hàng hóa mới cho mã vạch: ${kkVatTuVuaQuet.maVach}`,
+        {
+          title: 'Tạo nhanh vật tư mới',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy',
+          input: { placeholder: 'Ví dụ: Kẹp bướm Echo 15mm, Bông gòn y tế...', maxLength: 120 },
+        }
+      );
+      if (!tenMoi?.trim()) return;
+
+      const donViMoi = await requestInput(
+        `Nhập đơn vị tính cho "${tenMoi.trim()}":`,
+        {
+          title: 'Đơn vị tính',
+          confirmText: 'Tạo & Gán mã ngay',
+          cancelText: 'Hủy',
+          input: { placeholder: 'hộp, cái, cuộn, lọ, gói...', value: 'hộp', maxLength: 30 },
+        }
+      );
+      if (!donViMoi?.trim()) return;
+
+      const cleanCode = kkVatTuVuaQuet.maVach.trim();
+      try {
+        const resMoi = await themVatTu({
+          ten: tenMoi.trim(),
+          ma: 'VT-' + cleanCode.slice(-6),
+          don_vi: donViMoi.trim(),
+          nhom: 'tieu_hao',
+          dinh_muc: 10,
+        });
+        const newId = resMoi.id || resMoi.ma;
+        ganMaVachVatTu(newId, cleanCode);
+        showToast(`Đã thêm mới "${tenMoi.trim()}" và gán mã vạch ${cleanCode}!`);
+        onBarcodeDetected({ code: cleanCode, format: 'BARCODE' });
+      } catch (err) {
+        showToast(err.message || 'Lỗi tạo vật tư mới.', true);
+      }
+    });
   }
 
   function capNhatTheKetQua() {
@@ -3815,7 +3899,7 @@ function bindKiemKhoEvents(g, toi, maToi) {
     if (td) {
       td.innerHTML = veTienDoKiemKho();
       td.querySelector('[data-kk-sub="doi-soat"]')?.addEventListener('click', () => {
-        stopBarcodeScanner();
+        stopBarcodeScanner(g('kkVideo'));
         kkDangQuet = false;
         kkSubTab = 'doi-soat';
         ve();
@@ -3826,18 +3910,40 @@ function bindKiemKhoEvents(g, toi, maToi) {
   // Khởi tạo binding cho result card khi view nạp
   bindResultCardEvents();
 
-  // Tìm kiếm nhập thủ công / đếm tay
+  // Tìm kiếm nhập thủ công / đếm tay / tra mã vạch trực tiếp
   const inputManual = g('kkManualInput');
   const dropdownManual = g('kkManualDropdown');
   if (inputManual && dropdownManual) {
+    const xuLyTraMaThuCong = () => {
+      const val = inputManual.value.trim();
+      if (!val) {
+        showToast('Vui lòng nhập số in dưới mã vạch hoặc tên vật tư để tra cứu.', true);
+        return;
+      }
+      dropdownManual.style.display = 'none';
+      inputManual.value = '';
+      onBarcodeDetected({ code: val, format: 'MANUAL' });
+    };
+
+    g('btnKkTraMaVach')?.addEventListener('click', xuLyTraMaThuCong);
+
+    inputManual.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        xuLyTraMaThuCong();
+      }
+    });
+
     inputManual.addEventListener('input', (e) => {
       const q = e.target.value.trim().toLowerCase();
       if (!q) { dropdownManual.style.display = 'none'; return; }
       const matches = dsVatTu.filter((v) =>
-        (v.ma || '').toLowerCase().includes(q) || (v.ten || '').toLowerCase().includes(q)
+        (v.ma || '').toLowerCase().includes(q) || (v.ten || '').toLowerCase().includes(q) || (v.ma_vach || '').toLowerCase().includes(q)
       ).slice(0, 6);
       if (!matches.length) {
-        dropdownManual.innerHTML = '<div style="padding: 10px; color: #94a3b8; font-size: 0.8rem;">Không tìm thấy vật tư nào</div>';
+        dropdownManual.innerHTML = `<div style="padding: 10px 12px; color: #64748b; font-size: 0.8rem;">
+          Không tìm thấy vật tư khớp tên. Bấm nút <b>"Tra / Gán mã"</b> hoặc <b>Enter</b> để kiểm tra / gán mã vạch này.
+        </div>`;
       } else {
         dropdownManual.innerHTML = matches.map((m) => `
           <div class="kk-manual-item" data-id="${m.id}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; display: flex; justify-content: space-between;">
