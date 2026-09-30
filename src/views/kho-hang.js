@@ -1879,6 +1879,17 @@ function veKiemKho() {
           <i class="ri-history-line"></i> Lịch sử kiểm kê
         </button>
       </div>
+    <!-- Banner Kiểm Thử Quy Trình CI/CD dành riêng cho Admin-IT -->
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <strong style="color: #1e40af; font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
+          <i class="ri-test-tube-line"></i> CHẾ ĐỘ KIỂM THỬ QUY TRÌNH (CI/CD · ADMIN-IT TEST GATE)
+        </strong>
+        <p style="margin: 4px 0 0; font-size: 0.8rem; color: #1e3a8a; line-height: 1.4;">
+          Tính năng quét Barcode bằng camera đang được khóa riêng cho <strong>Admin-IT</strong> kiểm tra quy trình & thiết bị di động trước khi đưa vào vận hành. Nhân sự phụ tá chưa nhìn thấy tab này để tránh xáo trộn kho thực tế.
+        </p>
+      </div>
+      <span class="status-pill is-info" style="font-size: 11px; font-weight: 700; background: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 6px;">ADMIN-IT PILOT</span>
     </div>
 
     <!-- Thanh bộ lọc kho & chế độ quét -->
@@ -2331,22 +2342,34 @@ export async function renderView() {
     }
   }
 
+  const laItOrAdmin = ['admin', 'admin_it', 'superadmin'].includes(role) ||
+                      toi.title?.includes('Admin') ||
+                      ['PVC-10001', '10001'].includes(maToi);
+
+  // Quy tắc CI/CD: Tab Kiểm kho Barcode chỉ mở cho Admin-IT / Quản trị kiểm thử quy trình trước khi mở cho phụ tá
+  const visibleTabs = TABS.filter((t) => t.ma !== 'kiem-kho' || laItOrAdmin);
+
   if (tab === 'kiem-kho') {
-    if (!kkDanhSach.length) {
-      const phienCu = layPhienKiemKe(chiNhanh, kkKhoChon);
-      if (phienCu?.danh_sach?.length) {
-        kkDanhSach = phienCu.danh_sach;
+    if (!laItOrAdmin) {
+      tab = 'xuat-ca';
+    } else {
+      if (!kkDanhSach.length) {
+        const phienCu = layPhienKiemKe(chiNhanh, kkKhoChon);
+        if (phienCu?.danh_sach?.length) {
+          kkDanhSach = phienCu.danh_sach;
+        }
       }
+      kkLichSu = layLichSuKiemKe(chiNhanh);
     }
-    kkLichSu = layLichSuKiemKe(chiNhanh);
   }
 
   return `<div class="view-stack kh-view">
     <div class="kh-thanh-tren">
       <nav class="lt-tabs" role="tablist">
-        ${TABS.map((t) => `<button type="button" role="tab" class="lt-tab${tab === t.ma ? ' is-active' : ''}"
+        ${visibleTabs.map((t) => `<button type="button" role="tab" class="lt-tab${tab === t.ma ? ' is-active' : ''}"
            aria-selected="${tab === t.ma}" data-tab="${t.ma}">
            <i class="${t.icon}"></i><span>${escapeHTML(t.ten)}</span>
+           ${t.ma === 'kiem-kho' ? '<span style="font-size:10px; background:#dbeafe; color:#1e40af; padding:2px 5px; border-radius:4px; margin-left:5px; font-weight:700;">TEST IT</span>' : ''}
          </button>`).join('')}
       </nav>
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
