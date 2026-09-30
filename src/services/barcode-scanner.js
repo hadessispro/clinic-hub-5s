@@ -1,11 +1,12 @@
 /**
  * Barcode & QR Code Scanner Service for Clinic Hub 5S
- * Tận dụng chuẩn Web API BarcodeDetector trên điện thoại di động (Android / iOS Safari 17+)
- * Hỗ trợ Web Audio BEEP, rung phản hồi, đèn Flash/Torch, chống quét lặp Debounce.
+ * Tích hợp chuẩn thư viện ZXing độc lập (Zebra Crossing) chạy 100% offline,
+ * hỗ trợ đầy đủ mọi thiết bị di động (iOS Safari, Android Chrome, Tablet, Desktop)
+ * và mọi định dạng mã vạch thông dụng: EAN-13, Code 128, Code 39, QR Code, DataMatrix...
  */
 
 let activeStream = null;
-let scanIntervalId = null;
+let activeReader = null;
 let lastScannedCode = null;
 let lastScannedTimestamp = 0;
 let isTorchOn = false;
@@ -52,64 +53,84 @@ export function playBeepSound(type = 'success') {
 }
 
 /**
- * Kiểm tra xem trình duyệt có hỗ trợ BarcodeDetector gốc không
+ * Nạp động bộ giải mã ZXing từ tệp tĩnh cục bộ nếu chưa có trong bộ nhớ
  */
-export function isNativeBarcodeSupported() {
-  return typeof window !== 'undefined' && 'BarcodeDetector' in window;
-}
+export async function ensureZXing() {
+  if (typeof window === 'undefined') return null;
+  if (window.ZXing) return window.ZXing;
 
-/**
- * Nạp polyfill dự phòng nếu thiết bị hoặc trình duyệt cũ chưa có BarcodeDetector
- */
-async function ensureBarcodeDetector() {
-  if (isNativeBarcodeSupported()) {
-    try {
-      return new window.BarcodeDetector({
-        formats: [
-          'code_128', 'code_39', 'code_93', 'codabar',
-          'ean_13', 'ean_8', 'upc_a', 'upc_e',
-          'qr_code', 'data_matrix', 'itf',
-        ],
-      });
-    } catch {
-      // Một số phiên bản chỉ hỗ trợ một tập con
-      return new window.BarcodeDetector();
-    }
-  }
-
-  // Tải polyfill dự phòng nhẹ từ CDN nếu chưa có
-  if (!window.BarcodeDetector) {
-    await new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@undecaf/barcode-detector-polyfill@0.9.21/dist/index.min.js';
-      script.onload = () => {
-        if (window.BarcodeDetectorPolyfill) {
-          window.BarcodeDetector = window.BarcodeDetectorPolyfill;
+  return new Promise((resolve, reject) => {
+    // Nếu script tag đã được nạp trên DOM
+    const existing = document.querySelector('script[src*="zxing"]');
+    if (existing) {
+      let count = 0;
+      const check = setInterval(() => {
+        if (window.ZXing) {
+          clearInterval(check);
+          resolve(window.ZXing);
+        } else if (++count > 40) {
+          clearInterval(check);
+          reject(new Error('Hết thời gian chờ nạp thư viện quét mã ZXing.'));
         }
-        resolve();
-      };
-      script.onerror = () => resolve(); // Tiếp tục kể cả khi offline
-      document.head.appendChild(script);
-    });
-  }
+      }, 50);
+      return;
+    }
 
-  if (window.BarcodeDetector) {
-    try {
-      return new window.BarcodeDetector();
-    } catch {}
-  }
-  return null;
+    const s = document.createElement('script');
+    s.src = '/libs/zxing.min.js';
+    s.async = true;
+    s.onload = () => {
+      if (window.ZXing) resolve(window.ZXing);
+      else reject(new Error('Thư viện ZXing nạp không thành công.'));
+    };
+    s.onerror = () => reject(new Error('Không thể tải tệp thư viện quét mã vạch /libs/zxing.min.js.'));
+    document.head.appendChild(s);
+  });
 }
 
 /**
- * Bắt đầu camera và vòng lặp quét mã
+ * Kiểm tra xem trình duyệt có hỗ trợ mở Camera không
+ */
+export function isCameraSupported() {
+  return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+}
+
+/**
+ * Khởi tạo đầu đọc mã vạch đa định dạng với cấu hình tối ưu độ nhạy cho mã hàng hóa
+ */
+async function createReaderInstance() {
+  const ZXing = await ensureZXing();
+  if (!ZXing) throw new Error('Không thể khởi tạo động cơ giải mã mã vạch.');
+
+  const hints = new Map();
+  const formats = [
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.CODE_93,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR,
+    ZXing.BarcodeFormat.QR_CODE,
+    ZXing.BarcodeFormat.DATA_MATRIX,
+  ];
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  return new ZXing.BrowserMultiFormatReader(hints, 180);
+}
+
+/**
+ * Bắt đầu camera và giải mã trực tiếp luồng video liên tục
  */
 export async function startBarcodeScanner(videoElement, onDetected, { debounceMs = 1200 } = {}) {
   if (!window.isSecureContext) {
-    throw new Error('Camera chỉ hoạt động trên kết nối HTTPS an toàn.');
+    throw new Error('Camera chỉ hoạt động trên kết nối an toàn (HTTPS hoặc localhost).');
   }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Thiết bị hoặc trình duyệt không hỗ trợ mở camera.');
+  if (!isCameraSupported()) {
+    throw new Error('Thiết bị hoặc trình duyệt không hỗ trợ mở camera trực tiếp.');
   }
   if (!videoElement) {
     throw new Error('Không tìm thấy khung video hiển thị camera.');
@@ -118,18 +139,19 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
   stopBarcodeScanner();
 
   try {
+    // Ưu tiên camera sau (environment), độ phân giải cao để nhận diện rõ nét vạch 1D nhỏ
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
         },
       });
     } catch {
-      // Fallback constraints nếu thiết bị không hỗ trợ width/height ideal
+      // Fallback constraints nếu camera không hỗ trợ độ phân giải cao
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: 'environment' },
@@ -137,6 +159,16 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
     }
 
     activeStream = stream;
+
+    // Tự động bật Continuous Autofocus trên thiết bị hỗ trợ
+    const track = stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      try {
+        await track.applyConstraints({
+          advanced: [{ focusMode: 'continuous' }],
+        });
+      } catch {}
+    }
 
     videoElement.setAttribute('autoplay', '');
     videoElement.setAttribute('muted', '');
@@ -146,13 +178,13 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
     videoElement.playsInline = true;
     videoElement.srcObject = activeStream;
 
-    // Chờ metadata sẵn sàng trước khi play() để tránh AbortError trên iOS WebKit
+    // Chờ metadata sẵn sàng trước khi play() để tránh lỗi WebKit iOS
     await new Promise((resolve) => {
       if (videoElement.readyState >= 1) {
         resolve();
       } else {
         videoElement.onloadedmetadata = () => resolve();
-        setTimeout(resolve, 300);
+        setTimeout(resolve, 350);
       }
     });
 
@@ -160,9 +192,44 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
       await videoElement.play();
     } catch (playErr) {
       if (playErr.name !== 'AbortError') {
-        console.warn('video.play notice:', playErr);
+        console.warn('[BarcodeScanner] video.play notice:', playErr);
       }
     }
+
+    // Khởi tạo đầu đọc ZXing và quét liên tục trên luồng video
+    const reader = await createReaderInstance();
+    activeReader = reader;
+
+    reader.decodeFromVideoElementContinuously(videoElement, (result, err) => {
+      if (!result) return;
+      const code = String(result.getText() || '').trim();
+      if (!code) return;
+
+      const now = Date.now();
+      // Chống quét trùng lặp trong khoảng thời gian debounce
+      if (code !== lastScannedCode || now - lastScannedTimestamp > debounceMs) {
+        lastScannedCode = code;
+        lastScannedTimestamp = now;
+
+        const formatIndex = result.getBarcodeFormat();
+        const formatName = (window.ZXing?.BarcodeFormat && window.ZXing.BarcodeFormat[formatIndex]) || 'BARCODE';
+
+        playBeepSound('success');
+        if (typeof onDetected === 'function') {
+          onDetected({
+            code,
+            format: formatName,
+            rawResult: result,
+          });
+        }
+      }
+    });
+
+    return {
+      stream: activeStream,
+      hasTorch: checkTorchSupport(),
+      reader: activeReader,
+    };
   } catch (err) {
     stopBarcodeScanner();
     if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
@@ -171,50 +238,39 @@ export async function startBarcodeScanner(videoElement, onDetected, { debounceMs
     if (err.name === 'NotFoundError') {
       throw new Error('Không tìm thấy camera phù hợp trên thiết bị.');
     }
-    throw new Error(err.message || 'Không thể khởi động camera.');
+    throw new Error(err.message || 'Không thể khởi động camera quét mã vạch.');
   }
+}
 
-  const detector = await ensureBarcodeDetector();
-  if (!detector) {
-    console.warn('Thiết bị không hỗ trợ BarcodeDetector. Cho phép người dùng nhập mã bằng tay.');
-  }
+/**
+ * Giải mã mã vạch từ tệp ảnh tĩnh (Chụp ảnh từ camera gốc hoặc tải ảnh từ Album)
+ * Rất hữu ích khi camera quay trực tiếp bị rung, mờ hoặc ánh sáng yếu
+ */
+export async function scanBarcodeFromImage(fileOrBlob, onDetected) {
+  if (!fileOrBlob) throw new Error('Chưa chọn ảnh để quét.');
+  const ZXing = await ensureZXing();
+  const reader = new ZXing.BrowserMultiFormatReader();
+  const url = URL.createObjectURL(fileOrBlob);
 
-  let isScanning = false;
-  scanIntervalId = setInterval(async () => {
-    if (isScanning || !detector || videoElement.readyState < 2) return;
-    isScanning = true;
-    try {
-      const barcodes = await detector.detect(videoElement);
-      if (barcodes && barcodes.length > 0) {
-        const first = barcodes[0];
-        const code = (first.rawValue || first.displayValue || '').trim();
-        const now = Date.now();
+  try {
+    const result = await reader.decodeFromImageUrl(url);
+    if (result) {
+      const code = String(result.getText() || '').trim();
+      const formatIndex = result.getBarcodeFormat();
+      const formatName = (ZXing.BarcodeFormat && ZXing.BarcodeFormat[formatIndex]) || 'BARCODE';
 
-        // Chống quét trùng lặp trong khoảng thời gian debounce
-        if (code && (code !== lastScannedCode || now - lastScannedTimestamp > debounceMs)) {
-          lastScannedCode = code;
-          lastScannedTimestamp = now;
-          playBeepSound('success');
-          if (typeof onDetected === 'function') {
-            onDetected({
-              code,
-              format: first.format || 'unknown',
-              boundingBox: first.boundingBox,
-            });
-          }
-        }
+      playBeepSound('success');
+      if (typeof onDetected === 'function') {
+        onDetected({ code, format: formatName });
       }
-    } catch (detectErr) {
-      // Bỏ qua lỗi nhận diện từng frame
-    } finally {
-      isScanning = false;
+      return { code, format: formatName };
     }
-  }, 100); // Tần suất quét 10 lần/giây, vừa siêu mượt vừa không nóng máy
-
-  return {
-    stream: activeStream,
-    hasTorch: checkTorchSupport(),
-  };
+  } catch (err) {
+    throw new Error('Không nhận diện được mã vạch trong ảnh. Hãy chụp rõ nét phần mã vạch và thử lại.');
+  } finally {
+    URL.revokeObjectURL(url);
+    reader.reset();
+  }
 }
 
 /**
@@ -249,15 +305,19 @@ export async function toggleTorch(forceState = null) {
 }
 
 /**
- * Dừng camera và giải phóng bộ nhớ
+ * Dừng camera và giải phóng tài nguyên
  */
 export function stopBarcodeScanner() {
-  if (scanIntervalId) {
-    clearInterval(scanIntervalId);
-    scanIntervalId = null;
+  if (activeReader) {
+    try {
+      activeReader.reset();
+    } catch {}
+    activeReader = null;
   }
   if (activeStream) {
-    activeStream.getTracks().forEach((track) => track.stop());
+    try {
+      activeStream.getTracks().forEach((track) => track.stop());
+    } catch {}
     activeStream = null;
   }
   isTorchOn = false;

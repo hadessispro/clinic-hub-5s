@@ -31,7 +31,7 @@ import {
   xoaPhienKiemKe, chotPhienKiemKe, layLichSuKiemKe,
 } from '../services/kho-hang.js';
 import {
-  startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound,
+  startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound, scanBarcodeFromImage,
 } from '../services/barcode-scanner.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
@@ -2039,6 +2039,11 @@ function veKiemKho() {
           <i class="ri-flashlight-${kkDenFlash ? 'fill' : 'line'}"></i> ${kkDenFlash ? 'Tắt Flash' : 'Bật Flash'}
         </button>
 
+        <button type="button" class="secondary-button" id="btnKkUploadAnh" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem;" title="Chụp ảnh bằng camera gốc hoặc chọn ảnh mã vạch từ máy">
+          <i class="ri-image-add-line"></i> Chụp/Chọn ảnh
+        </button>
+        <input type="file" id="kkFileInput" accept="image/*" capture="environment" style="display: none;" />
+
         <button type="button" class="secondary-button" id="btnKkLuuPhien" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem;" title="Lưu tạm phiên kiểm kê vào bộ nhớ máy">
           <i class="ri-save-line"></i> Lưu tạm
         </button>
@@ -3693,6 +3698,25 @@ function bindKiemKhoEvents(g, toi, maToi) {
       b.innerHTML = `<i class="ri-flashlight-${bat ? 'fill' : 'line'}"></i> ${bat ? 'Tắt Flash' : 'Bật Flash'}`;
       b.style.background = bat ? '#fef08a' : '';
       b.style.color = bat ? '#854d0e' : '';
+    }
+  });
+
+  // Chụp ảnh bằng camera gốc hoặc chọn ảnh mã vạch từ máy
+  g('btnKkUploadAnh')?.addEventListener('click', () => {
+    g('kkFileInput')?.click();
+  });
+
+  g('kkFileInput')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    showToast('Đang phân tích mã vạch từ ảnh chụp...');
+    try {
+      await scanBarcodeFromImage(file, onBarcodeDetected);
+      showToast('Đã nhận diện mã vạch từ ảnh thành công!');
+    } catch (err) {
+      showToast(err.message || 'Không tìm thấy mã vạch trong ảnh.', true);
+    } finally {
+      e.target.value = '';
     }
   });
 
