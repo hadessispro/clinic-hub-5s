@@ -27,7 +27,12 @@ import {
   layDanhSachDeXuat, layChiTietDeXuat, taoPhieuDeXuat, capNhatPhieuDeXuat, xoaPhieuDeXuat,
   goiYHangThieu, soSanhGiaNhaCungCap, taoDonHangTuPhieu, xuatExcelDeXuatBM03,
   BM03_STANDARD_ITEMS,
+  timVatTuTheoMaVach, ganMaVachVatTu, layPhienKiemKe, luuPhienKiemKe,
+  xoaPhienKiemKe, chotPhienKiemKe, layLichSuKiemKe,
 } from '../services/kho-hang.js';
+import {
+  startBarcodeScanner, stopBarcodeScanner, toggleTorch, checkTorchSupport, playBeepSound,
+} from '../services/barcode-scanner.js';
 import { escapeHTML, downloadText, phanTrang, thanhPhanTrang, todayISO } from '../utils.js';
 import { showToast } from '../components/toast.js';
 import { exportTableToExcel } from '../services/excel-export.js';
@@ -42,6 +47,7 @@ const TABS = [
   { ma: 'tong-quan', ten: 'Tổng quan',    icon: 'ri-dashboard-line' },
   { ma: 'xuat-ca',   ten: 'Xuất vật tư',  icon: 'ri-medicine-bottle-line' },
   { ma: 'vat-tu',    ten: 'Vật tư & tồn', icon: 'ri-archive-2-line' },
+  { ma: 'kiem-kho',  ten: 'Kiểm kho Barcode', icon: 'ri-barcode-box-line' },
   { ma: 'don-hang',  ten: 'Đơn hàng',     icon: 'ri-truck-line' },
   { ma: 'phieu-xuat', ten: 'Phiếu xuất',  icon: 'ri-file-list-3-line' },
   { ma: 'de-xuat',   ten: 'Đề xuất mua',  icon: 'ri-shopping-cart-2-line' },
@@ -80,6 +86,20 @@ let hienDrawerHangThieu = false;
 let dsGoiYHangThieu = [];
 let goiYChonMap = {};
 let modalSoSanhGia = null; // { vat_tu, quotes, dongIndex? }
+
+/* Quản lý Kiểm kho Barcode & Camera */
+let kkKhoChon = 'pvc_tong_quat';
+let kkSubTab = 'quet'; // 'quet' | 'doi-soat' | 'lich-su'
+let kkCheDo = 'cong_don'; // 'cong_don' (+1) | 'nhap_so'
+let kkDangQuet = false;
+let kkDenFlash = false;
+let kkHasTorch = false;
+let kkVatTuVuaQuet = null;
+let kkDanhSach = [];
+let kkLichSu = [];
+let kkModalGanMa = null;
+let kkTimThuCong = '';
+let kkFilterDoiSoat = 'tat_ca'; // 'tat_ca' | 'lech' | 'khop'
 
 /* MỘT biến cho ngăn kéo, không phải mỗi loại chi tiết một biến. */
 let nganMo = null;   // { loai: 'vat_tu' | 'don', id, so_sanh?, can? }
@@ -1760,6 +1780,504 @@ function veXuatVatTuCa() {
   `;
 }
 
+/* ── Tab: Kiểm kho bằng Barcode / Camera ────────────────────────────────── */
+
+function veKiemKho() {
+  const khopCount = kkDanhSach.filter((x) => x.chenh_lech === 0).length;
+  const thuaCount = kkDanhSach.filter((x) => x.chenh_lech > 0).length;
+  const thieuCount = kkDanhSach.filter((x) => x.chenh_lech < 0).length;
+  const tongGiaTriLech = kkDanhSach.reduce((s, x) => s + (x.chenh_lech * (x.gia_von || 0)), 0);
+
+  const khoList = Object.entries(KHO_XUAT).filter(([k, v]) => !chiNhanh || v.chi_nhanh === chiNhanh);
+  if (!khoList.some(([k]) => k === kkKhoChon) && khoList.length) {
+    kkKhoChon = khoList[0][0];
+  }
+
+  // Lọc bảng đối soát
+  let dsDoiSoat = [...kkDanhSach];
+  if (kkFilterDoiSoat === 'lech') dsDoiSoat = dsDoiSoat.filter((x) => x.chenh_lech !== 0);
+  else if (kkFilterDoiSoat === 'khop') dsDoiSoat = dsDoiSoat.filter((x) => x.chenh_lech === 0);
+
+  return `
+  <style>
+    .kk-viewfinder {
+      position: relative;
+      width: 100%;
+      max-width: 440px;
+      height: 300px;
+      background: #020617;
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 0 auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    }
+    .kk-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .kk-reticle {
+      position: absolute;
+      inset: 35px 25px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+    }
+    .kk-reticle::before, .kk-reticle::after {
+      content: '';
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-color: #10b981;
+      border-style: solid;
+      pointer-events: none;
+    }
+    .kk-reticle::before {
+      top: -2px; left: -2px;
+      border-width: 4px 0 0 4px;
+      border-top-left-radius: 12px;
+    }
+    .kk-reticle::after {
+      bottom: -2px; right: -2px;
+      border-width: 0 4px 4px 0;
+      border-bottom-right-radius: 12px;
+    }
+    .kk-laser {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      height: 2px;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981, 0 0 16px #34d399;
+      animation: kk-scan 2s ease-in-out infinite alternate;
+    }
+    @keyframes kk-scan {
+      0% { top: 15%; opacity: 0.9; }
+      100% { top: 85%; opacity: 0.9; }
+    }
+  </style>
+
+  <div class="panel">
+    <div class="section-title">
+      <div>
+        <p class="eyebrow">KIỂM KÊ KHO THÔNG MINH</p>
+        <h3>Quét Mã Barcode / QR Bằng Camera Điện Thoại</h3>
+        <p class="subtle" style="font-size: 0.82rem; margin-top: 3px;">
+          Tự động nhận diện mã vạch bao bì hoặc tem dán, tra cứu số tồn sổ sách và phân tích chênh lệch tức thời.
+        </p>
+      </div>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <button type="button" class="tab-button ${kkSubTab === 'quet' ? 'is-active' : ''}" data-kk-sub="quet" style="padding: 7px 14px; font-size: 0.82rem;">
+          <i class="ri-barcode-box-line"></i> Quét mã camera
+        </button>
+        <button type="button" class="tab-button ${kkSubTab === 'doi-soat' ? 'is-active' : ''}" data-kk-sub="doi-soat" style="padding: 7px 14px; font-size: 0.82rem;">
+          <i class="ri-file-chart-line"></i> Bảng đối soát (${kkDanhSach.length})
+        </button>
+        <button type="button" class="tab-button ${kkSubTab === 'lich-su' ? 'is-active' : ''}" data-kk-sub="lich-su" style="padding: 7px 14px; font-size: 0.82rem;">
+          <i class="ri-history-line"></i> Lịch sử kiểm kê
+        </button>
+      </div>
+    </div>
+
+    <!-- Thanh bộ lọc kho & chế độ quét -->
+    <div class="kh-bo-loc" style="margin-bottom: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;">
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 600; color: #475569;">
+          <span>Kho kiểm kê:</span>
+          <select id="kkKhoSelect" style="min-height: 36px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; color: #0f172a;">
+            ${khoList.map(([k, v]) => opt(k, v.ten, kkKhoChon)).join('')}
+          </select>
+        </label>
+
+        <label style="display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 600; color: #475569;">
+          <span>Chế độ kiểm đếm:</span>
+          <select id="kkCheDoSelect" style="min-height: 36px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; color: #0f172a;">
+            <option value="cong_don" ${kkCheDo === 'cong_don' ? 'selected' : ''}>Quét liên tục (+1 mỗi lần tít)</option>
+            <option value="nhap_so" ${kkCheDo === 'nhap_so' ? 'selected' : ''}>Quét nhập số lượng lớn</option>
+          </select>
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <button type="button" class="primary-button" id="btnKkToggleCamera" style="min-height: 36px; padding: 0 14px; font-size: 0.82rem; background: ${kkDangQuet ? '#dc2626' : '#0f766e'};">
+          <i class="ri-${kkDangQuet ? 'stop-circle' : 'camera-lens'}-line"></i> ${kkDangQuet ? 'Dừng Camera' : 'Bật Camera Quét'}
+        </button>
+
+        <button type="button" class="secondary-button" id="btnKkToggleTorch" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem; ${kkDenFlash ? 'background: #fef08a; border-color: #eab308; color: #854d0e;' : ''}" title="Bật/Tắt đèn Flash soi tủ tối">
+          <i class="ri-flashlight-${kkDenFlash ? 'fill' : 'line'}"></i> ${kkDenFlash ? 'Tắt Flash' : 'Bật Flash'}
+        </button>
+
+        <button type="button" class="secondary-button" id="btnKkLuuPhien" style="min-height: 36px; padding: 0 12px; font-size: 0.82rem;" title="Lưu tạm phiên kiểm kê vào bộ nhớ máy">
+          <i class="ri-save-line"></i> Lưu tạm
+        </button>
+
+        ${kkDanhSach.length ? `
+          <button type="button" class="danger-button" id="btnKkXoaPhien" style="min-height: 36px; padding: 0 10px; font-size: 0.82rem;" title="Xóa đợt kiểm này để bắt đầu lại">
+            <i class="ri-delete-bin-line"></i> Làm mới
+          </button>
+        ` : ''}
+      </div>
+    </div>
+
+    <!-- NỘI DUNG SUBTAB 1: CAMERA QUÉT MÃ -->
+    ${kkSubTab === 'quet' ? `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start;">
+        <!-- Cột Camera -->
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <strong style="font-size: 0.9rem; color: #0f172a; display: flex; align-items: center; gap: 6px;">
+              <i class="ri-qr-scan-2-line" style="color: #0f766e;"></i> Khung ngắm Camera
+            </strong>
+            <span class="status-pill ${kkDangQuet ? 'is-success' : 'is-muted'}" style="font-size: 11px;">
+              ${kkDangQuet ? '🟢 Đang quét liên tục' : '⚪ Camera đang tắt'}
+            </span>
+          </div>
+
+          <div class="kk-viewfinder">
+            <video id="kkVideo" class="kk-video" playsinline muted></video>
+            ${kkDangQuet ? `
+              <div class="kk-reticle"></div>
+              <div class="kk-laser"></div>
+            ` : `
+              <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8; padding: 20px; text-align: center;">
+                <i class="ri-camera-off-line" style="font-size: 2.5rem; margin-bottom: 8px;"></i>
+                <p style="font-size: 0.85rem; margin: 0;">Bấm nút <strong>"Bật Camera Quét"</strong> bên trên để bắt đầu kiểm kê bằng camera điện thoại.</p>
+              </div>
+            `}
+          </div>
+
+          <!-- Nhập thủ công dự phòng nếu mã vạch rách/mờ -->
+          <div style="margin-top: 16px; border-top: 1px dashed #cbd5e1; padding-top: 14px;">
+            <label style="font-size: 0.78rem; font-weight: 700; color: #64748b; margin-bottom: 6px; display: block;">
+              <i class="ri-keyboard-line"></i> Tìm nhanh hoặc đếm tay (Nếu mã vạch bị rách/mờ):
+            </label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="kkManualInput" placeholder="Gõ tên hoặc mã SKU..." style="flex: 1; min-height: 36px; padding: 4px 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.82rem;">
+            </div>
+            <div id="kkManualDropdown" style="display: none; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+          </div>
+        </div>
+
+        <!-- Cột Vật tư vừa quét & Kết quả đếm -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <!-- Thẻ vật tư vừa quét -->
+          <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+              <span class="eyebrow" style="margin: 0; color: #0f766e;">KẾT QUẢ QUÉT GẦN NHẤT</span>
+              ${kkVatTuVuaQuet?.time ? `<span class="subtle" style="font-size: 0.75rem;"><i class="ri-time-line"></i> ${kkVatTuVuaQuet.time}</span>` : ''}
+            </div>
+
+            ${kkVatTuVuaQuet ? (kkVatTuVuaQuet.isNew ? `
+              <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; color: #92400e;">
+                <strong style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+                  <i class="ri-error-warning-line"></i> Mã vạch mới chưa khai báo!
+                </strong>
+                <p style="margin: 6px 0 10px; font-size: 0.82rem;">
+                  Mã vạch <code>${escapeHTML(kkVatTuVuaQuet.maVach)}</code> chưa liên kết với vật tư nào. Bạn có muốn gán mã này vào một vật tư có sẵn không?
+                </p>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <select id="kkGanMaSelect" style="flex: 1; min-width: 180px; min-height: 34px; font-size: 0.82rem; border-radius: 6px; border: 1px solid #cbd5e1;">
+                    <option value="">— Chọn vật tư để gán —</option>
+                    ${dsVatTu.map((v) => `<option value="${v.id}">${escapeHTML(v.ma)} · ${escapeHTML(v.ten)}</option>`).join('')}
+                  </select>
+                  <button type="button" class="primary-button" id="btnKkXacNhanGanMa" style="min-height: 34px; font-size: 0.82rem; white-space: nowrap;">
+                    <i class="ri-link"></i> Gán mã này
+                  </button>
+                </div>
+              </div>
+            ` : `
+              <div>
+                <h4 style="margin: 0 0 6px; font-size: 1.15rem; color: #0f172a;">${escapeHTML(kkVatTuVuaQuet.ten)}</h4>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px;">
+                  <span class="kh-ma" style="font-size: 0.82rem;">SKU: ${escapeHTML(kkVatTuVuaQuet.ma)}</span>
+                  <span class="subtle" style="font-size: 0.8rem;">Barcode: ${escapeHTML(kkVatTuVuaQuet.ma_vach || kkVatTuVuaQuet.maVach || '—')}</span>
+                  <span class="pill" style="font-size: 0.75rem;">ĐVT: ${escapeHTML(kkVatTuVuaQuet.don_vi)}</span>
+                  ${kkVatTuVuaQuet.vi_tri ? `<span class="subtle" style="font-size: 0.75rem;"><i class="ri-map-pin-line"></i> ${escapeHTML(kkVatTuVuaQuet.vi_tri)}</span>` : ''}
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; align-items: center; margin-bottom: 14px;">
+                  <div>
+                    <span style="font-size: 0.72rem; color: #64748b; font-weight: 700; display: block;">TỒN SỔ SÁCH</span>
+                    <strong style="font-size: 1.25rem; color: #0284c7;">${kkVatTuVuaQuet.ton_so}</strong>
+                  </div>
+
+                  <div>
+                    <span style="font-size: 0.72rem; color: #64748b; font-weight: 700; display: block; margin-bottom: 4px;">THỰC TẾ KIỂM</span>
+                    <div style="display: inline-flex; align-items: center; gap: 4px;">
+                      <button type="button" class="secondary-button" id="btnKkGiamSl" style="width: 28px; height: 28px; padding: 0; min-height: 28px; border-radius: 6px; font-weight: 900;">-</button>
+                      <input type="number" id="kkCurrentQtyInput" value="${kkVatTuVuaQuet.so_luong_thuc_te}" min="0" style="width: 55px; height: 28px; text-align: center; font-size: 1.05rem; font-weight: 800; border-radius: 6px; border: 1px solid #cbd5e1; color: #0f172a;">
+                      <button type="button" class="secondary-button" id="btnKkTangSl" style="width: 28px; height: 28px; padding: 0; min-height: 28px; border-radius: 6px; font-weight: 900;">+</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style="font-size: 0.72rem; color: #64748b; font-weight: 700; display: block;">CHÊNH LỆCH</span>
+                    <strong style="font-size: 1.15rem; color: ${kkVatTuVuaQuet.chenh_lech === 0 ? '#10b981' : kkVatTuVuaQuet.chenh_lech > 0 ? '#d97706' : '#ef4444'};">
+                      ${kkVatTuVuaQuet.chenh_lech > 0 ? `+${kkVatTuVuaQuet.chenh_lech}` : kkVatTuVuaQuet.chenh_lech}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span class="status-pill ${kkVatTuVuaQuet.chenh_lech === 0 ? 'is-success' : kkVatTuVuaQuet.chenh_lech > 0 ? 'is-warning' : 'is-danger'}" style="font-size: 0.78rem;">
+                    <i class="ri-${kkVatTuVuaQuet.chenh_lech === 0 ? 'checkbox-circle' : 'error-warning'}-line"></i>
+                    ${kkVatTuVuaQuet.chenh_lech === 0 ? 'Khớp 100% với sổ sách' : kkVatTuVuaQuet.chenh_lech > 0 ? `Thừa +${kkVatTuVuaQuet.chenh_lech} ${kkVatTuVuaQuet.don_vi}` : `Thiếu ${Math.abs(kkVatTuVuaQuet.chenh_lech)} ${kkVatTuVuaQuet.don_vi}`}
+                  </span>
+                  <span class="subtle" style="font-size: 0.75rem;">Đơn giá vốn: ${tien(kkVatTuVuaQuet.gia_von || 0)}</span>
+                </div>
+              </div>
+            `) : `
+              <div style="text-align: center; padding: 24px 10px; color: #94a3b8;">
+                <i class="ri-barcode-line" style="font-size: 2.2rem; display: block; margin-bottom: 8px;"></i>
+                <p style="font-size: 0.85rem; margin: 0;">Chưa quét mã nào trong lượt này.<br>Hãy hướng camera vào mã barcode hoặc QR của sản phẩm.</p>
+              </div>
+            `}
+          </div>
+
+          <!-- Tóm tắt nhanh tiến độ đợt kiểm -->
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <strong style="font-size: 0.88rem; color: #0f172a;">Tiến độ đợt kiểm kho hiện tại:</strong>
+              <button type="button" class="secondary-button" data-kk-sub="doi-soat" style="padding: 3px 8px; font-size: 0.75rem;">
+                Xem bảng chi tiết (${kkDanhSach.length}) →
+              </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center;">
+              <div style="background: #f1f5f9; padding: 8px 4px; border-radius: 6px;">
+                <span class="subtle" style="font-size: 0.7rem; font-weight: 700; display: block;">ĐÃ ĐẾM</span>
+                <strong style="font-size: 1.1rem; color: #0f172a;">${kkDanhSach.length}</strong>
+              </div>
+              <div style="background: #f0fdf4; padding: 8px 4px; border-radius: 6px;">
+                <span style="font-size: 0.7rem; font-weight: 700; color: #166534; display: block;">KHỚP</span>
+                <strong style="font-size: 1.1rem; color: #16a34a;">${khopCount}</strong>
+              </div>
+              <div style="background: #fffbeb; padding: 8px 4px; border-radius: 6px;">
+                <span style="font-size: 0.7rem; font-weight: 700; color: #854d0e; display: block;">THỪA</span>
+                <strong style="font-size: 1.1rem; color: #d97706;">${thuaCount}</strong>
+              </div>
+              <div style="background: #fef2f2; padding: 8px 4px; border-radius: 6px;">
+                <span style="font-size: 0.7rem; font-weight: 700; color: #991b1b; display: block;">THIẾU</span>
+                <strong style="font-size: 1.1rem; color: #dc2626;">${thieuCount}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Danh sách 5 vật tư quét gần nhất -->
+      ${kkDanhSach.length ? `
+        <div style="margin-top: 20px;">
+          <h4 style="font-size: 0.88rem; margin: 0 0 10px; color: #475569;">Các vật tư vừa kiểm đếm gần nhất:</h4>
+          <div class="kh-bang-cuon">
+            <table class="hh-bang">
+              <thead>
+                <tr>
+                  <th style="width: 45px; text-align: center;">STT</th>
+                  <th style="width: 120px;">Mã SKU</th>
+                  <th>Tên vật tư</th>
+                  <th style="width: 80px; text-align: center;">ĐVT</th>
+                  <th style="width: 100px; text-align: center;">Tồn sổ</th>
+                  <th style="width: 100px; text-align: center;">Thực tế</th>
+                  <th style="width: 110px; text-align: center;">Chênh lệch</th>
+                  <th style="width: 80px; text-align: center;">Giờ quét</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${kkDanhSach.slice(0, 5).map((item, idx) => `
+                  <tr>
+                    <td style="text-align: center;">${idx + 1}</td>
+                    <td><b class="kh-ma">${escapeHTML(item.ma)}</b></td>
+                    <td><b>${escapeHTML(item.ten)}</b></td>
+                    <td style="text-align: center;">${escapeHTML(item.don_vi)}</td>
+                    <td style="text-align: center; color: #0284c7; font-weight: 700;">${item.ton_so}</td>
+                    <td style="text-align: center; font-weight: 800; color: #0f172a;">${item.so_luong_thuc_te}</td>
+                    <td style="text-align: center;">
+                      <span class="pill ${item.chenh_lech === 0 ? 'good' : item.chenh_lech > 0 ? 'warn' : 'bad'}" style="font-size: 0.75rem;">
+                        ${item.chenh_lech === 0 ? 'Khớp' : item.chenh_lech > 0 ? `+${item.chenh_lech}` : item.chenh_lech}
+                      </span>
+                    </td>
+                    <td style="text-align: center; font-size: 0.75rem; color: #64748b;">${item.ngay_quet || '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ` : ''}
+    ` : ''}
+
+    <!-- NỘI DUNG SUBTAB 2: BẢNG ĐỐI SOÁT & CÂN CHỈNH KHO -->
+    ${kkSubTab === 'doi-soat' ? `
+      <div>
+        <!-- Thẻ KPI tổng kết đợt kiểm -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+            <span class="subtle" style="font-size: 0.75rem; font-weight: 700;">TỔNG MẶT HÀNG ĐÃ KIỂM</span>
+            <h3 style="margin: 4px 0 0; color: #0f172a;">${kkDanhSach.length} <small style="font-size: 0.75rem; font-weight: 400;">món</small></h3>
+          </div>
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: #166534;">KHỚP SỔ SÁCH (100%)</span>
+            <h3 style="margin: 4px 0 0; color: #15803d;">${khopCount} <small style="font-size: 0.75rem; font-weight: 400;">món</small></h3>
+          </div>
+          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: #854d0e;">THỪA KHO</span>
+            <h3 style="margin: 4px 0 0; color: #d97706;">${thuaCount} <small style="font-size: 0.75rem; font-weight: 400;">món</small></h3>
+          </div>
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 14px;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: #991b1b;">THIẾU KHO (HAO HỤT)</span>
+            <h3 style="margin: 4px 0 0; color: #dc2626;">${thieuCount} <small style="font-size: 0.75rem; font-weight: 400;">món</small></h3>
+          </div>
+          <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 12px 14px;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: #5b21b6;">CHÊNH LỆCH GIÁ TRỊ</span>
+            <h3 style="margin: 4px 0 0; color: ${tongGiaTriLech >= 0 ? '#16a34a' : '#dc2626'};">${tien(tongGiaTriLech)}</h3>
+          </div>
+        </div>
+
+        <!-- Thanh điều khiển bảng đối soát -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="tab-button ${kkFilterDoiSoat === 'tat_ca' ? 'is-active' : ''}" data-kk-filter="tat_ca" style="padding: 4px 10px; font-size: 0.78rem;">
+              Tất cả (${kkDanhSach.length})
+            </button>
+            <button type="button" class="tab-button ${kkFilterDoiSoat === 'lech' ? 'is-active' : ''}" data-kk-filter="lech" style="padding: 4px 10px; font-size: 0.78rem;">
+              Chỉ xem lệch (${thuaCount + thieuCount})
+            </button>
+            <button type="button" class="tab-button ${kkFilterDoiSoat === 'khop' ? 'is-active' : ''}" data-kk-filter="khop" style="padding: 4px 10px; font-size: 0.78rem;">
+              Đã khớp (${khopCount})
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="secondary-button" id="btnKkXuatExcel" style="font-size: 0.82rem; min-height: 36px; padding: 0 12px;" ${!kkDanhSach.length ? 'disabled' : ''}>
+              <i class="ri-file-excel-line"></i> Xuất Báo Cáo Excel
+            </button>
+            <button type="button" class="primary-button" id="btnKkChotCanChinh" style="font-size: 0.82rem; min-height: 36px; padding: 0 16px; background: #059669;" ${!kkDanhSach.length ? 'disabled' : ''}>
+              <i class="ri-checkbox-circle-fill"></i> Hoàn Tất & Cân Chỉnh Kho
+            </button>
+          </div>
+        </div>
+
+        <!-- Bảng chi tiết đối soát -->
+        <div class="kh-bang-cuon" style="overflow-x: auto;">
+          <table class="hh-bang" id="tableKkDoiSoat">
+            <thead>
+              <tr>
+                <th style="width: 45px; text-align: center;">STT</th>
+                <th style="width: 120px;">Mã SKU</th>
+                <th style="width: 120px;">Mã Barcode</th>
+                <th>Tên vật tư y tế</th>
+                <th style="width: 80px; text-align: center;">ĐVT</th>
+                <th style="width: 100px; text-align: center;">Tồn sổ sách</th>
+                <th style="width: 110px; text-align: center;">Thực tế kiểm</th>
+                <th style="width: 110px; text-align: center;">Chênh lệch</th>
+                <th style="width: 110px; text-align: right;">Đơn giá vốn</th>
+                <th style="width: 130px; text-align: right;">Thành tiền lệch</th>
+                <th style="width: 70px; text-align: center;">Xóa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dsDoiSoat.length ? dsDoiSoat.map((item, idx) => {
+                const ttLech = (item.chenh_lech || 0) * (item.gia_von || 0);
+                return `
+                  <tr>
+                    <td style="text-align: center;">${idx + 1}</td>
+                    <td><b class="kh-ma">${escapeHTML(item.ma)}</b></td>
+                    <td><span class="subtle" style="font-size: 0.78rem;">${escapeHTML(item.ma_vach || '—')}</span></td>
+                    <td><b>${escapeHTML(item.ten)}</b></td>
+                    <td style="text-align: center;">${escapeHTML(item.don_vi)}</td>
+                    <td style="text-align: center; color: #0284c7; font-weight: 700;">${item.ton_so}</td>
+                    <td style="text-align: center;">
+                      <input type="number" class="kk-inline-edit-qty" data-id="${item.vat_tu_id}" value="${item.so_luong_thuc_te}" min="0" style="width: 65px; height: 28px; text-align: center; font-weight: 800; border-radius: 4px; border: 1px solid #cbd5e1;">
+                    </td>
+                    <td style="text-align: center;">
+                      <span class="pill ${item.chenh_lech === 0 ? 'good' : item.chenh_lech > 0 ? 'warn' : 'bad'}" style="font-weight: 700;">
+                        ${item.chenh_lech === 0 ? '0 (Khớp)' : item.chenh_lech > 0 ? `+${item.chenh_lech}` : item.chenh_lech}
+                      </span>
+                    </td>
+                    <td style="text-align: right; font-size: 0.8rem; color: #64748b;">${tien(item.gia_von || 0)}</td>
+                    <td style="text-align: right; font-weight: 700; color: ${ttLech === 0 ? '#10b981' : ttLech > 0 ? '#d97706' : '#dc2626'};">
+                      ${tien(ttLech)}
+                    </td>
+                    <td style="text-align: center;">
+                      <button type="button" class="icon-button danger kk-btn-xoa-item" data-id="${item.vat_tu_id}" title="Xóa khỏi danh sách kiểm" style="border: none; background: none; cursor: pointer; color: #dc2626;">
+                        <i class="ri-delete-bin-line"></i>
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('') : `
+                <tr>
+                  <td colspan="11" style="text-align: center; padding: 30px; color: #94a3b8;">
+                    Chưa có mặt hàng nào trong danh sách đối soát. Hãy quét mã barcode để kiểm kê.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- NỘI DUNG SUBTAB 3: LỊCH SỬ KIỂM KÊ -->
+    ${kkSubTab === 'lich-su' ? `
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <h4 style="margin: 0; font-size: 0.95rem; color: #0f172a;">Nhật ký các đợt kiểm kê kho trước đây:</h4>
+          <span class="subtle" style="font-size: 0.8rem;">Lưu vết đầy đủ để kiểm toán nội bộ và kế toán đối chiếu.</span>
+        </div>
+
+        <div class="kh-bang-cuon" style="overflow-x: auto;">
+          <table class="hh-bang">
+            <thead>
+              <tr>
+                <th style="width: 120px;">Mã đợt kiểm</th>
+                <th style="width: 140px;">Thời gian chốt</th>
+                <th>Kho kiểm kê</th>
+                <th style="width: 140px;">Người thực hiện</th>
+                <th style="width: 90px; text-align: center;">Tổng món</th>
+                <th style="width: 110px; text-align: center;">Khớp</th>
+                <th style="width: 110px; text-align: center;">Thừa / Thiếu</th>
+                <th style="width: 140px; text-align: right;">Giá trị lệch</th>
+                <th>Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${kkLichSu.length ? kkLichSu.map((ls) => `
+                <tr>
+                  <td><b class="kh-ma">${escapeHTML(ls.id)}</b></td>
+                  <td>${new Date(ls.ngay).toLocaleString('vi-VN')}</td>
+                  <td><b>${escapeHTML(KHO_XUAT[ls.kho_id]?.ten || ls.kho_id || 'Kho Tổng')}</b></td>
+                  <td>${escapeHTML(tenNguoi(ls.nguoi_kiem) || ls.nguoi_kiem || 'Phụ tá')}</td>
+                  <td style="text-align: center; font-weight: 700;">${ls.tong_mon}</td>
+                  <td style="text-align: center;"><span class="pill good">${ls.khop}</span></td>
+                  <td style="text-align: center;">
+                    <span class="pill ${ls.lech_thua ? 'warn' : 'subtle'}">+${ls.lech_thua || 0}</span>
+                    <span class="pill ${ls.lech_thieu ? 'bad' : 'subtle'}">-${ls.lech_thieu || 0}</span>
+                  </td>
+                  <td style="text-align: right; font-weight: 700; color: ${ls.tong_gia_tri_lech >= 0 ? '#16a34a' : '#dc2626'};">
+                    ${tien(ls.tong_gia_tri_lech || 0)}
+                  </td>
+                  <td class="subtle" style="font-size: 0.8rem;">${escapeHTML(ls.ghi_chu || 'Kiểm kê định kỳ')}</td>
+                </tr>
+              `).join('') : `
+                <tr>
+                  <td colspan="9" style="text-align: center; padding: 30px; color: #94a3b8;">
+                    Chưa có nhật ký đợt kiểm kho nào được lưu.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : ''}
+  </div>
+  `;
+}
+
 /* ── Khung ────────────────────────────────────────────────────────────── */
 
 export async function renderView() {
@@ -1813,6 +2331,16 @@ export async function renderView() {
     }
   }
 
+  if (tab === 'kiem-kho') {
+    if (!kkDanhSach.length) {
+      const phienCu = layPhienKiemKe(chiNhanh, kkKhoChon);
+      if (phienCu?.danh_sach?.length) {
+        kkDanhSach = phienCu.danh_sach;
+      }
+    }
+    kkLichSu = layLichSuKiemKe(chiNhanh);
+  }
+
   return `<div class="view-stack kh-view">
     <div class="kh-thanh-tren">
       <nav class="lt-tabs" role="tablist">
@@ -1848,6 +2376,7 @@ export async function renderView() {
     ${tab === 'tong-quan' ? veTongQuan() : ''}
     ${tab === 'xuat-ca' ? veXuatVatTuCa() : ''}
     ${tab === 'vat-tu' ? veVatTu() : ''}
+    ${tab === 'kiem-kho' ? veKiemKho() : ''}
     ${tab === 'don-hang' ? veDonHang() : ''}
     ${tab === 'phieu-xuat' ? vePhieuXuat() : ''}
     ${tab === 'de-xuat' ? veDeXuat() : ''}
@@ -1874,10 +2403,24 @@ export function initView() {
   const maToi = toi.employee_code || 'PVC-10199';
 
   document.querySelectorAll('[data-tab]').forEach((b) => {
-    b.addEventListener('click', () => { tab = b.dataset.tab; nganMo = null; ve(); });
+    b.addEventListener('click', () => {
+      if (tab === 'kiem-kho' && b.dataset.tab !== 'kiem-kho' && kkDangQuet) {
+        stopBarcodeScanner();
+        kkDangQuet = false;
+        kkDenFlash = false;
+      }
+      tab = b.dataset.tab; nganMo = null; ve();
+    });
   });
   document.querySelectorAll('[data-tab-di]').forEach((b) => {
-    b.addEventListener('click', () => { tab = b.dataset.tabDi; ve(); });
+    b.addEventListener('click', () => {
+      if (tab === 'kiem-kho' && b.dataset.tabDi !== 'kiem-kho' && kkDangQuet) {
+        stopBarcodeScanner();
+        kkDangQuet = false;
+        kkDenFlash = false;
+      }
+      tab = b.dataset.tabDi; ve();
+    });
   });
   g('khChiNhanh')?.addEventListener('change', (e) => { chiNhanh = e.target.value; ve(); });
 
@@ -2904,5 +3447,353 @@ export function initView() {
       data,
     });
     showToast('Đã xuất đề xuất mua hàng ra file Excel (.xlsx) có bộ lọc.');
+  });
+
+  if (tab === 'kiem-kho') {
+    bindKiemKhoEvents(g, toi, maToi);
+  }
+}
+
+/* ── Sự kiện Tab Kiểm Kho Barcode ───────────────────────────────────────── */
+
+function bindKiemKhoEvents(g, toi, maToi) {
+  // Chuyển đổi tab con
+  document.querySelectorAll('[data-kk-sub]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      kkSubTab = btn.dataset.kkSub;
+      if (kkSubTab !== 'quet' && kkDangQuet) {
+        stopBarcodeScanner();
+        kkDangQuet = false;
+        kkDenFlash = false;
+      }
+      ve();
+    });
+  });
+
+  // Lọc bảng đối soát
+  document.querySelectorAll('[data-kk-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      kkFilterDoiSoat = btn.dataset.kkFilter;
+      ve();
+    });
+  });
+
+  // Chọn kho kiểm kê
+  g('kkKhoSelect')?.addEventListener('change', (e) => {
+    kkKhoChon = e.target.value;
+    const phien = layPhienKiemKe(chiNhanh, kkKhoChon);
+    if (phien?.danh_sach) kkDanhSach = phien.danh_sach;
+    else kkDanhSach = [];
+    kkVatTuVuaQuet = null;
+    ve();
+  });
+
+  // Chọn chế độ kiểm đếm
+  g('kkCheDoSelect')?.addEventListener('change', (e) => {
+    kkCheDo = e.target.value;
+  });
+
+  // Hàm xử lý khi quét trúng barcode
+  const onBarcodeDetected = ({ code, format }) => {
+    const vt = timVatTuTheoMaVach(code, chiNhanh);
+    if (!vt) {
+      playBeepSound('warn');
+      kkVatTuVuaQuet = {
+        isNew: true,
+        maVach: code,
+        message: `Mã vạch ${code} (${format}) chưa có trong hệ thống.`,
+      };
+      showToast(`Mã vạch ${code} chưa liên kết với vật tư nào.`, true);
+      ve();
+      return;
+    }
+
+    let item = kkDanhSach.find((x) => x.vat_tu_id === vt.id || x.ma === vt.ma);
+    const tonSo = Number(vt.so_luong ?? 0);
+    if (!item) {
+      item = {
+        vat_tu_id: vt.id,
+        ma: vt.ma,
+        ma_vach: code,
+        ten: vt.ten,
+        don_vi: vt.don_vi || 'cái',
+        gia_von: Number(vt.gia_von || 0),
+        vi_tri: vt.vi_tri || 'Chưa xếp kệ',
+        ton_so: tonSo,
+        so_luong_thuc_te: 1,
+        chenh_lech: 1 - tonSo,
+        ngay_quet: new Date().toLocaleTimeString('vi-VN'),
+      };
+      kkDanhSach.unshift(item);
+    } else {
+      if (kkCheDo === 'cong_don') {
+        item.so_luong_thuc_te += 1;
+        item.chenh_lech = item.so_luong_thuc_te - item.ton_so;
+        item.ngay_quet = new Date().toLocaleTimeString('vi-VN');
+      }
+    }
+
+    kkVatTuVuaQuet = {
+      ...item,
+      time: new Date().toLocaleTimeString('vi-VN'),
+    };
+
+    luuPhienKiemKe({
+      chi_nhanh: chiNhanh,
+      kho_id: kkKhoChon,
+      ngay_tao: new Date().toISOString(),
+      danh_sach: kkDanhSach,
+    });
+
+    showToast(`Đã đếm: ${vt.ten} (${item.so_luong_thuc_te} ${item.don_vi})`);
+    ve();
+  };
+
+  // Nút Bật / Tắt Camera
+  g('btnKkToggleCamera')?.addEventListener('click', async () => {
+    if (kkDangQuet) {
+      stopBarcodeScanner();
+      kkDangQuet = false;
+      kkDenFlash = false;
+      ve();
+    } else {
+      kkDangQuet = true;
+      ve();
+      setTimeout(async () => {
+        const vid = g('kkVideo');
+        if (vid) {
+          try {
+            const res = await startBarcodeScanner(vid, onBarcodeDetected);
+            kkHasTorch = res?.hasTorch;
+          } catch (err) {
+            kkDangQuet = false;
+            showToast(err.message, true);
+            ve();
+          }
+        }
+      }, 80);
+    }
+  });
+
+  // Tự động kích hoạt luồng camera nếu cờ quét đang bật
+  if (tab === 'kiem-kho' && kkSubTab === 'quet' && kkDangQuet) {
+    const vid = g('kkVideo');
+    if (vid && !vid.srcObject) {
+      startBarcodeScanner(vid, onBarcodeDetected).then((res) => {
+        kkHasTorch = res?.hasTorch;
+      }).catch((err) => {
+        kkDangQuet = false;
+        showToast(err.message, true);
+        ve();
+      });
+    }
+  }
+
+  // Bật / tắt đèn Flash
+  g('btnKkToggleTorch')?.addEventListener('click', async () => {
+    const bat = await toggleTorch();
+    kkDenFlash = bat;
+    showToast(bat ? 'Đã bật đèn Flash trợ sáng' : 'Đã tắt đèn Flash');
+    const b = g('btnKkToggleTorch');
+    if (b) {
+      b.innerHTML = `<i class="ri-flashlight-${bat ? 'fill' : 'line'}"></i> ${bat ? 'Tắt Flash' : 'Bật Flash'}`;
+      b.style.background = bat ? '#fef08a' : '';
+      b.style.color = bat ? '#854d0e' : '';
+    }
+  });
+
+  // Tăng số lượng thẻ vừa quét
+  g('btnKkTangSl')?.addEventListener('click', () => {
+    if (!kkVatTuVuaQuet) return;
+    const item = kkDanhSach.find((x) => x.vat_tu_id === kkVatTuVuaQuet.vat_tu_id);
+    if (item) {
+      item.so_luong_thuc_te += 1;
+      item.chenh_lech = item.so_luong_thuc_te - item.ton_so;
+      kkVatTuVuaQuet.so_luong_thuc_te = item.so_luong_thuc_te;
+      kkVatTuVuaQuet.chenh_lech = item.chenh_lech;
+      luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+      ve();
+    }
+  });
+
+  // Giảm số lượng thẻ vừa quét
+  g('btnKkGiamSl')?.addEventListener('click', () => {
+    if (!kkVatTuVuaQuet) return;
+    const item = kkDanhSach.find((x) => x.vat_tu_id === kkVatTuVuaQuet.vat_tu_id);
+    if (item && item.so_luong_thuc_te > 0) {
+      item.so_luong_thuc_te -= 1;
+      item.chenh_lech = item.so_luong_thuc_te - item.ton_so;
+      kkVatTuVuaQuet.so_luong_thuc_te = item.so_luong_thuc_te;
+      kkVatTuVuaQuet.chenh_lech = item.chenh_lech;
+      luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+      ve();
+    }
+  });
+
+  // Nhập số lượng trực tiếp
+  g('kkCurrentQtyInput')?.addEventListener('change', (e) => {
+    if (!kkVatTuVuaQuet) return;
+    const val = Math.max(0, Number(e.target.value) || 0);
+    const item = kkDanhSach.find((x) => x.vat_tu_id === kkVatTuVuaQuet.vat_tu_id);
+    if (item) {
+      item.so_luong_thuc_te = val;
+      item.chenh_lech = item.so_luong_thuc_te - item.ton_so;
+      kkVatTuVuaQuet.so_luong_thuc_te = val;
+      kkVatTuVuaQuet.chenh_lech = item.chenh_lech;
+      luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+      ve();
+    }
+  });
+
+  // Gán mã vạch cho vật tư chưa có mã
+  g('btnKkXacNhanGanMa')?.addEventListener('click', () => {
+    const sel = g('kkGanMaSelect');
+    const vtId = sel?.value;
+    if (!vtId || !kkVatTuVuaQuet?.maVach) {
+      showToast('Vui lòng chọn một vật tư để gán mã vạch này.', true);
+      return;
+    }
+    ganMaVachVatTu(vtId, kkVatTuVuaQuet.maVach);
+    showToast(`Đã gán mã vạch ${kkVatTuVuaQuet.maVach} thành công!`);
+    onBarcodeDetected({ code: kkVatTuVuaQuet.maVach, format: 'BARCODE' });
+  });
+
+  // Tìm kiếm nhập thủ công / đếm tay
+  const inputManual = g('kkManualInput');
+  const dropdownManual = g('kkManualDropdown');
+  if (inputManual && dropdownManual) {
+    inputManual.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      if (!q) { dropdownManual.style.display = 'none'; return; }
+      const matches = dsVatTu.filter((v) =>
+        (v.ma || '').toLowerCase().includes(q) || (v.ten || '').toLowerCase().includes(q)
+      ).slice(0, 6);
+      if (!matches.length) {
+        dropdownManual.innerHTML = '<div style="padding: 10px; color: #94a3b8; font-size: 0.8rem;">Không tìm thấy vật tư nào</div>';
+      } else {
+        dropdownManual.innerHTML = matches.map((m) => `
+          <div class="kk-manual-item" data-id="${m.id}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; display: flex; justify-content: space-between;">
+            <div><b>${escapeHTML(m.ten)}</b> <span class="kh-ma" style="font-size: 0.75rem;">${escapeHTML(m.ma)}</span></div>
+            <span class="subtle" style="font-size: 0.75rem;">Tồn: ${m.so_luong} ${m.don_vi}</span>
+          </div>
+        `).join('');
+        dropdownManual.querySelectorAll('.kk-manual-item').forEach((row) => {
+          row.addEventListener('click', () => {
+            const mId = row.dataset.id;
+            const vt = dsVatTu.find((v) => v.id === mId);
+            if (vt) {
+              onBarcodeDetected({ code: vt.ma || vt.id, format: 'MANUAL' });
+            }
+            dropdownManual.style.display = 'none';
+            inputManual.value = '';
+          });
+        });
+      }
+      dropdownManual.style.display = 'block';
+    });
+  }
+
+  // Chỉnh sửa số lượng trực tiếp trên bảng đối soát
+  document.querySelectorAll('.kk-inline-edit-qty').forEach((inp) => {
+    inp.addEventListener('change', (e) => {
+      const id = inp.dataset.id;
+      const val = Math.max(0, Number(e.target.value) || 0);
+      const item = kkDanhSach.find((x) => x.vat_tu_id === id);
+      if (item) {
+        item.so_luong_thuc_te = val;
+        item.chenh_lech = item.so_luong_thuc_te - item.ton_so;
+        luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+        ve();
+      }
+    });
+  });
+
+  // Xóa item khỏi danh sách kiểm
+  document.querySelectorAll('.kk-btn-xoa-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      kkDanhSach = kkDanhSach.filter((x) => x.vat_tu_id !== id);
+      if (kkVatTuVuaQuet?.vat_tu_id === id) kkVatTuVuaQuet = null;
+      luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+      ve();
+    });
+  });
+
+  // Lưu tạm phiên
+  g('btnKkLuuPhien')?.addEventListener('click', () => {
+    luuPhienKiemKe({ chi_nhanh: chiNhanh, kho_id: kkKhoChon, danh_sach: kkDanhSach });
+    showToast(`Đã lưu tạm phiên kiểm kê (${kkDanhSach.length} mặt hàng) vào bộ nhớ máy.`);
+  });
+
+  // Xóa phiên làm mới
+  g('btnKkXoaPhien')?.addEventListener('click', async () => {
+    const xacNhan = await confirmAction('Bắt đầu đợt kiểm kê mới? Dữ liệu kiểm kê chưa chốt của phiên này sẽ được đặt lại.');
+    if (xacNhan) {
+      xoaPhienKiemKe(chiNhanh, kkKhoChon);
+      kkDanhSach = [];
+      kkVatTuVuaQuet = null;
+      showToast('Đã làm mới phiên kiểm kê.');
+      ve();
+    }
+  });
+
+  // Xuất báo cáo Excel
+  g('btnKkXuatExcel')?.addEventListener('click', async () => {
+    if (!kkDanhSach.length) {
+      showToast('Chưa có dữ liệu kiểm kê để xuất Excel.', true);
+      return;
+    }
+    const data = kkDanhSach.map((item, idx) => ({
+      'STT': idx + 1,
+      'Mã SKU': item.ma,
+      'Mã Barcode': item.ma_vach || '',
+      'Tên vật tư y tế': item.ten,
+      'ĐVT': item.don_vi,
+      'Kho': KHO_XUAT[kkKhoChon]?.ten || kkKhoChon,
+      'Vị trí kệ': item.vi_tri || '',
+      'Tồn sổ sách': item.ton_so,
+      'Thực tế kiểm đếm': item.so_luong_thuc_te,
+      'Chênh lệch (+/-)': item.chenh_lech,
+      'Đơn giá vốn (VNĐ)': item.gia_von,
+      'Thành tiền lệch (VNĐ)': item.chenh_lech * item.gia_von,
+      'Đánh giá': item.chenh_lech === 0 ? 'Khớp 100%' : item.chenh_lech > 0 ? `Thừa +${item.chenh_lech}` : `Thiếu ${item.chenh_lech}`,
+    }));
+
+    await exportTableToExcel({
+      filename: `Bien_ban_kiem_ke_${chiNhanh}_${todayISO()}.xlsx`,
+      sheetName: 'Đối soát kiểm kê kho',
+      data,
+    });
+    showToast('Đã xuất biên bản kiểm kê kho ra file Excel thành công!');
+  });
+
+  // Chốt và cân chỉnh tồn kho
+  g('btnKkChotCanChinh')?.addEventListener('click', async () => {
+    if (!kkDanhSach.length) {
+      showToast('Danh sách kiểm kê trống.', true);
+      return;
+    }
+    const xacNhan = await confirmAction(
+      `Xác nhận chốt đợt kiểm kho (${kkDanhSach.length} mặt hàng)?\n\nHệ thống sẽ tự động cập nhật số lượng tồn thực tế vào kho và lưu nhật ký kiểm kê.`
+    );
+    if (!xacNhan) return;
+
+    try {
+      const phieu = chotPhienKiemKe({
+        chiNhanh: chiNhanh || 'le-van-tho',
+        khoId: kkKhoChon,
+        nguoiKiem: maToi,
+        ghiChu: `Kiểm kê kho qua Camera Barcode ngày ${todayISO()}`,
+        danhSach: kkDanhSach,
+      });
+
+      showToast(`Đã chốt đợt kiểm ${phieu.id} và cân chỉnh tồn kho thành công!`);
+      kkDanhSach = [];
+      kkVatTuVuaQuet = null;
+      kkSubTab = 'lich-su';
+      ve();
+    } catch (err) {
+      showToast(err.message, true);
+    }
   });
 }

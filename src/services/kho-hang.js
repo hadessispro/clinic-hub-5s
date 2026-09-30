@@ -1720,3 +1720,152 @@ export function xuatKhoCaDieuTri({ caId, bacSi, nguoiXuat, khoXuat, ghiChu, dong
 
   return cho({ ca, phieu: dungPhieu(phieuMoi) });
 }
+
+/* ── Kiểm kho thông minh bằng Barcode / Camera ──────────────────────────── */
+
+const KHO_MA_VACH_KEY = 'clinic-hub-kho-ma-vach-v1';
+const KHO_KIEM_KE_KEY = 'clinic-hub-phien-kiem-ke-v1';
+const KHO_LICH_SU_KIEM_KEY = 'clinic-hub-lich-su-kiem-ke-v1';
+
+function docBanDoMaVach() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(KHO_MA_VACH_KEY);
+      if (raw) return JSON.parse(raw);
+    }
+  } catch {}
+  return {};
+}
+
+function luuBanDoMaVach(banDo) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(KHO_MA_VACH_KEY, JSON.stringify(banDo));
+    }
+  } catch {}
+}
+
+export function timVatTuTheoMaVach(code, chiNhanh) {
+  if (!code) return null;
+  const cleanCode = String(code).trim().toLowerCase();
+  const banDo = docBanDoMaVach();
+  const mappedId = banDo[cleanCode];
+
+  // 1. Tìm qua bản đồ mã vạch đã gán
+  if (mappedId) {
+    const vt = VAT_TU.find((v) => v.id === mappedId || v.ma === mappedId);
+    if (vt) return { ...vt, ...dungVatTu(vt, chiNhanh) };
+  }
+
+  // 2. Tìm trực tiếp theo mã SKU (ma), id hoặc ma_vach sẵn có
+  const vt = VAT_TU.find((v) => {
+    const ma = (v.ma || '').trim().toLowerCase();
+    const id = (v.id || '').trim().toLowerCase();
+    const barcode = (v.ma_vach || '').trim().toLowerCase();
+    return ma === cleanCode || id === cleanCode || barcode === cleanCode;
+  });
+
+  if (vt) return { ...vt, ...dungVatTu(vt, chiNhanh) };
+  return null;
+}
+
+export function ganMaVachVatTu(vatTuId, maVach) {
+  if (!vatTuId || !maVach) throw new Error('Thiếu mã vật tư hoặc mã vạch.');
+  const cleanCode = String(maVach).trim().toLowerCase();
+  const banDo = docBanDoMaVach();
+  banDo[cleanCode] = vatTuId;
+  luuBanDoMaVach(banDo);
+
+  const vt = VAT_TU.find((v) => v.id === vatTuId || v.ma === vatTuId);
+  if (vt) vt.ma_vach = maVach.trim();
+  return cho({ thanh_cong: true, vat_tu: vt, ma_vach: maVach.trim() });
+}
+
+export function layPhienKiemKe(chiNhanh, khoId) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const key = `${KHO_KIEM_KE_KEY}_${chiNhanh || 'all'}_${khoId || 'all'}`;
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw);
+    }
+  } catch {}
+  return null;
+}
+
+export function luuPhienKiemKe(phien) {
+  try {
+    if (typeof localStorage !== 'undefined' && phien) {
+      const key = `${KHO_KIEM_KE_KEY}_${phien.chi_nhanh || 'all'}_${phien.kho_id || 'all'}`;
+      localStorage.setItem(key, JSON.stringify(phien));
+    }
+  } catch {}
+  return phien;
+}
+
+export function xoaPhienKiemKe(chiNhanh, khoId) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const key = `${KHO_KIEM_KE_KEY}_${chiNhanh || 'all'}_${khoId || 'all'}`;
+      localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+export function chotPhienKiemKe({ chiNhanh, khoId, nguoiKiem, ghiChu, danhSach }) {
+  if (!Array.isArray(danhSach) || !danhSach.length) {
+    throw new Error('Danh sách kiểm kê rỗng.');
+  }
+
+  // 1. Cập nhật số tồn thực tế vào TON_KHO
+  for (const item of danhSach) {
+    const slThuc = Number(item.so_luong_thuc_te);
+    if (Number.isFinite(slThuc)) {
+      capNhatTonKho(item.vat_tu_id, chiNhanh || item.chi_nhanh || 'le-van-tho', slThuc, item.vi_tri);
+    }
+  }
+
+  // 2. Ghi nhật ký đợt kiểm kho
+  const phieuMoi = {
+    id: `KK-${Date.now().toString(36).toUpperCase()}`,
+    ngay: new Date().toISOString(),
+    chi_nhanh: chiNhanh,
+    kho_id: khoId,
+    nguoi_kiem: nguoiKiem,
+    ghi_chu: ghiChu || '',
+    tong_mon: danhSach.length,
+    khop: danhSach.filter((x) => x.chenh_lech === 0).length,
+    lech_thua: danhSach.filter((x) => x.chenh_lech > 0).length,
+    lech_thieu: danhSach.filter((x) => x.chenh_lech < 0).length,
+    tong_gia_tri_lech: danhSach.reduce((s, x) => s + (x.chenh_lech * (x.gia_von || 0)), 0),
+    chi_tiet: danhSach,
+  };
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(KHO_LICH_SU_KIEM_KEY);
+      const lichSu = raw ? JSON.parse(raw) : [];
+      lichSu.unshift(phieuMoi);
+      localStorage.setItem(KHO_LICH_SU_KIEM_KEY, JSON.stringify(lichSu.slice(0, 100)));
+    }
+  } catch {}
+
+  xoaPhienKiemKe(chiNhanh, khoId);
+  return cho(phieuMoi);
+}
+
+export function layLichSuKiemKe(chiNhanh) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(KHO_LICH_SU_KIEM_KEY);
+      if (raw) {
+        let list = JSON.parse(raw);
+        if (chiNhanh && chiNhanh !== 'all') {
+          list = list.filter((x) => !x.chi_nhanh || x.chi_nhanh === chiNhanh);
+        }
+        return list;
+      }
+    }
+  } catch {}
+  return [];
+}
+
