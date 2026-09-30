@@ -33,7 +33,13 @@ import { store } from '../store.js';
 import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, normalizeText, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
-import { exportTableToExcel, exportWorkbookToExcel } from '../services/excel-export.js';
+import {
+  createZipArchive,
+  downloadFile,
+  exportTableToExcel,
+  exportWorkbookToExcel,
+  generateWorkbookBuffer,
+} from '../services/excel-export.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
@@ -598,6 +604,90 @@ function renderScheduleAdjustmentDialog(employee, allowedShifts) {
   </div>`;
 }
 
+function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
+  if (!canEdit) return '';
+  const hasDirPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  return `
+    <div class="attendance-adjust-dialog" id="companySplitExportModal" hidden>
+      <button class="attendance-adjust-backdrop" type="button" data-action="close-company-split-modal" aria-label="Đóng"></button>
+      <section class="attendance-adjust-sheet" role="dialog" aria-modal="true" aria-labelledby="companySplitTitle" style="max-width:580px;">
+        <div class="attendance-adjust-header">
+          <div>
+            <p class="eyebrow">XUẤT DỮ LIỆU ĐỐI SOÁT TOÀN CÔNG TY</p>
+            <h2 id="companySplitTitle"><i class="ri-folder-user-line"></i> Xuất Bảng Công Tách Từng Nhân Sự</h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-company-split-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
+        </div>
+
+        <div style="padding:16px 20px; font-size:0.88rem; color:#334155; line-height:1.5;">
+          <p style="margin:0 0 14px 0;">Xuất dữ liệu bảng công chi tiết toàn bộ nhân viên trong tháng, phân tách rõ ràng từng người để nhân sự có thể tự tra cứu, kiểm tra ngày công, giờ vào/ra và các lượt trễ sớm.</p>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+            <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
+              <span>Tháng tính công:</span>
+              <input type="month" id="companySplitMonth" min="2026-08" value="${escapeHTML(workMonth || attendanceWorkMonth)}" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px;">
+            </label>
+            <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
+              <span>Chi nhánh:</span>
+              <select id="companySplitBranch" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px;">
+                <option value="all">Tất cả chi nhánh (PVC &amp; LVT)</option>
+                <option value="pham-van-chieu">Phạm Văn Chiêu</option>
+                <option value="le-van-tho">Lê Văn Thọ</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset style="border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
+            <legend style="font-weight:700; font-size:0.8rem; color:#0f172a; padding:0 6px;">Phương thức xuất file</legend>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                <input type="radio" name="companySplitFormat" value="multi_sheet" checked style="margin-top:3px;">
+                <div>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#0f766e;"><i class="ri-file-excel-2-line"></i> Sổ cái Excel đa Sheet (Khuyên dùng)</strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">1 file Excel duy nhất gồm Sheet Tổng hợp toàn công ty + Từng Sheet riêng cho mỗi nhân sự. Mở file là bấm vào tên/mã của mình để tự kiểm tra đối chiếu.</span>
+                </div>
+              </label>
+
+              <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                <input type="radio" name="companySplitFormat" value="zip" style="margin-top:3px;">
+                <div>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#2563eb;"><i class="ri-file-zip-line"></i> Tải Thư mục ZIP (Tách riêng từng file Excel)</strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">File ZIP giải nén ra thư mục chứa từng file Excel riêng cho mỗi nhân viên. Rất tiện để lưu trữ máy tính hoặc gửi riêng file cho từng người.</span>
+                </div>
+              </label>
+
+              ${hasDirPicker ? `
+              <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                <input type="radio" name="companySplitFormat" value="directory" style="margin-top:3px;">
+                <div>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#7c3aed;"><i class="ri-folder-download-line"></i> Lưu trực tiếp vào Thư mục máy tính</strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">Chọn thư mục trên máy tính (Windows/Mac), hệ thống sẽ lưu thẳng toàn bộ file Excel của từng nhân sự vào thư mục đó.</span>
+                </div>
+              </label>
+              ` : ''}
+            </div>
+          </fieldset>
+
+          <div id="companySplitProgressBox" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#166534;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i>
+              <span id="companySplitProgressText">Đang khởi tạo xuất file...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="attendance-adjust-actions">
+          <button class="secondary-button" type="button" data-action="close-company-split-modal" id="companySplitCancelBtn">Hủy</button>
+          <button class="primary-button" type="button" id="btnExecuteCompanySplit">
+            <i class="ri-download-cloud-2-line"></i> Bắt đầu xuất file
+          </button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+
 function renderAdjustmentDialog(employee, allowedShifts, canEdit = false) {
   if (!canEdit) return '';
   return `
@@ -904,6 +994,9 @@ export async function renderView(state) {
           </button>
           <button class="secondary-button" type="button" data-action="open-schedule-modal">
             <i class="ri-calendar-event-line"></i> Xếp / đổi ca
+          </button>
+          <button class="secondary-button" type="button" data-action="export-company-split-excel" title="Xuất toàn bộ công ty phân tách theo từng nhân sự để nhân viên tự đối soát">
+            <i class="ri-folder-user-line"></i> Xuất toàn công ty (Tách từng người)
           </button>` : ''}
           <button class="secondary-button" type="button" data-action="export-work-excel">
             Xuất Excel bảng công
@@ -982,6 +1075,7 @@ export async function renderView(state) {
       `}
       ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
       ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
+      ${canEditWorkday ? renderCompanySplitExportDialog(canEditWorkday, attendanceWorkMonth) : ''}
       ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
     </div>
   `;
@@ -1575,6 +1669,237 @@ async function exportWorkExcel() {
   }
 }
 
+function openCompanySplitModal() {
+  const modal = document.getElementById('companySplitExportModal');
+  if (modal) {
+    modal.removeAttribute('hidden');
+    modal.hidden = false;
+  }
+}
+
+function closeCompanySplitModal() {
+  const modal = document.getElementById('companySplitExportModal');
+  if (modal) {
+    modal.setAttribute('hidden', '');
+    modal.hidden = true;
+  }
+}
+
+function makeSafeSheetName(code, name, existingNames) {
+  const cleanCode = String(code || '').replace(/[\/\\?*\[\]:]/g, '').trim();
+  const cleanName = String(name || '').replace(/[\/\\?*\[\]:]/g, '').trim();
+  let base = `${cleanCode} ${cleanName}`.trim();
+  if (base.length > 28) {
+    base = base.slice(0, 28).trim();
+  }
+  let unique = base || cleanCode || 'Sheet';
+  let counter = 1;
+  while (existingNames.has(unique.toLowerCase())) {
+    const suffix = `_${counter++}`;
+    unique = `${base.slice(0, 28 - suffix.length)}${suffix}`;
+  }
+  existingNames.add(unique.toLowerCase());
+  return unique;
+}
+
+async function executeCompanySplitExport() {
+  const monthInput = document.getElementById('companySplitMonth');
+  const branchSelect = document.getElementById('companySplitBranch');
+  const formatRadios = document.getElementsByName('companySplitFormat');
+  const progressBox = document.getElementById('companySplitProgressBox');
+  const progressText = document.getElementById('companySplitProgressText');
+  const executeBtn = document.getElementById('btnExecuteCompanySplit');
+  const cancelBtn = document.getElementById('companySplitCancelBtn');
+
+  const month = monthInput?.value || attendanceWorkMonth || todayISO().slice(0, 7);
+  const branch = branchSelect?.value || 'all';
+  let chosenFormat = 'multi_sheet';
+  for (const r of formatRadios) {
+    if (r.checked) chosenFormat = r.value;
+  }
+
+  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active');
+  if (branch !== 'all') {
+    employeesToExport = employeesToExport.filter((e) => e.branchId === branch);
+  }
+  if (!employeesToExport.length) {
+    showToast('Không có nhân sự nào trong phạm vi đã chọn.', true);
+    return;
+  }
+
+  let dirHandle = null;
+  if (chosenFormat === 'directory') {
+    if (!window.showDirectoryPicker) {
+      showToast('Trình duyệt không hỗ trợ chọn thư mục, chuyển sang tải file ZIP.', true);
+      chosenFormat = 'zip';
+    } else {
+      try {
+        dirHandle = await window.showDirectoryPicker();
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          showToast('Không thể mở thư mục máy tính: ' + err.message, true);
+        }
+        return;
+      }
+    }
+  }
+
+  if (progressBox) progressBox.style.display = 'block';
+  if (executeBtn) executeBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
+
+  try {
+    const summaryRows = [];
+    const perEmployeeSheets = [];
+    const zipFiles = [];
+    const usedSheetNames = new Set(['tổng hợp công ty', 'quy tắc tính công']);
+
+    const rules = [
+      { 'Nội dung': 'Nguồn dữ liệu', 'Quy tắc / công thức': 'Ca làm việc và lượt vào/ra được lưu trên hệ thống từ tháng 09/2026.' },
+      { 'Nội dung': 'Chi nhánh trong ngày', 'Quy tắc / công thức': 'Chi nhánh nhân viên chọn khi vào ca và được GPS xác nhận; không lấy chi nhánh cố định trong hồ sơ.' },
+      { 'Nội dung': 'Giờ công thường', 'Quy tắc / công thức': 'Thời lượng ca trừ thời gian nghỉ, đi muộn và về sớm; không vượt quá thời gian hiện diện thực tế.' },
+      { 'Nội dung': 'Tăng ca', 'Quy tắc / công thức': 'Chỉ cộng số phút từ đơn tăng ca đã được duyệt cuối cùng.' },
+      { 'Nội dung': 'Tổng giờ tính công', 'Quy tắc / công thức': 'Giờ công thường + tăng ca đã duyệt.' },
+      { 'Nội dung': 'Ngày công', 'Quy tắc / công thức': 'Giờ công thường / số phút chuẩn của ca, tối đa 1 ngày; tăng ca được cộng riêng vào tổng giờ.' },
+      { 'Nội dung': 'Cần đối chiếu', 'Quy tắc / công thức': 'Thiếu giờ vào/ra, thiếu ca hoặc dữ liệu bất thường không tự cộng công.' },
+    ];
+
+    for (let i = 0; i < employeesToExport.length; i++) {
+      const emp = employeesToExport[i];
+      if (progressText) {
+        progressText.textContent = `Đang trích xuất dữ liệu: [${i + 1}/${employeesToExport.length}] ${emp.name} (${emp.id})...`;
+      }
+
+      let summary = null;
+      try {
+        summary = await getAttendanceWorkSummary(month, emp.id);
+      } catch {
+        summary = null;
+      }
+
+      const totals = summary?.totals || {};
+      const days = summary?.days || [];
+
+      summaryRows.push({
+        'STT': i + 1,
+        'Mã NV': emp.id,
+        'Họ và tên': emp.name,
+        'Phòng ban': departmentName(emp.department),
+        'Chức danh': emp.role || '',
+        'Chi nhánh': BRANCHES[emp.branchId]?.name || emp.branchId || '',
+        'Tổng ngày công': Number(totals.workdays || 0),
+        'Tổng giờ công': Number(((totals.payableMinutes || 0) / 60).toFixed(2)),
+        'Công thường (phút)': Number(totals.regularMinutes || 0),
+        'Tăng ca duyệt (phút)': Number(totals.overtimeMinutes || 0),
+        'Tổng phút tính công': Number(totals.payableMinutes || 0),
+        'Đi muộn (phút)': Number(totals.lateMinutes || 0),
+        'Về sớm (phút)': Number(totals.earlyLeaveMinutes || 0),
+        'Cần đối chiếu (ngày)': Number(totals.incompleteDays || 0),
+        'Email': emp.email || '',
+        'SĐT': emp.phone || '',
+      });
+
+      const dayData = days.map((day, idx) => {
+        const [status] = workDayStatus(day);
+        const dateObj = new Date(`${day.work_date}T00:00:00`);
+        const weekday = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][dateObj.getDay()];
+        const branchDisplay = (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
+          ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
+          : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định');
+
+        return {
+          'STT': idx + 1,
+          'Ngày': dateObj.toLocaleDateString('vi-VN'),
+          'Thứ': weekday,
+          'Chi nhánh': branchDisplay,
+          'Ca làm việc': formatShiftDisplayName(day),
+          'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
+          'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
+          'Đi muộn (phút)': Number(day.late_minutes || 0),
+          'Về sớm (phút)': Number(day.early_leave_minutes || 0),
+          'Giờ công thường (phút)': Number(day.regular_minutes || 0),
+          'Tăng ca duyệt (phút)': Number(day.overtime_minutes || 0),
+          'Tổng phút tính công': Number(day.payable_minutes || 0),
+          'Tổng giờ công': Number(((day.payable_minutes || 0) / 60).toFixed(2)),
+          'Ngày công': Number(day.workday_credit || 0),
+          'Trạng thái đối chiếu': status,
+          'Ghi chú': day.note || day.attendance_anomaly_reason || '',
+        };
+      });
+
+      const sheetName = makeSafeSheetName(emp.id, emp.name, usedSheetNames);
+      perEmployeeSheets.push({
+        sheetName,
+        data: dayData.length ? dayData : [{ 'Thông báo': 'Chưa có dữ liệu chấm công trong tháng' }],
+      });
+
+      if (chosenFormat === 'zip' || chosenFormat === 'directory') {
+        const empWbBuffer = await generateWorkbookBuffer([
+          { sheetName: 'Bảng công cá nhân', data: dayData.length ? dayData : [{ 'Thông báo': 'Chưa có dữ liệu chấm công trong tháng' }] },
+          { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
+        ]);
+        const safeEmpName = normalizeText(emp.name).replace(/[^a-zA-Z0-9]/g, '_');
+        const empFilename = `Bang_Cong_${emp.id}_${safeEmpName}_${month}.xlsx`;
+
+        if (chosenFormat === 'zip') {
+          zipFiles.push({ name: empFilename, data: empWbBuffer });
+        } else if (chosenFormat === 'directory' && dirHandle) {
+          const fileHandle = await dirHandle.getFileHandle(empFilename, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(empWbBuffer);
+          await writable.close();
+        }
+      }
+    }
+
+    if (progressText) progressText.textContent = 'Đang đóng gói file xuất...';
+
+    if (chosenFormat === 'multi_sheet') {
+      const allSheets = [
+        { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
+        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
+        ...perEmployeeSheets,
+      ];
+      await exportWorkbookToExcel({
+        filename: `Bang_Cong_GPS_Toan_Cong_Ty_${month}.xlsx`,
+        sheets: allSheets,
+      });
+      showToast(`Đã xuất thành công sổ cái Excel toàn công ty (${employeesToExport.length} nhân sự, ${perEmployeeSheets.length} sheet)!`);
+    } else if (chosenFormat === 'zip') {
+      const summaryBuffer = await generateWorkbookBuffer([
+        { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
+        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
+      ]);
+      zipFiles.unshift({ name: `00_Tong_Hop_Cham_Cong_Toan_Cong_Ty_${month}.xlsx`, data: summaryBuffer });
+
+      const zipData = createZipArchive(zipFiles);
+      downloadFile(zipData, `Bang_Cong_GPS_Tung_Nhan_Su_${month}.zip`, 'application/zip');
+      showToast(`Đã tải file ZIP gồm ${zipFiles.length} file Excel phân tách theo từng nhân sự!`);
+    } else if (chosenFormat === 'directory' && dirHandle) {
+      const summaryBuffer = await generateWorkbookBuffer([
+        { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
+        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
+      ]);
+      const fileHandle = await dirHandle.getFileHandle(`00_Tong_Hop_Cham_Cong_Toan_Cong_Ty_${month}.xlsx`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(summaryBuffer);
+      await writable.close();
+
+      showToast(`Đã lưu trực tiếp toàn bộ file Excel của từng nhân sự vào thư mục máy tính!`);
+    }
+
+    closeCompanySplitModal();
+  } catch (error) {
+    console.error('[Attendance] Lỗi xuất bảng công toàn công ty:', error);
+    showToast('Lỗi xuất dữ liệu: ' + (error.message || 'Không xác định'), true);
+  } finally {
+    if (progressBox) progressBox.style.display = 'none';
+    if (executeBtn) executeBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+  }
+}
+
+
 
 function openAdjustModal(data = {}) {
   const modal = document.getElementById('attendanceAdjustModal');
@@ -1838,6 +2163,8 @@ export function initView() {
     if (action === 'checkout') confirmCheckout(event.target.closest('button'));
     if (action === 'export-attendance') exportAttendance();
     if (action === 'export-work-excel') exportWorkExcel();
+    if (action === 'export-company-split-excel') openCompanySplitModal();
+    if (action === 'close-company-split-modal') closeCompanySplitModal();
     if (action === 'work-prev' && attendanceWorkPage > 1) { attendanceWorkPage -= 1; refreshAttendanceFilters(); }
     if (action === 'work-next') { attendanceWorkPage += 1; refreshAttendanceFilters(); }
     if (action === 'history-prev' && attendanceHistoryPage > 1) { attendanceHistoryPage -= 1; refreshAttendanceFilters(); }
@@ -2020,10 +2347,22 @@ export function initView() {
     }
   });
 
+  const companySplitModal = document.getElementById('companySplitExportModal');
+  companySplitModal?.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'close-company-split-modal') {
+      event.preventDefault();
+      closeCompanySplitModal();
+    }
+  });
+
+  document.getElementById('btnExecuteCompanySplit')?.addEventListener('click', executeCompanySplitExport);
+
   const handleEscapeKey = (event) => {
     if (event.key === 'Escape') {
       closeAdjustModal();
       closeScheduleModal();
+      closeCompanySplitModal();
       closeDialog();
     }
   };

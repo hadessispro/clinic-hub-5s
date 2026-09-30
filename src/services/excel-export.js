@@ -126,3 +126,154 @@ export async function exportWorkbookToExcel({
   XLSX.writeFile(wb, safeFilename);
   return true;
 }
+
+/**
+ * Tạo buffer nhị phân Uint8Array của Workbook gồm nhiều sheet
+ */
+export async function generateWorkbookBuffer(sheets = []) {
+  if (!sheets || !sheets.length) return null;
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+
+  for (const s of sheets) {
+    const ws = await createStyledWorksheet(XLSX, s.data || [], {
+      customWidths: s.customWidths || {},
+      customFormats: s.customFormats || {},
+    });
+    XLSX.utils.book_append_sheet(wb, ws, s.sheetName || 'Sheet');
+  }
+
+  const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Uint8Array(arrayBuffer);
+}
+
+/**
+ * Tải file trực tiếp xuống trình duyệt
+ */
+export function downloadFile(data, filename, mimeType = 'application/octet-stream') {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+let crcTableCache = null;
+function getCrcTable() {
+  if (crcTableCache) return crcTableCache;
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c;
+  }
+  crcTableCache = table;
+  return table;
+}
+
+export function calculateCrc32(bytes) {
+  const table = getCrcTable();
+  let crc = 0 ^ (-1);
+  for (let i = 0; i < bytes.length; i++) {
+    crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xFF];
+  }
+  return (crc ^ (-1)) >>> 0;
+}
+
+/**
+ * Tạo file ZIP chuẩn (Store mode 0, tương thích 100% Windows/Mac/Linux)
+ * files: Array<{ name: string, data: Uint8Array | string }>
+ * Trả về Uint8Array
+ */
+export function createZipArchive(files = []) {
+  const enc = new TextEncoder();
+  const fileEntries = [];
+  let offset = 0;
+
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name);
+    const dataBytes = f.data instanceof Uint8Array ? f.data : enc.encode(String(f.data || ''));
+    const crc = calculateCrc32(dataBytes);
+
+    const header = new Uint8Array(30 + nameBytes.length);
+    const dv = new DataView(header.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 0, true);
+    dv.setUint16(8, 0, true);
+    dv.setUint16(10, 0, true);
+    dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, dataBytes.length, true);
+    dv.setUint32(22, dataBytes.length, true);
+    dv.setUint16(26, nameBytes.length, true);
+    dv.setUint16(28, 0, true);
+    header.set(nameBytes, 30);
+
+    fileEntries.push({ nameBytes, dataBytes, offset, header, crc });
+    offset += header.length + dataBytes.length;
+  }
+
+  const centralStart = offset;
+  const centralChunks = [];
+  for (const f of fileEntries) {
+    const cd = new Uint8Array(46 + f.nameBytes.length);
+    const dv = new DataView(cd.buffer);
+    dv.setUint32(0, 0x02014b50, true);
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 20, true);
+    dv.setUint16(8, 0, true);
+    dv.setUint16(10, 0, true);
+    dv.setUint16(12, 0, true);
+    dv.setUint16(14, 0, true);
+    dv.setUint32(16, f.crc, true);
+    dv.setUint32(20, f.dataBytes.length, true);
+    dv.setUint32(24, f.dataBytes.length, true);
+    dv.setUint16(28, f.nameBytes.length, true);
+    dv.setUint16(30, 0, true);
+    dv.setUint16(32, 0, true);
+    dv.setUint16(34, 0, true);
+    dv.setUint16(36, 0, true);
+    dv.setUint32(38, 0, true);
+    dv.setUint32(42, f.offset, true);
+    cd.set(f.nameBytes, 46);
+    centralChunks.push(cd);
+    offset += cd.length;
+  }
+
+  const centralSize = offset - centralStart;
+  const eocd = new Uint8Array(22);
+  const dv = new DataView(eocd.buffer);
+  dv.setUint32(0, 0x06054b50, true);
+  dv.setUint16(4, 0, true);
+  dv.setUint16(6, 0, true);
+  dv.setUint16(8, fileEntries.length, true);
+  dv.setUint16(10, fileEntries.length, true);
+  dv.setUint32(12, centralSize, true);
+  dv.setUint32(16, centralStart, true);
+  dv.setUint16(20, 0, true);
+
+  let totalLen = 0;
+  for (const f of fileEntries) totalLen += f.header.length + f.dataBytes.length;
+  for (const c of centralChunks) totalLen += c.length;
+  totalLen += eocd.length;
+
+  const result = new Uint8Array(totalLen);
+  let pos = 0;
+  for (const f of fileEntries) {
+    result.set(f.header, pos); pos += f.header.length;
+    result.set(f.dataBytes, pos); pos += f.dataBytes.length;
+  }
+  for (const c of centralChunks) {
+    result.set(c, pos); pos += c.length;
+  }
+  result.set(eocd, pos);
+  return result;
+}
+
