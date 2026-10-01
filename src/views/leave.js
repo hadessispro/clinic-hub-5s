@@ -7,6 +7,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { triggerArchive2Months } from '../services/archive-sync.js';
+import { exportLeaveRequestsWorkbook } from '../services/leave-export.js';
 
 let cachedEmployees = [];
 let cachedRequests = [];
@@ -348,10 +349,14 @@ function updateSwitcherStyles() {
 function updateLeaveDisplay() {
   const filtered = getFilteredRequests();
 
-  // Update summary count
+  // Update summary count & export button count
   const summaryEl = document.getElementById('leaveRequestSummaryText');
   if (summaryEl) {
     summaryEl.textContent = `${filtered.length} đơn theo bộ lọc`;
+  }
+  const exportBtn = document.getElementById('btnExportLeaveExcel');
+  if (exportBtn) {
+    exportBtn.innerHTML = `<i class="ri-file-excel-2-line"></i> Xuất Excel có màu (${filtered.length} đơn)`;
   }
 
   // Update content container
@@ -672,11 +677,16 @@ export async function renderView(state) {
             </button>
           </div>
         </div>
-        ${['admin', 'hr', 'admin_it'].includes(store.getState().role) ? `
-          <button class="secondary-button" type="button" id="triggerArchive2MonthsBtn" style="white-space:nowrap;">
-            <span>📁</span>Lưu trữ 2 tháng (Excel & Drive)
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <button class="primary-button" type="button" id="btnExportLeaveExcel" style="white-space:nowrap; background:#0f766e; border-color:#0f766e; display:inline-flex; align-items:center; gap:6px;">
+            <i class="ri-file-excel-2-line"></i> Xuất Excel có màu (${filteredRequests.length} đơn)
           </button>
-        ` : ''}
+          ${['admin', 'hr', 'admin_it'].includes(store.getState().role) ? `
+            <button class="secondary-button" type="button" id="triggerArchive2MonthsBtn" style="white-space:nowrap;">
+              <span>📁</span>Lưu trữ 2 tháng (Excel & Drive)
+            </button>
+          ` : ''}
+        </div>
       </div>
 
       <div class="operation-filterbar" id="leaveRequestFilters">
@@ -928,6 +938,38 @@ export function initView() {
       }
     });
   }
+
+  document.getElementById('btnExportLeaveExcel')?.addEventListener('click', async () => {
+    const filtered = getFilteredRequests();
+    if (!filtered.length) {
+      showToast('Không có đơn nào theo bộ lọc để xuất.', true);
+      return;
+    }
+    showToast(`Đang khởi tạo xuất Excel có màu sắc cho ${filtered.length} đơn...`, false, 2500);
+    try {
+      const filterParts = [];
+      if (requestTypeFilter !== 'all') filterParts.push(`Loại: ${requestTypeFilter}`);
+      if (requestStatusFilter !== 'all') filterParts.push(`Trạng thái: ${LEAVE_STATUS[requestStatusFilter] || requestStatusFilter}`);
+      if (requestDepartmentFilter !== 'all') filterParts.push(`Phòng: ${departmentName(requestDepartmentFilter)}`);
+      if (requestBranchFilter !== 'all') filterParts.push(`Cơ sở: ${requestBranchFilter === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : 'Lê Văn Thọ'}`);
+      if (requestSearch && requestSearch.trim()) filterParts.push(`Tìm: "${requestSearch.trim()}"`);
+
+      const filterSummary = filterParts.join(' | ') || 'Tất cả đơn từ trong hệ thống';
+      const dateSlug = new Date().toISOString().slice(0, 10);
+      const fileName = `Danh_Sach_Don_Tu_Tang_Ca_5S_${dateSlug}.xlsx`;
+
+      await exportLeaveRequestsWorkbook({
+        requests: filtered,
+        employees: cachedEmployees,
+        filterSummary,
+        filename: fileName,
+      });
+      showToast(`Đã xuất thành công ${filtered.length} đơn từ & tăng ca ra file Excel có màu sắc trực quan!`);
+    } catch (err) {
+      console.error('[Leave Export] Lỗi xuất file Excel:', err);
+      showToast('Lỗi xuất file Excel: ' + (err.message || 'Không xác định'), true);
+    }
+  });
 
   document.getElementById('triggerArchive2MonthsBtn')?.addEventListener('click', async () => {
     if (!await confirmAction('Hệ thống sẽ tổng hợp tất cả dữ liệu đơn từ & chấm công > 60 ngày thành file Excel, gửi lưu trữ về Google Drive và dọn dẹp cơ sở dữ liệu. Tiếp tục?', { title: 'Lưu trữ dữ liệu cũ', confirmText: 'Bắt đầu lưu trữ' })) return;
