@@ -88,7 +88,11 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   const start = shift ? Math.floor(seconds(shift.start_time) / 60) : 0;
   let end = shift ? Math.floor(seconds(shift.end_time) / 60) : 0;
   if (shift && end <= start) end += 24 * 60;
-  const breakMinutes = positiveMinutes(shift?.break_minutes);
+  let breakMinutes = positiveMinutes(shift?.break_minutes);
+  // ponytail: Ca hành chính (08:00 - 17:00) như clinic-0800, doctor-office luôn có 1 tiếng nghỉ trưa (60 phút)
+  if (breakMinutes === 0 && (normalizedShiftCode === 'clinic-0800' || (start === 480 && end === 1020))) {
+    breakMinutes = 60;
+  }
   const scheduledMinutes = shift ? Math.max(0, end - start - breakMinutes) : 0;
   const checkinMinute = minuteOfClinicDay(checkin?.recorded_at);
   let checkoutMinute = minuteOfClinicDay(checkout?.recorded_at);

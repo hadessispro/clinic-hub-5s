@@ -17,7 +17,7 @@ function paidHours(shift) {
   const [sh, sm] = String(shift.start_time || '00:00').split(':').map(Number);
   const [eh, em] = String(shift.end_time || '00:00').split(':').map(Number);
   const configuredBreak = Number(shift.break_minutes || 0);
-  const breakMinutes = ['front-morning', 'front-afternoon'].includes(shift.code) ? Math.max(60, configuredBreak) : configuredBreak;
+  const breakMinutes = ['front-morning', 'front-afternoon', 'clinic-0800'].includes(shift.code) ? Math.max(60, configuredBreak) : configuredBreak;
   return (((eh * 60 + em) - (sh * 60 + sm) - breakMinutes) / 60);
 }
 

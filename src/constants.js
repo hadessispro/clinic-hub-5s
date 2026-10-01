@@ -11,7 +11,7 @@ export const DEPARTMENTS = [
 
 /* ── Shifts ── */
 export const SHIFTS = [
-  { id: 'clinic-0800', group: 'Chi nhánh Lê Văn Thọ', name: 'Ca 08:00', start: '08:00', end: '17:00', breakText: 'Theo lịch phân công', checkinRule: 'Check-in khi có mặt tại phòng khám lúc 08:00' },
+  { id: 'clinic-0800', group: 'Văn phòng, Marketing, LVT', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in khi có mặt tại phòng khám lúc 08:00' },
   { id: 'front-office', group: 'Lễ tân, Phụ tá', name: 'Ca hành chính', start: '07:30', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'front-full', group: 'Lễ tân, Phụ tá', name: 'Ca full', start: '07:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
   { id: 'front-afternoon', group: 'Lễ tân, Phụ tá', name: 'Ca chiều', start: '09:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },

@@ -1112,7 +1112,7 @@ export class TelegramService {
     if (s.includes('chiều') || s === 'chieu' || s === 'c') {
       return { code: 'doctor-afternoon', name: 'Ca chiều', start: '10:00', end: '20:00', minutes: 540 };
     }
-    return { code: 'clinic-0800', name: 'Ca 08:00', start: '08:00', end: '17:00', minutes: 540 };
+    return { code: 'clinic-0800', name: 'Ca hành chính', start: '08:00', end: '17:00', minutes: 480 };
   }
 
   extractSlotsFallback(rawText: string, employeeCode?: string, employeeName?: string, empDept?: string, empTitle?: string): JsonMap {

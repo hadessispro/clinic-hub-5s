@@ -450,8 +450,13 @@ function buildMatrixWorksheetXml({
         const shiftCode = String(dayRec?.shift_code || '').toUpperCase();
         const note = String(dayRec?.note || '').toLowerCase();
 
-        // Tính giờ công làm việc thực tế (11 giờ -> 11, 9h21 -> 9.35)
-        const regHours = regMin > 0 ? Number((regMin / 60).toFixed(2)) : (credit > 0 ? Number((credit * 8).toFixed(2)) : 0);
+        // Tính giờ công làm việc thực tế (11 giờ -> 11, 8 giờ -> 8)
+        // Ca hành chính 08:00 - 17:00 chuẩn là 8 tiếng (đã trừ 1 tiếng nghỉ trưa). Nếu gặp dữ liệu cũ 540 phút (9h) thì chuẩn hoá về 8h (480 phút)
+        let effectiveRegMin = regMin;
+        if (effectiveRegMin >= 530 && effectiveRegMin <= 540 && (shiftCode === 'CLINIC-0800' || shiftCode === 'HC' || shiftCode === 'DOCTOR-OFFICE' || shiftCode.includes('0800'))) {
+          effectiveRegMin = 480;
+        }
+        const regHours = effectiveRegMin > 0 ? Number((effectiveRegMin / 60).toFixed(2)) : (credit > 0 ? Number((credit * 8).toFixed(2)) : 0);
 
         if (regHours > 0) {
           // Xuất số giờ làm thực tế dạng số (không xuất 1 công)
