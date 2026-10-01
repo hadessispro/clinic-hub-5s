@@ -24,6 +24,157 @@ import { isPgEmployee } from '../utils.js';
 
 export { isPgEmployee };
 
+/**
+ * Phân loại nhóm vị trí công việc trong phòng khám:
+ * 1. Khối Bác sĩ / Chuyên môn
+ * 2. Khối Phụ tá
+ * 3. Khối Lễ tân & DVKH / CSKH
+ * 4. Khối Telesale & Tư vấn
+ * 5. Khối Marketing & Truyền thông
+ * 6. Khối Hành chính - Quản trị - Nhân sự - Kế toán - IT
+ * 7. Khối Bảo vệ & Tạp vụ / Lao công
+ * 8. Khác
+ */
+export function getPositionGroup(emp) {
+  const dept = String(emp?.department || '').toLowerCase().trim();
+  const role = String(emp?.role || '').toLowerCase().trim();
+  const id = String(emp?.id || '').toUpperCase().trim();
+
+  // 1. Khối Bác sĩ / Chuyên môn
+  if (
+    dept === 'bs' ||
+    dept === 'chuyên môn' ||
+    id.startsWith('BS') ||
+    role.includes('bác sĩ') ||
+    role.includes('bác sỹ') ||
+    role.includes('chỉnh nha') ||
+    role.includes('nha sĩ')
+  ) {
+    return { order: 1, key: 'bac_si', name: 'Bác sĩ' };
+  }
+
+  // 2. Khối Phụ tá
+  if (dept === 'phuta' || role.includes('phụ tá')) {
+    return { order: 2, key: 'phu_ta', name: 'Phụ tá' };
+  }
+
+  // 3. Khối Lễ tân & Dịch vụ khách hàng (CSKH)
+  if (
+    dept === 'dvkh' ||
+    dept === 'lễ tân' ||
+    id.startsWith('LT') ||
+    role.includes('lễ tân') ||
+    role.includes('cskh') ||
+    role.includes('dịch vụ khách hàng') ||
+    role.includes('tiếp đón')
+  ) {
+    return { order: 3, key: 'le_tan_cskh', name: 'Lễ tân & DVKH' };
+  }
+
+  // 4. Khối Telesale & Tư vấn
+  if (role.includes('telesale') || role.includes('tư vấn')) {
+    return { order: 4, key: 'telesale_tu_van', name: 'Telesale & Tư vấn' };
+  }
+
+  // 5. Khối Marketing & Truyền thông
+  if (
+    dept === 'marketing' ||
+    dept === 'mkt' ||
+    role.includes('marketing') ||
+    role.includes('mkt') ||
+    role.includes('editor') ||
+    role.includes('thiết kế') ||
+    role.includes('content') ||
+    role.includes('phát triển thị trường') ||
+    role.includes('digital')
+  ) {
+    return { order: 5, key: 'marketing', name: 'Marketing' };
+  }
+
+  // 6. Khối Hành chính - Quản trị - Nhân sự - Kế toán - IT
+  if (
+    ['hcth', 'ns', 'kt', 'it', 'executive', 'bgd'].includes(dept) ||
+    role.includes('hành chính') ||
+    role.includes('kế toán') ||
+    role.includes('nhân sự') ||
+    role.includes('ktt') ||
+    role.includes('it') ||
+    role.includes('giám đốc') ||
+    role.includes('trợ lý')
+  ) {
+    if (role.includes('tạp vụ') || role.includes('lao công') || role.includes('vệ sinh')) {
+      return { order: 7, key: 'bao_ve_tap_vu', name: 'Bảo vệ & Tạp vụ' };
+    }
+    return { order: 6, key: 'hanh_chinh_quan_tri', name: 'Hành chính & Quản trị' };
+  }
+
+  // 7. Khối Bảo vệ & Tạp vụ / Lao công
+  if (
+    ['baove', 'laocong'].includes(dept) ||
+    role.includes('bảo vệ') ||
+    role.includes('tạp vụ') ||
+    role.includes('lao công') ||
+    role.includes('vệ sinh')
+  ) {
+    return { order: 7, key: 'bao_ve_tap_vu', name: 'Bảo vệ & Tạp vụ' };
+  }
+
+  // 8. Khác
+  return { order: 8, key: 'khac', name: 'Khác' };
+}
+
+/**
+ * Định dạng chức danh hiển thị chuẩn hóa cho nhân sự nếu trường role bị trống
+ */
+export function formatEmployeeRole(emp) {
+  const role = String(emp?.role || '').trim();
+  if (role) return role;
+  const dept = String(emp?.department || '').toLowerCase().trim();
+  if (dept === 'bs' || dept === 'chuyên môn') return 'Bác sĩ';
+  if (dept === 'phuta') return 'Phụ tá';
+  if (dept === 'dvkh' || dept === 'lễ tân') return 'Nhân viên DVKH';
+  if (dept === 'mkt' || dept === 'marketing') return 'Nhân viên Marketing';
+  if (dept === 'hcth') return 'Nhân viên HCTH';
+  if (dept === 'it') return 'Quản trị IT';
+  if (dept === 'kt') return 'Kế toán';
+  if (dept === 'baove') return 'Bảo vệ';
+  if (dept === 'laocong') return 'Lao công';
+  return 'Nhân viên';
+}
+
+/**
+ * Sắp xếp danh sách nhân viên theo khối vị trí công việc:
+ * Bác sĩ -> Phụ tá -> Lễ tân & CSKH -> Telesale & Tư vấn -> Marketing -> Hành chính/IT -> Bảo vệ/Tạp vụ
+ * Trong cùng khối: ưu tiên Trưởng bộ phận/Quản lý -> theo mã nhân viên -> theo tên.
+ */
+export function sortEmployeesByPosition(employees = []) {
+  return [...employees].sort((a, b) => {
+    const groupA = getPositionGroup(a);
+    const groupB = getPositionGroup(b);
+
+    // 1. So sánh theo nhóm vị trí
+    if (groupA.order !== groupB.order) {
+      return groupA.order - groupB.order;
+    }
+
+    // 2. Trong cùng nhóm: Trưởng phòng / Trưởng bộ phận / Quản lý / Lead lên trước
+    const isLeaderA = /(trưởng|quản lý|lead|ktt|trợ lý|giám đốc)/i.test(a.role || '');
+    const isLeaderB = /(trưởng|quản lý|lead|ktt|trợ lý|giám đốc)/i.test(b.role || '');
+    if (isLeaderA !== isLeaderB) {
+      return isLeaderA ? -1 : 1;
+    }
+
+    // 3. Trong cùng cấp: so sánh theo mã nhân viên tự nhiên (BS01, PVC001...)
+    const idA = String(a.id || '').toUpperCase();
+    const idB = String(b.id || '').toUpperCase();
+    const idCmp = idA.localeCompare(idB, 'vi', { numeric: true });
+    if (idCmp !== 0) return idCmp;
+
+    // 4. Theo tên tiếng Việt
+    return String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+  });
+}
+
 function escapeXml(value) {
   if (value == null) return '';
   return String(value)
@@ -408,9 +559,10 @@ function buildMatrixWorksheetXml({
   });
   rowsXml.push(`<row r="6" ht="26" customHeight="1">${r6Cells}</row>`);
 
-  // Dữ liệu từng nhân sự (từ Hàng 7 trở đi)
+  // Dữ liệu từng nhân sự (từ Hàng 7 trở đi, sắp xếp chặt chẽ theo vị trí việc làm)
   const startDataRow = 7;
-  employees.forEach((emp, empIdx) => {
+  const sortedEmployees = sortEmployeesByPosition(employees);
+  sortedEmployees.forEach((emp, empIdx) => {
     const rNum = startDataRow + empIdx;
     const summary = workSummaryMap.get(emp.id) || { days: [], totals: {} };
     const dayMap = new Map((summary.days || []).map((d) => [d.work_date, d]));
@@ -424,7 +576,7 @@ function buildMatrixWorksheetXml({
     // C: Họ và tên
     rowCells += cellStr(`C${rNum}`, 12, emp.name);
     // D: Chức vụ
-    rowCells += cellStr(`D${rNum}`, 13, emp.role || 'Nhân viên');
+    rowCells += cellStr(`D${rNum}`, 13, formatEmployeeRole(emp));
 
     // 01..totalDays
     days.forEach((d, dIdx) => {
@@ -685,9 +837,10 @@ function buildCompanySummarySheetXml({
   });
   rowsXml.push(`<row r="5" ht="26" customHeight="1">${r5Cells}</row>`);
 
-  // Dữ liệu từng nhân sự
+  // Dữ liệu từng nhân sự (sắp xếp theo nhóm vị trí việc làm)
   const startRow = 6;
-  employees.forEach((emp, idx) => {
+  const sortedEmployees = sortEmployeesByPosition(employees);
+  sortedEmployees.forEach((emp, idx) => {
     const rNum = startRow + idx;
     const summary = workSummaryMap.get(emp.id) || { totals: {} };
     const totals = summary.totals || {};
@@ -707,7 +860,7 @@ function buildCompanySummarySheetXml({
     rowCells += cellStr(`B${rNum}`, 11, emp.id);
     rowCells += cellStr(`C${rNum}`, 12, emp.name);
     rowCells += cellStr(`D${rNum}`, 13, branchName);
-    rowCells += cellStr(`E${rNum}`, 13, emp.role || '');
+    rowCells += cellStr(`E${rNum}`, 13, formatEmployeeRole(emp));
     rowCells += cellNum(`F${rNum}`, 23, regHours);
     rowCells += cellNum(`G${rNum}`, 23, workdays);
     rowCells += cellNum(`H${rNum}`, 21, otHours);
@@ -780,13 +933,12 @@ export function generateAttendanceMatrixXlsx({
   const monthInfo = getMonthDays(month);
 
   // Tách biệt nhân sự PG: Khối PG có hệ thống quản lý & chấm công riêng do SupPG điều phối
-  const clinicEmployees = employees.filter((e) => !isPgEmployee(e));
+  const clinicEmployees = sortEmployeesByPosition(employees.filter((e) => !isPgEmployee(e)));
 
-  // Phân chia nhân viên theo chi nhánh
-  // LVT: 'le-van-tho', PVC: 'pham-van-chieu' và các khối văn phòng / Telesale / Marketing
-  const lvtEmployees = clinicEmployees.filter((e) => e.branchId === 'le-van-tho');
-  const pvcEmployees = clinicEmployees.filter((e) => e.branchId !== 'le-van-tho');
-  const allEmployees = [...lvtEmployees, ...pvcEmployees];
+  // Phân chia nhân viên theo chi nhánh, sắp xếp chuẩn theo vị trí việc làm (Bác sĩ -> Phụ tá -> Lễ tân/CSKH -> Telesale -> Marketing -> HCTH/IT -> Bảo vệ/Tạp vụ)
+  const lvtEmployees = sortEmployeesByPosition(clinicEmployees.filter((e) => e.branchId === 'le-van-tho'));
+  const pvcEmployees = sortEmployeesByPosition(clinicEmployees.filter((e) => e.branchId !== 'le-van-tho'));
+  const allEmployees = sortEmployeesByPosition(clinicEmployees);
 
   // 1. Sheet Chấm công - LVT
   const sheet1Xml = buildMatrixWorksheetXml({
@@ -907,8 +1059,8 @@ export async function exportAttendanceMatrixWorkbook({
   fetchWorkSummaryFn,
   onProgress = null,
 }) {
-  // Loại bỏ nhân sự PG (do Marketing & SupPG quản lý riêng)
-  const clinicEmployees = employees.filter((e) => !isPgEmployee(e));
+  // Loại bỏ nhân sự PG và sắp xếp chuẩn theo vị trí việc làm (Bác sĩ, Phụ tá, Lễ tân...)
+  const clinicEmployees = sortEmployeesByPosition(employees.filter((e) => !isPgEmployee(e)));
   const workSummaryMap = new Map();
   const total = clinicEmployees.length;
 

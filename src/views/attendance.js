@@ -43,7 +43,7 @@ import {
   exportWorkbookToExcel,
   generateWorkbookBuffer,
 } from '../services/excel-export.js';
-import { exportAttendanceMatrixWorkbook } from '../services/attendance-matrix-export.js';
+import { exportAttendanceMatrixWorkbook, sortEmployeesByPosition } from '../services/attendance-matrix-export.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
@@ -1958,7 +1958,9 @@ function makeSafeSheetName(code, name, existingNames) {
 
 async function exportAttendanceMatrixDirect() {
   const month = attendanceWorkMonth || todayISO().slice(0, 7);
-  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e));
+  let employeesToExport = sortEmployeesByPosition(
+    (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e))
+  );
   if (!employeesToExport.length) {
     showToast('Không có danh sách nhân sự phù hợp để xuất.', true);
     return;
@@ -2006,6 +2008,7 @@ async function executeCompanySplitExport() {
   if (branch !== 'all') {
     employeesToExport = employeesToExport.filter((e) => e.branchId === branch);
   }
+  employeesToExport = sortEmployeesByPosition(employeesToExport);
   if (!employeesToExport.length) {
     showToast('Không có nhân sự nào trong phạm vi đã chọn.', true);
     return;
