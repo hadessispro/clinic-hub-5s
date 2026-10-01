@@ -20,6 +20,9 @@
 
 import { createZipArchive, downloadFile } from './excel-export.js';
 import { BRANCHES } from '../branch.js';
+import { isPgEmployee } from '../utils.js';
+
+export { isPgEmployee };
 
 function escapeXml(value) {
   if (value == null) return '';
@@ -745,11 +748,14 @@ export function generateAttendanceMatrixXlsx({
 }) {
   const monthInfo = getMonthDays(month);
 
+  // Tách biệt nhân sự PG: Khối PG có hệ thống quản lý & chấm công riêng do SupPG điều phối
+  const clinicEmployees = employees.filter((e) => !isPgEmployee(e));
+
   // Phân chia nhân viên theo chi nhánh
   // LVT: 'le-van-tho', PVC: 'pham-van-chieu'
-  const lvtEmployees = employees.filter((e) => e.branchId === 'le-van-tho');
-  const pvcEmployees = employees.filter((e) => e.branchId === 'pham-van-chieu');
-  const otherEmployees = employees.filter((e) => e.branchId !== 'le-van-tho' && e.branchId !== 'pham-van-chieu');
+  const lvtEmployees = clinicEmployees.filter((e) => e.branchId === 'le-van-tho');
+  const pvcEmployees = clinicEmployees.filter((e) => e.branchId === 'pham-van-chieu');
+  const otherEmployees = clinicEmployees.filter((e) => e.branchId !== 'le-van-tho' && e.branchId !== 'pham-van-chieu');
 
   // Nếu có nhân viên chưa gán, bổ sung vào LVT hoặc PVC tùy theo ngữ cảnh, hoặc giữ nguyên danh sách đầy đủ
   const allEmployees = [...lvtEmployees, ...pvcEmployees, ...otherEmployees];
@@ -873,11 +879,13 @@ export async function exportAttendanceMatrixWorkbook({
   fetchWorkSummaryFn,
   onProgress = null,
 }) {
+  // Loại bỏ nhân sự PG (do Marketing & SupPG quản lý riêng)
+  const clinicEmployees = employees.filter((e) => !isPgEmployee(e));
   const workSummaryMap = new Map();
-  const total = employees.length;
+  const total = clinicEmployees.length;
 
   for (let i = 0; i < total; i++) {
-    const emp = employees[i];
+    const emp = clinicEmployees[i];
     if (onProgress) {
       onProgress(i + 1, total, emp);
     }
@@ -893,7 +901,7 @@ export async function exportAttendanceMatrixWorkbook({
 
   const xlsxBuffer = generateAttendanceMatrixXlsx({
     month,
-    employees,
+    employees: clinicEmployees,
     workSummaryMap,
   });
 

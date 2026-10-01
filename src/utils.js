@@ -209,6 +209,27 @@ export function uniformPackageFor(department, roleTitle) {
   return UNIFORM_CATALOG.find((pkg) => pkg.matcher.some((m) => haystack.includes(m))) || UNIFORM_CATALOG.at(-1);
 }
 
+/**
+ * Kiểm tra nhân sự có thuộc khối PG (Promotion Girl / Marketing thị trường) hay không.
+ * Khối PG có quy trình vận hành và chấm công riêng do SupPG điều phối (src/views/pg-attendance.js),
+ * hoàn toàn tách biệt khỏi bảng chấm công & tăng ca của 2 chi nhánh phòng khám (LVT & PVC).
+ */
+export function isPgEmployee(emp) {
+  if (!emp) return false;
+  const code = String(emp.id || emp.code || emp.employee_number || emp.employeeCode || '').toUpperCase();
+  const role = String(emp.role || emp.title || '').toLowerCase();
+  const dept = String(emp.department || '').toLowerCase();
+  return (
+    code.startsWith('PG-') ||
+    code.startsWith('PG') ||
+    code.includes('-PG-') ||
+    role === 'pg_staff' ||
+    role.includes('nhân viên pg') ||
+    role === 'pg' ||
+    dept === 'pg'
+  );
+}
+
 /* ── Hiển thị người phụ trách ────────────────────────────────────────────
  *
  * Quy tắc chung của hệ thống: TÊN là thứ để đọc, MÃ là thứ để tra.

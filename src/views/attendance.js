@@ -33,7 +33,7 @@ import { BRANCH, BRANCHES, clinicDateISO, clinicTimeLabel } from '../branch.js';
 import { canEditAttendance, isOpsRole, khongPhaiChamCong } from '../permissions.js';
 import { navigateTo } from '../router.js';
 import { store } from '../store.js';
-import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, normalizeText, smartMatch } from '../utils.js';
+import { departmentName, distanceMeters, downloadText, escapeHTML, formatDateTime, formatTime, isPgEmployee, normalizeText, smartMatch } from '../utils.js';
 import { statusPill } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import {
@@ -937,7 +937,7 @@ function renderOvertimeAdjustmentDialog(employee) {
 }
 
 export async function renderView(state) {
-  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile) || (state.employeeCode && state.employeeCode.startsWith('PG'))) {
     return renderPgAttendance();
   }
   if (clockTimer) clearTimeout(clockTimer);
@@ -965,9 +965,12 @@ export async function renderView(state) {
     navigator.onLine && canEditWorkday ? getShiftConfiguration().catch(() => ({ shifts: [], allowed: [] })) : Promise.resolve({ shifts: [], allowed: [] }),
   ]);
 
+  // Tách biệt nhân sự PG: Khối PG chấm công riêng trên hệ thống Marketing do SupPG điều phối
+  const clinicEmployees = employees.filter((item) => !isPgEmployee(item));
+
   const scopedEmployees = state.role === 'leader'
-    ? employees.filter((item) => item.department === state.department)
-    : employees;
+    ? clinicEmployees.filter((item) => item.department === state.department)
+    : clinicEmployees;
 
   if (!attendanceAdminSelectedEmployee || !scopedEmployees.some((e) => e.id === attendanceAdminSelectedEmployee)) {
     attendanceAdminSelectedEmployee = canEditWorkday
@@ -1029,7 +1032,7 @@ export async function renderView(state) {
 
   const scopedEmployeeCodes = new Set(scopedEmployees.map((item) => item.id));
   const scopedRecords = canEditWorkday
-    ? (state.role === 'leader' ? records.filter((record) => scopedEmployeeCodes.has(record.employee)) : records)
+    ? records.filter((record) => scopedEmployeeCodes.has(record.employee))
     : records.filter((record) => record.employee === state.employeeCode);
   const filteredRecords = canEditWorkday ? scopedRecords.filter((record) => {
     const recordEmployee = scopedEmployees.find((item) => item.id === record.employee);
@@ -1870,7 +1873,7 @@ function makeSafeSheetName(code, name, existingNames) {
 
 async function exportAttendanceMatrixDirect() {
   const month = attendanceWorkMonth || todayISO().slice(0, 7);
-  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active');
+  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e));
   if (!employeesToExport.length) {
     showToast('Không có danh sách nhân sự phù hợp để xuất.', true);
     return;
@@ -1914,7 +1917,7 @@ async function executeCompanySplitExport() {
     if (r.checked) chosenFormat = r.value;
   }
 
-  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active');
+  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e));
   if (branch !== 'all') {
     employeesToExport = employeesToExport.filter((e) => e.branchId === branch);
   }
@@ -2294,7 +2297,7 @@ function closeScheduleModal() {
 
 export function initView() {
   const state = store.getState();
-  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff') {
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile) || (state.employeeCode && state.employeeCode.startsWith('PG'))) {
     initPgAttendance();
     return;
   }
