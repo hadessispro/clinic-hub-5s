@@ -175,6 +175,52 @@ export function sortEmployeesByPosition(employees = []) {
   });
 }
 
+/**
+ * Tính toán trạng thái trễ check-in dựa trên mốc yêu cầu 5 phút trước giờ vào ca.
+ * Quy định chuẩn 5S: Ca 07:30 yêu cầu 07:25 (07:26 là trễ), Ca 08:00 yêu cầu 07:55, Ca 10:00 yêu cầu 09:55...
+ */
+export function computeLateCheckinFromRecord(checkinAt, shiftCode) {
+  if (!checkinAt) return { isLate: false, lateMinutes: 0, requiredTime: '', checkinTime: '' };
+  const d = new Date(checkinAt);
+  if (isNaN(d.getTime())) return { isLate: false, lateMinutes: 0, requiredTime: '', checkinTime: '' };
+
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value || 0);
+  const min = Number(parts.find((p) => p.type === 'minute')?.value || 0);
+  const checkinMinuteOfDay = hour * 60 + min;
+  const checkinTime = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+
+  const sCode = String(shiftCode || '').toLowerCase().trim();
+  let shiftStartMinute = 480; // default 08:00
+  if (sCode.includes('0730') || sCode.includes('front-office') || sCode.includes('front-morning') || sCode.includes('front-full')) {
+    shiftStartMinute = 450; // 07:30
+  } else if (sCode.includes('doctor-afternoon') || sCode.includes('1000')) {
+    shiftStartMinute = 600; // 10:00
+  } else if (sCode.includes('afternoon') || sCode.includes('0930')) {
+    shiftStartMinute = 570; // 09:30
+  } else if (sCode.includes('security') || sCode.includes('0700')) {
+    shiftStartMinute = 420; // 07:00
+  } else if (sCode.includes('cleaning') || sCode.includes('0600')) {
+    shiftStartMinute = 360; // 06:00
+  } else if (sCode.includes('0800') || sCode.includes('doctor') || sCode.includes('clinic')) {
+    shiftStartMinute = 480; // 08:00
+  }
+
+  const requiredMinute = shiftStartMinute - 5;
+  const reqH = Math.floor(requiredMinute / 60);
+  const reqM = requiredMinute % 60;
+  const requiredTime = `${String(reqH).padStart(2, '0')}:${String(reqM).padStart(2, '0')}`;
+
+  const isLate = checkinMinuteOfDay > requiredMinute;
+  const lateMinutes = isLate ? (checkinMinuteOfDay - requiredMinute) : 0;
+  return { isLate, lateMinutes, requiredTime, checkinTime, shiftStartMinute };
+}
+
 function escapeXml(value) {
   if (value == null) return '';
   return String(value)
@@ -450,6 +496,8 @@ function buildMatrixWorksheetXml({
         { label: 'Tổng giờ tính công (h)', width: 16, isNum: true, isGrand: true },
         { label: 'Quy đổi công (h/8)', width: 15, isNum: true },
         { label: 'Công chuẩn', width: 12, isNum: true },
+        { label: 'Trễ check-in (lần)', width: 14, isNum: true, isInt: true },
+        { label: 'Trễ check-in (phút)', width: 14, isNum: true, isInt: true },
         { label: 'Đi muộn (phút)', width: 13, isNum: true, isInt: true },
         { label: 'Về sớm (phút)', width: 13, isNum: true, isInt: true },
         { label: 'Nghỉ phép (P/OFF)', width: 14, isNum: false },
@@ -679,21 +727,47 @@ function buildMatrixWorksheetXml({
       const c5 = colLetter(lastDayColIdx + 5);
       rowCells += cellNum(`${c5}${rNum}`, 23, 26);
 
-      // 6. Đi muộn (phút)
+      // Tính số lần & số phút trễ check-in
+      let lateCheckinCount = Number(totals.lateCheckinCount || 0);
+      let lateCheckinMin = Number(totals.lateCheckinMinutes || 0);
+      if (!lateCheckinCount && !lateCheckinMin && Array.isArray(summary.days)) {
+        summary.days.forEach((dayRec) => {
+          if (dayRec.is_late_checkin) {
+            lateCheckinCount++;
+            lateCheckinMin += Number(dayRec.late_checkin_minutes || 0);
+          } else if (dayRec.checkin_at) {
+            const check = computeLateCheckinFromRecord(dayRec.checkin_at, dayRec.shift_code);
+            if (check.isLate) {
+              lateCheckinCount++;
+              lateCheckinMin += check.lateMinutes;
+            }
+          }
+        });
+      }
+
+      // 6. Trễ check-in (lần)
       const c6 = colLetter(lastDayColIdx + 6);
-      rowCells += cellNum(`${c6}${rNum}`, 24, lateMin);
+      rowCells += cellNum(`${c6}${rNum}`, 24, lateCheckinCount);
 
-      // 7. Về sớm (phút)
+      // 7. Trễ check-in (phút)
       const c7 = colLetter(lastDayColIdx + 7);
-      rowCells += cellNum(`${c7}${rNum}`, 24, earlyMin);
+      rowCells += cellNum(`${c7}${rNum}`, 24, lateCheckinMin);
 
-      // 8. Nghỉ phép / OFF
+      // 8. Đi muộn (phút)
       const c8 = colLetter(lastDayColIdx + 8);
-      rowCells += cellEmpty(`${c8}${rNum}`, 25);
+      rowCells += cellNum(`${c8}${rNum}`, 24, lateMin);
 
-      // 9. Ghi chú
+      // 9. Về sớm (phút)
       const c9 = colLetter(lastDayColIdx + 9);
-      rowCells += cellEmpty(`${c9}${rNum}`, 25);
+      rowCells += cellNum(`${c9}${rNum}`, 24, earlyMin);
+
+      // 10. Nghỉ phép / OFF
+      const c10 = colLetter(lastDayColIdx + 10);
+      rowCells += cellEmpty(`${c10}${rNum}`, 25);
+
+      // 11. Ghi chú
+      const c11 = colLetter(lastDayColIdx + 11);
+      rowCells += cellEmpty(`${c11}${rNum}`, 25);
     }
 
     rowsXml.push(`<row r="${rNum}" ht="22" customHeight="1">${rowCells}</row>`);
@@ -784,6 +858,8 @@ function buildCompanySummarySheetXml({
     { label: 'Quy đổi công (ngày)', width: 15 },
     { label: 'Tăng ca (h)', width: 14 },
     { label: 'Tăng ca (phút)', width: 14 },
+    { label: 'Trễ check-in (lần)', width: 14 },
+    { label: 'Trễ check-in (phút)', width: 14 },
     { label: 'Đi muộn (phút)', width: 14 },
     { label: 'Về sớm (phút)', width: 14 },
     { label: 'Cần đối soát (ngày)', width: 16 },
@@ -855,6 +931,23 @@ function buildCompanySummarySheetXml({
     const earlyMin = Number(totals.earlyLeaveMinutes || 0);
     const incompleteDays = Number(totals.incompleteDays || 0);
 
+    let lateCheckinCount = Number(totals.lateCheckinCount || 0);
+    let lateCheckinMin = Number(totals.lateCheckinMinutes || 0);
+    if (!lateCheckinCount && !lateCheckinMin && Array.isArray(summary.days)) {
+      summary.days.forEach((dayRec) => {
+        if (dayRec.is_late_checkin) {
+          lateCheckinCount++;
+          lateCheckinMin += Number(dayRec.late_checkin_minutes || 0);
+        } else if (dayRec.checkin_at) {
+          const check = computeLateCheckinFromRecord(dayRec.checkin_at, dayRec.shift_code);
+          if (check.isLate) {
+            lateCheckinCount++;
+            lateCheckinMin += check.lateMinutes;
+          }
+        }
+      });
+    }
+
     let rowCells = '';
     rowCells += cellNum(`A${rNum}`, 10, idx + 1);
     rowCells += cellStr(`B${rNum}`, 11, emp.id);
@@ -865,11 +958,13 @@ function buildCompanySummarySheetXml({
     rowCells += cellNum(`G${rNum}`, 23, workdays);
     rowCells += cellNum(`H${rNum}`, 21, otHours);
     rowCells += cellNum(`I${rNum}`, 24, otMin);
-    rowCells += cellNum(`J${rNum}`, 24, lateMin);
-    rowCells += cellNum(`K${rNum}`, 24, earlyMin);
-    rowCells += cellNum(`L${rNum}`, 24, incompleteDays);
-    rowCells += cellStr(`M${rNum}`, 10, emp.phone || '');
-    rowCells += cellStr(`N${rNum}`, 13, emp.email || '');
+    rowCells += cellNum(`J${rNum}`, 24, lateCheckinCount);
+    rowCells += cellNum(`K${rNum}`, 24, lateCheckinMin);
+    rowCells += cellNum(`L${rNum}`, 24, lateMin);
+    rowCells += cellNum(`M${rNum}`, 24, earlyMin);
+    rowCells += cellNum(`N${rNum}`, 24, incompleteDays);
+    rowCells += cellStr(`O${rNum}`, 10, emp.phone || '');
+    rowCells += cellStr(`P${rNum}`, 13, emp.email || '');
 
     rowsXml.push(`<row r="${rNum}" ht="22" customHeight="1">${rowCells}</row>`);
   });
@@ -885,16 +980,16 @@ function buildCompanySummarySheetXml({
   footerCells += cellEmpty(`E${footerRow}`, 26);
   mergeCells.push(`A${footerRow}:E${footerRow}`);
 
-  // Sum F..L
-  ['F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((colLet) => {
+  // Sum F..N
+  ['F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'].forEach((colLet) => {
     if (employees.length) {
       footerCells += cellFormula(`${colLet}${footerRow}`, 29, `SUM(${colLet}${startRow}:${colLet}${lastDataRow})`);
     } else {
       footerCells += cellEmpty(`${colLet}${footerRow}`, 29);
     }
   });
-  footerCells += cellEmpty(`M${footerRow}`, 29);
-  footerCells += cellEmpty(`N${footerRow}`, 29);
+  footerCells += cellEmpty(`O${footerRow}`, 29);
+  footerCells += cellEmpty(`P${footerRow}`, 29);
   rowsXml.push(`<row r="${footerRow}" ht="26" customHeight="1">${footerCells}</row>`);
 
   let mergeCellsXml = '';

@@ -60,6 +60,9 @@ type WorkDay = {
   overtime_request_ids: string[];
   late_minutes: number;
   early_leave_minutes: number;
+  late_checkin_minutes: number;
+  is_late_checkin: boolean;
+  required_checkin_time: string | null;
   payable_minutes: number;
   workday_credit: number;
   checkin_at: string | null;
@@ -129,6 +132,22 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     overtimeMinutes = positiveMinutes(approvedOvertime.minutes);
   }
 
+  // ponytail: Mốc yêu cầu check-in vào ca (mặc định ít nhất 5 phút trước giờ vào ca)
+  // Ví dụ: Ca 07:30 yêu cầu 07:25 (07:26 là trễ), Ca 08:00 yêu cầu 07:55, Ca 10:00 yêu cầu 09:55
+  const checkinAdvanceMinutes = shift?.checkin_advance_minutes != null ? positiveMinutes(shift.checkin_advance_minutes) : 5;
+  const checkinRequiredMinute = shift ? (start - checkinAdvanceMinutes) : null;
+  let lateCheckinMinutes = 0;
+  let isLateCheckin = false;
+  if (checkinMinute !== null && checkinRequiredMinute !== null) {
+    if (checkinMinute > checkinRequiredMinute) {
+      lateCheckinMinutes = checkinMinute - checkinRequiredMinute;
+      isLateCheckin = true;
+    }
+  }
+  const requiredCheckinTime = checkinRequiredMinute !== null
+    ? `${String(Math.floor(checkinRequiredMinute / 60)).padStart(2, '0')}:${String(checkinRequiredMinute % 60).padStart(2, '0')}`
+    : null;
+
   const payableMinutes = regularMinutes + overtimeMinutes;
   return {
     id: `work:${employeeCode}:${workDate}`,
@@ -145,6 +164,9 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
     overtime_request_ids: approvedOvertime.ids,
     late_minutes: lateMinutes,
     early_leave_minutes: earlyLeaveMinutes,
+    late_checkin_minutes: lateCheckinMinutes,
+    is_late_checkin: isLateCheckin,
+    required_checkin_time: requiredCheckinTime,
     payable_minutes: payableMinutes,
     workday_credit: scheduledMinutes ? Number(Math.min(1, regularMinutes / scheduledMinutes).toFixed(3)) : 0,
     checkin_at: checkin ? String(checkin.recorded_at) : null,
@@ -470,9 +492,11 @@ export class AttendanceWorkController {
       overtimeMinutes: sum.overtimeMinutes + day.overtime_minutes,
       lateMinutes: sum.lateMinutes + day.late_minutes,
       earlyLeaveMinutes: sum.earlyLeaveMinutes + day.early_leave_minutes,
+      lateCheckinCount: sum.lateCheckinCount + (day.is_late_checkin ? 1 : 0),
+      lateCheckinMinutes: sum.lateCheckinMinutes + (day.late_checkin_minutes || 0),
       payableMinutes: sum.payableMinutes + day.payable_minutes,
       incompleteDays: sum.incompleteDays + (['complete', 'in_progress'].includes(day.status) ? 0 : 1),
-    }), { workdays: 0, regularMinutes: 0, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0, payableMinutes: 0, incompleteDays: 0 });
+    }), { workdays: 0, regularMinutes: 0, overtimeMinutes: 0, lateMinutes: 0, earlyLeaveMinutes: 0, lateCheckinCount: 0, lateCheckinMinutes: 0, payableMinutes: 0, incompleteDays: 0 });
 
     return { month: bounds.month, employeeCode, source: 'postgresql-vps', formulaVersion: '2026-09-v1', totals: { ...totals, workdays: Number(totals.workdays.toFixed(3)) }, days };
   }

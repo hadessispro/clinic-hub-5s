@@ -11,19 +11,19 @@ export const DEPARTMENTS = [
 
 /* ── Shifts ── */
 export const SHIFTS = [
-  { id: 'clinic-0800', group: 'Văn phòng, Marketing, LVT', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in khi có mặt tại phòng khám lúc 08:00' },
-  { id: 'front-office', group: 'Lễ tân, Phụ tá', name: 'Ca hành chính', start: '07:30', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'front-full', group: 'Lễ tân, Phụ tá', name: 'Ca full', start: '07:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'front-afternoon', group: 'Lễ tân, Phụ tá', name: 'Ca chiều', start: '09:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'front-morning', group: 'Lễ tân, Phụ tá', name: 'Ca sáng', start: '07:30', end: '18:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-office', group: 'Bác sĩ', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-morning', group: 'Bác sĩ', name: 'Ca sáng', start: '08:00', end: '18:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-afternoon', group: 'Bác sĩ', name: 'Ca chiều', start: '10:00', end: '20:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'doctor-full', group: 'Bác sĩ', name: 'Ca full', start: '08:00', end: '20:00', breakText: 'Nghỉ 60 phút', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'security-weekday', group: 'Bảo vệ', name: 'Ngày thường', start: '07:00', end: '20:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'security-sunday', group: 'Bảo vệ', name: 'Chủ nhật', start: '07:00', end: '17:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'cleaning-weekday', group: 'Tạp vụ', name: 'Ngày thường', start: '06:00', end: '16:00', breakText: 'Nghỉ trưa 11h-12h', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
-  { id: 'cleaning-sunday', group: 'Tạp vụ', name: 'Chủ nhật', start: '06:00', end: '15:00', breakText: 'Nghỉ trưa 11h-12h', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút' },
+  { id: 'clinic-0800', group: 'Văn phòng, Marketing, LVT', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:55)' },
+  { id: 'front-office', group: 'Lễ tân, Phụ tá', name: 'Ca hành chính', start: '07:30', end: '17:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:25)' },
+  { id: 'front-full', group: 'Lễ tân, Phụ tá', name: 'Ca full', start: '07:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:25)' },
+  { id: 'front-afternoon', group: 'Lễ tân, Phụ tá', name: 'Ca chiều', start: '09:30', end: '20:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 09:25)' },
+  { id: 'front-morning', group: 'Lễ tân, Phụ tá', name: 'Ca sáng', start: '07:30', end: '18:00', breakText: 'Nghỉ trưa 1 tiếng', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:25)' },
+  { id: 'doctor-office', group: 'Bác sĩ', name: 'Ca hành chính', start: '08:00', end: '17:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:55)' },
+  { id: 'doctor-morning', group: 'Bác sĩ', name: 'Ca sáng', start: '08:00', end: '18:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:55)' },
+  { id: 'doctor-afternoon', group: 'Bác sĩ', name: 'Ca chiều', start: '10:00', end: '20:00', breakText: 'Nghỉ 1 giờ', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 09:55)' },
+  { id: 'doctor-full', group: 'Bác sĩ', name: 'Ca full', start: '08:00', end: '20:00', breakText: 'Nghỉ 60 phút', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 07:55)' },
+  { id: 'security-weekday', group: 'Bảo vệ', name: 'Ngày thường', start: '07:00', end: '20:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 06:55)' },
+  { id: 'security-sunday', group: 'Bảo vệ', name: 'Chủ nhật', start: '07:00', end: '17:00', breakText: 'Theo bàn giao ca', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 06:55)' },
+  { id: 'cleaning-weekday', group: 'Tạp vụ', name: 'Ngày thường', start: '06:00', end: '16:00', breakText: 'Nghỉ trưa 11h-12h', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 05:55)' },
+  { id: 'cleaning-sunday', group: 'Tạp vụ', name: 'Chủ nhật', start: '06:00', end: '15:00', breakText: 'Nghỉ trưa 11h-12h', checkinRule: 'Check-in trước giờ làm ít nhất 5 phút (trước 05:55)' },
 ];
 
 export function defaultShiftForDepartment(department) {

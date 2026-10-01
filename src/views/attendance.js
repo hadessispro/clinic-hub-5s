@@ -261,10 +261,10 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
         return `<tr class="attendance-data-row is-${escapeHTML(day.status || 'unknown')}">
           <td><strong>${new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN')}</strong>${branchBadge}</td>
           <td><strong>${escapeHTML(formatShiftDisplayName(day))}</strong></td>
-          <td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b><i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td>
+          <td><span class="attendance-time-pair"><b>${day.checkin_at ? formatTime(day.checkin_at) : '—'}</b>${day.late_checkin_minutes > 0 ? `<span class="pill" style="font-size:10px; background:#fee2e2; color:#991b1b; padding:1px 5px; border-radius:4px; margin-left:4px;" title="Trễ check-in mốc 5p trước ca (${day.required_checkin_time || 'trước 5p'}): ${day.late_checkin_minutes} phút">Trễ CI: ${day.late_checkin_minutes}p</span>` : ''}<i>→</i><b>${day.checkout_at ? formatTime(day.checkout_at) : '—'}</b></span></td>
           <td class="attendance-number is-primary">${minuteLabel(day.regular_minutes)}</td>
           <td class="attendance-number is-overtime">${minuteLabel(day.overtime_minutes)}</td>
-          <td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td>
+          <td><span class="attendance-deduction"><em title="Đi muộn sau giờ vào ca: ${day.late_minutes} phút">${minuteLabel(day.late_minutes)}</em><em title="Về sớm trước giờ hết ca: ${day.early_leave_minutes} phút">${minuteLabel(day.early_leave_minutes)}</em></span></td>
           <td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td>
           <td>${statusPill(label, tone)}</td>
           ${canEdit ? `<td>
@@ -1892,6 +1892,7 @@ async function exportWorkExcel() {
         'Giờ công thường (phút)': regMin,
         'Tăng ca đã duyệt (phút)': otMin,
         'Tổng giờ tính công (phút)': payMin,
+        'Trễ check-in (phút)': Number(day.late_checkin_minutes || 0),
         'Đi muộn (phút)': Number(day.late_minutes || 0),
         'Về sớm (phút)': Number(day.early_leave_minutes || 0),
         'Ngày công': Number(day.workday_credit || 0),
@@ -2140,6 +2141,7 @@ async function executeCompanySplitExport() {
           'Giờ công thường (giờ)': Number((regMin / 60).toFixed(2)),
           'Tăng ca duyệt (giờ)': Number((otMin / 60).toFixed(2)),
           'Tổng giờ tính công (giờ)': Number((payMin / 60).toFixed(2)),
+          'Trễ check-in (phút)': Number(day.late_checkin_minutes || 0),
           'Đi muộn (phút)': Number(day.late_minutes || 0),
           'Về sớm (phút)': Number(day.early_leave_minutes || 0),
           'Giờ công thường (phút)': regMin,

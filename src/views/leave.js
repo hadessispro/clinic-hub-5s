@@ -7,7 +7,8 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { triggerArchive2Months } from '../services/archive-sync.js';
-import { exportLeaveRequestsWorkbook } from '../services/leave-export.js';
+import { exportLeaveRequestsWorkbook, computeLateCheckinList } from '../services/leave-export.js';
+import { dataClient } from '../data-client.js';
 
 let cachedEmployees = [];
 let cachedRequests = [];
@@ -945,7 +946,7 @@ export function initView() {
       showToast('Không có đơn nào theo bộ lọc để xuất.', true);
       return;
     }
-    showToast(`Đang khởi tạo xuất Excel có màu sắc cho ${filtered.length} đơn...`, false, 2500);
+    showToast(`Đang khởi tạo xuất Excel có màu sắc (kèm danh sách Check-in vào ca trễ)...`, false, 2500);
     try {
       const filterParts = [];
       if (requestTypeFilter !== 'all') filterParts.push(`Loại: ${requestTypeFilter}`);
@@ -958,13 +959,29 @@ export function initView() {
       const dateSlug = new Date().toISOString().slice(0, 10);
       const fileName = `Danh_Sach_Don_Tu_Tang_Ca_5S_${dateSlug}.xlsx`;
 
+      // Tải danh sách check-in để đối soát các lượt check-in vào ca trễ (mốc yêu cầu trước ca 5 phút)
+      let lateCheckinRows = [];
+      try {
+        const { data: attData } = await dataClient
+          .from('attendance_records')
+          .select('*')
+          .eq('record_type', 'checkin');
+
+        if (Array.isArray(attData) && attData.length) {
+          lateCheckinRows = computeLateCheckinList(attData, cachedEmployees);
+        }
+      } catch (attErr) {
+        console.warn('[Leave Export] Lỗi nhẹ khi lấy dữ liệu check-in trễ:', attErr);
+      }
+
       await exportLeaveRequestsWorkbook({
         requests: filtered,
         employees: cachedEmployees,
+        lateCheckins: lateCheckinRows,
         filterSummary,
         filename: fileName,
       });
-      showToast(`Đã xuất thành công ${filtered.length} đơn từ & tăng ca ra file Excel có màu sắc trực quan!`);
+      showToast(`Đã xuất thành công ${filtered.length} đơn từ & ${lateCheckinRows.length} lượt check-in trễ ra file Excel 5S!`);
     } catch (err) {
       console.error('[Leave Export] Lỗi xuất file Excel:', err);
       showToast('Lỗi xuất file Excel: ' + (err.message || 'Không xác định'), true);

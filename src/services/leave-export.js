@@ -270,7 +270,7 @@ function getTypeStyleId(type) {
 function getStatusStyleId(status) {
   if (status === 'approved') return 10;
   if (status === 'pending') return 11;
-  if (status === 'rejected') return 12;
+  if (status === 'rejected' || status === 'late' || String(status).toLowerCase().includes('trễ')) return 12;
   return 5;
 }
 
@@ -278,6 +278,7 @@ function getStatusLabel(status) {
   if (status === 'approved') return 'ĐÃ DUYỆT';
   if (status === 'pending') return 'CHỜ DUYỆT';
   if (status === 'rejected') return 'TỪ CHỐI';
+  if (status === 'late' || String(status).toLowerCase().includes('trễ')) return 'TRỄ CHECK-IN';
   return status || '—';
 }
 
@@ -437,11 +438,124 @@ function buildGenericSheetXml({
 }
 
 /**
+ * Chuẩn hoá và tính toán danh sách nhân sự check-in vào ca trễ
+ * Dựa trên quy định 5S: Check-in trước giờ vào ca ít nhất 5 phút.
+ * Ví dụ: Ca 07:30 yêu cầu 07:25 (07:26 là trễ), Ca 08:00 yêu cầu 07:55, Ca 10:00 yêu cầu 09:55
+ */
+export function computeLateCheckinList(records = [], employees = []) {
+  const empMap = new Map((employees || []).map((e) => [String(e.id || e.code || '').toLowerCase(), e]));
+
+  const shiftInfoMap = {
+    'front-office': { name: 'Ca hành chính', start: '07:30', startMin: 450, advance: 5 },
+    'front-morning': { name: 'Ca sáng', start: '07:30', startMin: 450, advance: 5 },
+    'front-full': { name: 'Ca full', start: '07:30', startMin: 450, advance: 5 },
+    'front-afternoon': { name: 'Ca chiều', start: '09:30', startMin: 570, advance: 5 },
+    'doctor-office': { name: 'Ca hành chính', start: '08:00', startMin: 480, advance: 5 },
+    'doctor-morning': { name: 'Ca sáng', start: '08:00', startMin: 480, advance: 5 },
+    'doctor-afternoon': { name: 'Ca chiều', start: '10:00', startMin: 600, advance: 5 },
+    'doctor-full': { name: 'Ca full', start: '08:00', startMin: 480, advance: 5 },
+    'clinic-0800': { name: 'Ca hành chính (08:00 - 17:00)', start: '08:00', startMin: 480, advance: 5 },
+    'security-weekday': { name: 'Ngày thường', start: '07:00', startMin: 420, advance: 5 },
+    'security-sunday': { name: 'Chủ nhật', start: '07:00', startMin: 420, advance: 5 },
+    'cleaning-weekday': { name: 'Ngày thường', start: '06:00', startMin: 360, advance: 5 },
+    'cleaning-sunday': { name: 'Chủ nhật', start: '06:00', startMin: 360, advance: 5 },
+  };
+
+  const results = [];
+
+  for (const rec of (records || [])) {
+    if (rec.record_type && rec.record_type !== 'checkin') continue;
+    const recordedAt = rec.recorded_at || rec.time;
+    if (!recordedAt) continue;
+
+    const d = new Date(recordedAt);
+    if (isNaN(d.getTime())) continue;
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(d);
+
+    const get = (type) => parts.find((p) => p.type === type)?.value || '00';
+    const hour = Number(get('hour'));
+    const min = Number(get('minute'));
+    const checkinMinuteOfDay = hour * 60 + min;
+    const actualCheckinStr = `${get('hour')}:${get('minute')}:${get('second')}`;
+    const workDate = rec.work_date || rec.date || `${get('year')}-${get('month')}-${get('day')}`;
+
+    const empCode = String(rec.employee_code || rec.employee || '').toUpperCase().trim();
+    const emp = empMap.get(empCode.toLowerCase()) || { id: empCode, name: empCode };
+
+    const shiftCode = String(rec.shift_code || rec.shift || 'clinic-0800').toLowerCase().trim();
+    let shift = shiftInfoMap[shiftCode];
+    if (!shift) {
+      if (shiftCode.includes('0730') || shiftCode.includes('front')) {
+        shift = shiftInfoMap['front-office'];
+      } else if (shiftCode.includes('1000') || shiftCode.includes('doctor-afternoon')) {
+        shift = shiftInfoMap['doctor-afternoon'];
+      } else if (shiftCode.includes('afternoon') || shiftCode.includes('0930')) {
+        shift = shiftInfoMap['front-afternoon'];
+      } else if (shiftCode.includes('0700') || shiftCode.includes('security')) {
+        shift = shiftInfoMap['security-weekday'];
+      } else if (shiftCode.includes('0600') || shiftCode.includes('cleaning')) {
+        shift = shiftInfoMap['cleaning-weekday'];
+      } else {
+        shift = shiftInfoMap['clinic-0800'];
+      }
+    }
+
+    const requiredCheckinMin = shift.startMin - (shift.advance || 5);
+    const reqH = Math.floor(requiredCheckinMin / 60);
+    const reqM = requiredCheckinMin % 60;
+    const requiredCheckinStr = `${String(reqH).padStart(2, '0')}:${String(reqM).padStart(2, '0')} (Trước ca 5p)`;
+
+    if (checkinMinuteOfDay > requiredCheckinMin) {
+      const lateMinutes = checkinMinuteOfDay - requiredCheckinMin;
+      const branchId = rec.branch_id || emp.branchId || '';
+      const branchName = getBranchLabel(branchId);
+
+      results.push({
+        empCode: emp.id || empCode,
+        empName: emp.name || empCode,
+        deptName: departmentName(emp.department),
+        branchName,
+        empRole: emp.role || 'Nhân sự',
+        workDate: formatVnDate(workDate),
+        rawDate: workDate,
+        shiftName: shift.name,
+        shiftStart: shift.start,
+        requiredCheckin: requiredCheckinStr,
+        actualCheckin: actualCheckinStr,
+        lateMinutes,
+        status: 'late',
+        statusText: 'Trễ check-in',
+        note: rec.note || (rec.device_id ? `Thiết bị: ${rec.device_id.slice(0, 8)}...` : 'Hệ thống GPS'),
+      });
+    }
+  }
+
+  results.sort((a, b) => {
+    const dComp = String(b.rawDate).localeCompare(String(a.rawDate));
+    if (dComp !== 0) return dComp;
+    return String(a.empCode).localeCompare(String(b.empCode));
+  });
+
+  return results.map((r, idx) => ({ ...r, stt: idx + 1 }));
+}
+
+/**
  * Trình xuất chính Workbook Danh sách đơn từ & Tăng ca
  */
 export async function exportLeaveRequestsWorkbook({
   requests = [],
   employees = [],
+  lateCheckins = [],
   filterSummary = '',
   filename = '',
 }) {
@@ -642,6 +756,45 @@ export async function exportLeaveRequestsWorkbook({
     },
   });
 
+  // 5. Sheet 5: Check-in Vào Ca Trễ (Mốc yêu cầu 5 phút trước giờ vào ca)
+  let lateCheckinRows = Array.isArray(lateCheckins) ? [...lateCheckins] : [];
+  if (lateCheckinRows.length && (!lateCheckinRows[0].requiredCheckin || !lateCheckinRows[0].stt)) {
+    lateCheckinRows = computeLateCheckinList(lateCheckinRows, employees);
+  }
+
+  const colsSheet5 = [
+    { key: 'stt', label: 'STT', width: 6, type: 'center' },
+    { key: 'empCode', label: 'MÃ NV', width: 14, type: 'center_bold' },
+    { key: 'empName', label: 'HỌ VÀ TÊN', width: 25, type: 'bold' },
+    { key: 'deptName', label: 'PHÒNG BAN', width: 18, type: 'text' },
+    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 18, type: 'text' },
+    { key: 'empRole', label: 'CHỨC DANH', width: 20, type: 'text' },
+    { key: 'workDate', label: 'NGÀY LÀM VIỆC', width: 14, type: 'center' },
+    { key: 'shiftName', label: 'CA LÀM VIỆC', width: 20, type: 'text' },
+    { key: 'shiftStart', label: 'GIỜ VÀO CA', width: 14, type: 'center' },
+    { key: 'requiredCheckin', label: 'MỐC YÊU CẦU CHECK-IN', width: 24, type: 'center_bold' },
+    { key: 'actualCheckin', label: 'GIỜ CHECK-IN THỰC TẾ', width: 24, type: 'center_bold' },
+    { key: 'lateMinutes', label: 'TRỄ CHECK-IN (PHÚT)', width: 22, type: 'number' },
+    { key: 'statusText', label: 'TRẠNG THÁI', width: 18, type: 'status' },
+    { key: 'note', label: 'GHI CHÚ / THIẾT BỊ', width: 32, type: 'text' },
+  ];
+
+  const totalLateMinSheet5 = lateCheckinRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
+
+  const sheet5Xml = buildGenericSheetXml({
+    sheetTitle: 'DANH SÁCH NHÂN SỰ CHECK-IN VÀO CA TRỄ (MỐC YÊU CẦU 5 PHÚT TRƯỚC CA) — NHA KHOA 5S',
+    metaSubtitle: `${metaCommon}  |  Tổng số: ${lateCheckinRows.length} lượt check-in trễ  |  Tổng phút trễ: ${totalLateMinSheet5} phút`,
+    columns: colsSheet5,
+    dataRows: lateCheckinRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG SỐ PHÚT TRỄ CHECK-IN:',
+      labelColEndIndex: 10,
+      sumColumns: {
+        lateMinutes: { type: 'number', cachedTotal: totalLateMinSheet5 },
+      },
+    },
+  });
+
   // Package OpenXML files
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -653,6 +806,7 @@ export async function exportLeaveRequestsWorkbook({
   <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet5.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 </Types>`;
 
   const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -668,6 +822,7 @@ export async function exportLeaveRequestsWorkbook({
     <sheet name="Đơn Tăng ca" sheetId="2" r:id="rId2"/>
     <sheet name="Đơn Nghỉ phép" sheetId="3" r:id="rId3"/>
     <sheet name="Ứng lương &amp; Khác" sheetId="4" r:id="rId4"/>
+    <sheet name="Check-in Vào ca trễ" sheetId="5" r:id="rId5"/>
   </sheets>
 </workbook>`;
 
@@ -678,6 +833,7 @@ export async function exportLeaveRequestsWorkbook({
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
   <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/>
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet5.xml"/>
 </Relationships>`;
 
   const stylesXml = buildLeaveStylesXml();
@@ -692,6 +848,7 @@ export async function exportLeaveRequestsWorkbook({
     { name: 'xl/worksheets/sheet2.xml', data: sheet2Xml },
     { name: 'xl/worksheets/sheet3.xml', data: sheet3Xml },
     { name: 'xl/worksheets/sheet4.xml', data: sheet4Xml },
+    { name: 'xl/worksheets/sheet5.xml', data: sheet5Xml },
   ];
 
   const zipBytes = createZipArchive(files);
