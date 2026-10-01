@@ -514,6 +514,8 @@ function renderCheckinDialog(employee, shift, settings, allowedShifts, assignedS
 }
 
 function employeeBranchName(employee) {
+  if (employee?.branchId === 'marketing') return 'Khối Marketing';
+  if (employee?.branchId === 'all') return 'Toàn hệ thống';
   return BRANCHES[employee?.branchId]?.shortName || 'Chưa gán chi nhánh';
 }
 
@@ -556,11 +558,13 @@ function configuredShiftsForEmployee(employee, configuration) {
 }
 
 function renderAdminEmployeePicker(employees, selectedEmployee) {
-  const branchOrder = ['le-van-tho', 'pham-van-chieu', 'unknown'];
+  const branchOrder = ['pham-van-chieu', 'le-van-tho', 'marketing', 'unknown'];
   const groups = new Map(branchOrder.map((branch) => [branch, []]));
   [...employees].sort((left, right) => String(left.name).localeCompare(String(right.name), 'vi'))
     .forEach((employee) => {
-      const branch = BRANCHES[employee.branchId] ? employee.branchId : 'unknown';
+      const branch = employee.branchId === 'marketing'
+        ? 'marketing'
+        : (BRANCHES[employee.branchId] ? employee.branchId : 'unknown');
       groups.get(branch).push(employee);
     });
   return `<div class="attendance-employee-combobox" id="attendanceEmployeeCombobox">
@@ -577,7 +581,9 @@ function renderAdminEmployeePicker(employees, selectedEmployee) {
         ${branchOrder.map((branch) => {
           const rows = groups.get(branch);
           if (!rows.length) return '';
-          const title = branch === 'unknown' ? 'Chưa xác định chi nhánh' : BRANCHES[branch].shortName;
+          const title = branch === 'marketing'
+            ? 'Khối Marketing / Telesale'
+            : (branch === 'unknown' ? 'Chưa xác định chi nhánh' : BRANCHES[branch].shortName);
           return `<section class="attendance-employee-group" data-employee-group><header><span>${escapeHTML(title)}</span><b>${rows.length}</b></header>${rows.map((employee) => `<button type="button" role="option" data-action="select-attendance-employee" data-employee="${escapeHTML(employee.id)}" data-employee-search="${escapeHTML(normalizeText(`${employee.name} ${employee.id} ${employee.role} ${departmentName(employee.department)} ${employeeBranchName(employee)}`))}"><span class="attendance-employee-avatar">${escapeHTML(employeeInitials(employee.name))}</span><span><strong>${escapeHTML(employee.name)}</strong><small>${escapeHTML(employee.id)} · ${escapeHTML(employee.role || departmentName(employee.department))}</small></span><em>${escapeHTML(departmentName(employee.department))}</em></button>`).join('')}</section>`;
         }).join('')}
         <p class="attendance-employee-no-result" hidden>Không tìm thấy nhân sự phù hợp.</p>
@@ -937,7 +943,7 @@ function renderOvertimeAdjustmentDialog(employee) {
 }
 
 export async function renderView(state) {
-  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile) || (state.employeeCode && state.employeeCode.startsWith('PG'))) {
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile)) {
     return renderPgAttendance();
   }
   if (clockTimer) clearTimeout(clockTimer);
@@ -2384,7 +2390,7 @@ function closeScheduleModal() {
 
 export function initView() {
   const state = store.getState();
-  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile) || (state.employeeCode && state.employeeCode.startsWith('PG'))) {
+  if (state.profile?.role === 'pg_staff' || state.role === 'pg_staff' || isPgEmployee(state.profile)) {
     initPgAttendance();
     return;
   }

@@ -216,13 +216,23 @@ export function uniformPackageFor(department, roleTitle) {
  */
 export function isPgEmployee(emp) {
   if (!emp) return false;
-  const code = String(emp.id || emp.code || emp.employee_number || emp.employeeCode || '').toUpperCase();
   const role = String(emp.role || emp.title || '').toLowerCase();
+  // Tuyệt đối không nhầm Telesale, CSKH, Tư vấn, Editor, Thiết kế, Quản lý thành PG thực địa
+  if (
+    role.includes('telesale') ||
+    role.includes('tư vấn') ||
+    role.includes('cskh') ||
+    role.includes('editor') ||
+    role.includes('thiết kế') ||
+    role.includes('leader') ||
+    role.includes('trưởng') ||
+    role.includes('quản trị')
+  ) {
+    return false;
+  }
   const dept = String(emp.department || '').toLowerCase();
+  // Chỉ nhân sự thực sự thuộc khối chạy sự kiện PG thực địa (role pg_staff hoặc title Nhân viên PG)
   return (
-    code.startsWith('PG-') ||
-    code.startsWith('PG') ||
-    code.includes('-PG-') ||
     role === 'pg_staff' ||
     role.includes('nhân viên pg') ||
     role === 'pg' ||

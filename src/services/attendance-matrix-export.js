@@ -778,13 +778,10 @@ export function generateAttendanceMatrixXlsx({
   const clinicEmployees = employees.filter((e) => !isPgEmployee(e));
 
   // Phân chia nhân viên theo chi nhánh
-  // LVT: 'le-van-tho', PVC: 'pham-van-chieu'
+  // LVT: 'le-van-tho', PVC: 'pham-van-chieu' và các khối văn phòng / Telesale / Marketing
   const lvtEmployees = clinicEmployees.filter((e) => e.branchId === 'le-van-tho');
-  const pvcEmployees = clinicEmployees.filter((e) => e.branchId === 'pham-van-chieu');
-  const otherEmployees = clinicEmployees.filter((e) => e.branchId !== 'le-van-tho' && e.branchId !== 'pham-van-chieu');
-
-  // Nếu có nhân viên chưa gán, bổ sung vào LVT hoặc PVC tùy theo ngữ cảnh, hoặc giữ nguyên danh sách đầy đủ
-  const allEmployees = [...lvtEmployees, ...pvcEmployees, ...otherEmployees];
+  const pvcEmployees = clinicEmployees.filter((e) => e.branchId !== 'le-van-tho');
+  const allEmployees = [...lvtEmployees, ...pvcEmployees];
 
   // 1. Sheet Chấm công - LVT
   const sheet1Xml = buildMatrixWorksheetXml({
@@ -793,7 +790,7 @@ export function generateAttendanceMatrixXlsx({
     branchName: 'Lê Văn Thọ',
     monthStr: month,
     monthInfo,
-    employees: lvtEmployees.length ? lvtEmployees : otherEmployees,
+    employees: lvtEmployees,
     workSummaryMap,
   });
 
@@ -815,7 +812,7 @@ export function generateAttendanceMatrixXlsx({
     branchName: 'Lê Văn Thọ',
     monthStr: month,
     monthInfo,
-    employees: lvtEmployees.length ? lvtEmployees : otherEmployees,
+    employees: lvtEmployees,
     workSummaryMap,
   });
 
