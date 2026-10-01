@@ -1796,6 +1796,9 @@ async function exportWorkExcel() {
   try {
     const data = rows.map((day) => {
       const [status] = workDayStatus(day);
+      const regMin = Number(day.regular_minutes || 0);
+      const otMin = Number(day.overtime_minutes || 0);
+      const payMin = Number(day.payable_minutes || 0);
       return {
         'Ngày': new Date(`${day.work_date}T00:00:00`).toLocaleDateString('vi-VN'),
         'Chi nhánh': (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
@@ -1804,9 +1807,12 @@ async function exportWorkExcel() {
         'Ca làm việc': formatShiftDisplayName(day),
         'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
         'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
-        'Giờ công thường (phút)': Number(day.regular_minutes || 0),
-        'Tăng ca đã duyệt (phút)': Number(day.overtime_minutes || 0),
-        'Tổng giờ tính công (phút)': Number(day.payable_minutes || 0),
+        'Giờ công thường (giờ)': Number((regMin / 60).toFixed(2)),
+        'Tăng ca duyệt (giờ)': Number((otMin / 60).toFixed(2)),
+        'Tổng giờ tính công (giờ)': Number((payMin / 60).toFixed(2)),
+        'Giờ công thường (phút)': regMin,
+        'Tăng ca đã duyệt (phút)': otMin,
+        'Tổng giờ tính công (phút)': payMin,
         'Đi muộn (phút)': Number(day.late_minutes || 0),
         'Về sớm (phút)': Number(day.early_leave_minutes || 0),
         'Ngày công': Number(day.workday_credit || 0),
@@ -2015,8 +2021,10 @@ async function executeCompanySplitExport() {
         'Phòng ban': departmentName(emp.department),
         'Chức danh': emp.role || '',
         'Chi nhánh': BRANCHES[emp.branchId]?.name || emp.branchId || '',
+        'Giờ công thường (giờ)': Number(((totals.regularMinutes || 0) / 60).toFixed(2)),
+        'Tăng ca duyệt (giờ)': Number(((totals.overtimeMinutes || 0) / 60).toFixed(2)),
+        'Tổng giờ tính công (giờ)': Number(((totals.payableMinutes || 0) / 60).toFixed(2)),
         'Tổng ngày công': Number(totals.workdays || 0),
-        'Tổng giờ công': Number(((totals.payableMinutes || 0) / 60).toFixed(2)),
         'Công thường (phút)': Number(totals.regularMinutes || 0),
         'Tăng ca duyệt (phút)': Number(totals.overtimeMinutes || 0),
         'Tổng phút tính công': Number(totals.payableMinutes || 0),
@@ -2035,6 +2043,10 @@ async function executeCompanySplitExport() {
           ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
           : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định');
 
+        const regMin = Number(day.regular_minutes || 0);
+        const otMin = Number(day.overtime_minutes || 0);
+        const payMin = Number(day.payable_minutes || 0);
+
         return {
           'STT': idx + 1,
           'Ngày': dateObj.toLocaleDateString('vi-VN'),
@@ -2043,12 +2055,14 @@ async function executeCompanySplitExport() {
           'Ca làm việc': formatShiftDisplayName(day),
           'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
           'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
+          'Giờ công thường (giờ)': Number((regMin / 60).toFixed(2)),
+          'Tăng ca duyệt (giờ)': Number((otMin / 60).toFixed(2)),
+          'Tổng giờ tính công (giờ)': Number((payMin / 60).toFixed(2)),
           'Đi muộn (phút)': Number(day.late_minutes || 0),
           'Về sớm (phút)': Number(day.early_leave_minutes || 0),
-          'Giờ công thường (phút)': Number(day.regular_minutes || 0),
-          'Tăng ca duyệt (phút)': Number(day.overtime_minutes || 0),
-          'Tổng phút tính công': Number(day.payable_minutes || 0),
-          'Tổng giờ công': Number(((day.payable_minutes || 0) / 60).toFixed(2)),
+          'Giờ công thường (phút)': regMin,
+          'Tăng ca duyệt (phút)': otMin,
+          'Tổng phút tính công': payMin,
           'Ngày công': Number(day.workday_credit || 0),
           'Trạng thái đối chiếu': status,
           'Ghi chú': day.note || day.attendance_anomaly_reason || '',

@@ -37,7 +37,7 @@ export async function createStyledWorksheet(XLSX, data, options = {}) {
     // Nhận diện kiểu cột từ tiêu đề để định dạng tự động
     const headerLower = headerText.toLowerCase();
     const isPhoneOrCode = /điện thoại|sđt|phone|mã|stk|tài khoản|cccd|cmnd|id/i.test(headerLower);
-    const isCurrencyOrNumber = /lương|tiền|giá|chi phí|thực lãnh|tạm ứng|phí|hoa hồng|thành tiền|đơn giá|phút|số lượng|tồn|định mức|công/i.test(headerLower);
+    const isCurrencyOrNumber = /lương|tiền|giá|chi phí|thực lãnh|tạm ứng|phí|hoa hồng|thành tiền|đơn giá|phút|số lượng|tồn|định mức|công|giờ|tăng ca/i.test(headerLower);
 
     // Quét các dòng dữ liệu để đo độ rộng và format cell
     const maxScanRow = Math.min(range.e.r, range.s.r + 300);
@@ -56,7 +56,7 @@ export async function createStyledWorksheet(XLSX, data, options = {}) {
         cell.v = String(cell.v);
         cell.z = '@';
       } else if (isCurrencyOrNumber && typeof cell.v === 'number') {
-        cell.z = '#,##0';
+        cell.z = Number.isInteger(cell.v) ? '#,##0' : '#,##0.##';
       }
 
       // Ghi đè format nếu có cấu hình riêng

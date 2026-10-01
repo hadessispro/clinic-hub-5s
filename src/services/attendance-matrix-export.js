@@ -98,7 +98,7 @@ function buildStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <numFmts count="3">
-    <numFmt numFmtId="164" formatCode="0.0"/>
+    <numFmt numFmtId="164" formatCode="0.##"/>
     <numFmt numFmtId="165" formatCode="#,##0"/>
     <numFmt numFmtId="166" formatCode="@"/>
   </numFmts>
@@ -294,7 +294,8 @@ function buildMatrixWorksheetXml({
         { label: 'Ghi chú', width: 20, isNum: false },
       ]
     : [
-        { label: 'Tổng ngày công', width: 14, isNum: true, isGrand: true },
+        { label: 'Tổng giờ công (h)', width: 16, isNum: true, isGrand: true },
+        { label: 'Quy đổi ngày công (h/8)', width: 16, isNum: true },
         { label: 'Công chuẩn', width: 12, isNum: true },
         { label: 'Đi muộn (phút)', width: 13, isNum: true, isInt: true },
         { label: 'Về sớm (phút)', width: 13, isNum: true, isInt: true },
@@ -426,10 +427,10 @@ function buildMatrixWorksheetXml({
       const dayRec = dayMap.get(d.dateIso);
 
       if (isOvertime) {
-        // Bảng Tăng Ca: Hiển thị số giờ tăng ca (0.7, 1.5, 2.0...) nếu có
+        // Bảng Tăng Ca: Hiển thị số giờ tăng ca dạng số thuần (0.75, 1.5, 2...) để kế toán tính toán
         const otMin = Number(dayRec?.overtime_minutes || 0);
         if (otMin > 0) {
-          const otHours = Number((otMin / 60).toFixed(1));
+          const otHours = Number((otMin / 60).toFixed(2));
           const otStyle = d.isSunday ? 22 : 21;
           rowCells += cellNum(`${cLetter}${rNum}`, otStyle, otHours);
         } else {
@@ -438,17 +439,19 @@ function buildMatrixWorksheetXml({
           rowCells += cellEmpty(`${cLetter}${rNum}`, emptyStyle);
         }
       } else {
-        // Bảng Chấm Công:
+        // Bảng Chấm Công: Hiển thị số giờ làm việc thực tế (11, 9, 8, 9.35...) dạng số thuần
+        const regMin = Number(dayRec?.regular_minutes || 0);
         const credit = Number(dayRec?.workday_credit || 0);
         const shiftCode = String(dayRec?.shift_code || '').toUpperCase();
         const note = String(dayRec?.note || '').toLowerCase();
 
-        if (credit >= 0.9) {
-          // Công đủ (1 hoặc ca hoàn chỉnh)
-          rowCells += cellNum(`${cLetter}${rNum}`, 17, 1);
-        } else if (credit > 0) {
-          // Nửa ngày công (0.5)
-          rowCells += cellNum(`${cLetter}${rNum}`, 18, credit);
+        // Tính giờ công làm việc thực tế (11 giờ -> 11, 9h21 -> 9.35)
+        const regHours = regMin > 0 ? Number((regMin / 60).toFixed(2)) : (credit > 0 ? Number((credit * 8).toFixed(2)) : 0);
+
+        if (regHours > 0) {
+          // Xuất số giờ làm thực tế dạng số (không xuất 1 công)
+          const cellStyle = credit >= 0.9 ? 17 : 18;
+          rowCells += cellNum(`${cLetter}${rNum}`, cellStyle, regHours);
         } else if (shiftCode === 'OFF' || note.includes('off') || note.includes('phép')) {
           // Nghỉ phép hoặc OFF
           rowCells += cellStr(`${cLetter}${rNum}`, 19, shiftCode === 'OFF' ? 'OFF' : 'P');
@@ -464,7 +467,7 @@ function buildMatrixWorksheetXml({
     if (isOvertime) {
       const sumRange = `${firstDayColLetter}${rNum}:${lastDayColLetter}${rNum}`;
       const totalOtMin = Number(totals.overtimeMinutes || 0);
-      const totalOtHours = Number((totalOtMin / 60).toFixed(1));
+      const totalOtHours = Number((totalOtMin / 60).toFixed(2));
       const convertedDays = Number((totalOtHours / 8).toFixed(2));
 
       // 1. Tổng giờ tăng ca (Formula =SUM)
@@ -484,33 +487,40 @@ function buildMatrixWorksheetXml({
       rowCells += cellEmpty(`${c4}${rNum}`, 25);
     } else {
       const sumRange = `${firstDayColLetter}${rNum}:${lastDayColLetter}${rNum}`;
+      const totalRegMin = Number(totals.regularMinutes || 0);
+      const totalRegHours = Number((totalRegMin / 60).toFixed(2));
       const totalWorkdays = Number(totals.workdays || 0);
+      const convertedDays = totalWorkdays > 0 ? totalWorkdays : Number((totalRegHours / 8).toFixed(2));
       const lateMin = Number(totals.lateMinutes || 0);
       const earlyMin = Number(totals.earlyLeaveMinutes || 0);
 
-      // 1. Tổng ngày công (=SUM(ngày 01..30))
+      // 1. Tổng giờ công (h) (=SUM(ngày 01..totalDays))
       const c1 = colLetter(lastDayColIdx + 1);
-      rowCells += cellFormula(`${c1}${rNum}`, 23, `SUM(${sumRange})`, totalWorkdays);
+      rowCells += cellFormula(`${c1}${rNum}`, 23, `SUM(${sumRange})`, totalRegHours);
 
-      // 2. Công chuẩn (chuẩn 26 ngày)
+      // 2. Quy đổi ngày công (=ROUND(c1/8, 2))
       const c2 = colLetter(lastDayColIdx + 2);
-      rowCells += cellNum(`${c2}${rNum}`, 23, 26);
+      rowCells += cellFormula(`${c2}${rNum}`, 23, `ROUND(${c1}${rNum}/8,2)`, convertedDays);
 
-      // 3. Đi muộn
+      // 3. Công chuẩn (chuẩn 26 ngày)
       const c3 = colLetter(lastDayColIdx + 3);
-      rowCells += cellNum(`${c3}${rNum}`, 24, lateMin);
+      rowCells += cellNum(`${c3}${rNum}`, 23, 26);
 
-      // 4. Về sớm
+      // 4. Đi muộn (phút)
       const c4 = colLetter(lastDayColIdx + 4);
-      rowCells += cellNum(`${c4}${rNum}`, 24, earlyMin);
+      rowCells += cellNum(`${c4}${rNum}`, 24, lateMin);
 
-      // 5. Nghỉ phép / OFF
+      // 5. Về sớm (phút)
       const c5 = colLetter(lastDayColIdx + 5);
-      rowCells += cellEmpty(`${c5}${rNum}`, 25);
+      rowCells += cellNum(`${c5}${rNum}`, 24, earlyMin);
 
-      // 6. Ghi chú
+      // 6. Nghỉ phép / OFF
       const c6 = colLetter(lastDayColIdx + 6);
       rowCells += cellEmpty(`${c6}${rNum}`, 25);
+
+      // 7. Ghi chú
+      const c7 = colLetter(lastDayColIdx + 7);
+      rowCells += cellEmpty(`${c7}${rNum}`, 25);
     }
 
     rowsXml.push(`<row r="${rNum}" ht="22" customHeight="1">${rowCells}</row>`);
@@ -597,8 +607,8 @@ function buildCompanySummarySheetXml({
     { label: 'Họ và tên', width: 26 },
     { label: 'Chi nhánh', width: 18 },
     { label: 'Chức vụ', width: 20 },
-    { label: 'Tổng ngày công', width: 15 },
     { label: 'Tổng giờ công (h)', width: 16 },
+    { label: 'Quy đổi công (ngày)', width: 15 },
     { label: 'Tăng ca (h)', width: 14 },
     { label: 'Tăng ca (phút)', width: 14 },
     { label: 'Đi muộn (phút)', width: 14 },
@@ -662,11 +672,11 @@ function buildCompanySummarySheetXml({
     const totals = summary.totals || {};
     const branchName = BRANCHES[emp.branchId]?.name || emp.branchId || 'Chưa gán';
 
+    const regMin = Number(totals.regularMinutes || 0);
+    const regHours = Number((regMin / 60).toFixed(2));
     const workdays = Number(totals.workdays || 0);
-    const payableMin = Number(totals.payableMinutes || 0);
-    const totalHours = Number((payableMin / 60).toFixed(1));
     const otMin = Number(totals.overtimeMinutes || 0);
-    const otHours = Number((otMin / 60).toFixed(1));
+    const otHours = Number((otMin / 60).toFixed(2));
     const lateMin = Number(totals.lateMinutes || 0);
     const earlyMin = Number(totals.earlyLeaveMinutes || 0);
     const incompleteDays = Number(totals.incompleteDays || 0);
@@ -677,8 +687,8 @@ function buildCompanySummarySheetXml({
     rowCells += cellStr(`C${rNum}`, 12, emp.name);
     rowCells += cellStr(`D${rNum}`, 13, branchName);
     rowCells += cellStr(`E${rNum}`, 13, emp.role || '');
-    rowCells += cellNum(`F${rNum}`, 23, workdays);
-    rowCells += cellNum(`G${rNum}`, 23, totalHours);
+    rowCells += cellNum(`F${rNum}`, 23, regHours);
+    rowCells += cellNum(`G${rNum}`, 23, workdays);
     rowCells += cellNum(`H${rNum}`, 21, otHours);
     rowCells += cellNum(`I${rNum}`, 24, otMin);
     rowCells += cellNum(`J${rNum}`, 24, lateMin);
