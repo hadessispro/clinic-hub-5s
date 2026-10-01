@@ -40,6 +40,7 @@ import {
   exportWorkbookToExcel,
   generateWorkbookBuffer,
 } from '../services/excel-export.js';
+import { exportAttendanceMatrixWorkbook } from '../services/attendance-matrix-export.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
@@ -667,9 +668,17 @@ function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
             <legend style="font-weight:700; font-size:0.8rem; color:#0f172a; padding:0 6px;">Phương thức xuất file</legend>
             <div style="display:flex; flex-direction:column; gap:12px;">
               <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-                <input type="radio" name="companySplitFormat" value="multi_sheet" checked style="margin-top:3px;">
+                <input type="radio" name="companySplitFormat" value="matrix_format" checked style="margin-top:3px;">
                 <div>
-                  <strong style="display:flex; align-items:center; gap:6px; color:#0f766e;"><i class="ri-file-excel-2-line"></i> Sổ cái Excel đa Sheet (Khuyên dùng)</strong>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#0f766e;"><i class="ri-table-fill"></i> Bảng Ma Trận 30 Ngày (Tách LVT &amp; PVC, Chấm Công &amp; Tăng Ca) (Mới - Khuyên dùng)</strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">Tự động phân tách 5 bảng tính có màu sắc trực quan: Chấm công LVT, Chấm công PVC, Tăng ca LVT, Tăng ca PVC và Tổng hợp 2 chi nhánh. Ô tăng ca hiển thị giờ chi tiết (0.7h, 1.5h...), ô công đủ/nửa công/nghỉ phép có màu riêng, cố định hàng cột, công thức =SUM chuẩn Excel.</span>
+                </div>
+              </label>
+
+              <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                <input type="radio" name="companySplitFormat" value="multi_sheet" style="margin-top:3px;">
+                <div>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#334155;"><i class="ri-file-excel-2-line"></i> Sổ cái Excel đa Sheet (Tách từng nhân sự)</strong>
                   <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">1 file Excel duy nhất gồm Sheet Tổng hợp toàn công ty + Từng Sheet riêng cho mỗi nhân sự. Mở file là bấm vào tên/mã của mình để tự kiểm tra đối chiếu.</span>
                 </div>
               </label>
@@ -1014,8 +1023,11 @@ export async function renderView(state) {
           <p>${canEditWorkday ? 'Tra cứu, đối chiếu và bổ sung công từ một bảng dữ liệu thống nhất.' : 'Theo dõi dữ liệu vào/ra thực tế và chi tiết ngày công của nhân sự.'}</p>
         </div>
         <div class="attendance-header-actions">
+          <button class="primary-button" type="button" data-action="export-matrix-attendance" style="background:#0f766e; border-color:#0f766e;" title="Xuất bảng công &amp; tăng ca ma trận 30 ngày tách riêng LVT &amp; PVC có định dạng màu sắc trực quan">
+            <i class="ri-table-fill"></i> Xuất Ma Trận LVT &amp; PVC (Có Màu)
+          </button>
           ${canEditWorkday ? `
-          <button class="primary-button" type="button" data-action="open-adjust-modal">
+          <button class="secondary-button" type="button" data-action="open-adjust-modal">
             <i class="ri-time-line"></i> Điều chỉnh công
           </button>
           <button class="secondary-button" type="button" data-action="open-schedule-modal">
@@ -1730,6 +1742,33 @@ function makeSafeSheetName(code, name, existingNames) {
   return unique;
 }
 
+async function exportAttendanceMatrixDirect() {
+  const month = attendanceWorkMonth || todayISO().slice(0, 7);
+  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active');
+  if (!employeesToExport.length) {
+    showToast('Không có danh sách nhân sự phù hợp để xuất.', true);
+    return;
+  }
+
+  showToast(`Đang khởi tạo xuất Bảng Ma Trận Công & Tăng Ca tháng ${month}...`, false, 3000);
+  try {
+    await exportAttendanceMatrixWorkbook({
+      month,
+      employees: employeesToExport,
+      fetchWorkSummaryFn: getAttendanceWorkSummary,
+      onProgress: (current, total, emp) => {
+        if (current === 1 || current % 5 === 0 || current === total) {
+          showToast(`Đang tổng hợp ma trận công: ${current}/${total} nhân sự...`, false, 2000);
+        }
+      },
+    });
+    showToast(`Đã xuất thành công Bảng Chấm Công & Tăng Ca ma trận 30 ngày (LVT & PVC) có định dạng màu sắc!`);
+  } catch (error) {
+    console.error('[Attendance] Lỗi xuất ma trận công:', error);
+    showToast('Lỗi xuất file ma trận: ' + (error.message || 'Không xác định'), true);
+  }
+}
+
 async function executeCompanySplitExport() {
   const monthSelect = document.getElementById('companySplitMonth');
   const yearSelect = document.getElementById('companySplitYear');
@@ -1744,7 +1783,7 @@ async function executeCompanySplitExport() {
     ? `${yearSelect.value}-${monthSelect.value}`
     : (attendanceWorkMonth || todayISO().slice(0, 7));
   const branch = branchSelect?.value || 'all';
-  let chosenFormat = 'multi_sheet';
+  let chosenFormat = 'matrix_format';
   for (const r of formatRadios) {
     if (r.checked) chosenFormat = r.value;
   }
@@ -1756,6 +1795,35 @@ async function executeCompanySplitExport() {
   if (!employeesToExport.length) {
     showToast('Không có nhân sự nào trong phạm vi đã chọn.', true);
     return;
+  }
+
+  if (chosenFormat === 'matrix_format') {
+    if (progressBox) progressBox.style.display = 'block';
+    if (executeBtn) executeBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    try {
+      await exportAttendanceMatrixWorkbook({
+        month,
+        employees: employeesToExport,
+        fetchWorkSummaryFn: getAttendanceWorkSummary,
+        onProgress: (current, total, emp) => {
+          if (progressText) {
+            progressText.textContent = `Đang trích xuất ma trận công: [${current}/${total}] ${emp.name} (${emp.id})...`;
+          }
+        },
+      });
+      showToast(`Đã xuất thành công Ma Trận Chấm Công & Tăng Ca có định dạng màu sắc cho 2 chi nhánh LVT & PVC (${employeesToExport.length} nhân sự)!`);
+      closeCompanySplitModal();
+      return;
+    } catch (err) {
+      console.error('[Attendance] Lỗi xuất ma trận công:', err);
+      showToast('Lỗi xuất ma trận công: ' + (err.message || 'Không xác định'), true);
+      return;
+    } finally {
+      if (progressBox) progressBox.style.display = 'none';
+      if (executeBtn) executeBtn.disabled = false;
+      if (cancelBtn) cancelBtn.disabled = false;
+    }
   }
 
   let dirHandle = null;
@@ -2221,6 +2289,7 @@ export function initView() {
     if (action === 'checkout') confirmCheckout(event.target.closest('button'));
     if (action === 'export-attendance') exportAttendance();
     if (action === 'export-work-excel') exportWorkExcel();
+    if (action === 'export-matrix-attendance') exportAttendanceMatrixDirect();
     if (action === 'export-company-split-excel') openCompanySplitModal();
     if (action === 'close-company-split-modal') closeCompanySplitModal();
     if (action === 'work-prev' && attendanceWorkPage > 1) { attendanceWorkPage -= 1; refreshAttendanceFilters(); }
