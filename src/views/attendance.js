@@ -1,11 +1,14 @@
 import {
   adjustAttendanceRecord,
+  adjustOvertimeRecord,
   clockIn, clockOut,
   deleteAttendanceDayRecords,
+  deleteOvertimeRecord,
   discardRejectedAttendance,
   getAttendance,
   getAttendanceWorkSummary,
   getOfflineQueue,
+  getOvertimeRecord,
   getRejectedQueue,
   syncOfflineAttendance
 } from '../services/attendance.js';
@@ -204,9 +207,13 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
     return `<section class="attendance-work-panel">
       <div class="section-title attendance-work-heading">
         <div><p class="eyebrow">Bảng công việc</p><h3>${employeeTitle}</h3></div>
-        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal" style="font-size:0.85rem;padding:6px 14px;">+ Bổ sung / Sửa công</button>` : ''}
+        ${canEdit ? `
+        <div style="display:inline-flex; gap:8px;">
+          <button class="primary-button" type="button" data-action="open-adjust-modal" style="font-size:0.85rem;padding:6px 14px;">+ Bổ sung công</button>
+          <button class="primary-button" type="button" data-action="open-overtime-modal" style="font-size:0.85rem;padding:6px 14px; background:#0f766e; border-color:#0f766e;"><i class="ri-add-circle-line"></i> Bổ sung tăng ca</button>
+        </div>` : ''}
       </div>
-      <div class="attendance-empty"><strong>Chưa có dữ liệu bảng công của nhân sự này</strong><span>${canEdit ? 'Bấm nút "+ Bổ sung / Sửa công" ở trên để nhập hoặc điều chỉnh ngày công cho nhân sự.' : 'Nhân sự chưa có dữ liệu ngày công được ghi nhận trong tháng này.'}</span></div>
+      <div class="attendance-empty"><strong>Chưa có dữ liệu bảng công của nhân sự này</strong><span>${canEdit ? 'Bấm nút "+ Bổ sung công" hoặc "+ Bổ sung tăng ca" ở trên để nhập hoặc điều chỉnh cho nhân sự.' : 'Nhân sự chưa có dữ liệu ngày công được ghi nhận trong tháng này.'}</span></div>
     </section>`;
   }
   const totals = summary.totals || {};
@@ -228,7 +235,10 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
     <div class="section-title attendance-work-heading">
       <div><p class="eyebrow">Bảng công việc</p><h3>${employeeTitle}</h3><span class="subtle">Tính từ ca làm và chấm công đã xác nhận</span></div>
       <div class="attendance-work-actions">
-        ${canEdit ? `<button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-edit-2-line"></i> Điều chỉnh công</button>` : ''}
+        ${canEdit ? `
+        <button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-edit-2-line"></i> Điều chỉnh công</button>
+        <button class="primary-button" type="button" data-action="open-overtime-modal" style="background:#0f766e; border-color:#0f766e;"><i class="ri-add-circle-line"></i> Bổ sung tăng ca</button>
+        ` : ''}
         <button class="secondary-button" type="button" data-action="export-work-excel">Xuất Excel</button>
       </div>
     </div>
@@ -240,7 +250,7 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
       <span class="is-review"><i class="ri-error-warning-line"></i><small>Cần đối chiếu</small><b>${Number(totals.incompleteDays || 0)} ngày</b></span>
     </div>
     <div class="table-wrap attendance-work-table"><table>
-      <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status">${canEdit ? '<col class="col-actions" style="width:105px;">' : ''}</colgroup>
+      <colgroup><col class="col-date"><col class="col-shift"><col class="col-time"><col class="col-work"><col class="col-overtime"><col class="col-deduction"><col class="col-credit"><col class="col-status">${canEdit ? '<col class="col-actions" style="width:170px;">' : ''}</colgroup>
       <thead><tr><th>Ngày & chi nhánh</th><th>Ca làm việc</th><th>Vào / Ra</th><th>Giờ công</th><th>Tăng ca duyệt</th><th>Đi muộn / Về sớm</th><th>Ngày công</th><th>Đối chiếu</th>${canEdit ? '<th>Thao tác</th>' : ''}</tr></thead>
       <tbody>${days.length ? days.map((day) => {
         const [label, tone] = workDayStatus(day);
@@ -257,7 +267,12 @@ function renderWorkSummary(summary, month, targetEmployee = null, canEdit = fals
           <td><span class="attendance-deduction"><em>${minuteLabel(day.late_minutes)}</em><em>${minuteLabel(day.early_leave_minutes)}</em></span></td>
           <td class="attendance-number is-credit">${Number(day.workday_credit || 0).toFixed(3).replace(/\.?0+$/, '')}</td>
           <td>${statusPill(label, tone)}</td>
-          ${canEdit ? `<td><button type="button" class="btn-adjust-day" data-action="adjust-day" data-date="${day.work_date}" data-shift="${escapeHTML(day.shift_code || '')}" data-branch="${escapeHTML(day.branch_id || '')}" data-checkout-branch="${escapeHTML(day.checkout_branch_id || '')}" data-checkin="${day.checkin_at ? formatTime(day.checkin_at) : ''}" data-checkout="${day.checkout_at ? formatTime(day.checkout_at) : ''}">✎ Sửa công</button></td>` : ''}
+          ${canEdit ? `<td>
+            <div style="display:inline-flex; gap:4px; align-items:center;">
+              <button type="button" class="btn-adjust-day" data-action="adjust-day" data-date="${day.work_date}" data-shift="${escapeHTML(day.shift_code || '')}" data-branch="${escapeHTML(day.branch_id || '')}" data-checkout-branch="${escapeHTML(day.checkout_branch_id || '')}" data-checkin="${day.checkin_at ? formatTime(day.checkin_at) : ''}" data-checkout="${day.checkout_at ? formatTime(day.checkout_at) : ''}">✎ Sửa công</button>
+              <button type="button" class="btn-adjust-day" data-action="quick-overtime-day" data-date="${day.work_date}" title="Bổ sung / sửa tăng ca ngày này" style="color:#0f766e; border-color:#99f6e4; background:#f0fdfa;">+ Tăng ca</button>
+            </div>
+          </td>` : ''}
         </tr>`;
       }).join('') : '<tr><td colspan="' + (canEdit ? 9 : 8) + '" class="subtle">Chưa có dữ liệu phù hợp bộ lọc.</td></tr>'}</tbody>
     </table></div>
@@ -581,7 +596,11 @@ function renderSelectedEmployeeProfile(employee, allowedShifts) {
       <span><small>Phòng ban</small><b><i class="ri-team-line"></i>${escapeHTML(departmentName(employee?.department))}</b></span>
     </div>
     <div class="attendance-profile-shifts"><small>Ca được phép</small><div>${allowedShifts.map((shift) => `<span><b>${escapeHTML(shift.name)}</b>${escapeHTML(shift.start)}–${escapeHTML(shift.end)}</span>`).join('') || '<span>Chưa cấu hình ca</span>'}</div></div>
-    <div class="attendance-profile-actions"><button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-time-line"></i> Bổ sung công</button><button class="secondary-button" type="button" data-action="open-schedule-modal"><i class="ri-calendar-event-line"></i> Xếp / đổi ca</button></div>
+    <div class="attendance-profile-actions">
+      <button class="primary-button" type="button" data-action="open-adjust-modal"><i class="ri-time-line"></i> Bổ sung công</button>
+      <button class="primary-button" type="button" data-action="open-overtime-modal" style="background:#0f766e; border-color:#0f766e;"><i class="ri-add-circle-line"></i> Bổ sung tăng ca</button>
+      <button class="secondary-button" type="button" data-action="open-schedule-modal"><i class="ri-calendar-event-line"></i> Xếp / đổi ca</button>
+    </div>
   </section>`;
 }
 
@@ -781,6 +800,25 @@ function renderAdjustmentDialog(employee, allowedShifts, canEdit = false) {
               <small class="subtle">Để trống nếu chưa ra ca</small>
             </label>
 
+            <div class="full" style="padding:10px 12px; background:#f0fdfa; border:1px solid #ccfbf1; border-radius:8px;">
+              <span style="font-weight:700; color:#0f766e; font-size:0.82rem; display:block; margin-bottom:6px;">
+                <i class="ri-add-circle-line"></i> Giờ tăng ca (Dành cho ca tăng cường / qua đêm)
+              </span>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <label style="margin:0;">
+                  <span style="font-size:0.75rem;">Bắt đầu tăng ca</span>
+                  <input type="time" id="adjustOtStart" placeholder="17:30">
+                </label>
+                <label style="margin:0;">
+                  <span style="font-size:0.75rem;">Kết thúc tăng ca</span>
+                  <input type="time" id="adjustOtEnd" placeholder="20:00">
+                </label>
+              </div>
+              <small class="subtle" style="font-size:0.72rem; color:#0d9488; margin-top:4px; display:block;">
+                Hỗ trợ ca xuyên đêm (ví dụ: 20:00 → 00:00). Để trống nếu ngày này không có tăng ca.
+              </small>
+            </div>
+
             <label class="full">
               <span>Lý do điều chỉnh / Bổ sung *</span>
               <select id="adjustReason">
@@ -806,6 +844,90 @@ function renderAdjustmentDialog(employee, allowedShifts, canEdit = false) {
             <button class="secondary-button" type="button" data-action="close-adjust-modal">Hủy</button>
             <button class="primary-button" type="submit" id="adjustSubmitBtn">
               Lưu &amp; Cập nhật ngày công
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
+function renderOvertimeAdjustmentDialog(employee) {
+  return `
+    <div class="attendance-adjust-dialog" id="overtimeAdjustModal" hidden>
+      <button class="attendance-adjust-backdrop" type="button" data-action="close-overtime-modal" aria-label="Đóng"></button>
+      <section class="attendance-adjust-sheet" role="dialog" aria-modal="true" aria-labelledby="overtimeDialogTitle">
+        <div class="attendance-adjust-header">
+          <div>
+            <p class="eyebrow">Quản trị chấm công</p>
+            <h2 id="overtimeDialogTitle">Bổ sung &amp; Duyệt tăng ca nhanh</h2>
+          </div>
+          <button class="icon-button" type="button" data-action="close-overtime-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
+        </div>
+
+        <form id="overtimeAdjustForm">
+          <div class="attendance-adjust-grid">
+            <div class="schedule-dialog-person full">
+              <span class="attendance-employee-avatar">${escapeHTML(employeeInitials(employee?.name))}</span>
+              <div>
+                <small>Nhân sự áp dụng tăng ca</small>
+                <strong>${escapeHTML(employee?.name || '')}</strong>
+                <span>${escapeHTML(employee?.id || '')} · ${escapeHTML(employee?.role || departmentName(employee?.department))}</span>
+              </div>
+              <em>${escapeHTML(employeeBranchName(employee))}</em>
+            </div>
+            <input id="otEmployee" type="hidden" value="${escapeHTML(employee?.id || '')}">
+
+            <label class="full">
+              <span>Ngày tăng ca *</span>
+              <input type="date" id="otWorkDate" required value="${clinicDateISO()}">
+            </label>
+
+            <label>
+              <span>Giờ bắt đầu tăng ca *</span>
+              <input type="time" id="otStartTime" required value="17:30">
+            </label>
+
+            <label>
+              <span>Giờ kết thúc tăng ca *</span>
+              <input type="time" id="otEndTime" required value="20:00">
+            </label>
+
+            <div class="full" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px 14px;">
+              <div id="otDurationBadge" style="font-size:0.88rem; font-weight:700; color:#15803d; display:flex; align-items:center; gap:6px;">
+                <i class="ri-time-line"></i> <span>Thời lượng: 2.5 giờ (150 phút)</span>
+              </div>
+              <small class="subtle" style="font-size:0.75rem; color:#166534; margin-top:2px; display:block;">
+                Hệ thống tự động nhận diện ca qua đêm nếu giờ kết thúc nhỏ hơn giờ bắt đầu (VD: 20:00 → 00:00 = 4.0 giờ).
+              </small>
+            </div>
+
+            <label class="full">
+              <span>Lý do tăng ca *</span>
+              <input id="otReason" required placeholder="Ví dụ: Giám sát sơn cửa cuốn LVT / Phụ tá ca tối / Hỗ trợ khách hàng..." list="otReasonSuggestions">
+              <datalist id="otReasonSuggestions">
+                <option value="Giám sát sơn cửa cuốn Chi nhánh LVT">
+                <option value="Hỗ trợ điều trị khách hàng ngoài giờ">
+                <option value="Phụ tá trực ca tối ngoài giờ hành chính">
+                <option value="Kiểm kê kho &amp; đối soát vật tư y tế">
+                <option value="Hỗ trợ công tác đột xuất theo điều phối">
+                <option value="Trực xử lý sự cố kỹ thuật / hệ thống">
+              </datalist>
+            </label>
+
+            <label class="full">
+              <span>Ghi chú Admin IT (Căn cứ duyệt)</span>
+              <input id="otNote" placeholder="Ví dụ: Đã đối chiếu camera / duyệt theo chỉ đạo vận hành" value="Duyệt trực tiếp bởi Admin IT">
+            </label>
+          </div>
+
+          <div class="attendance-adjust-actions">
+            <button type="button" class="danger-btn" id="otDeleteBtn" hidden>
+              <i class="ri-delete-bin-6-line"></i> Xóa tăng ca ngày này
+            </button>
+            <button class="secondary-button" type="button" data-action="close-overtime-modal">Hủy</button>
+            <button class="primary-button" type="submit" id="otSubmitBtn" style="background:#0f766e; border-color:#0f766e;">
+              <i class="ri-checkbox-circle-line"></i> Lưu &amp; Duyệt tăng ca
             </button>
           </div>
         </form>
@@ -1030,6 +1152,9 @@ export async function renderView(state) {
           <button class="secondary-button" type="button" data-action="open-adjust-modal">
             <i class="ri-time-line"></i> Điều chỉnh công
           </button>
+          <button class="secondary-button" type="button" data-action="open-overtime-modal" style="color:#0f766e; border-color:#0f766e; background:#f0fdfa;">
+            <i class="ri-add-circle-line"></i> Bổ sung tăng ca
+          </button>
           <button class="secondary-button" type="button" data-action="open-schedule-modal">
             <i class="ri-calendar-event-line"></i> Xếp / đổi ca
           </button>
@@ -1114,6 +1239,7 @@ export async function renderView(state) {
         </section>
       `}
       ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
+      ${canEditWorkday ? renderOvertimeAdjustmentDialog(targetEmployee) : ''}
       ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
       ${canEditWorkday ? renderCompanySplitExportDialog(canEditWorkday, attendanceWorkMonth) : ''}
       ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
@@ -2025,6 +2151,21 @@ function openAdjustModal(data = {}) {
   if (reasonSelect) reasonSelect.value = data.reason || 'Quên bấm chấm công';
   if (noteInput) noteInput.value = data.note || '';
 
+  const otStartInput = document.getElementById('adjustOtStart');
+  const otEndInput = document.getElementById('adjustOtEnd');
+  if (otStartInput) otStartInput.value = '';
+  if (otEndInput) otEndInput.value = '';
+  const empTargetCode = data.employeeCode || context?.targetEmployeeCode;
+  const wDateTarget = data.workDate || clinicDateISO();
+  if (empTargetCode && wDateTarget) {
+    getOvertimeRecord(empTargetCode, wDateTarget).then((ot) => {
+      if (ot) {
+        if (otStartInput) otStartInput.value = (ot.request_start_time || '').slice(0, 5);
+        if (otEndInput) otEndInput.value = (ot.request_end_time || '').slice(0, 5);
+      }
+    }).catch(() => null);
+  }
+
   if (delBtn) {
     delBtn.hidden = !(data.checkin || data.checkout);
     delBtn.disabled = false;
@@ -2045,6 +2186,71 @@ function closeAdjustModal() {
     modal.hidden = true;
     modal.setAttribute('hidden', '');
   }
+}
+
+async function openOvertimeModal(workDate = '') {
+  const modal = document.getElementById('overtimeAdjustModal');
+  if (!modal) return;
+
+  const targetDate = workDate || clinicDateISO();
+  const dateInput = document.getElementById('otWorkDate');
+  if (dateInput) dateInput.value = targetDate;
+
+  const empCode = document.getElementById('otEmployee')?.value || context?.targetEmployeeCode || attendanceAdminSelectedEmployee;
+  const deleteBtn = document.getElementById('otDeleteBtn');
+  const startTimeInput = document.getElementById('otStartTime');
+  const endTimeInput = document.getElementById('otEndTime');
+  const reasonInput = document.getElementById('otReason');
+
+  if (deleteBtn) deleteBtn.hidden = true;
+
+  if (empCode && targetDate) {
+    try {
+      const existingOt = await getOvertimeRecord(empCode, targetDate);
+      if (existingOt) {
+        if (startTimeInput) startTimeInput.value = (existingOt.request_start_time || '17:30').slice(0, 5);
+        if (endTimeInput) endTimeInput.value = (existingOt.request_end_time || '20:00').slice(0, 5);
+        if (reasonInput) reasonInput.value = existingOt.reason || '';
+        if (deleteBtn) deleteBtn.hidden = false;
+      } else {
+        if (startTimeInput && !startTimeInput.value) startTimeInput.value = '17:30';
+        if (endTimeInput && !endTimeInput.value) endTimeInput.value = '20:00';
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  updateOtDurationHint();
+  modal.removeAttribute('hidden');
+  modal.hidden = false;
+}
+
+function closeOvertimeModal() {
+  const modal = document.getElementById('overtimeAdjustModal');
+  if (modal) {
+    modal.hidden = true;
+    modal.setAttribute('hidden', '');
+  }
+}
+
+function updateOtDurationHint() {
+  const badge = document.getElementById('otDurationBadge');
+  const startVal = document.getElementById('otStartTime')?.value;
+  const endVal = document.getElementById('otEndTime')?.value;
+  if (!badge || !startVal || !endVal) return;
+  const [sH, sM] = startVal.split(':').map(Number);
+  const [eH, eM] = endVal.split(':').map(Number);
+  let sTotal = sH * 60 + sM;
+  let eTotal = eH * 60 + eM;
+  let isOvernight = false;
+  if (eTotal <= sTotal) {
+    eTotal += 24 * 60;
+    isOvernight = true;
+  }
+  const diff = eTotal - sTotal;
+  const hours = Math.round((diff / 60) * 10) / 10;
+  badge.innerHTML = `<i class="ri-time-line"></i> <span>Thời lượng: ${hours} giờ (${diff} phút)${isOvernight ? ' — Ca qua đêm (+1 ngày)' : ''}</span>`;
 }
 
 async function openScheduleModal(workDate = clinicDateISO()) {
@@ -2277,6 +2483,24 @@ export function initView() {
     if (action === 'close-adjust-modal') {
       closeAdjustModal();
     }
+    if (action === 'open-overtime-modal') {
+      if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+        showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền bổ sung tăng ca.', true);
+        return;
+      }
+      openOvertimeModal();
+    }
+    if (action === 'quick-overtime-day') {
+      if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+        showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền bổ sung tăng ca.', true);
+        return;
+      }
+      const targetDate = event.target.closest('button')?.dataset.date || clinicDateISO();
+      openOvertimeModal(targetDate);
+    }
+    if (action === 'close-overtime-modal') {
+      closeOvertimeModal();
+    }
     if (action === 'open-schedule-modal') {
       if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
         showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền xếp lịch.', true);
@@ -2346,6 +2570,19 @@ export function initView() {
         reason: document.getElementById('adjustReason').value,
         note: document.getElementById('adjustNote').value,
       });
+      const otStartVal = document.getElementById('adjustOtStart')?.value;
+      const otEndVal = document.getElementById('adjustOtEnd')?.value;
+      if (otStartVal && otEndVal) {
+        const adminCode = context?.state?.profile?.employee_code || context?.state?.user?.user_metadata?.employee_code || 'admin_it';
+        await adjustOvertimeRecord({
+          employeeCode: empCode,
+          workDate: wDate,
+          startTime: otStartVal,
+          endTime: otEndVal,
+          reason: 'Admin IT điều chỉnh công & tăng ca',
+          reviewerCode: adminCode,
+        }).catch((otErr) => console.warn('[Attendance] Adjust overtime in modal:', otErr));
+      }
       attendanceAdminSelectedEmployee = empCode;
       showToast(`Đã điều chỉnh công ngày ${wDate} thành công!`);
       closeAdjustModal();
@@ -2421,6 +2658,85 @@ export function initView() {
       showToast(err?.message || 'Không thể xóa dữ liệu.', true);
       deleteDayBtn.disabled = false;
       deleteDayBtn.innerHTML = '<i class="ri-delete-bin-6-line"></i> Xóa lượt chấm ngày này';
+    }
+  });
+
+  const otForm = document.getElementById('overtimeAdjustForm');
+  otForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!canEditAttendance(context?.state?.profile?.role || context?.state?.role)) {
+      showToast('Chỉ quản trị viên hệ thống (Admin IT) mới có quyền bổ sung tăng ca.', true);
+      return;
+    }
+    const submitBtn = document.getElementById('otSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Đang lưu…';
+    try {
+      const empCode = document.getElementById('otEmployee')?.value || context?.targetEmployeeCode || attendanceAdminSelectedEmployee;
+      const wDate = document.getElementById('otWorkDate')?.value;
+      const sTime = document.getElementById('otStartTime')?.value;
+      const eTime = document.getElementById('otEndTime')?.value;
+      const reasonVal = document.getElementById('otReason')?.value;
+      const noteVal = document.getElementById('otNote')?.value;
+      const adminCode = context?.state?.profile?.employee_code || context?.state?.user?.user_metadata?.employee_code || 'admin_it';
+
+      await adjustOvertimeRecord({
+        employeeCode: empCode,
+        workDate: wDate,
+        startTime: sTime,
+        endTime: eTime,
+        reason: reasonVal + (noteVal ? ` [${noteVal}]` : ''),
+        reviewerCode: adminCode,
+      });
+
+      attendanceAdminSelectedEmployee = empCode;
+      showToast(`Đã lưu & duyệt tăng ca ngày ${wDate} thành công!`);
+      closeOvertimeModal();
+      navigateTo('attendance');
+    } catch (err) {
+      console.error('[Attendance] Adjust overtime failed:', err);
+      showToast(err?.message || 'Không thể lưu tăng ca. Vui lòng thử lại.', true);
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ri-checkbox-circle-line"></i> Lưu & Duyệt tăng ca';
+    }
+  });
+
+  document.getElementById('otDeleteBtn')?.addEventListener('click', async () => {
+    const empCode = document.getElementById('otEmployee')?.value || context?.targetEmployeeCode || attendanceAdminSelectedEmployee;
+    const wDate = document.getElementById('otWorkDate')?.value;
+    if (!confirm(`Xóa giờ tăng ca ngày ${wDate} của nhân sự ${context?.targetEmployee?.name || empCode}?`)) return;
+    try {
+      await deleteOvertimeRecord(empCode, wDate);
+      showToast(`Đã xóa tăng ca ngày ${wDate}.`);
+      closeOvertimeModal();
+      navigateTo('attendance');
+    } catch (err) {
+      showToast(err?.message || 'Không thể xóa tăng ca.', true);
+    }
+  });
+
+  document.getElementById('otStartTime')?.addEventListener('input', updateOtDurationHint);
+  document.getElementById('otStartTime')?.addEventListener('change', updateOtDurationHint);
+  document.getElementById('otEndTime')?.addEventListener('input', updateOtDurationHint);
+  document.getElementById('otEndTime')?.addEventListener('change', updateOtDurationHint);
+  document.getElementById('otWorkDate')?.addEventListener('change', (e) => {
+    const empCode = document.getElementById('otEmployee')?.value || context?.targetEmployeeCode || attendanceAdminSelectedEmployee;
+    if (empCode && e.target.value) {
+      getOvertimeRecord(empCode, e.target.value).then((existingOt) => {
+        const delBtn = document.getElementById('otDeleteBtn');
+        const sInput = document.getElementById('otStartTime');
+        const eInput = document.getElementById('otEndTime');
+        const rInput = document.getElementById('otReason');
+        if (existingOt) {
+          if (sInput) sInput.value = (existingOt.request_start_time || '17:30').slice(0, 5);
+          if (eInput) eInput.value = (existingOt.request_end_time || '20:00').slice(0, 5);
+          if (rInput) rInput.value = existingOt.reason || '';
+          if (delBtn) delBtn.hidden = false;
+        } else {
+          if (delBtn) delBtn.hidden = true;
+        }
+        updateOtDurationHint();
+      }).catch(() => null);
     }
   });
 

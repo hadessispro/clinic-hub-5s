@@ -381,3 +381,141 @@ export async function deleteAttendanceDayRecords(employeeCode, workDate) {
   await getAttendanceWorkSummary(month, employeeCode).catch(() => null);
   return true;
 }
+
+/**
+ * Lấy bản ghi tăng ca hiện có của nhân viên trong ngày
+ */
+export async function getOvertimeRecord(employeeCode, workDate) {
+  if (!employeeCode || !workDate) return null;
+  const { data: records } = await dataClient
+    .from('leave_requests')
+    .select('*')
+    .eq('employee_code', employeeCode)
+    .eq('from_date', workDate);
+  const ot = (records || []).find((r) =>
+    String(r.request_type || '').toLowerCase().includes('tăng ca') ||
+    String(r.request_type || '').toLowerCase().includes('overtime')
+  );
+  return ot || null;
+}
+
+/**
+ * Bổ sung / Điều chỉnh tăng ca nhanh cho nhân viên (Admin IT / Quản lý)
+ * Tự động tạo hoặc cập nhật bản ghi tăng ca ở trạng thái đã duyệt (approved),
+ * sau đó kích hoạt backend tính lại bảng công tháng đó.
+ */
+export async function adjustOvertimeRecord({
+  employeeCode,
+  workDate,
+  startTime = '17:30',
+  endTime = '20:00',
+  overtimeMinutes = 0,
+  reason = 'Admin IT bổ sung tăng ca',
+  reviewerCode = 'admin_it',
+}) {
+  if (!employeeCode || !workDate) {
+    throw new Error('Vui lòng chọn nhân viên và ngày cần bổ sung tăng ca.');
+  }
+
+  let finalMinutes = Number(overtimeMinutes || 0);
+  if (!finalMinutes && startTime && endTime) {
+    const [sH, sM] = startTime.split(':').map(Number);
+    const [eH, eM] = endTime.split(':').map(Number);
+    let sTotal = sH * 60 + sM;
+    let eTotal = eH * 60 + eM;
+    if (eTotal <= sTotal) {
+      eTotal += 24 * 60; // Ca qua đêm
+    }
+    finalMinutes = eTotal - sTotal;
+  }
+  if (finalMinutes <= 0) {
+    throw new Error('Thời gian tăng ca không hợp lệ (phải lớn hơn 0 phút).');
+  }
+
+  // 1. Kiểm tra đơn tăng ca hiện có của ngày này
+  const { data: existingRecords } = await dataClient
+    .from('leave_requests')
+    .select('*')
+    .eq('employee_code', employeeCode)
+    .eq('from_date', workDate);
+
+  const existingOt = (existingRecords || []).find((r) =>
+    String(r.request_type || '').toLowerCase().includes('tăng ca') ||
+    String(r.request_type || '').toLowerCase().includes('overtime')
+  );
+
+  const sTime = startTime.length === 5 ? `${startTime}:00` : startTime;
+  const eTime = endTime.length === 5 ? `${endTime}:00` : endTime;
+
+  if (existingOt?.id) {
+    await dataClient.from('leave_requests').update({
+      request_type: 'Đơn tăng ca',
+      from_date: workDate,
+      to_date: workDate,
+      request_start_time: sTime,
+      request_end_time: eTime,
+      overtime_minutes: finalMinutes,
+      reason: reason || 'Admin IT bổ sung tăng ca',
+      status: 'approved',
+      leader_status: 'approved',
+      operations_status: 'approved',
+      reviewer_code: reviewerCode || 'admin_it',
+      rejection_reason: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', existingOt.id);
+  } else {
+    const id = globalThis.crypto?.randomUUID?.() || `ot-${Date.now()}`;
+    await dataClient.from('leave_requests').insert({
+      id,
+      employee_code: employeeCode,
+      request_type: 'Đơn tăng ca',
+      from_date: workDate,
+      to_date: workDate,
+      request_start_time: sTime,
+      request_end_time: eTime,
+      overtime_minutes: finalMinutes,
+      reason: reason || 'Admin IT bổ sung tăng ca',
+      status: 'approved',
+      leader_status: 'approved',
+      operations_status: 'approved',
+      reviewer_code: reviewerCode || 'admin_it',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // 2. Kích hoạt backend tính lại ngày công tháng đó
+  const month = workDate.slice(0, 7);
+  return getAttendanceWorkSummary(month, employeeCode).catch((err) => {
+    console.warn('[Attendance] Recompute work summary after overtime:', err);
+    return null;
+  });
+}
+
+/**
+ * Xóa tăng ca của nhân viên trong ngày
+ */
+export async function deleteOvertimeRecord(employeeCode, workDate) {
+  if (!employeeCode || !workDate) return false;
+  const { data: existingRecords } = await dataClient
+    .from('leave_requests')
+    .select('*')
+    .eq('employee_code', employeeCode)
+    .eq('from_date', workDate);
+
+  const existingOt = (existingRecords || []).filter((r) =>
+    String(r.request_type || '').toLowerCase().includes('tăng ca') ||
+    String(r.request_type || '').toLowerCase().includes('overtime')
+  );
+
+  if (existingOt.length) {
+    for (const r of existingOt) {
+      await dataClient.from('leave_requests').delete().eq('id', r.id);
+    }
+  }
+
+  const month = workDate.slice(0, 7);
+  await getAttendanceWorkSummary(month, employeeCode).catch(() => null);
+  return true;
+}
+
