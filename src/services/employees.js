@@ -138,12 +138,16 @@ export async function updateEmployee(code, updates) {
 
 export async function deleteEmployee(code) {
   try {
-    const { error } = await dataClient
-      .from('employees')
-      .delete()
-      .eq('code', code);
-
-    if (error) throw error;
+    const { error } = await dataClient.rpc('system_delete_user', {
+      p_employee_code: code,
+    });
+    if (error) {
+      const fallback = await dataClient
+        .from('employees')
+        .delete()
+        .eq('code', code);
+      if (fallback.error) throw error;
+    }
     return true;
   } catch (error) {
     console.error(`[Employee Service] deleteEmployee (${code}) error:`, error);

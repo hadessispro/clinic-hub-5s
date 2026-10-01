@@ -277,7 +277,7 @@ export class DataService {
         'schedule_assignments', 'schedule_requests', 'profiles', 'employees',
         'audit_logs', 'phan_quyen'
       ]);
-      if (protectedDeleteTables.has(table) && !adminRoles.has(user.role)) {
+      if (protectedDeleteTables.has(table) && !adminRoles.has(user.role) && !(user.role === 'hr' && (table === 'employees' || table === 'profiles'))) {
         throw new ForbiddenException(`Nhân sự không có quyền xóa dữ liệu từ bảng ${table}. Mọi thao tác xóa đơn/chấm công phải do Admin-IT thực hiện và lưu nhật ký kiểm toán.`);
       }
     }
@@ -399,6 +399,41 @@ export class DataService {
           }
         }
 
+        if (table === 'profiles') {
+          for (const rawItem of output) {
+            const item: any = rawItem;
+            const empCode = String(item.employee_code || item.id || '').trim();
+            if (!empCode) continue;
+            const existing = await client.query<{ record_key: string; payload: JsonMap }>(
+              `select record_key, payload from app.records
+               where entity_type='employees' and deleted_at is null
+                 and (lower(payload->>'code')=lower($1) or lower(payload->>'id')=lower($1) or lower(record_key)=lower($1))
+               limit 1`, [empCode],
+            );
+            const nowIso = new Date().toISOString();
+            if (existing.rows[0]) {
+              const prev = existing.rows[0].payload;
+              const updated = {
+                ...prev,
+                full_name: item.full_name || prev.full_name,
+                phone: item.phone !== undefined ? (item.phone || null) : prev.phone,
+                email: item.email !== undefined ? (item.email || null) : prev.email,
+                department: item.department || prev.department,
+                title: item.title !== undefined ? (item.title || null) : prev.title,
+                branch_id: item.branch_id || prev.branch_id || 'pham-van-chieu',
+                status: item.active !== undefined ? (item.active ? 'active' : 'inactive') : prev.status,
+                updated_at: nowIso,
+              };
+              await client.query(
+                `update app.records set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+                 where entity_type='employees' and record_key=$1`,
+                [existing.rows[0].record_key, JSON.stringify(updated)],
+              );
+              tablesToNotify.add('employees');
+            }
+          }
+        }
+
         await client.query('commit');
       } catch (error) {
         await client.query('rollback');
@@ -462,7 +497,7 @@ export class DataService {
           'schedule_assignments', 'schedule_requests', 'profiles', 'employees',
           'audit_logs', 'phan_quyen'
         ]);
-        if (protectedDeleteTables.has(table) && !adminRoles.has(user.role)) {
+        if (protectedDeleteTables.has(table) && !adminRoles.has(user.role) && !(user.role === 'hr' && (table === 'employees' || table === 'profiles'))) {
           throw new ForbiddenException(`Nhân sự không có quyền xóa dữ liệu từ bảng ${table}. Mọi thao tác xóa đơn/chấm công phải do Admin-IT thực hiện và lưu nhật ký kiểm toán.`);
         }
         await this.infrastructure.postgres.query(
@@ -482,6 +517,20 @@ export class DataService {
               [empCode],
             );
             tablesToNotify.add('profiles');
+          }
+        }
+        if (table === 'profiles') {
+          const empCode = String(current.payload.employee_code || current.payload.id || '').trim();
+          if (empCode) {
+            await this.infrastructure.postgres.query(
+              `update app.records
+               set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+                   payload = jsonb_set(payload, '{status}', '"inactive"'::jsonb)
+               where entity_type='employees' and deleted_at is null
+                 and (lower(payload->>'code')=lower($1) or lower(payload->>'id')=lower($1) or lower(record_key)=lower($1))`,
+              [empCode],
+            );
+            tablesToNotify.add('employees');
           }
         }
       } else if (operation === 'update') {
@@ -552,6 +601,37 @@ export class DataService {
                 );
                 tablesToNotify.add('employee_allowed_shifts');
               }
+            }
+          }
+        }
+        if (table === 'profiles') {
+          const empCode = String(next.employee_code || next.id || '').trim();
+          if (empCode) {
+            const existing = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+              `select record_key, payload from app.records
+               where entity_type='employees' and deleted_at is null
+                 and (lower(payload->>'code')=lower($1) or lower(payload->>'id')=lower($1) or lower(record_key)=lower($1))
+               limit 1`, [empCode],
+            );
+            if (existing.rows[0]) {
+              const prev = existing.rows[0].payload;
+              const updated = {
+                ...prev,
+                full_name: next.full_name || prev.full_name,
+                phone: next.phone !== undefined ? (next.phone || null) : prev.phone,
+                email: next.email !== undefined ? (next.email || null) : prev.email,
+                department: next.department || prev.department,
+                title: next.title !== undefined ? (next.title || null) : prev.title,
+                branch_id: next.branch_id || prev.branch_id || 'pham-van-chieu',
+                status: next.active !== undefined ? (next.active ? 'active' : 'inactive') : prev.status,
+                updated_at: new Date().toISOString(),
+              };
+              await this.infrastructure.postgres.query(
+                `update app.records set payload=$2::jsonb, origin='vps', version=version+1, updated_at=now()
+                 where entity_type='employees' and record_key=$1`,
+                [existing.rows[0].record_key, JSON.stringify(updated)],
+              );
+              tablesToNotify.add('employees');
             }
           }
         }

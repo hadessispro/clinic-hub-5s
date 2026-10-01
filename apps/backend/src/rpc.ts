@@ -503,52 +503,128 @@ export class RpcService {
       return next;
     }
     if (name === 'system_delete_user') {
-      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ Admin IT hoặc Ban Giám Đốc mới có quyền xóa nhân sự.');
+      const allowedRoles = new Set(['admin', 'admin_it', 'superadmin', 'hr']);
+      if (!allowedRoles.has(user.role)) {
+        throw new ForbiddenException('Chỉ Ban Quản trị, Admin IT hoặc Phòng Nhân sự (HR) mới có quyền xóa nhân sự.');
+      }
       const targetUserId = String(args.p_user_id || '').trim();
       const targetEmpCode = String(args.p_employee_code || '').trim();
-      if (!targetUserId && !targetEmpCode) throw new BadRequestException('Vui lòng cung cấp mã hoặc ID nhân sự cần xóa.');
+      if (!targetUserId && !targetEmpCode) {
+        throw new BadRequestException('Vui lòng cung cấp mã hoặc ID nhân sự cần xóa.');
+      }
 
-      const current = await this.ensureProfile(targetUserId || targetEmpCode);
-      const targetCode = String(current?.payload?.employee_code || targetEmpCode || targetUserId);
-      const targetName = String(current?.payload?.full_name || targetCode);
+      // 1. Tìm hồ sơ profile: thử targetUserId trước, nếu không thấy thử tiếp targetEmpCode
+      let current = targetUserId ? await this.ensureProfile(targetUserId) : null;
+      if (!current && targetEmpCode) {
+        current = await this.ensureProfile(targetEmpCode);
+      }
+
+      // 2. Tìm nhân sự employees
+      const empRes = await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
+        `select record_key, payload from app.records
+         where entity_type='employees' and deleted_at is null
+           and (lower(payload->>'code')=lower($1) or lower(record_key)=lower($1) or payload->>'id'=$1
+                or lower(payload->>'code')=lower($2) or lower(record_key)=lower($2) or payload->>'id'=$2)
+         limit 1`,
+        [targetEmpCode || targetUserId, targetUserId || targetEmpCode],
+      );
+      const currentEmp = empRes.rows[0];
+
+      if (!current && !currentEmp) {
+        throw new BadRequestException(`Không tìm thấy dữ liệu nhân sự "${targetEmpCode || targetUserId}" để xóa.`);
+      }
+
+      const targetCode = String(current?.payload?.employee_code || currentEmp?.payload?.code || targetEmpCode || targetUserId);
+      const targetName = String(current?.payload?.full_name || currentEmp?.payload?.full_name || targetCode);
       const targetRole = String(current?.payload?.role || 'staff');
 
-      // Chặn tự xóa chính mình hoặc xóa Superadmin
+      // Chặn tự xóa chính mình hoặc xóa Superadmin / Admin nếu không đủ quyền
       if (current && (current.record_key === user.id || current.payload?.id === user.id || targetCode.toLowerCase() === (user.employeeCode || '').toLowerCase())) {
         throw new BadRequestException('Không thể tự xóa tài khoản của chính mình.');
       }
       if (['superadmin'].includes(targetRole) && user.role !== 'superadmin') {
         throw new ForbiddenException('Không có quyền xóa tài khoản Superadmin.');
       }
+      if (user.role === 'hr' && ['admin', 'admin_it', 'superadmin', 'hr'].includes(targetRole)) {
+        throw new ForbiddenException('Phòng Nhân sự (HR) không có quyền xóa tài khoản Quản trị viên hoặc HR khác.');
+      }
 
       const now = new Date().toISOString();
-
-      // 1. Soft delete trên profiles
-      if (current) {
-        await this.infrastructure.postgres.query(
-          `update app.records
-           set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
-               payload = jsonb_set(jsonb_set(payload, '{active}', 'false'::jsonb), '{deleted_at}', $1::jsonb)
-           where entity_type='profiles' and record_key=$2`,
-          [JSON.stringify(now), current.record_key],
-        );
-      }
-
-      // 2. Soft delete trên employees
-      if (targetCode) {
-        await this.infrastructure.postgres.query(
-          `update app.records
-           set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
-               payload = jsonb_set(jsonb_set(payload, '{status}', '"inactive"'::jsonb), '{deleted_at}', $1::jsonb)
-           where entity_type='employees' and deleted_at is null
-             and (lower(payload->>'code')=lower($2) or lower(record_key)=lower($2))`,
-          [JSON.stringify(now), targetCode],
-        );
-      }
-
-      // 3. Ghi audit an ninh
+      const client = await this.infrastructure.postgres.connect();
       try {
-        await this.infrastructure.postgres.query(
+        await client.query('begin');
+
+        // A. Soft delete trên profiles
+        if (current) {
+          await client.query(
+            `update app.records
+             set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+                 payload = jsonb_set(jsonb_set(payload, '{active}', 'false'::jsonb), '{deleted_at}', $1::jsonb)
+             where entity_type='profiles' and record_key=$2`,
+            [JSON.stringify(now), current.record_key],
+          );
+        } else if (targetCode) {
+          await client.query(
+            `update app.records
+             set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+                 payload = jsonb_set(jsonb_set(payload, '{active}', 'false'::jsonb), '{deleted_at}', $1::jsonb)
+             where entity_type='profiles' and deleted_at is null
+               and (lower(payload->>'employee_code')=lower($2) or lower(record_key)=lower($2))`,
+            [JSON.stringify(now), targetCode],
+          );
+        }
+
+        // B. Soft delete trên employees
+        if (currentEmp) {
+          await client.query(
+            `update app.records
+             set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+                 payload = jsonb_set(jsonb_set(payload, '{status}', '"inactive"'::jsonb), '{deleted_at}', $1::jsonb)
+             where entity_type='employees' and record_key=$2`,
+            [JSON.stringify(now), currentEmp.record_key],
+          );
+        }
+        if (targetCode) {
+          await client.query(
+            `update app.records
+             set deleted_at=now(), origin='vps', version=version+1, updated_at=now(),
+                 payload = jsonb_set(jsonb_set(payload, '{status}', '"inactive"'::jsonb), '{deleted_at}', $1::jsonb)
+             where entity_type='employees' and deleted_at is null
+               and (lower(payload->>'code')=lower($2) or lower(record_key)=lower($2) or payload->>'id'=$2)`,
+            [JSON.stringify(now), targetCode],
+          );
+        }
+
+        // C. Vô hiệu hóa tài khoản đăng nhập và hủy phiên trong local_accounts
+        const profileKey = current?.record_key || '';
+        await client.query(
+          `update app.local_accounts
+           set active = false, updated_at = now()
+           where (profile_key = $1 and $1 <> '') or lower(employee_code) = lower($2)`,
+          [profileKey, targetCode],
+        );
+        await client.query(
+          `delete from app.refresh_sessions
+           where user_id in (
+             select user_id from app.local_accounts
+             where (profile_key = $1 and $1 <> '') or lower(employee_code) = lower($2)
+           )`,
+          [profileKey, targetCode],
+        );
+
+        // D. Soft delete phân ca cho phép (employee_allowed_shifts)
+        if (targetCode) {
+          await client.query(
+            `update app.records
+             set deleted_at=now(), origin='vps', version=version+1, updated_at=now()
+             where entity_type='employee_allowed_shifts' and deleted_at is null
+               and lower(payload->>'employee_code')=lower($1)`,
+            [targetCode],
+          );
+        }
+
+        // E. Ghi audit an ninh
+        await client.query(
           `insert into app.auth_audit
              (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
            values ($1, $2, $3, $4, $5, $6::jsonb)`,
@@ -562,25 +638,16 @@ export class RpcService {
              deleted_at: now,
            })],
         );
-      } catch {
-        await this.infrastructure.postgres.query(
-          `insert into app.auth_audit
-             (hanh_dong, actor_code, actor_role, muc_tieu_ma, muc_tieu_vai_tro, chi_tiet)
-           values ($1, $2, $3, $4, $5, $6::jsonb)`,
-          ['khoa_tai_khoan',
-           user.employeeCode || null, user.role,
-           targetCode, targetRole,
-           JSON.stringify({
-             target_name: targetName,
-             target_code: targetCode,
-             hanh_dong_chi_tiet: 'xoa_nhan_su_khoi_he_thong',
-             deleted_by: user.employeeCode || user.id,
-             deleted_at: now,
-           })],
-        ).catch(() => {});
+
+        await client.query('commit');
+      } catch (err) {
+        await client.query('rollback');
+        throw err;
+      } finally {
+        client.release();
       }
 
-      // 4. Bắn cảnh báo Telegram CRITICAL
+      // F. Bắn cảnh báo Telegram CRITICAL
       try {
         const shouldAlert = await this.telegram.shouldNotify('delete_employee', true);
         if (shouldAlert) {
@@ -603,7 +670,7 @@ export class RpcService {
         console.warn('[RPC system_delete_user] Telegram alert warning:', err);
       }
 
-      this.infrastructure.markDataChanged(['profiles', 'employees']);
+      this.infrastructure.markDataChanged(['profiles', 'employees', 'employee_allowed_shifts']);
       return { success: true, code: targetCode, name: targetName };
     }
     if (name === 'system_delete_request') {
@@ -761,13 +828,13 @@ export class RpcService {
       }
     }
     if (name === 'system_update_user_profile') {
-
-      if (!admins.has(user.role)) throw new ForbiddenException('Chỉ quản trị viên được sửa thông tin tài khoản.');
+      const allowedRoles = new Set(['admin', 'admin_it', 'superadmin', 'hr']);
+      if (!allowedRoles.has(user.role)) throw new ForbiddenException('Chỉ Ban Quản trị, Admin IT hoặc Phòng Nhân sự (HR) mới có quyền sửa thông tin.');
       const current = await this.ensureProfile(String(args.p_user_id || ''));
       if (!current) throw new BadRequestException('Không tìm thấy hồ sơ người dùng.');
       const currentProfile = current.payload;
-      const rank = (role: unknown) => ({ superadmin: 3, admin: 2, admin_it: 2 } as Record<string, number>)[String(role || '')] ?? 1;
-      if (rank(currentProfile.role) >= rank(user.role) && String(currentProfile.id || '') !== user.id) {
+      const rank = (role: unknown) => ({ superadmin: 3, admin: 2, admin_it: 2, hr: 1 } as Record<string, number>)[String(role || '')] ?? 0;
+      if (rank(currentProfile.role) >= rank(user.role) && String(currentProfile.id || '') !== user.id && user.role !== 'superadmin') {
         throw new ForbiddenException('Không được sửa hồ sơ của tài khoản có quyền bằng hoặc cao hơn bạn.');
       }
       const fullName = String(args.p_full_name || '').trim();
@@ -795,12 +862,24 @@ export class RpcService {
         updated_at: new Date().toISOString() };
       const employeeResult = employeeCode ? await this.infrastructure.postgres.query<{ record_key: string; payload: JsonMap }>(
         `select record_key,payload from app.records where entity_type='employees' and deleted_at is null
-          and lower(payload->>'code')=lower($1) limit 1`, [employeeCode],
+          and (lower(payload->>'code')=lower($1) or lower(record_key)=lower($1) or payload->>'id'=$1) limit 1`, [employeeCode],
       ) : { rows: [] };
       const employee = employeeResult.rows[0];
       const nextEmployee = employee ? { ...employee.payload, full_name: fullName, email: email || null,
         phone: phone || null, department, title: title || null, branch_id: branchId,
-        updated_at: new Date().toISOString() } : null;
+        updated_at: new Date().toISOString() } : (employeeCode ? {
+        id: employeeCode,
+        code: employeeCode,
+        full_name: fullName,
+        email: email || null,
+        phone: phone || null,
+        department,
+        title: title || null,
+        branch_id: branchId,
+        status: currentProfile.active === false ? 'inactive' : 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } : null);
 
       const client = await this.infrastructure.postgres.connect();
       try {
@@ -815,6 +894,15 @@ export class RpcService {
             `update app.records set payload=$2::jsonb,origin='vps',version=version+1,updated_at=now()
               where entity_type='employees' and record_key=$1`,
             [employee.record_key, JSON.stringify(nextEmployee)],
+          );
+        } else if (employeeCode && nextEmployee) {
+          const newEmpKey = randomUUID();
+          await client.query(
+            `insert into app.records(entity_type, record_key, payload, origin)
+             values ('employees', $1, $2::jsonb, 'vps')
+             on conflict (entity_type, record_key) do update
+             set payload=excluded.payload, origin='vps', version=app.records.version+1, updated_at=now(), deleted_at=null`,
+            [newEmpKey, JSON.stringify(nextEmployee)],
           );
         }
         await client.query(
