@@ -1147,29 +1147,102 @@ export async function renderView(state) {
           <h3>${canEditWorkday ? 'Quản lý công nhân sự' : 'Bảng công & chấm công'}</h3>
           <p>${canEditWorkday ? 'Tra cứu, đối chiếu và bổ sung công từ một bảng dữ liệu thống nhất.' : 'Theo dõi dữ liệu vào/ra thực tế và chi tiết ngày công của nhân sự.'}</p>
         </div>
-        <div class="attendance-header-actions">
-          <button class="primary-button" type="button" data-action="export-matrix-attendance" style="background:#0f766e; border-color:#0f766e;" title="Xuất bảng công &amp; tăng ca ma trận 30 ngày tách riêng LVT &amp; PVC có định dạng màu sắc trực quan">
-            <i class="ri-table-fill"></i> Xuất Ma Trận LVT &amp; PVC (Có Màu)
-          </button>
-          ${canEditWorkday ? `
-          <button class="secondary-button" type="button" data-action="open-adjust-modal">
-            <i class="ri-time-line"></i> Điều chỉnh công
-          </button>
-          <button class="secondary-button" type="button" data-action="open-overtime-modal" style="color:#0f766e; border-color:#0f766e; background:#f0fdfa;">
-            <i class="ri-add-circle-line"></i> Bổ sung tăng ca
-          </button>
-          <button class="secondary-button" type="button" data-action="open-schedule-modal">
-            <i class="ri-calendar-event-line"></i> Xếp / đổi ca
-          </button>
-          <button class="secondary-button" type="button" data-action="export-company-split-excel" title="Xuất toàn bộ công ty phân tách theo từng nhân sự để nhân viên tự đối soát">
-            <i class="ri-folder-user-line"></i> Xuất toàn công ty (Tách từng người)
-          </button>` : ''}
-          <button class="secondary-button" type="button" data-action="export-work-excel">
-            Xuất Excel bảng công
-          </button>
-          <button class="secondary-button" type="button" data-action="export-attendance">
-            Xuất Excel nhật ký GPS
-          </button>
+        <div class="attendance-header-actions" style="position:relative;">
+          <div class="attendance-action-dropdown-wrap" style="position:relative; display:inline-block;">
+            <button type="button" class="primary-button" id="btnAttendanceActionMenu" style="background:#0f766e; border-color:#0f766e; display:inline-flex; align-items:center; gap:8px; padding:9px 18px; border-radius:8px; font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,0.1); cursor:pointer;">
+              <i class="ri-apps-2-line" style="font-size:1.15rem;"></i>
+              <span>Chức năng &amp; Xuất Excel</span>
+              <i class="ri-arrow-down-s-line" style="font-size:1.15rem; transition:transform 0.2s;" id="attendanceMenuArrow"></i>
+            </button>
+            <div id="attendanceActionMenuDropdown" class="attendance-dropdown-menu" style="display:none; position:absolute; right:0; top:calc(100% + 8px); background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; box-shadow:0 12px 30px -4px rgba(0,0,0,0.18), 0 6px 12px -3px rgba(0,0,0,0.1); width:320px; z-index:1000; overflow:hidden; text-align:left;">
+              
+              <div style="padding:10px 14px 6px; font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase; background:#f8fafc; border-bottom:1px solid #f1f5f9;">
+                <i class="ri-file-excel-2-line" style="color:#0f766e;"></i> Xuất báo cáo Excel
+              </div>
+              <div style="padding:4px 0;">
+                <button type="button" class="attendance-dropdown-item" data-action="export-matrix-attendance" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#ecfdf5; color:#0f766e; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-table-fill" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600; display:flex; align-items:center; gap:6px;">
+                      <span>Xuất Ma Trận LVT &amp; PVC</span>
+                      <span style="font-size:0.65rem; background:#0f766e; color:#ffffff; padding:1px 5px; border-radius:4px; font-weight:700;">Có Màu</span>
+                    </div>
+                    <span style="font-size:0.75rem; color:#64748b;">Bảng công &amp; tăng ca ma trận 30 ngày</span>
+                  </div>
+                </button>
+
+                ${canEditWorkday ? `
+                <button type="button" class="attendance-dropdown-item" data-action="export-company-split-excel" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#eff6ff; color:#2563eb; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-folder-user-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Xuất toàn viện (Tách nhân sự)</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Mỗi nhân sự một sheet để đối soát</span>
+                  </div>
+                </button>` : ''}
+
+                <button type="button" class="attendance-dropdown-item" data-action="export-work-excel" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#f1f5f9; color:#475569; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-file-list-3-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Xuất Excel bảng công hiện tại</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Dữ liệu bảng công theo bộ lọc đang xem</span>
+                  </div>
+                </button>
+
+                <button type="button" class="attendance-dropdown-item" data-action="export-attendance" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#f1f5f9; color:#475569; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-map-pin-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Xuất nhật ký chấm công GPS</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Toàn bộ lượt quét vào/ra chi tiết</span>
+                  </div>
+                </button>
+              </div>
+
+              ${canEditWorkday ? `
+              <div style="padding:10px 14px 6px; font-size:0.72rem; font-weight:700; color:#64748b; letter-spacing:0.05em; text-transform:uppercase; background:#f8fafc; border-top:1px solid #f1f5f9; border-bottom:1px solid #f1f5f9;">
+                <i class="ri-settings-3-line" style="color:#0284c7;"></i> Quản trị &amp; Nghiệp vụ
+              </div>
+              <div style="padding:4px 0;">
+                <button type="button" class="attendance-dropdown-item" data-action="open-adjust-modal" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#fef3c7; color:#b45309; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-time-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Điều chỉnh công</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Sửa ca, giờ vào/ra, tính lại ngày công</span>
+                  </div>
+                </button>
+
+                <button type="button" class="attendance-dropdown-item" data-action="open-overtime-modal" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#f0fdfa; color:#0f766e; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-add-circle-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Bổ sung tăng ca nhanh</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Tạo đơn tăng ca duyệt trực tiếp cho nhân sự</span>
+                  </div>
+                </button>
+
+                <button type="button" class="attendance-dropdown-item" data-action="open-schedule-modal" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#f5f3ff; color:#7c3aed; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-calendar-event-line" style="font-size:1.1rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600;">Xếp / đổi ca làm việc</div>
+                    <span style="font-size:0.75rem; color:#64748b;">Phân ca trực và lịch làm việc</span>
+                  </div>
+                </button>
+              </div>` : ''}
+
+            </div>
+          </div>
         </div>
       </header>
 
@@ -2818,8 +2891,46 @@ export function initView() {
 
   document.getElementById('btnExecuteCompanySplit')?.addEventListener('click', executeCompanySplitExport);
 
+  // Menu Dropdown Quản trị & Xuất Excel
+  const menuBtn = document.getElementById('btnAttendanceActionMenu');
+  const dropdownMenu = document.getElementById('attendanceActionMenuDropdown');
+  const arrowIcon = document.getElementById('attendanceMenuArrow');
+
+  if (menuBtn && dropdownMenu) {
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = dropdownMenu.style.display === 'block';
+      dropdownMenu.style.display = isOpen ? 'none' : 'block';
+      if (arrowIcon) arrowIcon.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!dropdownMenu.contains(e.target) && !menuBtn.contains(e.target)) {
+        dropdownMenu.style.display = 'none';
+        if (arrowIcon) arrowIcon.style.transform = 'rotate(0deg)';
+      }
+    });
+
+    dropdownMenu.querySelectorAll('.attendance-dropdown-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        if (arrowIcon) arrowIcon.style.transform = 'rotate(0deg)';
+      });
+      item.addEventListener('mouseenter', () => {
+        item.style.backgroundColor = '#f8fafc';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.backgroundColor = 'transparent';
+      });
+    });
+  }
+
   const handleEscapeKey = (event) => {
     if (event.key === 'Escape') {
+      if (dropdownMenu) {
+        dropdownMenu.style.display = 'none';
+        if (arrowIcon) arrowIcon.style.transform = 'rotate(0deg)';
+      }
       closeAdjustModal();
       closeScheduleModal();
       closeCompanySplitModal();

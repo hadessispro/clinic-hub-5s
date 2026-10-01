@@ -294,8 +294,10 @@ function buildMatrixWorksheetXml({
         { label: 'Ghi chú', width: 20, isNum: false },
       ]
     : [
-        { label: 'Tổng giờ công (h)', width: 16, isNum: true, isGrand: true },
-        { label: 'Quy đổi ngày công (h/8)', width: 16, isNum: true },
+        { label: 'Giờ thường (h)', width: 14, isNum: true, isGrand: true },
+        { label: 'Tăng ca duyệt (h)', width: 15, isNum: true, isGrand: true },
+        { label: 'Tổng giờ tính công (h)', width: 16, isNum: true, isGrand: true },
+        { label: 'Quy đổi công (h/8)', width: 15, isNum: true },
         { label: 'Công chuẩn', width: 12, isNum: true },
         { label: 'Đi muộn (phút)', width: 13, isNum: true, isInt: true },
         { label: 'Về sớm (phút)', width: 13, isNum: true, isInt: true },
@@ -343,9 +345,12 @@ function buildMatrixWorksheetXml({
 
   // Hàng 3: Metadata thông tin xuất
   const printDateStr = new Date().toLocaleString('vi-VN');
+  const unitNote = isOvertime
+    ? '  |  Đơn vị: Giờ thập phân (45 phút = 0.75h, 30 phút = 0.5h, 60 phút = 1.0h)'
+    : '  |  Đơn vị: Giờ làm việc thực tế';
   rowsXml.push(
     `<row r="3" ht="20" customHeight="1">` +
-    cellStr('A3', 2, `Chu kỳ: 01/${String(month).padStart(2, '0')}/${year} - ${totalDays}/${String(month).padStart(2, '0')}/${year}  |  Chi nhánh: ${branchName} (${branchCode})  |  Thời gian xuất: ${printDateStr}`) +
+    cellStr('A3', 2, `Chu kỳ: 01/${String(month).padStart(2, '0')}/${year} - ${totalDays}/${String(month).padStart(2, '0')}/${year}  |  Chi nhánh: ${branchName} (${branchCode})${unitNote}  |  Thời gian xuất: ${printDateStr}`) +
     `</row>`
   );
   mergeCells.push(`A3:${lastColLetter}3`);
@@ -362,8 +367,8 @@ function buildMatrixWorksheetXml({
 
   // Ô nhóm các ngày
   const groupLabel = isOvertime
-    ? `CHI TIẾT TĂNG CA CÁC NGÀY TRONG THÁNG (TỪ NGÀY 01 ĐẾN ${totalDays})`
-    : `CHI TIẾT CHẤM CÔNG CÁC NGÀY TRONG THÁNG (TỪ NGÀY 01 ĐẾN ${totalDays})`;
+    ? `CHI TIẾT SỐ GIỜ TĂNG CA THEO NGÀY (ĐƠN VỊ: GIỜ — VÍ DỤ: 0.75 = 45 PHÚT, 1 = 60 PHÚT, 1.5 = 90 PHÚT)`
+    : `CHI TIẾT GIỜ CÔNG CÁC NGÀY TRONG THÁNG (TỪ NGÀY 01 ĐẾN ${totalDays})`;
   r5Cells += cellStr(`${firstDayColLetter}5`, 3, groupLabel);
   for (let c = firstDayColIdx + 1; c <= lastDayColIdx; c++) {
     r5Cells += cellEmpty(`${colLetter(c)}5`, 3);
@@ -489,38 +494,49 @@ function buildMatrixWorksheetXml({
       const sumRange = `${firstDayColLetter}${rNum}:${lastDayColLetter}${rNum}`;
       const totalRegMin = Number(totals.regularMinutes || 0);
       const totalRegHours = Number((totalRegMin / 60).toFixed(2));
+      const totalOtMin = Number(totals.overtimeMinutes || 0);
+      const totalOtHours = Number((totalOtMin / 60).toFixed(2));
+      const totalPayableHours = Number(((totalRegMin + totalOtMin) / 60).toFixed(2));
       const totalWorkdays = Number(totals.workdays || 0);
-      const convertedDays = totalWorkdays > 0 ? totalWorkdays : Number((totalRegHours / 8).toFixed(2));
+      const convertedDays = totalWorkdays > 0 ? totalWorkdays : Number((totalPayableHours / 8).toFixed(2));
       const lateMin = Number(totals.lateMinutes || 0);
       const earlyMin = Number(totals.earlyLeaveMinutes || 0);
 
-      // 1. Tổng giờ công (h) (=SUM(ngày 01..totalDays))
+      // 1. Giờ thường (h) (=SUM(ngày 01..totalDays))
       const c1 = colLetter(lastDayColIdx + 1);
       rowCells += cellFormula(`${c1}${rNum}`, 23, `SUM(${sumRange})`, totalRegHours);
 
-      // 2. Quy đổi ngày công (=ROUND(c1/8, 2))
+      // 2. Tăng ca duyệt (h)
       const c2 = colLetter(lastDayColIdx + 2);
-      rowCells += cellFormula(`${c2}${rNum}`, 23, `ROUND(${c1}${rNum}/8,2)`, convertedDays);
+      rowCells += cellNum(`${c2}${rNum}`, 23, totalOtHours);
 
-      // 3. Công chuẩn (chuẩn 26 ngày)
+      // 3. Tổng giờ tính công (h) (=c1+c2)
       const c3 = colLetter(lastDayColIdx + 3);
-      rowCells += cellNum(`${c3}${rNum}`, 23, 26);
+      rowCells += cellFormula(`${c3}${rNum}`, 23, `${c1}${rNum}+${c2}${rNum}`, totalPayableHours);
 
-      // 4. Đi muộn (phút)
+      // 4. Quy đổi công (h/8) (=ROUND(c3/8, 2))
       const c4 = colLetter(lastDayColIdx + 4);
-      rowCells += cellNum(`${c4}${rNum}`, 24, lateMin);
+      rowCells += cellFormula(`${c4}${rNum}`, 23, `ROUND(${c3}${rNum}/8,2)`, convertedDays);
 
-      // 5. Về sớm (phút)
+      // 5. Công chuẩn (chuẩn 26 ngày)
       const c5 = colLetter(lastDayColIdx + 5);
-      rowCells += cellNum(`${c5}${rNum}`, 24, earlyMin);
+      rowCells += cellNum(`${c5}${rNum}`, 23, 26);
 
-      // 6. Nghỉ phép / OFF
+      // 6. Đi muộn (phút)
       const c6 = colLetter(lastDayColIdx + 6);
-      rowCells += cellEmpty(`${c6}${rNum}`, 25);
+      rowCells += cellNum(`${c6}${rNum}`, 24, lateMin);
 
-      // 7. Ghi chú
+      // 7. Về sớm (phút)
       const c7 = colLetter(lastDayColIdx + 7);
-      rowCells += cellEmpty(`${c7}${rNum}`, 25);
+      rowCells += cellNum(`${c7}${rNum}`, 24, earlyMin);
+
+      // 8. Nghỉ phép / OFF
+      const c8 = colLetter(lastDayColIdx + 8);
+      rowCells += cellEmpty(`${c8}${rNum}`, 25);
+
+      // 9. Ghi chú
+      const c9 = colLetter(lastDayColIdx + 9);
+      rowCells += cellEmpty(`${c9}${rNum}`, 25);
     }
 
     rowsXml.push(`<row r="${rNum}" ht="22" customHeight="1">${rowCells}</row>`);
