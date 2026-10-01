@@ -612,6 +612,7 @@ export async function renderView(state) {
           <div class="form-field" data-request-fields="overtime" hidden>
             <label for="leaveEndTime">Kết thúc tăng ca</label>
             <input id="leaveEndTime" name="endTime" type="time" />
+            <small id="leaveOvertimeHint" class="subtle" style="font-size: 0.75rem; color: #0f766e; margin-top: 3px; display: none; font-weight: 600;"></small>
           </div>
           <div class="form-field" data-request-fields="advance" hidden>
             <label for="leaveAmount">Số tiền ứng (VNĐ)</label>
@@ -797,7 +798,36 @@ export function initView() {
       endInput.required = isOvertime;
       amountInput.required = isAdvance;
       bankInput.required = isAdvance;
+      syncOvertimeHint();
     };
+
+    const syncOvertimeHint = () => {
+      const hintEl = document.getElementById('leaveOvertimeHint');
+      if (!hintEl) return;
+      if (typeSelect.value !== 'Đơn tăng ca' || !startInput.value || !endInput.value) {
+        hintEl.textContent = '';
+        hintEl.style.display = 'none';
+        return;
+      }
+      const [startHour, startMinute] = startInput.value.split(':').map(Number);
+      const [endHour, endMinute] = endInput.value.split(':').map(Number);
+      let startTotal = startHour * 60 + startMinute;
+      let endTotal = endHour * 60 + endMinute;
+      let isOvernight = false;
+      if (endTotal <= startTotal) {
+        endTotal += 24 * 60;
+        isOvernight = true;
+      }
+      const diff = endTotal - startTotal;
+      const hours = Math.round((diff / 60) * 10) / 10;
+      hintEl.innerHTML = `<i class="ri-time-line"></i> Thời lượng: <strong>${hours} giờ (${diff} phút)</strong>${isOvernight ? ' <span style="color: #b45309; font-weight: 700;">(Ca qua đêm +1 ngày)</span>' : ''}`;
+      hintEl.style.display = 'block';
+    };
+
+    startInput?.addEventListener('input', syncOvertimeHint);
+    startInput?.addEventListener('change', syncOvertimeHint);
+    endInput?.addEventListener('input', syncOvertimeHint);
+    endInput?.addEventListener('change', syncOvertimeHint);
     typeSelect.addEventListener('change', syncRequestFields);
     syncRequestFields();
 
@@ -842,11 +872,21 @@ export function initView() {
 
       let overtimeMinutes = 0;
       if (data.type === 'Đơn tăng ca') {
+        if (!data.startTime || !data.endTime) {
+          showToast('Vui lòng chọn giờ bắt đầu và kết thúc tăng ca.', true);
+          return;
+        }
         const [startHour, startMinute] = data.startTime.split(':').map(Number);
         const [endHour, endMinute] = data.endTime.split(':').map(Number);
-        overtimeMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
-        if (overtimeMinutes <= 0) {
-          showToast('Giờ kết thúc tăng ca phải sau giờ bắt đầu.', true);
+        let startTotal = startHour * 60 + startMinute;
+        let endTotal = endHour * 60 + endMinute;
+        if (endTotal <= startTotal) {
+          // Tăng ca xuyên đêm (qua 00:00 / 12:00 AM sáng hôm sau)
+          endTotal += 24 * 60;
+        }
+        overtimeMinutes = endTotal - startTotal;
+        if (overtimeMinutes <= 0 || overtimeMinutes > 18 * 60) {
+          showToast('Khoảng thời gian tăng ca không hợp lệ (tối đa 18 giờ).', true);
           return;
         }
       }
