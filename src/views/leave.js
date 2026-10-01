@@ -1,7 +1,7 @@
 import { getLeaveRequests, createLeaveRequest, reviewLeaveRequest, updateLeaveRequest, reReviewLeaveRequest } from '../services/leave.js';
 import { getEmployees } from '../services/employees.js';
 import { LEAVE_STATUS, LEAVE_TYPES } from '../constants.js';
-import { todayISO, escapeHTML, formatShortDate, formatDateTime, formatCurrency, smartMatch, departmentName } from '../utils.js';
+import { todayISO, escapeHTML, formatShortDate, formatDateTime, formatCurrency, smartMatch, departmentName, normalizeText } from '../utils.js';
 import { pill, statusPill, option, emptyState, statusTone } from '../components/shared.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
@@ -10,6 +10,7 @@ import { triggerArchive2Months } from '../services/archive-sync.js';
 
 let cachedEmployees = [];
 let cachedRequests = [];
+let currentSelectedEmpCode = '';
 let requestSearch = '';
 let requestSearchMode = 'near';
 let requestTypeFilter = 'all';
@@ -529,6 +530,11 @@ export async function renderView(state) {
 
   leaveViewMode = localStorage.getItem('clinic_leave_view_mode') || 'pipeline';
 
+  currentSelectedEmpCode = currentEmpCode;
+  const currentEmp = cachedEmployees.find(emp => emp.id === currentEmpCode) || cachedEmployees[0];
+  const currentEmpLabel = currentEmp ? `${currentEmp.name} (${currentEmp.id}) - ${departmentName(currentEmp.department)}` : '';
+  const currentEmpId = currentEmp?.id || '';
+
   const filteredRequests = getFilteredRequests();
   const requestTotalPages = Math.max(1, Math.ceil(filteredRequests.length / requestPageSize));
   requestPage = Math.min(Math.max(1, requestPage), requestTotalPages);
@@ -550,11 +556,40 @@ export async function renderView(state) {
           ${pill('HR duyệt trước ca')}
         </div>
         <form class="form-grid" data-form="leave" id="leaveForm">
-          <div class="form-field">
-            <label for="leaveEmployee">Nhân sự</label>
-            <select id="leaveEmployee" name="employee" required>
-              ${cachedEmployees.map(emp => option(emp.id, `${emp.name} (${emp.id}) - ${departmentName(emp.department)}`, emp.id === currentEmpCode)).join('')}
-            </select>
+          <div class="form-field leave-employee-field" style="position: relative; z-index: 20;">
+            <label for="leaveEmployeeSearch" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span>Nhân sự <small class="subtle" style="font-weight: normal; font-size: 0.74rem;">(Gõ để tìm nhanh)</small></span>
+              <span id="leaveEmployeeBadge" class="pill subtle" style="font-size: 0.7rem; padding: 2px 7px;">${currentEmp ? escapeHTML(currentEmp.id) : 'Chưa chọn'}</span>
+            </label>
+            <div class="leave-combobox-wrap" style="position: relative;">
+              <div style="position: relative; display: flex; align-items: center;">
+                <i class="ri-search-line" style="position: absolute; left: 10px; color: #94a3b8; font-size: 0.95rem; pointer-events: none;"></i>
+                <input
+                  type="text"
+                  id="leaveEmployeeSearch"
+                  placeholder="Gõ tên, MNV (vd: 10221) hoặc phòng ban..."
+                  value="${escapeHTML(currentEmpLabel)}"
+                  autocomplete="off"
+                  style="width: 100%; min-height: 38px; padding: 6px 34px 6px 32px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.84rem; box-sizing: border-box;"
+                />
+                <button
+                  type="button"
+                  id="leaveEmployeeClear"
+                  class="icon-button"
+                  style="position: absolute; right: 6px; width: 24px; height: 24px; padding: 0; display: ${currentEmp ? 'inline-flex' : 'none'}; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; color: #94a3b8;"
+                  title="Xóa để chọn nhân sự khác"
+                >
+                  <i class="ri-close-circle-fill" style="font-size: 1.1rem;"></i>
+                </button>
+              </div>
+              <input type="hidden" id="leaveEmployee" name="employee" value="${escapeHTML(currentEmpId)}" required />
+
+              <div
+                id="leaveEmployeeDropdown"
+                class="leave-employee-dropdown"
+                style="display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); max-height: 280px; overflow-y: auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.18), 0 8px 10px -6px rgba(0,0,0,0.1); z-index: 1000;"
+              ></div>
+            </div>
           </div>
           <div class="form-field">
             <label for="leaveType">Loại đơn</label>
@@ -744,6 +779,7 @@ export function initView() {
 
   bindPaginationEvents();
   bindLeaveCardActions();
+  bindEmployeeSearch();
 
   const leaveForm = document.getElementById('leaveForm');
   if (leaveForm) {
@@ -784,9 +820,24 @@ export function initView() {
       const formData = new FormData(leaveForm);
       const data = Object.fromEntries(formData.entries());
 
+      // Tự động nhận diện nếu người dùng gõ mã hoặc tên mà chưa nhấp chọn trong dropdown
       if (!data.employee || !String(data.employee).trim()) {
-        showToast('Vui lòng chọn nhân sự hợp lệ.', true);
-        return;
+        const searchVal = (document.getElementById('leaveEmployeeSearch')?.value || '').trim();
+        const searchNorm = normalizeText(searchVal);
+        const match = cachedEmployees.find((emp) => {
+          const idNorm = normalizeText(emp.id);
+          const nameNorm = normalizeText(emp.name);
+          return idNorm === searchNorm || nameNorm === searchNorm || idNorm.includes(searchNorm) || nameNorm.includes(searchNorm);
+        });
+        if (match) {
+          data.employee = match.id;
+          const hid = document.getElementById('leaveEmployee');
+          if (hid) hid.value = match.id;
+        } else {
+          showToast('Vui lòng chọn nhân sự hợp lệ từ danh sách gợi ý.', true);
+          document.getElementById('leaveEmployeeSearch')?.focus();
+          return;
+        }
       }
 
       let overtimeMinutes = 0;
@@ -819,6 +870,17 @@ export function initView() {
 
         showToast('Đã gửi đơn.');
         leaveForm.reset();
+        const defaultEmp = cachedEmployees.find((emp) => emp.id === currentSelectedEmpCode) || cachedEmployees[0];
+        const searchInput = document.getElementById('leaveEmployeeSearch');
+        const hiddenInput = document.getElementById('leaveEmployee');
+        const badge = document.getElementById('leaveEmployeeBadge');
+        const clearBtn = document.getElementById('leaveEmployeeClear');
+        if (defaultEmp && searchInput && hiddenInput) {
+          hiddenInput.value = defaultEmp.id;
+          searchInput.value = `${defaultEmp.name} (${defaultEmp.id}) - ${departmentName(defaultEmp.department)}`;
+          if (badge) badge.textContent = defaultEmp.id;
+          if (clearBtn) clearBtn.style.display = 'inline-flex';
+        }
         store.notify();
       } catch (err) {
         console.error('[Leave View] createLeaveRequest failed:', err);
@@ -837,6 +899,129 @@ export function initView() {
     } catch (err) {
       console.error('[Leave View] Archive 2 months failed:', err);
       showToast('Lỗi khi lưu trữ dữ liệu: ' + (err.message || err), true);
+    }
+  });
+}
+
+/**
+ * Xử lý tìm kiếm nhanh nhân sự (Autocomplete / Searchable Combobox)
+ * Cho phép gõ tên, mã NV hoặc phòng ban để lọc tức thì không cần cuộn 100+ người
+ */
+function bindEmployeeSearch() {
+  const searchInput = document.getElementById('leaveEmployeeSearch');
+  const hiddenInput = document.getElementById('leaveEmployee');
+  const dropdown = document.getElementById('leaveEmployeeDropdown');
+  const clearBtn = document.getElementById('leaveEmployeeClear');
+  const badge = document.getElementById('leaveEmployeeBadge');
+  if (!searchInput || !hiddenInput || !dropdown) return;
+
+  function renderList(query = '') {
+    const q = normalizeText(query.trim());
+    const matches = cachedEmployees.filter((emp) => {
+      if (!q) return true;
+      const haystack = normalizeText(`${emp.name} ${emp.id} ${emp.role || ''} ${departmentName(emp.department)}`);
+      return haystack.includes(q);
+    });
+
+    if (!matches.length) {
+      dropdown.innerHTML = `<div style="padding: 14px 12px; text-align: center; color: #94a3b8; font-size: 0.82rem;">
+        <i class="ri-user-unfollow-line" style="font-size: 1.3rem; display: block; margin-bottom: 4px; color: #cbd5e1;"></i>
+        Không tìm thấy nhân sự khớp với "${escapeHTML(query)}"
+      </div>`;
+      dropdown.style.display = 'block';
+      return;
+    }
+
+    dropdown.innerHTML = matches.map((emp) => {
+      const isSelected = emp.id === hiddenInput.value;
+      const dept = departmentName(emp.department);
+      const roleOrDept = emp.role || dept;
+      return `
+        <div class="leave-emp-option" data-id="${escapeHTML(emp.id)}" data-label="${escapeHTML(`${emp.name} (${emp.id}) - ${dept}`)}" style="padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem; background: ${isSelected ? '#f0fdf4' : 'transparent'};">
+          <div style="min-width: 0; padding-right: 8px;">
+            <strong style="color: ${isSelected ? '#15803d' : '#0f172a'}; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.86rem;">${escapeHTML(emp.name)}</strong>
+            <span style="font-size: 0.75rem; color: #64748b;">${escapeHTML(roleOrDept)}</span>
+          </div>
+          <span class="pill" style="font-size: 0.72rem; background: ${isSelected ? '#bbf7d0' : '#e0f2fe'}; color: ${isSelected ? '#166534' : '#0369a1'}; font-weight: 700; white-space: nowrap;">${escapeHTML(emp.id)}</span>
+        </div>
+      `;
+    }).join('');
+
+    dropdown.querySelectorAll('.leave-emp-option').forEach((opt) => {
+      opt.addEventListener('mouseenter', () => {
+        if (opt.dataset.id !== hiddenInput.value) opt.style.background = '#f8fafc';
+      });
+      opt.addEventListener('mouseleave', () => {
+        opt.style.background = opt.dataset.id === hiddenInput.value ? '#f0fdf4' : 'transparent';
+      });
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = opt.dataset.id;
+        const label = opt.dataset.label;
+        hiddenInput.value = id;
+        searchInput.value = label;
+        if (badge) badge.textContent = id;
+        if (clearBtn) clearBtn.style.display = 'inline-flex';
+        dropdown.style.display = 'none';
+      });
+    });
+
+    dropdown.style.display = 'block';
+  }
+
+  // Khi click hoặc focus: mở danh sách và tự bôi đen chữ để tiện gõ đè ngay
+  searchInput.addEventListener('focus', () => {
+    renderList(searchInput.value);
+    searchInput.select();
+  });
+  searchInput.addEventListener('click', () => {
+    if (dropdown.style.display !== 'block') {
+      renderList(searchInput.value);
+    }
+  });
+
+  // Khi gõ ký tự: lọc danh sách tức thì
+  searchInput.addEventListener('input', (e) => {
+    const val = e.target.value;
+    if (clearBtn) clearBtn.style.display = val ? 'inline-flex' : 'none';
+    renderList(val);
+  });
+
+  // Nút xóa (X) để tìm người khác
+  clearBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    searchInput.value = '';
+    hiddenInput.value = '';
+    if (badge) badge.textContent = 'Chưa chọn';
+    clearBtn.style.display = 'none';
+    searchInput.focus();
+    renderList('');
+  });
+
+  // Đóng dropdown khi click ra ngoài
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.leave-combobox-wrap')) {
+      dropdown.style.display = 'none';
+      // Nếu xóa dở mà click ra ngoài không chọn ai, khôi phục lại nhân sự cũ
+      const selectedEmp = cachedEmployees.find((emp) => emp.id === hiddenInput.value);
+      if (selectedEmp && !searchInput.value.trim()) {
+        searchInput.value = `${selectedEmp.name} (${selectedEmp.id}) - ${departmentName(selectedEmp.department)}`;
+        if (clearBtn) clearBtn.style.display = 'inline-flex';
+        if (badge) badge.textContent = selectedEmp.id;
+      }
+    }
+  });
+
+  // Hỗ trợ phím tắt bàn phím tiện lợi
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+    } else if (e.key === 'Enter' && dropdown.style.display === 'block') {
+      const firstOpt = dropdown.querySelector('.leave-emp-option');
+      if (firstOpt) {
+        e.preventDefault();
+        firstOpt.click();
+      }
     }
   });
 }
