@@ -72,6 +72,37 @@ type WorkDay = {
   source: 'postgresql-vps';
 };
 
+function getShiftBreakWindow(shiftCode: string | null, shift: JsonMap | undefined, start: number, end: number) {
+  let breakMinutes = positiveMinutes(shift?.break_minutes);
+  const code = String(shiftCode || '').toLowerCase();
+  // ponytail: Ca hành chính (08:00 - 17:00) như clinic-0800, doctor-office luôn có 1 tiếng nghỉ trưa (60 phút)
+  if (breakMinutes === 0 && (code === 'clinic-0800' || (start === 480 && end === 1020))) {
+    breakMinutes = 60;
+  }
+  if (breakMinutes === 0 || start >= end) {
+    return { breakMinutes: 0, breakStart: 0, breakEnd: 0 };
+  }
+
+  // Khung giờ nghỉ chuẩn theo quy định Nha Khoa 5S:
+  // - Đối với ca hành chính / ca sáng / ca full: từ 12h00 đến 13h00 (720 đến 780)
+  // - Đối với ca chiều (doctor-afternoon, front-afternoon hoặc bắt đầu >= 09:30): từ 15h00 đến 16h00 (900 đến 960)
+  // - Đối với ca tạp vụ (cleaning-weekday, cleaning-sunday): từ 11h00 đến 12h00 (660 đến 720)
+  let breakStart = 12 * 60; // 720 (12:00)
+  if (code.includes('afternoon') || (start >= 570 && start <= 660)) {
+    breakStart = 15 * 60; // 900 (15:00)
+  } else if (code.startsWith('cleaning')) {
+    breakStart = 11 * 60; // 660 (11:00)
+  }
+
+  if (breakStart < start || breakStart >= end) {
+    breakStart = Math.floor((start + end - breakMinutes) / 2);
+  }
+  const breakEnd = Math.min(end, breakStart + breakMinutes);
+  const actualBreak = Math.max(0, breakEnd - breakStart);
+
+  return { breakMinutes: actualBreak, breakStart, breakEnd };
+}
+
 function calculateWorkDay(employeeCode: string, workDate: string, assignment: JsonMap | undefined, events: JsonMap[], shifts: Map<string, JsonMap>, approvedOvertime: { minutes: number; ids: string[] }) {
   const checkins = events.filter((row) => row.record_type === 'checkin').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
   const checkouts = events.filter((row) => row.record_type === 'checkout').sort((a, b) => String(a.recorded_at).localeCompare(String(b.recorded_at)));
@@ -91,11 +122,7 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   const start = shift ? Math.floor(seconds(shift.start_time) / 60) : 0;
   let end = shift ? Math.floor(seconds(shift.end_time) / 60) : 0;
   if (shift && end <= start) end += 24 * 60;
-  let breakMinutes = positiveMinutes(shift?.break_minutes);
-  // ponytail: Ca hành chính (08:00 - 17:00) như clinic-0800, doctor-office luôn có 1 tiếng nghỉ trưa (60 phút)
-  if (breakMinutes === 0 && (normalizedShiftCode === 'clinic-0800' || (start === 480 && end === 1020))) {
-    breakMinutes = 60;
-  }
+  const { breakMinutes, breakStart, breakEnd } = getShiftBreakWindow(normalizedShiftCode || shiftCode, shift, start, end);
   const scheduledMinutes = shift ? Math.max(0, end - start - breakMinutes) : 0;
   const checkinMinute = minuteOfClinicDay(checkin?.recorded_at);
   let checkoutMinute = minuteOfClinicDay(checkout?.recorded_at);
@@ -122,11 +149,42 @@ function calculateWorkDay(employeeCode: string, workDate: string, assignment: Js
   let regularMinutes = 0;
   let overtimeMinutes = 0;
   if (status === 'complete' && checkinMinute !== null && checkoutMinute !== null) {
-    lateMinutes = Math.max(0, checkinMinute - start);
-    earlyLeaveMinutes = Math.max(Math.max(0, end - checkoutMinute), positiveMinutes(assignment?.early_leave_minutes));
-    const regularByRules = Math.max(0, scheduledMinutes - lateMinutes - earlyLeaveMinutes);
-    const regularByPresence = Math.max(0, checkoutMinute - checkinMinute - breakMinutes);
-    regularMinutes = Math.min(scheduledMinutes, regularByRules, regularByPresence);
+    const effCheckin = Math.max(start, Math.min(end, checkinMinute));
+    const effCheckout = Math.min(end, Math.max(start, checkoutMinute));
+
+    if (effCheckout > effCheckin) {
+      if (breakMinutes > 0 && breakStart < breakEnd) {
+        // Khoảng 1: [start, breakStart]
+        const work1 = Math.max(0, Math.min(effCheckout, breakStart) - Math.max(effCheckin, start));
+        // Khoảng 2: [breakEnd, end]
+        const work2 = Math.max(0, Math.min(effCheckout, end) - Math.max(effCheckin, breakEnd));
+        regularMinutes = Math.min(scheduledMinutes, work1 + work2);
+      } else {
+        regularMinutes = Math.min(scheduledMinutes, effCheckout - effCheckin);
+      }
+    }
+
+    if (checkinMinute > start) {
+      if (breakMinutes > 0 && breakStart < breakEnd) {
+        const missed1 = Math.max(0, Math.min(checkinMinute, breakStart) - start);
+        const missed2 = Math.max(0, Math.min(checkinMinute, end) - Math.max(start, breakEnd));
+        lateMinutes = missed1 + missed2;
+      } else {
+        lateMinutes = Math.min(end, checkinMinute) - start;
+      }
+    }
+
+    if (checkoutMinute < end) {
+      if (breakMinutes > 0 && breakStart < breakEnd) {
+        const missed1 = Math.max(0, Math.min(end, breakStart) - Math.max(checkoutMinute, start));
+        const missed2 = Math.max(0, end - Math.max(checkoutMinute, breakEnd));
+        earlyLeaveMinutes = missed1 + missed2;
+      } else {
+        earlyLeaveMinutes = end - Math.max(start, checkoutMinute);
+      }
+    }
+    earlyLeaveMinutes = Math.max(earlyLeaveMinutes, positiveMinutes(assignment?.early_leave_minutes));
+
     // Chỉ đơn tăng ca đã được duyệt cuối cùng mới sinh phút tính công. Số phút
     // nhập tay trên phân ca không còn là bằng chứng đủ để cộng lương.
     overtimeMinutes = positiveMinutes(approvedOvertime.minutes);
