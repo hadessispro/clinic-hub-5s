@@ -2134,41 +2134,171 @@ async function executeUnifiedExport() {
       return;
     }
 
-    // 2. LOẠI BÁO CÁO 2: DANH SÁCH CHECK-IN TRỄ (4 SHEET)
+    // 2. LOẠI BÁO CÁO 2: DANH SÁCH CHECK-IN TRỄ (4 SHEET ĐẸP OPENXML 5S)
     if (chosenType === 'late_checkin') {
-      if (progressText) progressText.textContent = `Đang truy vấn dữ liệu check-in ${periodSummary}...`;
+      if (progressText) progressText.textContent = `Đang truy vấn dữ liệu check-in trễ ${periodSummary}...`;
 
-      let query = dataClient
-        .from('attendance_records')
-        .select('*')
-        .eq('record_type', 'checkin');
-
-      if (isMonthMode) {
-        query = query
-          .gte('time', `${targetMonth}-01T00:00:00`)
-          .lte('time', `${targetMonth}-31T23:59:59`);
-      } else {
-        query = query
-          .gte('time', `${rangeFrom}T00:00:00`)
-          .lte('time', `${rangeTo}T23:59:59`);
-      }
-      if (branch !== 'all') {
-        query = query.eq('branch_id', branch);
-      }
-
-      const { data: attData, error: attError } = await query;
-      if (attError) throw attError;
-
+      // Lấy danh sách nhân viên
       const emps = context?.employees || store.getState()?.employees || [];
-      let lateRows = computeLateCheckinList(attData || [], emps);
+      const empMap = new Map(emps.map((e) => [String(e.id || e.code || '').toLowerCase(), e]));
 
-      if (isMonthMode) {
-        lateRows = lateRows.filter((r) => r.rawDate && r.rawDate.startsWith(targetMonth));
-      } else {
-        lateRows = lateRows.filter((r) => r.rawDate && r.rawDate >= rangeFrom && r.rawDate <= rangeTo);
+      // Lấy danh sách đơn từ (đơn xin đi trễ)
+      let leaveReqs = [];
+      try {
+        const { data: lData } = await dataClient.from('leave_requests').select('*');
+        leaveReqs = (lData || []).filter((r) => String(r.request_type || '').toLowerCase().includes('trễ'));
+      } catch {
+        leaveReqs = [];
       }
-      if (branch !== 'all') {
-        lateRows = lateRows.filter((r) => r.branchId === branch || (r.branchName && (branch === 'pham-van-chieu' ? r.branchName.includes('Phạm Văn Chiêu') : r.branchName.includes('Lê Văn Thọ'))));
+
+      // Lấy bảng công attendance_work_days (nguồn chuẩn hóa chính thức đã tính toán của hệ thống)
+      let workDays = [];
+      try {
+        let q = dataClient.from('attendance_work_days').select('*');
+        if (isMonthMode) {
+          q = q.like('work_date', `${targetMonth}%`);
+        } else {
+          q = q.gte('work_date', rangeFrom).lte('work_date', rangeTo);
+        }
+        if (branch !== 'all') {
+          q = q.eq('branch_id', branch);
+        }
+        const { data: wdData } = await q;
+        if (wdData && wdData.length) workDays = wdData;
+      } catch (err) {
+        console.warn('[Export] Truy vấn attendance_work_days thất bại, dùng fallback:', err);
+      }
+
+      // Đếm tổng số ca làm việc theo từng nhân viên trong kỳ để tính tỷ lệ tuân thủ
+      const totalShiftsByEmp = {};
+      workDays.forEach((w) => {
+        const code = String(w.employee_code || '').trim();
+        if (code) totalShiftsByEmp[code] = (totalShiftsByEmp[code] || 0) + 1;
+      });
+
+      // Lọc các bản ghi đi trễ (trễ 5S hoặc trễ ca)
+      let lateWorkDays = workDays.filter((w) =>
+        Boolean(w.is_late_checkin) ||
+        Number(w.late_checkin_minutes || 0) > 0 ||
+        Number(w.late_minutes || 0) > 0
+      );
+
+      // Map sang hàng dữ liệu đầy đủ hoặc fallback nếu chưa tính bảng công
+      let lateRows = [];
+      if (lateWorkDays.length) {
+        lateRows = lateWorkDays.map((w, idx) => {
+          const code = w.employee_code || '';
+          const emp = empMap.get(code.toLowerCase()) || {};
+          const branchId = w.branch_id || emp.branchId || '';
+          const branchName = branchId === 'pham-van-chieu' ? 'Nha Khoa 5S - Phạm Văn Chiêu' : (branchId === 'le-van-tho' ? 'Nha Khoa 5S - Lê Văn Thọ' : branchId);
+
+          // Tìm đơn xin đi trễ phù hợp
+          const matchedReq = leaveReqs.find((r) =>
+            String(r.employee_code || '').toLowerCase() === code.toLowerCase() &&
+            r.from_date <= w.work_date && w.work_date <= (r.to_date || r.from_date)
+          );
+
+          const late5sMin = Number(w.late_checkin_minutes || 0);
+          const lateShiftMin = Number(w.late_minutes || 0);
+
+          let statusText = 'Trễ không phép';
+          let leaveRequest = '—';
+          let hasApprovedLeave = false;
+
+          if (matchedReq) {
+            leaveRequest = matchedReq.reason ? matchedReq.reason.trim() : 'Đơn xin đi trễ';
+            if (matchedReq.status === 'approved') {
+              statusText = 'Đã duyệt đơn (Miễn phạt)';
+              hasApprovedLeave = true;
+            } else if (matchedReq.status === 'pending') {
+              statusText = 'Chờ duyệt đơn';
+            } else if (matchedReq.status === 'rejected') {
+              statusText = 'Từ chối đơn';
+            }
+          } else if (lateShiftMin === 0 && late5sMin <= 5) {
+            statusText = 'Trễ 5S nhẹ (<5p)';
+          } else if (lateShiftMin > 0) {
+            statusText = `Trễ vào ca (${lateShiftMin}p)`;
+          }
+
+          // Định dạng giờ check-in thực tế sang UTC+7
+          let checkinDisplay = '—';
+          if (w.checkin_at) {
+            try {
+              const d = new Date(w.checkin_at);
+              if (!isNaN(d.getTime())) {
+                checkinDisplay = d.toLocaleTimeString('vi-VN', {
+                  timeZone: 'Asia/Ho_Chi_Minh',
+                  hour12: false,
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                });
+              } else {
+                checkinDisplay = String(w.checkin_at);
+              }
+            } catch {
+              checkinDisplay = String(w.checkin_at);
+            }
+          }
+
+          const parts = String(w.work_date || '').split('-');
+          const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : w.work_date;
+
+          return {
+            stt: idx + 1,
+            empCode: code,
+            empName: emp.name || emp.full_name || code,
+            deptName: departmentName(emp.department),
+            branchName,
+            empRole: emp.role || '—',
+            workDate: formattedDate,
+            rawDate: w.work_date,
+            shiftName: w.shift_name || w.shift_code || '—',
+            requiredCheckin: w.required_checkin_time ? `${w.required_checkin_time} (Trước 5p)` : '—',
+            actualCheckin: checkinDisplay,
+            lateMinutes: late5sMin,
+            shiftLateMinutes: lateShiftMin,
+            leaveRequest,
+            hasApprovedLeave,
+            statusText,
+            note: hasApprovedLeave ? 'Có đơn được duyệt hợp lệ' : (lateShiftMin > 0 ? `Vào trễ sau giờ bắt đầu ca ${lateShiftMin} phút` : 'Trễ quy chuẩn 5S nhẹ'),
+            totalShifts: totalShiftsByEmp[code] || 0,
+          };
+        });
+      } else {
+        // Fallback sang attendance_records nếu attendance_work_days chưa có dữ liệu
+        let query = dataClient
+          .from('attendance_records')
+          .select('*')
+          .eq('record_type', 'checkin');
+
+        if (isMonthMode) {
+          query = query
+            .gte('time', `${targetMonth}-01T00:00:00`)
+            .lte('time', `${targetMonth}-31T23:59:59`);
+        } else {
+          query = query
+            .gte('time', `${rangeFrom}T00:00:00`)
+            .lte('time', `${rangeTo}T23:59:59`);
+        }
+        if (branch !== 'all') {
+          query = query.eq('branch_id', branch);
+        }
+
+        const { data: attData, error: attError } = await query;
+        if (attError) throw attError;
+
+        lateRows = computeLateCheckinList(attData || [], emps);
+
+        if (isMonthMode) {
+          lateRows = lateRows.filter((r) => r.rawDate && r.rawDate.startsWith(targetMonth));
+        } else {
+          lateRows = lateRows.filter((r) => r.rawDate && r.rawDate >= rangeFrom && r.rawDate <= rangeTo);
+        }
+        if (branch !== 'all') {
+          lateRows = lateRows.filter((r) => r.branchId === branch || (r.branchName && (branch === 'pham-van-chieu' ? r.branchName.includes('Phạm Văn Chiêu') : r.branchName.includes('Lê Văn Thọ'))));
+        }
       }
 
       if (!lateRows.length) {
@@ -2185,7 +2315,7 @@ async function executeUnifiedExport() {
         month: isMonthMode ? targetMonth : '',
       });
 
-      showToast(`Đã xuất riêng file Excel ${lateRows.length} lượt check-in trễ thành công!`);
+      showToast(`Đã xuất riêng file Excel 4 sheet ${lateRows.length} lượt check-in trễ thành công!`);
       closeAttendanceExportModal();
       return;
     }

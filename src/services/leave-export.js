@@ -269,9 +269,10 @@ function getTypeStyleId(type) {
 }
 
 function getStatusStyleId(status) {
-  if (status === 'approved') return 10;
-  if (status === 'pending') return 11;
-  if (status === 'rejected' || status === 'late' || String(status).toLowerCase().includes('trễ')) return 12;
+  const s = String(status || '').toLowerCase();
+  if (s.includes('duyệt') || s === 'approved' || s.includes('hợp lệ') || s.includes('miễn') || s.includes('xuất sắc') || s.includes('tốt')) return 10;
+  if (s.includes('chờ') || s === 'pending' || s.includes('nhẹ') || s.includes('nhắc nhở') || s.includes('tương đối')) return 11;
+  if (s.includes('từ chối') || s === 'rejected' || s.includes('trễ') || s.includes('vi phạm') || s.includes('không phép') || s.includes('kiểm điểm')) return 12;
   return 5;
 }
 
@@ -279,8 +280,7 @@ function getStatusLabel(status) {
   if (status === 'approved') return 'ĐÃ DUYỆT';
   if (status === 'pending') return 'CHỜ DUYỆT';
   if (status === 'rejected') return 'TỪ CHỐI';
-  if (status === 'late' || String(status).toLowerCase().includes('trễ')) return 'TRỄ CHECK-IN';
-  return status || '—';
+  return String(status || '—');
 }
 
 /**
@@ -886,38 +886,134 @@ export function computeEmployeeLateSummary(lateCheckins = []) {
         branchName: r.branchName,
         empRole: r.empRole,
         posOrder: r.posOrder || 99,
+        totalShifts: r.totalShifts || 0,
         lateCount: 0,
+        shiftLateCount: 0,
         totalLateMinutes: 0,
+        totalShiftLateMinutes: 0,
         maxLateMinutes: 0,
+        approvedCount: 0,
+        unapprovedCount: 0,
       });
     }
     const item = map.get(key);
     item.lateCount += 1;
     const mins = Number(r.lateMinutes || 0);
+    const shiftMins = Number(r.shiftLateMinutes || 0);
     item.totalLateMinutes += mins;
+    item.totalShiftLateMinutes += shiftMins;
+    if (shiftMins > 0) item.shiftLateCount += 1;
     if (mins > item.maxLateMinutes) item.maxLateMinutes = mins;
+    if (r.totalShifts) item.totalShifts = r.totalShifts;
+
+    const isApproved = r.hasApprovedLeave || String(r.statusText || '').toLowerCase().includes('duyệt');
+    if (isApproved) {
+      item.approvedCount += 1;
+    } else {
+      item.unapprovedCount += 1;
+    }
   }
 
-  const list = Array.from(map.values()).map((item) => ({
-    ...item,
-    avgLateMinutes: item.lateCount ? Math.round(item.totalLateMinutes / item.lateCount) : 0,
-  }));
+  const list = Array.from(map.values()).map((item) => {
+    const avgLate = item.lateCount ? Math.round(item.totalLateMinutes / item.lateCount) : 0;
+    const totalShifts = item.totalShifts || 0;
+    const complianceRate = totalShifts > 0
+      ? Math.max(0, Math.round(((totalShifts - item.unapprovedCount) / totalShifts) * 100))
+      : (item.unapprovedCount === 0 ? 100 : Math.max(0, 100 - item.unapprovedCount * 5));
+
+    let evaluation = 'Tuân thủ tốt';
+    if (item.unapprovedCount >= 7) evaluation = 'Cần kiểm điểm & nhắc nhở đặc biệt';
+    else if (item.unapprovedCount >= 4) evaluation = 'Cần nhắc nhở chấp hành nội quy';
+    else if (item.unapprovedCount >= 1) evaluation = 'Chấp hành tương đối tốt';
+    else evaluation = 'Tuân thủ xuất sắc (Có đơn đầy đủ)';
+
+    return {
+      ...item,
+      avgLateMinutes: avgLate,
+      complianceRate: `${complianceRate}%`,
+      evaluation,
+    };
+  });
 
   list.sort((a, b) => {
-    if (b.totalLateMinutes !== a.totalLateMinutes) return b.totalLateMinutes - a.totalLateMinutes;
-    return b.lateCount - a.lateCount;
+    if (b.lateCount !== a.lateCount) return b.lateCount - a.lateCount;
+    return b.totalLateMinutes - a.totalLateMinutes;
   });
 
   return list.map((item, idx) => ({ ...item, stt: idx + 1 }));
 }
 
 /**
+ * Tổng hợp thống kê vi phạm check-in theo từng Phòng Ban / Bộ phận
+ */
+export function computeDepartmentLateSummary(lateCheckins = []) {
+  const map = new Map();
+  for (const r of lateCheckins) {
+    const dept = r.deptName || 'Khác';
+    if (!map.has(dept)) {
+      map.set(dept, {
+        deptName: dept,
+        empSet: new Set(),
+        lateCount: 0,
+        shiftLateCount: 0,
+        totalLateMinutes: 0,
+        totalShiftLateMinutes: 0,
+        approvedCount: 0,
+        unapprovedCount: 0,
+      });
+    }
+    const item = map.get(dept);
+    if (r.empCode) item.empSet.add(r.empCode);
+    item.lateCount += 1;
+    const mins = Number(r.lateMinutes || 0);
+    const shiftMins = Number(r.shiftLateMinutes || 0);
+    item.totalLateMinutes += mins;
+    item.totalShiftLateMinutes += shiftMins;
+    if (shiftMins > 0) item.shiftLateCount += 1;
+
+    const isApproved = r.hasApprovedLeave || String(r.statusText || '').toLowerCase().includes('duyệt');
+    if (isApproved) {
+      item.approvedCount += 1;
+    } else {
+      item.unapprovedCount += 1;
+    }
+  }
+
+  const list = Array.from(map.values()).map((item) => {
+    const avgLate = item.lateCount ? Math.round(item.totalLateMinutes / item.lateCount) : 0;
+    const approvedRate = item.lateCount > 0 ? Math.round((item.approvedCount / item.lateCount) * 100) : 100;
+    let evalText = 'Chấp hành tốt';
+    if (item.unapprovedCount >= 10) evalText = 'Cần chấn chỉnh & nhắc nhở bộ phận';
+    else if (item.unapprovedCount >= 5) evalText = 'Cần lưu ý giờ giấc';
+    else if (item.unapprovedCount === 0) evalText = 'Tuân thủ xuất sắc (Có đơn 100%)';
+
+    return {
+      deptName: item.deptName,
+      staffCount: item.empSet.size,
+      lateCount: item.lateCount,
+      shiftLateCount: item.shiftLateCount,
+      totalLateMinutes: item.totalLateMinutes,
+      totalShiftLateMinutes: item.totalShiftLateMinutes,
+      approvedCount: item.approvedCount,
+      unapprovedCount: item.unapprovedCount,
+      avgLateMinutes: avgLate,
+      complianceRate: `${approvedRate}%`,
+      evaluation: evalText,
+    };
+  });
+
+  list.sort((a, b) => b.lateCount - a.lateCount);
+  return list.map((item, idx) => ({ ...item, stt: idx + 1 }));
+}
+
+/**
  * Trình xuất RIÊNG BIỆT Danh sách & Bảng thống kê Check-in vào ca trễ
- * Thiết kế chuyên nghiệp 4 Sheet chuẩn OpenXML nhận diện Nha Khoa 5S:
- * - Sheet 1: Tất cả lượt trễ (Toàn hệ thống, đầy đủ 14 cột, xếp theo ngày & chức danh)
- * - Sheet 2: Thống kê theo Nhân sự (Số lần trễ, tổng phút trễ, trễ max, trễ trung bình)
- * - Sheet 3: Cơ sở Lê Văn Thọ (LVT)
- * - Sheet 4: Cơ sở Phạm Văn Chiêu (PVC)
+ * Thiết kế chuyên nghiệp 5 Sheet chuẩn OpenXML nhận diện Nha Khoa 5S:
+ * - Sheet 1: Tất cả lượt trễ (Toàn hệ thống, đầy đủ thứ, ngày, giờ ca, giờ thực tế, badge trạng thái)
+ * - Sheet 2: Thống kê theo Nhân sự (Xếp hạng mức độ vi phạm, tỷ lệ tuân thủ, số lần có đơn / không phép)
+ * - Sheet 3: Thống kê Phòng ban (Tổng hợp theo Khối Bác sĩ, Phụ tá, Lễ tân, Marketing...)
+ * - Sheet 4: Cơ sở Lê Văn Thọ (LVT)
+ * - Sheet 5: Cơ sở Phạm Văn Chiêu (PVC)
  */
 export async function exportLateCheckinWorkbook({
   lateCheckins = [],
@@ -933,9 +1029,18 @@ export async function exportLateCheckinWorkbook({
 
   if (month) {
     allLateRows = allLateRows
-      .filter((r) => r.rawDate && r.rawDate.startsWith(month))
-      .map((r, idx) => ({ ...r, stt: idx + 1 }));
+      .filter((r) => r.rawDate && r.rawDate.startsWith(month));
   }
+
+  const dayOfWeekNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  allLateRows = allLateRows.map((r, idx) => {
+    let dayOfWeek = r.dayOfWeek;
+    if (!dayOfWeek && r.rawDate) {
+      const d = new Date(r.rawDate);
+      dayOfWeek = isNaN(d.getTime()) ? '—' : dayOfWeekNames[d.getDay()];
+    }
+    return { ...r, stt: idx + 1, dayOfWeek: dayOfWeek || '—' };
+  });
 
   const exportDateStr = new Intl.DateTimeFormat('vi-VN', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -952,75 +1057,140 @@ export async function exportLateCheckinWorkbook({
     { key: 'stt', label: 'STT', width: 6, type: 'center' },
     { key: 'empCode', label: 'MÃ NV', width: 14, type: 'center_bold' },
     { key: 'empName', label: 'HỌ VÀ TÊN', width: 25, type: 'bold' },
-    { key: 'deptName', label: 'PHÒNG BAN', width: 18, type: 'text' },
-    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 18, type: 'text' },
+    { key: 'deptName', label: 'PHÒNG BAN', width: 20, type: 'text' },
+    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 24, type: 'text' },
     { key: 'empRole', label: 'CHỨC DANH', width: 20, type: 'text' },
-    { key: 'workDate', label: 'NGÀY LÀM VIỆC', width: 14, type: 'center' },
+    { key: 'dayOfWeek', label: 'THỨ', width: 13, type: 'center' },
+    { key: 'workDate', label: 'NGÀY LÀM VIỆC', width: 15, type: 'center' },
     { key: 'shiftName', label: 'CA LÀM VIỆC', width: 20, type: 'text' },
-    { key: 'shiftStart', label: 'GIỜ VÀO CA', width: 14, type: 'center' },
-    { key: 'requiredCheckin', label: 'MỐC YÊU CẦU CHECK-IN', width: 24, type: 'center_bold' },
-    { key: 'actualCheckin', label: 'GIỜ CHECK-IN THỰC TẾ', width: 24, type: 'center_bold' },
-    { key: 'lateMinutes', label: 'TRỄ CHECK-IN (PHÚT)', width: 22, type: 'number' },
-    { key: 'statusText', label: 'TRẠNG THÁI', width: 18, type: 'status' },
-    { key: 'note', label: 'GHI CHÚ / THIẾT BỊ', width: 32, type: 'text' },
+    { key: 'requiredCheckin', label: 'MỐC QUY ĐỊNH 5S', width: 22, type: 'center_bold' },
+    { key: 'actualCheckin', label: 'GIỜ CHECK-IN THỰC TẾ', width: 22, type: 'center_bold' },
+    { key: 'lateMinutes', label: 'TRỄ 5S (PHÚT)', width: 16, type: 'number' },
+    { key: 'shiftLateMinutes', label: 'TRỄ CA (PHÚT)', width: 16, type: 'number' },
+    { key: 'leaveRequest', label: 'ĐƠN XIN ĐI TRỄ / LÝ DO', width: 38, type: 'text' },
+    { key: 'statusText', label: 'TRẠNG THÁI / MIỄN PHẠT', width: 26, type: 'status' },
+    { key: 'note', label: 'GHI CHÚ / ĐÁNH GIÁ', width: 30, type: 'text' },
   ];
 
   const colsSummary = [
     { key: 'stt', label: 'STT', width: 6, type: 'center' },
     { key: 'empCode', label: 'MÃ NV', width: 14, type: 'center_bold' },
     { key: 'empName', label: 'HỌ VÀ TÊN', width: 25, type: 'bold' },
-    { key: 'deptName', label: 'PHÒNG BAN', width: 18, type: 'text' },
-    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 18, type: 'text' },
+    { key: 'deptName', label: 'PHÒNG BAN', width: 20, type: 'text' },
+    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 24, type: 'text' },
     { key: 'empRole', label: 'CHỨC DANH', width: 20, type: 'text' },
-    { key: 'lateCount', label: 'TỔNG SỐ LẦN TRỄ', width: 18, type: 'number' },
-    { key: 'totalLateMinutes', label: 'TỔNG SỐ PHÚT TRỄ', width: 20, type: 'number' },
-    { key: 'maxLateMinutes', label: 'TRỄ NHIỀU NHẤT (PHÚT)', width: 22, type: 'number' },
-    { key: 'avgLateMinutes', label: 'TRUNG BÌNH (PHÚT/LẦN)', width: 22, type: 'number' },
+    { key: 'totalShifts', label: 'TỔNG CA TRONG THÁNG', width: 20, type: 'number' },
+    { key: 'lateCount', label: 'SỐ LẦN TRỄ 5S', width: 16, type: 'number' },
+    { key: 'shiftLateCount', label: 'TRỄ VÀO CA (>5P)', width: 18, type: 'number' },
+    { key: 'totalLateMinutes', label: 'TỔNG PHÚT TRỄ 5S', width: 18, type: 'number' },
+    { key: 'totalShiftLateMinutes', label: 'TỔNG PHÚT TRỄ CA', width: 18, type: 'number' },
+    { key: 'approvedCount', label: 'CÓ ĐƠN ĐÃ DUYỆT', width: 18, type: 'number' },
+    { key: 'unapprovedCount', label: 'TRỄ KHÔNG PHÉP', width: 18, type: 'number' },
+    { key: 'complianceRate', label: 'TỶ LỆ TUÂN THỦ (%)', width: 18, type: 'center_bold' },
+    { key: 'evaluation', label: 'ĐÁNH GIÁ CHUNG', width: 32, type: 'status' },
+  ];
+
+  const colsDeptSummary = [
+    { key: 'stt', label: 'STT', width: 6, type: 'center' },
+    { key: 'deptName', label: 'PHÒNG BAN / BỘ PHẬN', width: 24, type: 'bold' },
+    { key: 'staffCount', label: 'SỐ NV CÓ TRỄ', width: 16, type: 'number' },
+    { key: 'lateCount', label: 'TỔNG LƯỢT TRỄ 5S', width: 18, type: 'number' },
+    { key: 'shiftLateCount', label: 'TRỄ VÀO CA (>5P)', width: 18, type: 'number' },
+    { key: 'totalLateMinutes', label: 'TỔNG PHÚT TRỄ 5S', width: 18, type: 'number' },
+    { key: 'totalShiftLateMinutes', label: 'TỔNG PHÚT TRỄ CA', width: 18, type: 'number' },
+    { key: 'approvedCount', label: 'CÓ ĐƠN ĐÃ DUYỆT', width: 18, type: 'number' },
+    { key: 'unapprovedCount', label: 'TRỄ KHÔNG PHÉP', width: 18, type: 'number' },
+    { key: 'complianceRate', label: 'TỶ LỆ CÓ ĐƠN (%)', width: 18, type: 'center_bold' },
+    { key: 'evaluation', label: 'ĐÁNH GIÁ CHUNG', width: 32, type: 'status' },
   ];
 
   // 1. Sheet 1: Tất cả lượt trễ
   const totalLateMinAll = allLateRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
+  const totalShiftLateMinAll = allLateRows.reduce((acc, r) => acc + (Number(r.shiftLateMinutes) || 0), 0);
   const sheet1Xml = buildGenericSheetXml({
     sheetTitle: 'DANH SÁCH CHI TIẾT TẤT CẢ LƯỢT CHECK-IN VÀO CA TRỄ — NHA KHOA 5S',
-    metaSubtitle: `${metaCommon}  |  Quy chuẩn: Yêu cầu check-in trước giờ vào ca 5 phút  |  Tổng số: ${allLateRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinAll} phút`,
+    metaSubtitle: `${metaCommon}  |  Quy chuẩn: Yêu cầu check-in trước giờ vào ca 5 phút  |  Tổng số: ${allLateRows.length} lượt trễ  |  Tổng phút trễ 5S: ${totalLateMinAll} phút`,
     columns: colsLateList,
     dataRows: allLateRows,
     totalsConfig: {
-      label: 'TỔNG CỘNG SỐ PHÚT TRỄ CHECK-IN:',
+      label: 'TỔNG CỘNG SỐ PHÚT TRỄ:',
       labelColEndIndex: 10,
       sumColumns: {
         lateMinutes: { type: 'number', cachedTotal: totalLateMinAll },
+        shiftLateMinutes: { type: 'number', cachedTotal: totalShiftLateMinAll },
       },
     },
   });
 
   // 2. Sheet 2: Thống kê theo Nhân sự
   const summaryRows = computeEmployeeLateSummary(allLateRows);
+  const totalShiftsSummary = summaryRows.reduce((acc, r) => acc + (Number(r.totalShifts) || 0), 0);
   const totalLateCountSummary = summaryRows.reduce((acc, r) => acc + (Number(r.lateCount) || 0), 0);
+  const totalShiftLateCountSummary = summaryRows.reduce((acc, r) => acc + (Number(r.shiftLateCount) || 0), 0);
   const totalLateMinSummary = summaryRows.reduce((acc, r) => acc + (Number(r.totalLateMinutes) || 0), 0);
+  const totalShiftLateMinSummary = summaryRows.reduce((acc, r) => acc + (Number(r.totalShiftLateMinutes) || 0), 0);
+  const totalApprovedSummary = summaryRows.reduce((acc, r) => acc + (Number(r.approvedCount) || 0), 0);
+  const totalUnapprovedSummary = summaryRows.reduce((acc, r) => acc + (Number(r.unapprovedCount) || 0), 0);
+
   const sheet2Xml = buildGenericSheetXml({
     sheetTitle: 'BẢNG TỔNG HỢP & THỐNG KÊ CHECK-IN TRỄ THEO NHÂN SỰ — NHA KHOA 5S',
-    metaSubtitle: `${metaCommon}  |  Sắp xếp theo tổng phút trễ giảm dần  |  Tổng số: ${summaryRows.length} nhân sự vi phạm`,
+    metaSubtitle: `${metaCommon}  |  Sắp xếp theo số lần trễ và tổng phút trễ giảm dần  |  Tổng số: ${summaryRows.length} nhân sự vi phạm`,
     columns: colsSummary,
     dataRows: summaryRows,
     totalsConfig: {
       label: 'TỔNG CỘNG TOÀN CÔNG TY:',
       labelColEndIndex: 5,
       sumColumns: {
+        totalShifts: { type: 'number', cachedTotal: totalShiftsSummary },
         lateCount: { type: 'number', cachedTotal: totalLateCountSummary },
+        shiftLateCount: { type: 'number', cachedTotal: totalShiftLateCountSummary },
         totalLateMinutes: { type: 'number', cachedTotal: totalLateMinSummary },
+        totalShiftLateMinutes: { type: 'number', cachedTotal: totalShiftLateMinSummary },
+        approvedCount: { type: 'number', cachedTotal: totalApprovedSummary },
+        unapprovedCount: { type: 'number', cachedTotal: totalUnapprovedSummary },
       },
     },
   });
 
-  // 3. Sheet 3: Chi nhánh Lê Văn Thọ
+  // 3. Sheet 3: Thống kê theo Phòng Ban / Bộ phận
+  const deptSummaryRows = computeDepartmentLateSummary(allLateRows);
+  const totalDeptStaffSummary = deptSummaryRows.reduce((acc, r) => acc + (Number(r.staffCount) || 0), 0);
+  const totalDeptLateCount = deptSummaryRows.reduce((acc, r) => acc + (Number(r.lateCount) || 0), 0);
+  const totalDeptShiftLateCount = deptSummaryRows.reduce((acc, r) => acc + (Number(r.shiftLateCount) || 0), 0);
+  const totalDeptLateMin = deptSummaryRows.reduce((acc, r) => acc + (Number(r.totalLateMinutes) || 0), 0);
+  const totalDeptShiftLateMin = deptSummaryRows.reduce((acc, r) => acc + (Number(r.totalShiftLateMinutes) || 0), 0);
+  const totalDeptApproved = deptSummaryRows.reduce((acc, r) => acc + (Number(r.approvedCount) || 0), 0);
+  const totalDeptUnapproved = deptSummaryRows.reduce((acc, r) => acc + (Number(r.unapprovedCount) || 0), 0);
+
+  const sheet3Xml = buildGenericSheetXml({
+    sheetTitle: 'BẢNG THỐNG KÊ CHECK-IN TRỄ THEO PHÒNG BAN & BỘ PHẬN — NHA KHOA 5S',
+    metaSubtitle: `${metaCommon}  |  Thống kê tổng hợp theo từng bộ phận chuyên môn  |  Tổng số: ${deptSummaryRows.length} phòng ban`,
+    columns: colsDeptSummary,
+    dataRows: deptSummaryRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG CÁC PHÒNG BAN:',
+      labelColEndIndex: 1,
+      sumColumns: {
+        staffCount: { type: 'number', cachedTotal: totalDeptStaffSummary },
+        lateCount: { type: 'number', cachedTotal: totalDeptLateCount },
+        shiftLateCount: { type: 'number', cachedTotal: totalDeptShiftLateCount },
+        totalLateMinutes: { type: 'number', cachedTotal: totalDeptLateMin },
+        totalShiftLateMinutes: { type: 'number', cachedTotal: totalDeptShiftLateMin },
+        approvedCount: { type: 'number', cachedTotal: totalDeptApproved },
+        unapprovedCount: { type: 'number', cachedTotal: totalDeptUnapproved },
+      },
+    },
+  });
+
+  // 4. Sheet 4: Chi nhánh Lê Văn Thọ
   const lvtRows = allLateRows
     .filter((r) => r.branchName?.includes('Lê Văn Thọ') || r.branchName?.includes('LVT'))
     .map((r, idx) => ({ ...r, stt: idx + 1 }));
   const totalLateMinLvt = lvtRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
-  const sheet3Xml = buildGenericSheetXml({
+  const totalShiftLateMinLvt = lvtRows.reduce((acc, r) => acc + (Number(r.shiftLateMinutes) || 0), 0);
+  const sheet4Xml = buildGenericSheetXml({
     sheetTitle: 'DANH SÁCH CHECK-IN VÀO CA TRỄ — CƠ SỞ LÊ VĂN THỌ (LVT)',
-    metaSubtitle: `${metaCommon}  |  Cơ sở Lê Văn Thọ  |  Tổng số: ${lvtRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinLvt} phút`,
+    metaSubtitle: `${metaCommon}  |  Cơ sở Lê Văn Thọ  |  Tổng số: ${lvtRows.length} lượt trễ  |  Tổng phút trễ 5S: ${totalLateMinLvt} phút`,
     columns: colsLateList,
     dataRows: lvtRows,
     totalsConfig: {
@@ -1028,18 +1198,20 @@ export async function exportLateCheckinWorkbook({
       labelColEndIndex: 10,
       sumColumns: {
         lateMinutes: { type: 'number', cachedTotal: totalLateMinLvt },
+        shiftLateMinutes: { type: 'number', cachedTotal: totalShiftLateMinLvt },
       },
     },
   });
 
-  // 4. Sheet 4: Chi nhánh Phạm Văn Chiêu
+  // 5. Sheet 5: Chi nhánh Phạm Văn Chiêu
   const pvcRows = allLateRows
     .filter((r) => r.branchName?.includes('Phạm Văn Chiêu') || r.branchName?.includes('PVC'))
     .map((r, idx) => ({ ...r, stt: idx + 1 }));
   const totalLateMinPvc = pvcRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
-  const sheet4Xml = buildGenericSheetXml({
+  const totalShiftLateMinPvc = pvcRows.reduce((acc, r) => acc + (Number(r.shiftLateMinutes) || 0), 0);
+  const sheet5Xml = buildGenericSheetXml({
     sheetTitle: 'DANH SÁCH CHECK-IN VÀO CA TRỄ — CƠ SỞ PHẠM VĂN CHIÊU (PVC)',
-    metaSubtitle: `${metaCommon}  |  Cơ sở Phạm Văn Chiêu  |  Tổng số: ${pvcRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinPvc} phút`,
+    metaSubtitle: `${metaCommon}  |  Cơ sở Phạm Văn Chiêu  |  Tổng số: ${pvcRows.length} lượt trễ  |  Tổng phút trễ 5S: ${totalLateMinPvc} phút`,
     columns: colsLateList,
     dataRows: pvcRows,
     totalsConfig: {
@@ -1047,6 +1219,7 @@ export async function exportLateCheckinWorkbook({
       labelColEndIndex: 10,
       sumColumns: {
         lateMinutes: { type: 'number', cachedTotal: totalLateMinPvc },
+        shiftLateMinutes: { type: 'number', cachedTotal: totalShiftLateMinPvc },
       },
     },
   });
@@ -1062,6 +1235,7 @@ export async function exportLateCheckinWorkbook({
   <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet5.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 </Types>`;
 
   const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1075,8 +1249,9 @@ export async function exportLateCheckinWorkbook({
   <sheets>
     <sheet name="Tất cả lượt trễ" sheetId="1" r:id="rId1"/>
     <sheet name="Thống kê theo Nhân sự" sheetId="2" r:id="rId2"/>
-    <sheet name="Cơ sở Lê Văn Thọ" sheetId="3" r:id="rId3"/>
-    <sheet name="Cơ sở Phạm Văn Chiêu" sheetId="4" r:id="rId4"/>
+    <sheet name="Thống kê Phòng ban" sheetId="3" r:id="rId3"/>
+    <sheet name="Cơ sở Lê Văn Thọ" sheetId="4" r:id="rId4"/>
+    <sheet name="Cơ sở Phạm Văn Chiêu" sheetId="5" r:id="rId5"/>
   </sheets>
 </workbook>`;
 
@@ -1087,6 +1262,7 @@ export async function exportLateCheckinWorkbook({
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
   <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
   <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/>
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet5.xml"/>
 </Relationships>`;
 
   const stylesXml = buildLeaveStylesXml();
@@ -1101,6 +1277,7 @@ export async function exportLateCheckinWorkbook({
     { name: 'xl/worksheets/sheet2.xml', data: sheet2Xml },
     { name: 'xl/worksheets/sheet3.xml', data: sheet3Xml },
     { name: 'xl/worksheets/sheet4.xml', data: sheet4Xml },
+    { name: 'xl/worksheets/sheet5.xml', data: sheet5Xml },
   ];
 
   const zipBytes = createZipArchive(files);
