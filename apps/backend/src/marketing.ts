@@ -251,12 +251,17 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
            and (nullif($3,'') is null or lower(p.payload->>'employee_code')=lower($3))
        ), cohort as (
          select l.*,
-                exists (
-                  select 1 from marketing.audit_log a
-                  where a.entity_type='marketing.lead' and a.action='lead.update'
-                    and a.entity_id=l.id::text
-                    and lower(a.actor_code)=lower(l.assigned_telesale_code)
-                    and a.created_at>=coalesce(l.assigned_at,l.created_at)
+                (
+                  (l.status is not null and l.status <> 'new')
+                  or exists (
+                    select 1 from marketing.audit_log a
+                    where a.entity_type='marketing.lead' and a.action in ('lead.update','lead.call_log')
+                      and a.entity_id=l.id::text
+                  )
+                  or exists (
+                    select 1 from marketing.call_logs cl
+                    where cl.lead_id=l.id
+                  )
                 ) processed_by_owner
          from marketing.leads l cross join bounds b
          where l.assigned_telesale_code is not null
