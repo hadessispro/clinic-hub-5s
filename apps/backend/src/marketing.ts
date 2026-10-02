@@ -526,7 +526,12 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     if (user.role === 'pg_staff') {
       params.push(user.employeeCode); where.push(`lower(l.created_by_pg_code)=lower($${params.length})`);
     } else if (user.role === 'telesale_staff') {
-      params.push(user.employeeCode); where.push(`lower(l.assigned_telesale_code)=lower($${params.length})`);
+      const code = (user.employeeCode || '').toLowerCase();
+      if (code === 'pvc-17' || code === 'pg-legacy-17' || code === 'pg-legacy-16') {
+        where.push(`lower(l.assigned_telesale_code) in ('pvc-17', 'pg-legacy-17', 'pg-legacy-16')`);
+      } else {
+        params.push(user.employeeCode); where.push(`lower(l.assigned_telesale_code)=lower($${params.length})`);
+      }
     } else if (!reportRoles.has(user.role)) {
       throw new ForbiddenException();
     }
@@ -851,7 +856,12 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
 
     const isManager = managerRoles.has(user.role) || supportRoles.has(user.role);
     const isCreator = Boolean(existing.created_by_pg_code && user.employeeCode && existing.created_by_pg_code.trim().toLowerCase() === user.employeeCode.trim().toLowerCase());
-    const isTelesale = user.role === 'telesale_staff' && Boolean(existing.assigned_telesale_code && user.employeeCode && existing.assigned_telesale_code.trim().toLowerCase() === user.employeeCode.trim().toLowerCase());
+    const isKhanhMy = ['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes((user.employeeCode || '').trim().toLowerCase())
+      && ['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes((existing.assigned_telesale_code || '').trim().toLowerCase());
+    const isTelesale = user.role === 'telesale_staff' && Boolean(
+      (existing.assigned_telesale_code && user.employeeCode && existing.assigned_telesale_code.trim().toLowerCase() === user.employeeCode.trim().toLowerCase())
+      || isKhanhMy
+    );
 
     if (!isManager && !isCreator && !isTelesale) {
       throw new ForbiddenException('Tài khoản không có quyền chỉnh sửa hồ sơ Lead này.');
@@ -1025,7 +1035,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const lead = await this.infrastructure.postgres.query<{ assigned_telesale_code: string }>(
       'select assigned_telesale_code from marketing.leads where id=$1', [leadId],
     );
-    if (!lead.rows[0] || (user.role === 'telesale_staff' && lead.rows[0].assigned_telesale_code !== user.employeeCode)) {
+    const leadCode = (lead.rows[0]?.assigned_telesale_code || '').trim().toLowerCase();
+    const userCode = (user.employeeCode || '').trim().toLowerCase();
+    const isMatched = leadCode === userCode
+      || (['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes(userCode) && ['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes(leadCode));
+    if (!lead.rows[0] || (user.role === 'telesale_staff' && !isMatched)) {
       throw new ForbiddenException('Lead không thuộc quyền xử lý của tài khoản này.');
     }
     const result = await this.infrastructure.postgres.query(
@@ -1051,7 +1065,11 @@ export class MarketingService implements OnModuleInit, OnModuleDestroy {
     const row = lead.rows[0];
     if (!row) throw new BadRequestException('Không tìm thấy Lead.');
     if (user.role === 'pg_staff' && row.created_by_pg_code !== user.employeeCode) throw new ForbiddenException();
-    if (user.role === 'telesale_staff' && row.assigned_telesale_code !== user.employeeCode) throw new ForbiddenException();
+    const telesaleLeadCode = (row.assigned_telesale_code || '').trim().toLowerCase();
+    const telesaleUserCode = (user.employeeCode || '').trim().toLowerCase();
+    const telesaleMatched = telesaleLeadCode === telesaleUserCode
+      || (['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes(telesaleUserCode) && ['pvc-17', 'pg-legacy-17', 'pg-legacy-16'].includes(telesaleLeadCode));
+    if (user.role === 'telesale_staff' && !telesaleMatched) throw new ForbiddenException();
     if (!['pg_staff', 'telesale_staff'].includes(user.role) && !reportRoles.has(user.role)) throw new ForbiddenException();
     const result = await this.infrastructure.postgres.query(
       `with history as (

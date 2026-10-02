@@ -120,12 +120,14 @@ export class AuthService {
            or lower(coalesce(e.payload->>'email',''))=$1
            or lower(coalesce(p.payload->>'full_name',''))=$1
            or lower(coalesce(e.payload->>'full_name',''))=$1
+           or (lower(coalesce(p.payload->>'role','')) in ('admin_it', 'it') and $1 in ('admin-it', 'admin_it', 'adminit', 'it', 'pvc-it'))
          )
        order by case
          when lower(coalesce(e.payload->>'email',''))=$1 then 0
          when lower(p.payload->>'employee_code')=$1 then 1
          when lower(p.payload->>'employee_number')=$1 then 2
-         else 3
+         when lower(coalesce(p.payload->>'role','')) in ('admin_it', 'it') and $1 in ('admin-it', 'admin_it', 'adminit', 'it', 'pvc-it') then 3
+         else 4
        end
        limit 5`, [identifier]);
 
