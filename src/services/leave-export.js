@@ -23,6 +23,7 @@
 import { createZipArchive, downloadFile } from './excel-export.js';
 import { BRANCHES } from '../branch.js';
 import { departmentName } from '../utils.js';
+import { getPositionGroup } from './attendance-matrix-export.js';
 
 function escapeXml(value) {
   if (value == null) return '';
@@ -519,13 +520,16 @@ export function computeLateCheckinList(records = [], employees = []) {
       const lateMinutes = checkinMinuteOfDay - requiredCheckinMin;
       const branchId = rec.branch_id || emp.branchId || '';
       const branchName = getBranchLabel(branchId);
+      const posGroup = getPositionGroup(emp);
 
       results.push({
         empCode: emp.id || empCode,
         empName: emp.name || empCode,
         deptName: departmentName(emp.department),
         branchName,
-        empRole: emp.role || 'Nhân sự',
+        empRole: emp.role || posGroup.name || 'Nhân sự',
+        posOrder: posGroup.order,
+        posName: posGroup.name,
         workDate: formatVnDate(workDate),
         rawDate: workDate,
         shiftName: shift.name,
@@ -543,6 +547,8 @@ export function computeLateCheckinList(records = [], employees = []) {
   results.sort((a, b) => {
     const dComp = String(b.rawDate).localeCompare(String(a.rawDate));
     if (dComp !== 0) return dComp;
+    const gComp = (a.posOrder || 99) - (b.posOrder || 99);
+    if (gComp !== 0) return gComp;
     return String(a.empCode).localeCompare(String(b.empCode));
   });
 
@@ -853,6 +859,245 @@ export async function exportLeaveRequestsWorkbook({
 
   const zipBytes = createZipArchive(files);
   const outName = filename || `Danh_Sach_Don_Tu_5S_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  if (typeof document !== 'undefined') {
+    downloadFile(
+      zipBytes,
+      outName,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+  }
+
+  return zipBytes;
+}
+
+/**
+ * Tổng hợp thống kê vi phạm check-in theo từng nhân sự
+ */
+export function computeEmployeeLateSummary(lateCheckins = []) {
+  const map = new Map();
+  for (const r of lateCheckins) {
+    const key = r.empCode || r.empName;
+    if (!map.has(key)) {
+      map.set(key, {
+        empCode: r.empCode,
+        empName: r.empName,
+        deptName: r.deptName,
+        branchName: r.branchName,
+        empRole: r.empRole,
+        posOrder: r.posOrder || 99,
+        lateCount: 0,
+        totalLateMinutes: 0,
+        maxLateMinutes: 0,
+      });
+    }
+    const item = map.get(key);
+    item.lateCount += 1;
+    const mins = Number(r.lateMinutes || 0);
+    item.totalLateMinutes += mins;
+    if (mins > item.maxLateMinutes) item.maxLateMinutes = mins;
+  }
+
+  const list = Array.from(map.values()).map((item) => ({
+    ...item,
+    avgLateMinutes: item.lateCount ? Math.round(item.totalLateMinutes / item.lateCount) : 0,
+  }));
+
+  list.sort((a, b) => {
+    if (b.totalLateMinutes !== a.totalLateMinutes) return b.totalLateMinutes - a.totalLateMinutes;
+    return b.lateCount - a.lateCount;
+  });
+
+  return list.map((item, idx) => ({ ...item, stt: idx + 1 }));
+}
+
+/**
+ * Trình xuất RIÊNG BIỆT Danh sách & Bảng thống kê Check-in vào ca trễ
+ * Thiết kế chuyên nghiệp 4 Sheet chuẩn OpenXML nhận diện Nha Khoa 5S:
+ * - Sheet 1: Tất cả lượt trễ (Toàn hệ thống, đầy đủ 14 cột, xếp theo ngày & chức danh)
+ * - Sheet 2: Thống kê theo Nhân sự (Số lần trễ, tổng phút trễ, trễ max, trễ trung bình)
+ * - Sheet 3: Cơ sở Lê Văn Thọ (LVT)
+ * - Sheet 4: Cơ sở Phạm Văn Chiêu (PVC)
+ */
+export async function exportLateCheckinWorkbook({
+  lateCheckins = [],
+  employees = [],
+  filterSummary = '',
+  filename = '',
+}) {
+  let allLateRows = Array.isArray(lateCheckins) ? [...lateCheckins] : [];
+  if (allLateRows.length && (!allLateRows[0].requiredCheckin || !allLateRows[0].stt)) {
+    allLateRows = computeLateCheckinList(allLateRows, employees);
+  }
+
+  const exportDateStr = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date());
+
+  const metaCommon = `Hệ Thống Nha Khoa 5S  |  Xuất ngày: ${exportDateStr}${filterSummary ? `  |  Bộ lọc: ${filterSummary}` : ''}`;
+
+  const colsLateList = [
+    { key: 'stt', label: 'STT', width: 6, type: 'center' },
+    { key: 'empCode', label: 'MÃ NV', width: 14, type: 'center_bold' },
+    { key: 'empName', label: 'HỌ VÀ TÊN', width: 25, type: 'bold' },
+    { key: 'deptName', label: 'PHÒNG BAN', width: 18, type: 'text' },
+    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 18, type: 'text' },
+    { key: 'empRole', label: 'CHỨC DANH', width: 20, type: 'text' },
+    { key: 'workDate', label: 'NGÀY LÀM VIỆC', width: 14, type: 'center' },
+    { key: 'shiftName', label: 'CA LÀM VIỆC', width: 20, type: 'text' },
+    { key: 'shiftStart', label: 'GIỜ VÀO CA', width: 14, type: 'center' },
+    { key: 'requiredCheckin', label: 'MỐC YÊU CẦU CHECK-IN', width: 24, type: 'center_bold' },
+    { key: 'actualCheckin', label: 'GIỜ CHECK-IN THỰC TẾ', width: 24, type: 'center_bold' },
+    { key: 'lateMinutes', label: 'TRỄ CHECK-IN (PHÚT)', width: 22, type: 'number' },
+    { key: 'statusText', label: 'TRẠNG THÁI', width: 18, type: 'status' },
+    { key: 'note', label: 'GHI CHÚ / THIẾT BỊ', width: 32, type: 'text' },
+  ];
+
+  const colsSummary = [
+    { key: 'stt', label: 'STT', width: 6, type: 'center' },
+    { key: 'empCode', label: 'MÃ NV', width: 14, type: 'center_bold' },
+    { key: 'empName', label: 'HỌ VÀ TÊN', width: 25, type: 'bold' },
+    { key: 'deptName', label: 'PHÒNG BAN', width: 18, type: 'text' },
+    { key: 'branchName', label: 'CƠ SỞ / CHI NHÁNH', width: 18, type: 'text' },
+    { key: 'empRole', label: 'CHỨC DANH', width: 20, type: 'text' },
+    { key: 'lateCount', label: 'TỔNG SỐ LẦN TRỄ', width: 18, type: 'number' },
+    { key: 'totalLateMinutes', label: 'TỔNG SỐ PHÚT TRỄ', width: 20, type: 'number' },
+    { key: 'maxLateMinutes', label: 'TRỄ NHIỀU NHẤT (PHÚT)', width: 22, type: 'number' },
+    { key: 'avgLateMinutes', label: 'TRUNG BÌNH (PHÚT/LẦN)', width: 22, type: 'number' },
+  ];
+
+  // 1. Sheet 1: Tất cả lượt trễ
+  const totalLateMinAll = allLateRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
+  const sheet1Xml = buildGenericSheetXml({
+    sheetTitle: 'DANH SÁCH CHI TIẾT TẤT CẢ LƯỢT CHECK-IN VÀO CA TRỄ — NHA KHOA 5S',
+    metaSubtitle: `${metaCommon}  |  Quy chuẩn: Yêu cầu check-in trước giờ vào ca 5 phút  |  Tổng số: ${allLateRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinAll} phút`,
+    columns: colsLateList,
+    dataRows: allLateRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG SỐ PHÚT TRỄ CHECK-IN:',
+      labelColEndIndex: 10,
+      sumColumns: {
+        lateMinutes: { type: 'number', cachedTotal: totalLateMinAll },
+      },
+    },
+  });
+
+  // 2. Sheet 2: Thống kê theo Nhân sự
+  const summaryRows = computeEmployeeLateSummary(allLateRows);
+  const totalLateCountSummary = summaryRows.reduce((acc, r) => acc + (Number(r.lateCount) || 0), 0);
+  const totalLateMinSummary = summaryRows.reduce((acc, r) => acc + (Number(r.totalLateMinutes) || 0), 0);
+  const sheet2Xml = buildGenericSheetXml({
+    sheetTitle: 'BẢNG TỔNG HỢP & THỐNG KÊ CHECK-IN TRỄ THEO NHÂN SỰ — NHA KHOA 5S',
+    metaSubtitle: `${metaCommon}  |  Sắp xếp theo tổng phút trễ giảm dần  |  Tổng số: ${summaryRows.length} nhân sự vi phạm`,
+    columns: colsSummary,
+    dataRows: summaryRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG TOÀN CÔNG TY:',
+      labelColEndIndex: 5,
+      sumColumns: {
+        lateCount: { type: 'number', cachedTotal: totalLateCountSummary },
+        totalLateMinutes: { type: 'number', cachedTotal: totalLateMinSummary },
+      },
+    },
+  });
+
+  // 3. Sheet 3: Chi nhánh Lê Văn Thọ
+  const lvtRows = allLateRows
+    .filter((r) => r.branchName?.includes('Lê Văn Thọ') || r.branchName?.includes('LVT'))
+    .map((r, idx) => ({ ...r, stt: idx + 1 }));
+  const totalLateMinLvt = lvtRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
+  const sheet3Xml = buildGenericSheetXml({
+    sheetTitle: 'DANH SÁCH CHECK-IN VÀO CA TRỄ — CƠ SỞ LÊ VĂN THỌ (LVT)',
+    metaSubtitle: `${metaCommon}  |  Cơ sở Lê Văn Thọ  |  Tổng số: ${lvtRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinLvt} phút`,
+    columns: colsLateList,
+    dataRows: lvtRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG PHÚT TRỄ (CƠ SỞ LÊ VĂN THỌ):',
+      labelColEndIndex: 10,
+      sumColumns: {
+        lateMinutes: { type: 'number', cachedTotal: totalLateMinLvt },
+      },
+    },
+  });
+
+  // 4. Sheet 4: Chi nhánh Phạm Văn Chiêu
+  const pvcRows = allLateRows
+    .filter((r) => r.branchName?.includes('Phạm Văn Chiêu') || r.branchName?.includes('PVC'))
+    .map((r, idx) => ({ ...r, stt: idx + 1 }));
+  const totalLateMinPvc = pvcRows.reduce((acc, r) => acc + (Number(r.lateMinutes) || 0), 0);
+  const sheet4Xml = buildGenericSheetXml({
+    sheetTitle: 'DANH SÁCH CHECK-IN VÀO CA TRỄ — CƠ SỞ PHẠM VĂN CHIÊU (PVC)',
+    metaSubtitle: `${metaCommon}  |  Cơ sở Phạm Văn Chiêu  |  Tổng số: ${pvcRows.length} lượt trễ  |  Tổng phút trễ: ${totalLateMinPvc} phút`,
+    columns: colsLateList,
+    dataRows: pvcRows,
+    totalsConfig: {
+      label: 'TỔNG CỘNG PHÚT TRỄ (CƠ SỞ PHẠM VĂN CHIÊU):',
+      labelColEndIndex: 10,
+      sumColumns: {
+        lateMinutes: { type: 'number', cachedTotal: totalLateMinPvc },
+      },
+    },
+  });
+
+  // Package OpenXML files
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <bookViews><workbookView xWindow="0" yWindow="0" windowWidth="24000" windowHeight="14000"/></bookViews>
+  <sheets>
+    <sheet name="Tất cả lượt trễ" sheetId="1" r:id="rId1"/>
+    <sheet name="Thống kê theo Nhân sự" sheetId="2" r:id="rId2"/>
+    <sheet name="Cơ sở Lê Văn Thọ" sheetId="3" r:id="rId3"/>
+    <sheet name="Cơ sở Phạm Văn Chiêu" sheetId="4" r:id="rId4"/>
+  </sheets>
+</workbook>`;
+
+  const workbookRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/>
+</Relationships>`;
+
+  const stylesXml = buildLeaveStylesXml();
+
+  const files = [
+    { name: '[Content_Types].xml', data: contentTypesXml },
+    { name: '_rels/.rels', data: rootRelsXml },
+    { name: 'xl/_rels/workbook.xml.rels', data: workbookRelsXml },
+    { name: 'xl/workbook.xml', data: workbookXml },
+    { name: 'xl/styles.xml', data: stylesXml },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet1Xml },
+    { name: 'xl/worksheets/sheet2.xml', data: sheet2Xml },
+    { name: 'xl/worksheets/sheet3.xml', data: sheet3Xml },
+    { name: 'xl/worksheets/sheet4.xml', data: sheet4Xml },
+  ];
+
+  const zipBytes = createZipArchive(files);
+  const outName = filename || `Danh_Sach_Checkin_Tre_5S_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
   if (typeof document !== 'undefined') {
     downloadFile(

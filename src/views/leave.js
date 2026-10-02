@@ -7,7 +7,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { triggerArchive2Months } from '../services/archive-sync.js';
-import { exportLeaveRequestsWorkbook, computeLateCheckinList } from '../services/leave-export.js';
+import { exportLeaveRequestsWorkbook, exportLateCheckinWorkbook, computeLateCheckinList } from '../services/leave-export.js';
 import { dataClient } from '../data-client.js';
 
 let cachedEmployees = [];
@@ -682,6 +682,9 @@ export async function renderView(state) {
           <button class="primary-button" type="button" id="btnExportLeaveExcel" style="white-space:nowrap; background:#0f766e; border-color:#0f766e; display:inline-flex; align-items:center; gap:6px;">
             <i class="ri-file-excel-2-line"></i> Xuất Excel có màu (${filteredRequests.length} đơn)
           </button>
+          <button class="secondary-button" type="button" id="btnExportLateCheckinExcel" style="white-space:nowrap; background:#fff1f2; border-color:#f43f5e; color:#be123c; font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Xuất riêng file Excel danh sách &amp; thống kê nhân sự check-in vào ca trễ">
+            <i class="ri-alarm-warning-line"></i> Xuất riêng DS Check-in trễ
+          </button>
           ${['admin', 'hr', 'admin_it'].includes(store.getState().role) ? `
             <button class="secondary-button" type="button" id="triggerArchive2MonthsBtn" style="white-space:nowrap;">
               <span>📁</span>Lưu trữ 2 tháng (Excel & Drive)
@@ -985,6 +988,42 @@ export function initView() {
     } catch (err) {
       console.error('[Leave Export] Lỗi xuất file Excel:', err);
       showToast('Lỗi xuất file Excel: ' + (err.message || 'Không xác định'), true);
+    }
+  });
+
+  document.getElementById('btnExportLateCheckinExcel')?.addEventListener('click', async () => {
+    showToast('Đang tổng hợp dữ liệu check-in vào ca trễ...', false, 2500);
+    try {
+      const { data: attData } = await dataClient
+        .from('attendance_records')
+        .select('*')
+        .eq('record_type', 'checkin');
+
+      if (!Array.isArray(attData) || !attData.length) {
+        showToast('Không có dữ liệu check-in trong hệ thống.', true);
+        return;
+      }
+
+      const lateCheckinRows = computeLateCheckinList(attData, cachedEmployees);
+      if (!lateCheckinRows.length) {
+        showToast('Tuyệt vời! Không có lượt check-in trễ nào ghi nhận.', false);
+        return;
+      }
+
+      const dateSlug = new Date().toISOString().slice(0, 10);
+      const fileName = `Danh_Sach_Checkin_Tre_5S_${dateSlug}.xlsx`;
+
+      await exportLateCheckinWorkbook({
+        lateCheckins: lateCheckinRows,
+        employees: cachedEmployees,
+        filterSummary: 'Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
+        filename: fileName,
+      });
+
+      showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);
+    } catch (err) {
+      console.error('[Late Checkin Export] Lỗi xuất file:', err);
+      showToast('Lỗi xuất file Check-in trễ: ' + (err.message || 'Không xác định'), true);
     }
   });
 

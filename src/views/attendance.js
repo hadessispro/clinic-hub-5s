@@ -44,6 +44,8 @@ import {
   generateWorkbookBuffer,
 } from '../services/excel-export.js';
 import { exportAttendanceMatrixWorkbook, sortEmployeesByPosition } from '../services/attendance-matrix-export.js';
+import { exportLateCheckinWorkbook, computeLateCheckinList } from '../services/leave-export.js';
+import { dataClient } from '../data-client.js';
 import { renderView as renderPgAttendance, initView as initPgAttendance } from './pg-attendance.js';
 import { SHIFTS, defaultShiftForDepartment, effectiveShiftId } from '../constants.js';
 
@@ -1179,6 +1181,19 @@ export async function renderView(state) {
                   </div>
                 </button>
 
+                <button type="button" class="attendance-dropdown-item" data-action="export-late-checkin" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#be123c; font-size:0.87rem; transition:background 0.15s;">
+                  <span style="width:34px; height:34px; border-radius:8px; background:#fff1f2; color:#e11d48; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i class="ri-alarm-warning-fill" style="font-size:1.15rem;"></i>
+                  </span>
+                  <div style="flex:1;">
+                    <div style="font-weight:600; color:#be123c; display:flex; align-items:center; gap:6px;">
+                      <span>Xuất riêng DS Check-in Trễ</span>
+                      <span style="font-size:0.65rem; background:#e11d48; color:#ffffff; padding:1px 5px; border-radius:4px; font-weight:700;">Hot</span>
+                    </div>
+                    <span style="font-size:0.75rem; color:#64748b;">File Excel 4 sheet: chi tiết &amp; thống kê nhân sự</span>
+                  </div>
+                </button>
+
                 ${canEditWorkday ? `
                 <button type="button" class="attendance-dropdown-item" data-action="export-company-split-excel" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
                   <span style="width:34px; height:34px; border-radius:8px; background:#eff6ff; color:#2563eb; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
@@ -1986,6 +2001,39 @@ async function exportAttendanceMatrixDirect() {
   }
 }
 
+async function exportLateCheckinDirect() {
+  showToast('Đang tổng hợp dữ liệu check-in vào ca trễ từ hệ thống...', false, 2500);
+  try {
+    const { data: attData } = await dataClient
+      .from('attendance_records')
+      .select('*')
+      .eq('record_type', 'checkin');
+
+    const emps = context?.employees || store.getState()?.employees || [];
+    const lateCheckinRows = computeLateCheckinList(attData || [], emps);
+
+    if (!lateCheckinRows.length) {
+      showToast('Tuyệt vời! Không có lượt check-in trễ nào trong hệ thống.', false);
+      return;
+    }
+
+    const dateSlug = new Date().toISOString().slice(0, 10);
+    const fileName = `Danh_Sach_Checkin_Tre_5S_${dateSlug}.xlsx`;
+
+    await exportLateCheckinWorkbook({
+      lateCheckins: lateCheckinRows,
+      employees: emps,
+      filterSummary: 'Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
+      filename: fileName,
+    });
+
+    showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);
+  } catch (error) {
+    console.error('[Attendance] Lỗi xuất file check-in trễ:', error);
+    showToast('Lỗi xuất file Check-in trễ: ' + (error.message || 'Không xác định'), true);
+  }
+}
+
 async function executeCompanySplitExport() {
   const monthSelect = document.getElementById('companySplitMonth');
   const yearSelect = document.getElementById('companySplitYear');
@@ -2615,6 +2663,7 @@ export function initView() {
     if (action === 'export-attendance') exportAttendance();
     if (action === 'export-work-excel') exportWorkExcel();
     if (action === 'export-matrix-attendance') exportAttendanceMatrixDirect();
+    if (action === 'export-late-checkin') exportLateCheckinDirect();
     if (action === 'export-company-split-excel') openCompanySplitModal();
     if (action === 'close-company-split-modal') closeCompanySplitModal();
     if (action === 'work-prev' && attendanceWorkPage > 1) { attendanceWorkPage -= 1; refreshAttendanceFilters(); }
