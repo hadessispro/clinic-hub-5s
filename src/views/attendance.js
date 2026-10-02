@@ -656,92 +656,149 @@ function renderVietnameseMonthYearSelects(monthId, yearId, selectedISO) {
   `;
 }
 
-function renderCompanySplitExportDialog(canEdit = false, workMonth = '') {
-  if (!canEdit) return '';
+function renderAttendanceExportModal(canEdit = true, workMonth = '') {
   const hasDirPicker = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
   return `
-    <div class="attendance-adjust-dialog" id="companySplitExportModal" hidden>
-      <button class="attendance-adjust-backdrop" type="button" data-action="close-company-split-modal" aria-label="Đóng"></button>
-      <section class="attendance-adjust-sheet" role="dialog" aria-modal="true" aria-labelledby="companySplitTitle" style="max-width:580px;">
+    <div class="attendance-adjust-dialog" id="attendanceExportModal" hidden>
+      <button class="attendance-adjust-backdrop" type="button" data-action="close-export-modal" aria-label="Đóng"></button>
+      <section class="attendance-adjust-sheet" role="dialog" aria-modal="true" aria-labelledby="attendanceExportTitle" style="max-width:620px;">
         <div class="attendance-adjust-header">
           <div>
-            <p class="eyebrow">XUẤT DỮ LIỆU ĐỐI SOÁT TOÀN CÔNG TY</p>
-            <h2 id="companySplitTitle"><i class="ri-folder-user-line"></i> Xuất Bảng Công Tách Từng Nhân Sự</h2>
+            <p class="eyebrow">XUẤT DỮ LIỆU &amp; ĐỐI SOÁT CHẤM CÔNG</p>
+            <h2 id="attendanceExportTitle"><i class="ri-file-excel-2-line" style="color:#0f766e;"></i> Trung Tâm Xuất Báo Cáo Excel</h2>
           </div>
-          <button class="icon-button" type="button" data-action="close-company-split-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
+          <button class="icon-button" type="button" data-action="close-export-modal" aria-label="Đóng"><i class="ri-close-line"></i></button>
         </div>
 
         <div style="font-size:0.88rem; color:#334155; line-height:1.5;">
-          <p style="margin:0 0 14px 0;">Xuất dữ liệu bảng công chi tiết toàn bộ nhân viên trong tháng, phân tách rõ ràng từng người để nhân sự có thể tự tra cứu, kiểm tra ngày công, giờ vào/ra và các lượt trễ sớm.</p>
+          <!-- 1. BỘ LỌC THỜI GIAN & CHI NHÁNH -->
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+            <div style="font-weight:700; font-size:0.82rem; color:#0f172a; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+              <i class="ri-calendar-event-line" style="color:#0f766e; font-size:1rem;"></i> 1. KỲ XUẤT DỮ LIỆU &amp; PHẠM VI CHI NHÁNH
+            </div>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
-            <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
-              <span>Tháng tính công:</span>
-              <div style="display:flex; gap:6px;">
-                ${renderVietnameseMonthYearSelects('companySplitMonth', 'companySplitYear', workMonth || attendanceWorkMonth)}
+            <div style="display:flex; gap:18px; margin-bottom:12px; font-size:0.82rem; font-weight:600;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="radio" name="exportTimeMode" value="month" checked id="exportTimeModeMonth"> Theo Tháng &amp; Năm
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="radio" name="exportTimeMode" value="range" id="exportTimeModeRange"> Khoảng ngày tùy chọn (Từ – Đến)
+              </label>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:12px; margin-bottom:4px; align-items:end;">
+              <!-- Khối chọn Tháng / Năm -->
+              <div id="exportMonthYearGroup">
+                <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
+                  <span>Tháng tính công:</span>
+                  <div style="display:flex; gap:6px;">
+                    ${renderVietnameseMonthYearSelects('exportTargetMonth', 'exportTargetYear', workMonth || attendanceWorkMonth)}
+                  </div>
+                </label>
               </div>
-            </label>
-            <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
-              <span>Chi nhánh:</span>
-              <select id="companySplitBranch" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; height:36px; background:#fff;">
-                <option value="all">Tất cả chi nhánh (PVC &amp; LVT)</option>
-                <option value="pham-van-chieu">Phạm Văn Chiêu</option>
-                <option value="le-van-tho">Lê Văn Thọ</option>
-              </select>
-            </label>
+
+              <!-- Khối chọn Khoảng ngày (ẩn theo mặc định) -->
+              <div id="exportDateRangeGroup" style="display:none;">
+                <div style="display:flex; gap:6px;">
+                  <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem; flex:1;">
+                    <span>Từ ngày:</span>
+                    <input type="date" id="exportRangeFrom" style="padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem; height:36px; background:#fff; width:100%;">
+                  </label>
+                  <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem; flex:1;">
+                    <span>Đến ngày:</span>
+                    <input type="date" id="exportRangeTo" style="padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.82rem; height:36px; background:#fff; width:100%;">
+                  </label>
+                </div>
+              </div>
+
+              <!-- Chi nhánh luôn hiển thị bên phải -->
+              <label style="display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:0.8rem;">
+                <span>Chi nhánh:</span>
+                <select id="exportTargetBranch" style="padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; height:36px; background:#fff; width:100%;">
+                  <option value="all">Tất cả chi nhánh (PVC &amp; LVT)</option>
+                  <option value="pham-van-chieu">Phạm Văn Chiêu</option>
+                  <option value="le-van-tho">Lê Văn Thọ</option>
+                </select>
+              </label>
+            </div>
           </div>
 
-          <fieldset style="border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
-            <legend style="font-weight:700; font-size:0.8rem; color:#0f172a; padding:0 6px;">Phương thức xuất file</legend>
+          <!-- 2. CHỌN LOẠI BÁO CÁO CẦN XUẤT -->
+          <fieldset style="border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+            <legend style="font-weight:700; font-size:0.82rem; color:#0f172a; padding:0 6px;">
+              <i class="ri-file-list-3-line" style="color:#0f766e;"></i> 2. CHỌN LOẠI BÁO CÁO CẦN XUẤT
+            </legend>
             <div style="display:flex; flex-direction:column; gap:12px;">
+
+              <!-- Loại 1: Ma trận 30 ngày -->
               <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-                <input type="radio" name="companySplitFormat" value="matrix_format" checked style="margin-top:3px;">
+                <input type="radio" name="exportReportType" value="matrix" checked style="margin-top:3px;">
                 <div>
-                  <strong style="display:flex; align-items:center; gap:6px; color:#0f766e;"><i class="ri-table-fill"></i> Bảng Ma Trận 30 Ngày (Tách LVT &amp; PVC, Chấm Công &amp; Tăng Ca) (Mới - Khuyên dùng)</strong>
-                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">Tự động phân tách 5 bảng tính có màu sắc trực quan: Chấm công LVT, Chấm công PVC, Tăng ca LVT, Tăng ca PVC và Tổng hợp 2 chi nhánh. Ô tăng ca hiển thị giờ chi tiết (0.7h, 1.5h...), ô công đủ/nửa công/nghỉ phép có màu riêng, cố định hàng cột, công thức =SUM chuẩn Excel.</span>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#0f766e;">
+                    <i class="ri-table-fill"></i> Bảng Ma Trận Chấm Công &amp; Tăng Ca (LVT &amp; PVC)
+                    <span style="font-size:0.65rem; background:#0f766e; color:#ffffff; padding:1px 6px; border-radius:4px; font-weight:700;">Có Màu · Khuyên dùng</span>
+                  </strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">
+                    5 bảng tính màu sắc trực quan: Chấm công LVT, Chấm công PVC, Tăng ca LVT, Tăng ca PVC và Tổng hợp 2 chi nhánh. Ô tăng ca hiển thị giờ chi tiết (0.7h, 1.5h...), cố định cột, công thức =SUM chuẩn Excel.
+                  </span>
                 </div>
               </label>
 
+              <!-- Loại 2: DS Check-in trễ -->
               <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-                <input type="radio" name="companySplitFormat" value="multi_sheet" style="margin-top:3px;">
+                <input type="radio" name="exportReportType" value="late_checkin" style="margin-top:3px;">
                 <div>
-                  <strong style="display:flex; align-items:center; gap:6px; color:#334155;"><i class="ri-file-excel-2-line"></i> Sổ cái Excel đa Sheet (Tách từng nhân sự)</strong>
-                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">1 file Excel duy nhất gồm Sheet Tổng hợp toàn công ty + Từng Sheet riêng cho mỗi nhân sự. Mở file là bấm vào tên/mã của mình để tự kiểm tra đối chiếu.</span>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#be123c;">
+                    <i class="ri-alarm-warning-fill"></i> Danh Sách &amp; Bảng Thống Kê Check-in Vào Ca Trễ (4 Sheet)
+                    <span style="font-size:0.65rem; background:#e11d48; color:#ffffff; padding:1px 6px; border-radius:4px; font-weight:700;">Hot</span>
+                  </strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">
+                    Quy chuẩn check-in trước ca 5 phút. File 4 sheet: Tất cả lượt trễ trong tháng, Bảng xếp hạng nhân sự vi phạm theo tổng phút trễ, Tách riêng LVT, Tách riêng PVC.
+                  </span>
                 </div>
               </label>
 
+              <!-- Loại 3: Tách từng nhân sự -->
               <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-                <input type="radio" name="companySplitFormat" value="zip" style="margin-top:3px;">
+                <input type="radio" name="exportReportType" value="multi_sheet" style="margin-top:3px;">
                 <div>
-                  <strong style="display:flex; align-items:center; gap:6px; color:#2563eb;"><i class="ri-file-zip-line"></i> Tải Thư mục ZIP (Tách riêng từng file Excel)</strong>
-                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">File ZIP giải nén ra thư mục chứa từng file Excel riêng cho mỗi nhân viên. Rất tiện để lưu trữ máy tính hoặc gửi riêng file cho từng người.</span>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#1e40af;">
+                    <i class="ri-folder-user-line"></i> Bảng Công Đối Soát Tách Từng Sheet Cho Nhân Sự
+                  </strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">
+                    File Excel gồm Sheet Tổng hợp + Từng Sheet riêng cho mỗi nhân sự để tự kiểm tra đối soát giờ vào/ra, ngày công và tăng ca.
+                  </span>
                 </div>
               </label>
 
-              ${hasDirPicker ? `
+              <!-- Loại 4: Nhật ký GPS -->
               <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-                <input type="radio" name="companySplitFormat" value="directory" style="margin-top:3px;">
+                <input type="radio" name="exportReportType" value="gps_history" style="margin-top:3px;">
                 <div>
-                  <strong style="display:flex; align-items:center; gap:6px; color:#7c3aed;"><i class="ri-folder-download-line"></i> Lưu trực tiếp vào Thư mục máy tính</strong>
-                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">Chọn thư mục trên máy tính (Windows/Mac), hệ thống sẽ lưu thẳng toàn bộ file Excel của từng nhân sự vào thư mục đó.</span>
+                  <strong style="display:flex; align-items:center; gap:6px; color:#475569;">
+                    <i class="ri-map-pin-time-line"></i> Nhật Ký Quét GPS Vào / Ra Chi Tiết
+                  </strong>
+                  <span class="subtle" style="font-size:0.78rem; display:block; margin-top:2px;">
+                    Bảng kê chi tiết từng lượt quét chấm công GPS kèm toạ độ, chi nhánh, khoảng cách và thiết bị trong kỳ đã chọn.
+                  </span>
                 </div>
               </label>
-              ` : ''}
+
             </div>
           </fieldset>
 
-          <div id="companySplitProgressBox" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#166534;">
+          <div id="exportCenterProgressBox" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#166534;">
             <div style="display:flex; align-items:center; gap:8px;">
               <i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i>
-              <span id="companySplitProgressText">Đang khởi tạo xuất file...</span>
+              <span id="exportCenterProgressText">Đang khởi tạo xuất file...</span>
             </div>
           </div>
         </div>
 
         <div class="attendance-adjust-actions" style="margin-top:16px;">
-          <button class="secondary-button" type="button" data-action="close-company-split-modal" id="companySplitCancelBtn">Đóng</button>
-          <button class="primary-button" type="button" id="btnExecuteCompanySplit" style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; padding:8px 16px;">
-            <i class="ri-download-2-line"></i> Bắt đầu xuất file
+          <button class="secondary-button" type="button" data-action="close-export-modal" id="exportCenterCancelBtn">Đóng</button>
+          <button class="primary-button" type="button" id="btnExecuteUnifiedExport" style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; flex-shrink:0; padding:8px 18px; background:#0f766e; border-color:#0f766e;">
+            <i class="ri-download-2-line"></i> Bắt đầu xuất file Excel
           </button>
         </div>
       </section>
@@ -1168,7 +1225,7 @@ export async function renderView(state) {
                 <i class="ri-file-excel-2-line" style="color:#0f766e;"></i> Xuất báo cáo Excel
               </div>
               <div style="padding:4px 0;">
-                <button type="button" class="attendance-dropdown-item" data-action="export-matrix-attendance" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                <button type="button" class="attendance-dropdown-item" data-action="open-export-modal" data-type="matrix" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
                   <span style="width:34px; height:34px; border-radius:8px; background:#ecfdf5; color:#0f766e; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                     <i class="ri-table-fill" style="font-size:1.1rem;"></i>
                   </span>
@@ -1181,7 +1238,7 @@ export async function renderView(state) {
                   </div>
                 </button>
 
-                <button type="button" class="attendance-dropdown-item" data-action="export-late-checkin" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#be123c; font-size:0.87rem; transition:background 0.15s;">
+                <button type="button" class="attendance-dropdown-item" data-action="open-export-modal" data-type="late_checkin" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#be123c; font-size:0.87rem; transition:background 0.15s;">
                   <span style="width:34px; height:34px; border-radius:8px; background:#fff1f2; color:#e11d48; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                     <i class="ri-alarm-warning-fill" style="font-size:1.15rem;"></i>
                   </span>
@@ -1194,8 +1251,7 @@ export async function renderView(state) {
                   </div>
                 </button>
 
-                ${canEditWorkday ? `
-                <button type="button" class="attendance-dropdown-item" data-action="export-company-split-excel" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                <button type="button" class="attendance-dropdown-item" data-action="open-export-modal" data-type="multi_sheet" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
                   <span style="width:34px; height:34px; border-radius:8px; background:#eff6ff; color:#2563eb; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                     <i class="ri-folder-user-line" style="font-size:1.1rem;"></i>
                   </span>
@@ -1203,19 +1259,9 @@ export async function renderView(state) {
                     <div style="font-weight:600;">Xuất toàn viện (Tách nhân sự)</div>
                     <span style="font-size:0.75rem; color:#64748b;">Mỗi nhân sự một sheet để đối soát</span>
                   </div>
-                </button>` : ''}
-
-                <button type="button" class="attendance-dropdown-item" data-action="export-work-excel" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
-                  <span style="width:34px; height:34px; border-radius:8px; background:#f1f5f9; color:#475569; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                    <i class="ri-file-list-3-line" style="font-size:1.1rem;"></i>
-                  </span>
-                  <div style="flex:1;">
-                    <div style="font-weight:600;">Xuất Excel bảng công hiện tại</div>
-                    <span style="font-size:0.75rem; color:#64748b;">Dữ liệu bảng công theo bộ lọc đang xem</span>
-                  </div>
                 </button>
 
-                <button type="button" class="attendance-dropdown-item" data-action="export-attendance" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
+                <button type="button" class="attendance-dropdown-item" data-action="open-export-modal" data-type="gps_history" style="width:100%; display:flex; align-items:center; gap:12px; padding:10px 16px; border:none; background:none; text-align:left; cursor:pointer; color:#0f172a; font-size:0.87rem; transition:background 0.15s;">
                   <span style="width:34px; height:34px; border-radius:8px; background:#f1f5f9; color:#475569; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                     <i class="ri-map-pin-line" style="font-size:1.1rem;"></i>
                   </span>
@@ -1338,7 +1384,7 @@ export async function renderView(state) {
       ${renderAdjustmentDialog(targetEmployee, targetAllowedShifts, canEditWorkday)}
       ${canEditWorkday ? renderOvertimeAdjustmentDialog(targetEmployee) : ''}
       ${canEditWorkday ? renderScheduleAdjustmentDialog(targetEmployee, targetAllowedShifts) : ''}
-      ${canEditWorkday ? renderCompanySplitExportDialog(canEditWorkday, attendanceWorkMonth) : ''}
+      ${renderAttendanceExportModal(canEditWorkday, attendanceWorkMonth)}
       ${state.employeeCode ? renderCheckinDialog(employee, shift, settings, allowedShifts, todayAssignment?.shift || '') : ''}
     </div>
   `;
@@ -1939,21 +1985,41 @@ async function exportWorkExcel() {
   }
 }
 
-function openCompanySplitModal() {
-  const modal = document.getElementById('companySplitExportModal');
+function openAttendanceExportModal(defaultType = 'matrix') {
+  const modal = document.getElementById('attendanceExportModal');
   if (modal) {
     modal.removeAttribute('hidden');
     modal.hidden = false;
+    if (defaultType) {
+      const radio = modal.querySelector(`input[name="exportReportType"][value="${defaultType}"]`);
+      if (radio) radio.checked = true;
+    }
+    const fromInput = document.getElementById('exportRangeFrom');
+    const toInput = document.getElementById('exportRangeTo');
+    const mSelect = document.getElementById('exportTargetMonth');
+    const ySelect = document.getElementById('exportTargetYear');
+    const curYear = ySelect?.value || '2026';
+    const curMonth = mSelect?.value || '09';
+    if (fromInput && !fromInput.value) {
+      fromInput.value = `${curYear}-${curMonth}-01`;
+    }
+    if (toInput && !toInput.value) {
+      const lastDay = new Date(Number(curYear), Number(curMonth), 0).getDate();
+      toInput.value = `${curYear}-${curMonth}-${String(lastDay).padStart(2, '0')}`;
+    }
   }
 }
 
-function closeCompanySplitModal() {
-  const modal = document.getElementById('companySplitExportModal');
+function closeAttendanceExportModal() {
+  const modal = document.getElementById('attendanceExportModal');
   if (modal) {
     modal.setAttribute('hidden', '');
     modal.hidden = true;
   }
 }
+
+const openCompanySplitModal = openAttendanceExportModal;
+const closeCompanySplitModal = closeAttendanceExportModal;
 
 function makeSafeSheetName(code, name, existingNames) {
   const cleanCode = String(code || '').replace(/[\/\\?*\[\]:]/g, '').trim();
@@ -1973,302 +2039,338 @@ function makeSafeSheetName(code, name, existingNames) {
 }
 
 async function exportAttendanceMatrixDirect() {
-  const month = attendanceWorkMonth || todayISO().slice(0, 7);
-  let employeesToExport = sortEmployeesByPosition(
-    (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e))
-  );
-  if (!employeesToExport.length) {
-    showToast('Không có danh sách nhân sự phù hợp để xuất.', true);
-    return;
-  }
-
-  showToast(`Đang khởi tạo xuất Bảng Ma Trận Công & Tăng Ca tháng ${month}...`, false, 3000);
-  try {
-    await exportAttendanceMatrixWorkbook({
-      month,
-      employees: employeesToExport,
-      fetchWorkSummaryFn: getAttendanceWorkSummary,
-      onProgress: (current, total, emp) => {
-        if (current === 1 || current % 5 === 0 || current === total) {
-          showToast(`Đang tổng hợp ma trận công: ${current}/${total} nhân sự...`, false, 2000);
-        }
-      },
-    });
-    showToast(`Đã xuất thành công Bảng Chấm Công & Tăng Ca ma trận 30 ngày (LVT & PVC) có định dạng màu sắc!`);
-  } catch (error) {
-    console.error('[Attendance] Lỗi xuất ma trận công:', error);
-    showToast('Lỗi xuất file ma trận: ' + (error.message || 'Không xác định'), true);
-  }
+  openAttendanceExportModal('matrix');
 }
 
 async function exportLateCheckinDirect() {
-  showToast('Đang tổng hợp dữ liệu check-in vào ca trễ từ hệ thống...', false, 2500);
-  try {
-    const { data: attData } = await dataClient
-      .from('attendance_records')
-      .select('*')
-      .eq('record_type', 'checkin');
-
-    const emps = context?.employees || store.getState()?.employees || [];
-    const lateCheckinRows = computeLateCheckinList(attData || [], emps);
-
-    if (!lateCheckinRows.length) {
-      showToast('Tuyệt vời! Không có lượt check-in trễ nào trong hệ thống.', false);
-      return;
-    }
-
-    const activeMonth = attendanceWorkMonth || attendanceHistoryMonth || '2026-09';
-    const monthLabel = activeMonth ? `Tháng ${activeMonth.slice(5, 7)}/${activeMonth.slice(0, 4)}` : '';
-    const dateSlug = activeMonth ? activeMonth.replace('-', '_') : new Date().toISOString().slice(0, 10);
-    const fileName = `Danh_Sach_Checkin_Tre_5S_${dateSlug}.xlsx`;
-
-    await exportLateCheckinWorkbook({
-      lateCheckins: lateCheckinRows,
-      employees: emps,
-      filterSummary: `${monthLabel ? monthLabel + ' — ' : ''}Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)`,
-      filename: fileName,
-      month: activeMonth,
-    });
-
-    showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);
-  } catch (error) {
-    console.error('[Attendance] Lỗi xuất file check-in trễ:', error);
-    showToast('Lỗi xuất file Check-in trễ: ' + (error.message || 'Không xác định'), true);
-  }
+  openAttendanceExportModal('late_checkin');
 }
 
-async function executeCompanySplitExport() {
-  const monthSelect = document.getElementById('companySplitMonth');
-  const yearSelect = document.getElementById('companySplitYear');
-  const branchSelect = document.getElementById('companySplitBranch');
-  const formatRadios = document.getElementsByName('companySplitFormat');
-  const progressBox = document.getElementById('companySplitProgressBox');
-  const progressText = document.getElementById('companySplitProgressText');
-  const executeBtn = document.getElementById('btnExecuteCompanySplit');
-  const cancelBtn = document.getElementById('companySplitCancelBtn');
+async function executeUnifiedExport() {
+  const isMonthMode = document.getElementById('exportTimeModeMonth')?.checked ?? true;
+  const monthSelect = document.getElementById('exportTargetMonth');
+  const yearSelect = document.getElementById('exportTargetYear');
+  const fromInput = document.getElementById('exportRangeFrom');
+  const toInput = document.getElementById('exportRangeTo');
+  const branchSelect = document.getElementById('exportTargetBranch');
+  const reportRadios = document.getElementsByName('exportReportType');
+  const progressBox = document.getElementById('exportCenterProgressBox');
+  const progressText = document.getElementById('exportCenterProgressText');
+  const executeBtn = document.getElementById('btnExecuteUnifiedExport');
+  const cancelBtn = document.getElementById('exportCenterCancelBtn');
 
-  const month = monthSelect && yearSelect
-    ? `${yearSelect.value}-${monthSelect.value}`
-    : (attendanceWorkMonth || todayISO().slice(0, 7));
-  const branch = branchSelect?.value || 'all';
-  let chosenFormat = 'matrix_format';
-  for (const r of formatRadios) {
-    if (r.checked) chosenFormat = r.value;
+  let chosenType = 'matrix';
+  for (const r of reportRadios) {
+    if (r.checked) chosenType = r.value;
   }
 
-  let employeesToExport = (context?.employees || []).filter((e) => e.status === 'active' && !isPgEmployee(e));
+  const branch = branchSelect?.value || 'all';
+  const branchLabel = branch === 'all'
+    ? 'Toàn viện (PVC & LVT)'
+    : (branch === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : 'Lê Văn Thọ');
+  const branchSlug = branch === 'all' ? 'Toan_Vien' : (branch === 'pham-van-chieu' ? 'PVC' : 'LVT');
+
+  let targetMonth = '';
+  let monthLabel = '';
+  let rangeFrom = '';
+  let rangeTo = '';
+  let rangeLabel = '';
+
+  if (isMonthMode) {
+    const y = yearSelect?.value || '2026';
+    const m = monthSelect?.value || '09';
+    targetMonth = `${y}-${m}`;
+    monthLabel = `Tháng ${m}/${y}`;
+  } else {
+    rangeFrom = fromInput?.value?.trim() || '';
+    rangeTo = toInput?.value?.trim() || '';
+    if (!rangeFrom || !rangeTo) {
+      showToast('Vui lòng chọn đầy đủ từ ngày và đến ngày.', true);
+      return;
+    }
+    if (rangeFrom > rangeTo) {
+      showToast('Từ ngày không được lớn hơn đến ngày.', true);
+      return;
+    }
+    rangeLabel = `Từ ${rangeFrom} đến ${rangeTo}`;
+    targetMonth = rangeFrom.slice(0, 7);
+  }
+
+  const periodSummary = isMonthMode ? monthLabel : rangeLabel;
+  const dateSlug = isMonthMode ? targetMonth.replace('-', '_') : `${rangeFrom}_den_${rangeTo}`;
+
+  let employeesToExport = (context?.employees || store.getState()?.employees || []).filter(
+    (e) => e.status === 'active' && !isPgEmployee(e)
+  );
   if (branch !== 'all') {
     employeesToExport = employeesToExport.filter((e) => e.branchId === branch);
   }
   employeesToExport = sortEmployeesByPosition(employeesToExport);
-  if (!employeesToExport.length) {
-    showToast('Không có nhân sự nào trong phạm vi đã chọn.', true);
-    return;
-  }
-
-  if (chosenFormat === 'matrix_format') {
-    if (progressBox) progressBox.style.display = 'block';
-    if (executeBtn) executeBtn.disabled = true;
-    if (cancelBtn) cancelBtn.disabled = true;
-    try {
-      await exportAttendanceMatrixWorkbook({
-        month,
-        employees: employeesToExport,
-        fetchWorkSummaryFn: getAttendanceWorkSummary,
-        onProgress: (current, total, emp) => {
-          if (progressText) {
-            progressText.textContent = `Đang trích xuất ma trận công: [${current}/${total}] ${emp.name} (${emp.id})...`;
-          }
-        },
-      });
-      showToast(`Đã xuất thành công Ma Trận Chấm Công & Tăng Ca có định dạng màu sắc cho 2 chi nhánh LVT & PVC (${employeesToExport.length} nhân sự)!`);
-      closeCompanySplitModal();
-      return;
-    } catch (err) {
-      console.error('[Attendance] Lỗi xuất ma trận công:', err);
-      showToast('Lỗi xuất ma trận công: ' + (err.message || 'Không xác định'), true);
-      return;
-    } finally {
-      if (progressBox) progressBox.style.display = 'none';
-      if (executeBtn) executeBtn.disabled = false;
-      if (cancelBtn) cancelBtn.disabled = false;
-    }
-  }
-
-  let dirHandle = null;
-  if (chosenFormat === 'directory') {
-    if (!window.showDirectoryPicker) {
-      showToast('Trình duyệt không hỗ trợ chọn thư mục, chuyển sang tải file ZIP.', true);
-      chosenFormat = 'zip';
-    } else {
-      try {
-        dirHandle = await window.showDirectoryPicker();
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          showToast('Không thể mở thư mục máy tính: ' + err.message, true);
-        }
-        return;
-      }
-    }
-  }
 
   if (progressBox) progressBox.style.display = 'block';
   if (executeBtn) executeBtn.disabled = true;
   if (cancelBtn) cancelBtn.disabled = true;
 
   try {
-    const summaryRows = [];
-    const perEmployeeSheets = [];
-    const zipFiles = [];
-    const usedSheetNames = new Set(['tổng hợp công ty', 'quy tắc tính công']);
-
-    const rules = [
-      { 'Nội dung': 'Nguồn dữ liệu', 'Quy tắc / công thức': 'Ca làm việc và lượt vào/ra được lưu trên hệ thống từ tháng 09/2026.' },
-      { 'Nội dung': 'Chi nhánh trong ngày', 'Quy tắc / công thức': 'Chi nhánh nhân viên chọn khi vào ca và được GPS xác nhận; không lấy chi nhánh cố định trong hồ sơ.' },
-      { 'Nội dung': 'Giờ công thường', 'Quy tắc / công thức': 'Thời lượng ca trừ thời gian nghỉ, đi muộn và về sớm; không vượt quá thời gian hiện diện thực tế.' },
-      { 'Nội dung': 'Tăng ca', 'Quy tắc / công thức': 'Chỉ cộng số phút từ đơn tăng ca đã được duyệt cuối cùng.' },
-      { 'Nội dung': 'Tổng giờ tính công', 'Quy tắc / công thức': 'Giờ công thường + tăng ca đã duyệt.' },
-      { 'Nội dung': 'Ngày công', 'Quy tắc / công thức': 'Giờ công thường / số phút chuẩn của ca, tối đa 1 ngày; tăng ca được cộng riêng vào tổng giờ.' },
-      { 'Nội dung': 'Cần đối chiếu', 'Quy tắc / công thức': 'Thiếu giờ vào/ra, thiếu ca hoặc dữ liệu bất thường không tự cộng công.' },
-    ];
-
-    for (let i = 0; i < employeesToExport.length; i++) {
-      const emp = employeesToExport[i];
-      if (progressText) {
-        progressText.textContent = `Đang trích xuất dữ liệu: [${i + 1}/${employeesToExport.length}] ${emp.name} (${emp.id})...`;
+    // 1. LOẠI BÁO CÁO 1: MA TRẬN 30 NGÀY (CÓ MÀU)
+    if (chosenType === 'matrix') {
+      if (!employeesToExport.length) {
+        showToast('Không có nhân sự nào trong phạm vi chi nhánh đã chọn.', true);
+        return;
       }
-
-      let summary = null;
-      try {
-        summary = await getAttendanceWorkSummary(month, emp.id);
-      } catch {
-        summary = null;
-      }
-
-      const totals = summary?.totals || {};
-      const days = summary?.days || [];
-
-      summaryRows.push({
-        'STT': i + 1,
-        'Mã NV': emp.id,
-        'Họ và tên': emp.name,
-        'Phòng ban': departmentName(emp.department),
-        'Chức danh': emp.role || '',
-        'Chi nhánh': BRANCHES[emp.branchId]?.name || emp.branchId || '',
-        'Giờ công thường (giờ)': Number(((totals.regularMinutes || 0) / 60).toFixed(2)),
-        'Tăng ca duyệt (giờ)': Number(((totals.overtimeMinutes || 0) / 60).toFixed(2)),
-        'Tổng giờ tính công (giờ)': Number(((totals.payableMinutes || 0) / 60).toFixed(2)),
-        'Tổng ngày công': Number(totals.workdays || 0),
-        'Công thường (phút)': Number(totals.regularMinutes || 0),
-        'Tăng ca duyệt (phút)': Number(totals.overtimeMinutes || 0),
-        'Tổng phút tính công': Number(totals.payableMinutes || 0),
-        'Đi muộn (phút)': Number(totals.lateMinutes || 0),
-        'Về sớm (phút)': Number(totals.earlyLeaveMinutes || 0),
-        'Cần đối chiếu (ngày)': Number(totals.incompleteDays || 0),
-        'Email': emp.email || '',
-        'SĐT': emp.phone || '',
+      if (progressText) progressText.textContent = `Đang trích xuất ma trận công ${periodSummary}...`;
+      await exportAttendanceMatrixWorkbook({
+        month: targetMonth,
+        employees: employeesToExport,
+        fetchWorkSummaryFn: getAttendanceWorkSummary,
+        onProgress: (current, total, emp) => {
+          if (progressText) {
+            progressText.textContent = `Đang tổng hợp ma trận công: [${current}/${total}] ${emp.name} (${emp.id})...`;
+          }
+        },
       });
-
-      const dayData = days.map((day, idx) => {
-        const [status] = workDayStatus(day);
-        const dateObj = new Date(`${day.work_date}T00:00:00`);
-        const weekday = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][dateObj.getDay()];
-        const branchDisplay = (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
-          ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
-          : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định');
-
-        const regMin = Number(day.regular_minutes || 0);
-        const otMin = Number(day.overtime_minutes || 0);
-        const payMin = Number(day.payable_minutes || 0);
-
-        return {
-          'STT': idx + 1,
-          'Ngày': dateObj.toLocaleDateString('vi-VN'),
-          'Thứ': weekday,
-          'Chi nhánh': branchDisplay,
-          'Ca làm việc': formatShiftDisplayName(day),
-          'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
-          'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
-          'Giờ công thường (giờ)': Number((regMin / 60).toFixed(2)),
-          'Tăng ca duyệt (giờ)': Number((otMin / 60).toFixed(2)),
-          'Tổng giờ tính công (giờ)': Number((payMin / 60).toFixed(2)),
-          'Trễ check-in (phút)': Number(day.late_checkin_minutes || 0),
-          'Đi muộn (phút)': Number(day.late_minutes || 0),
-          'Về sớm (phút)': Number(day.early_leave_minutes || 0),
-          'Giờ công thường (phút)': regMin,
-          'Tăng ca duyệt (phút)': otMin,
-          'Tổng phút tính công': payMin,
-          'Ngày công': Number(day.workday_credit || 0),
-          'Trạng thái đối chiếu': status,
-          'Ghi chú': day.note || day.attendance_anomaly_reason || '',
-        };
-      });
-
-      const sheetName = makeSafeSheetName(emp.id, emp.name, usedSheetNames);
-      perEmployeeSheets.push({
-        sheetName,
-        data: dayData.length ? dayData : [{ 'Thông báo': 'Chưa có dữ liệu chấm công trong tháng' }],
-      });
-
-      if (chosenFormat === 'zip' || chosenFormat === 'directory') {
-        const empWbBuffer = await generateWorkbookBuffer([
-          { sheetName: 'Bảng công cá nhân', data: dayData.length ? dayData : [{ 'Thông báo': 'Chưa có dữ liệu chấm công trong tháng' }] },
-          { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
-        ]);
-        const safeEmpName = normalizeText(emp.name).replace(/[^a-zA-Z0-9]/g, '_');
-        const empFilename = `Bang_Cong_${emp.id}_${safeEmpName}_${month}.xlsx`;
-
-        if (chosenFormat === 'zip') {
-          zipFiles.push({ name: empFilename, data: empWbBuffer });
-        } else if (chosenFormat === 'directory' && dirHandle) {
-          const fileHandle = await dirHandle.getFileHandle(empFilename, { create: true });
-          const writable = await fileHandle.createWritable();
-          await writable.write(empWbBuffer);
-          await writable.close();
-        }
-      }
+      showToast(`Đã xuất thành công Bảng Ma Trận Chấm Công & Tăng Ca ${periodSummary} (${branchLabel})!`);
+      closeAttendanceExportModal();
+      return;
     }
 
-    if (progressText) progressText.textContent = 'Đang đóng gói file xuất...';
+    // 2. LOẠI BÁO CÁO 2: DANH SÁCH CHECK-IN TRỄ (4 SHEET)
+    if (chosenType === 'late_checkin') {
+      if (progressText) progressText.textContent = `Đang truy vấn dữ liệu check-in ${periodSummary}...`;
 
-    if (chosenFormat === 'multi_sheet') {
+      let query = dataClient
+        .from('attendance_records')
+        .select('*')
+        .eq('record_type', 'checkin');
+
+      if (isMonthMode) {
+        query = query
+          .gte('time', `${targetMonth}-01T00:00:00`)
+          .lte('time', `${targetMonth}-31T23:59:59`);
+      } else {
+        query = query
+          .gte('time', `${rangeFrom}T00:00:00`)
+          .lte('time', `${rangeTo}T23:59:59`);
+      }
+      if (branch !== 'all') {
+        query = query.eq('branch_id', branch);
+      }
+
+      const { data: attData, error: attError } = await query;
+      if (attError) throw attError;
+
+      const emps = context?.employees || store.getState()?.employees || [];
+      let lateRows = computeLateCheckinList(attData || [], emps);
+
+      if (isMonthMode) {
+        lateRows = lateRows.filter((r) => r.rawDate && r.rawDate.startsWith(targetMonth));
+      } else {
+        lateRows = lateRows.filter((r) => r.rawDate && r.rawDate >= rangeFrom && r.rawDate <= rangeTo);
+      }
+      if (branch !== 'all') {
+        lateRows = lateRows.filter((r) => r.branchId === branch || (r.branchName && (branch === 'pham-van-chieu' ? r.branchName.includes('Phạm Văn Chiêu') : r.branchName.includes('Lê Văn Thọ'))));
+      }
+
+      if (!lateRows.length) {
+        showToast(`Không có lượt check-in trễ nào ghi nhận trong ${periodSummary} (${branchLabel}).`, false);
+        return;
+      }
+
+      const fileName = `Danh_Sach_Checkin_Tre_5S_${branchSlug}_${dateSlug}.xlsx`;
+      await exportLateCheckinWorkbook({
+        lateCheckins: lateRows,
+        employees: emps,
+        filterSummary: `${periodSummary} — ${branchLabel} (Mốc yêu cầu trước ca 5 phút)`,
+        filename: fileName,
+        month: isMonthMode ? targetMonth : '',
+      });
+
+      showToast(`Đã xuất riêng file Excel ${lateRows.length} lượt check-in trễ thành công!`);
+      closeAttendanceExportModal();
+      return;
+    }
+
+    // 3. LOẠI BÁO CÁO 3: BẢNG CÔNG ĐỐI SOÁT TÁCH TỪNG SHEET NHÂN SỰ
+    if (chosenType === 'multi_sheet') {
+      if (!employeesToExport.length) {
+        showToast('Không có nhân sự nào trong phạm vi đã chọn.', true);
+        return;
+      }
+
+      const summaryRows = [];
+      const perEmployeeSheets = [];
+      const usedSheetNames = new Set(['tổng hợp công ty', 'quy tắc tính công']);
+
+      const rules = [
+        { 'Nội dung': 'Nguồn dữ liệu', 'Quy tắc / công thức': 'Ca làm việc và lượt vào/ra được lưu trên hệ thống từ tháng 09/2026.' },
+        { 'Nội dung': 'Chi nhánh trong ngày', 'Quy tắc / công thức': 'Chi nhánh nhân viên chọn khi vào ca và được GPS xác nhận; không lấy chi nhánh cố định trong hồ sơ.' },
+        { 'Nội dung': 'Giờ công thường', 'Quy tắc / công thức': 'Thời lượng ca trừ thời gian nghỉ, đi muộn và về sớm; không vượt quá thời gian hiện diện thực tế.' },
+        { 'Nội dung': 'Tăng ca', 'Quy tắc / công thức': 'Chỉ cộng số phút từ đơn tăng ca đã được duyệt cuối cùng.' },
+        { 'Nội dung': 'Tổng giờ tính công', 'Quy tắc / công thức': 'Giờ công thường + tăng ca đã duyệt.' },
+        { 'Nội dung': 'Ngày công', 'Quy tắc / công thức': 'Giờ công thường / số phút chuẩn của ca, tối đa 1 ngày; tăng ca được cộng riêng vào tổng giờ.' },
+        { 'Nội dung': 'Cần đối chiếu', 'Quy tắc / công thức': 'Thiếu giờ vào/ra, thiếu ca hoặc dữ liệu bất thường không tự cộng công.' },
+      ];
+
+      for (let i = 0; i < employeesToExport.length; i++) {
+        const emp = employeesToExport[i];
+        if (progressText) {
+          progressText.textContent = `Đang trích xuất dữ liệu: [${i + 1}/${employeesToExport.length}] ${emp.name} (${emp.id})...`;
+        }
+
+        let summary = null;
+        try {
+          summary = await getAttendanceWorkSummary(targetMonth, emp.id);
+        } catch {
+          summary = null;
+        }
+
+        const totals = summary?.totals || {};
+        let days = summary?.days || [];
+        if (!isMonthMode && rangeFrom && rangeTo) {
+          days = days.filter((d) => d.work_date >= rangeFrom && d.work_date <= rangeTo);
+        }
+
+        summaryRows.push({
+          'STT': i + 1,
+          'Mã NV': emp.id,
+          'Họ và tên': emp.name,
+          'Phòng ban': departmentName(emp.department),
+          'Chức danh': emp.role || '',
+          'Chi nhánh': BRANCHES[emp.branchId]?.name || emp.branchId || '',
+          'Giờ công thường (giờ)': Number(((totals.regularMinutes || 0) / 60).toFixed(2)),
+          'Tăng ca duyệt (giờ)': Number(((totals.overtimeMinutes || 0) / 60).toFixed(2)),
+          'Tổng giờ tính công (giờ)': Number(((totals.payableMinutes || 0) / 60).toFixed(2)),
+          'Tổng ngày công': Number(totals.workdays || 0),
+          'Công thường (phút)': Number(totals.regularMinutes || 0),
+          'Tăng ca duyệt (phút)': Number(totals.overtimeMinutes || 0),
+          'Tổng phút tính công': Number(totals.payableMinutes || 0),
+          'Đi muộn (phút)': Number(totals.lateMinutes || 0),
+          'Về sớm (phút)': Number(totals.earlyLeaveMinutes || 0),
+          'Cần đối chiếu (ngày)': Number(totals.incompleteDays || 0),
+          'Email': emp.email || '',
+          'SĐT': emp.phone || '',
+        });
+
+        const dayData = days.map((day, idx) => {
+          const [status] = workDayStatus(day);
+          const dateObj = new Date(`${day.work_date}T00:00:00`);
+          const weekday = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][dateObj.getDay()];
+          const branchDisplay = (day.checkout_branch_id && day.checkout_branch_id !== day.branch_id)
+            ? `${BRANCHES[day.branch_id]?.shortName || day.branch_id} ➔ ${BRANCHES[day.checkout_branch_id]?.shortName || day.checkout_branch_id}`
+            : (BRANCHES[day.branch_id]?.shortName || 'Chưa xác định');
+
+          const regMin = Number(day.regular_minutes || 0);
+          const otMin = Number(day.overtime_minutes || 0);
+          const payMin = Number(day.payable_minutes || 0);
+
+          return {
+            'STT': idx + 1,
+            'Ngày': dateObj.toLocaleDateString('vi-VN'),
+            'Thứ': weekday,
+            'Chi nhánh': branchDisplay,
+            'Ca làm việc': formatShiftDisplayName(day),
+            'Giờ vào': day.checkin_at ? formatTime(day.checkin_at) : '',
+            'Giờ ra': day.checkout_at ? formatTime(day.checkout_at) : '',
+            'Giờ công thường (giờ)': Number((regMin / 60).toFixed(2)),
+            'Tăng ca duyệt (giờ)': Number((otMin / 60).toFixed(2)),
+            'Tổng giờ tính công (giờ)': Number((payMin / 60).toFixed(2)),
+            'Trễ check-in (phút)': Number(day.late_checkin_minutes || 0),
+            'Đi muộn (phút)': Number(day.late_minutes || 0),
+            'Về sớm (phút)': Number(day.early_leave_minutes || 0),
+            'Giờ công thường (phút)': regMin,
+            'Tăng ca duyệt (phút)': otMin,
+            'Tổng phút tính công': payMin,
+            'Ngày công': Number(day.workday_credit || 0),
+            'Trạng thái đối chiếu': status,
+            'Ghi chú': day.note || day.attendance_anomaly_reason || '',
+          };
+        });
+
+        const sheetName = makeSafeSheetName(emp.id, emp.name, usedSheetNames);
+        perEmployeeSheets.push({
+          sheetName,
+          data: dayData.length ? dayData : [{ 'Thông báo': 'Chưa có dữ liệu chấm công trong kỳ' }],
+        });
+      }
+
+      if (progressText) progressText.textContent = 'Đang đóng gói file Excel...';
+
       const allSheets = [
         { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
         { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
         ...perEmployeeSheets,
       ];
       await exportWorkbookToExcel({
-        filename: `Bang_Cong_GPS_Toan_Cong_Ty_${month}.xlsx`,
+        filename: `Bang_Cong_Doi_Soat_5S_${branchSlug}_${dateSlug}.xlsx`,
         sheets: allSheets,
       });
-      showToast(`Đã xuất thành công sổ cái Excel toàn công ty (${employeesToExport.length} nhân sự, ${perEmployeeSheets.length} sheet)!`);
-    } else if (chosenFormat === 'zip') {
-      const summaryBuffer = await generateWorkbookBuffer([
-        { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
-        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
-      ]);
-      zipFiles.unshift({ name: `00_Tong_Hop_Cham_Cong_Toan_Cong_Ty_${month}.xlsx`, data: summaryBuffer });
-
-      const zipData = createZipArchive(zipFiles);
-      downloadFile(zipData, `Bang_Cong_GPS_Tung_Nhan_Su_${month}.zip`, 'application/zip');
-      showToast(`Đã tải file ZIP gồm ${zipFiles.length} file Excel phân tách theo từng nhân sự!`);
-    } else if (chosenFormat === 'directory' && dirHandle) {
-      const summaryBuffer = await generateWorkbookBuffer([
-        { sheetName: 'TỔNG HỢP CÔNG TY', data: summaryRows },
-        { sheetName: 'Quy tắc tính công', data: rules, customWidths: { 'Nội dung': 25, 'Quy tắc / công thức': 80 } },
-      ]);
-      const fileHandle = await dirHandle.getFileHandle(`00_Tong_Hop_Cham_Cong_Toan_Cong_Ty_${month}.xlsx`, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(summaryBuffer);
-      await writable.close();
-
-      showToast(`Đã lưu trực tiếp toàn bộ file Excel của từng nhân sự vào thư mục máy tính!`);
+      showToast(`Đã xuất thành công sổ cái Excel (${employeesToExport.length} nhân sự, ${perEmployeeSheets.length} sheet)!`);
+      closeAttendanceExportModal();
+      return;
     }
 
-    closeCompanySplitModal();
+    // 4. LOẠI BÁO CÁO 4: NHẬT KÝ QUÉT GPS VÀO / RA CHI TIẾT
+    if (chosenType === 'gps_history') {
+      if (progressText) progressText.textContent = `Đang trích xuất nhật ký quét GPS ${periodSummary}...`;
+
+      let query = dataClient.from('attendance_records').select('*');
+      if (isMonthMode) {
+        query = query
+          .gte('time', `${targetMonth}-01T00:00:00`)
+          .lte('time', `${targetMonth}-31T23:59:59`);
+      } else {
+        query = query
+          .gte('time', `${rangeFrom}T00:00:00`)
+          .lte('time', `${rangeTo}T23:59:59`);
+      }
+      if (branch !== 'all') {
+        query = query.eq('branch_id', branch);
+      }
+
+      const { data: recs, error: recsError } = await query.order('time', { ascending: false });
+      if (recsError) throw recsError;
+
+      if (!recs || !recs.length) {
+        showToast(`Không có lượt quét GPS nào trong ${periodSummary} (${branchLabel}).`, false);
+        return;
+      }
+
+      const emps = context?.employees || store.getState()?.employees || [];
+      const empMap = new Map(emps.map((e) => [e.id, e]));
+
+      const gpsData = recs.map((record, index) => {
+        const employee = empMap.get(record.employee);
+        const branchInfo = BRANCHES[record.branch_id];
+        return {
+          'STT': index + 1,
+          'Mã NV': record.employee || '',
+          'Họ và tên': employee?.name || record.employee || '',
+          'Phòng ban': departmentName(employee?.department),
+          'Chức danh': employee?.role || '',
+          'Chi nhánh': branchInfo?.shortName || record.branch_id || 'Chưa xác định',
+          'Loại ghi nhận': recordTypeLabel(record),
+          'Thời gian': formatDateTime(record.time),
+          'Toạ độ GPS': record.latitude && record.longitude ? `${record.latitude}, ${record.longitude}` : '',
+          'Khoảng cách (m)': record.distance != null ? Number(record.distance) : '',
+          'Sai số GPS (m)': record.accuracy != null ? Number(record.accuracy) : '',
+          'Đánh giá hợp lệ': attendanceLabel(record),
+          'Chế độ': record.captured_offline ? 'Ngoại tuyến' : 'Trực tuyến',
+          'Ghi chú / Thiết bị': record.sync_error || record.device_info || '',
+        };
+      });
+
+      await exportTableToExcel({
+        filename: `Nhat_Ky_Cham_Cong_GPS_5S_${branchSlug}_${dateSlug}.xlsx`,
+        sheetName: 'Nhật ký GPS',
+        data: gpsData,
+      });
+      showToast(`Đã xuất thành công ${gpsData.length} lượt quét GPS!`);
+      closeAttendanceExportModal();
+      return;
+    }
   } catch (error) {
-    console.error('[Attendance] Lỗi xuất bảng công toàn công ty:', error);
-    showToast('Lỗi xuất dữ liệu: ' + (error.message || 'Không xác định'), true);
+    console.error('[Attendance Export Center] Lỗi xuất báo cáo:', error);
+    showToast('Lỗi xuất file: ' + (error.message || 'Không xác định'), true);
   } finally {
     if (progressBox) progressBox.style.display = 'none';
     if (executeBtn) executeBtn.disabled = false;
@@ -2660,15 +2762,17 @@ export function initView() {
       }
       await openScheduleModal();
     }
-    if (action === 'close-schedule-modal') closeScheduleModal();
-    if (action === 'open-checkin') openDialog();
-    if (action === 'checkout') confirmCheckout(event.target.closest('button'));
-    if (action === 'export-attendance') exportAttendance();
+    if (action === 'open-export-modal') {
+      const type = event.target.closest('[data-type]')?.dataset.type || 'matrix';
+      openAttendanceExportModal(type);
+    }
+    if (action === 'close-export-modal') closeAttendanceExportModal();
+    if (action === 'export-attendance') openAttendanceExportModal('gps_history');
     if (action === 'export-work-excel') exportWorkExcel();
-    if (action === 'export-matrix-attendance') exportAttendanceMatrixDirect();
-    if (action === 'export-late-checkin') exportLateCheckinDirect();
-    if (action === 'export-company-split-excel') openCompanySplitModal();
-    if (action === 'close-company-split-modal') closeCompanySplitModal();
+    if (action === 'export-matrix-attendance') openAttendanceExportModal('matrix');
+    if (action === 'export-late-checkin') openAttendanceExportModal('late_checkin');
+    if (action === 'export-company-split-excel') openAttendanceExportModal('multi_sheet');
+    if (action === 'close-company-split-modal') closeAttendanceExportModal();
     if (action === 'work-prev' && attendanceWorkPage > 1) { attendanceWorkPage -= 1; refreshAttendanceFilters(); }
     if (action === 'work-next') { attendanceWorkPage += 1; refreshAttendanceFilters(); }
     if (action === 'history-prev' && attendanceHistoryPage > 1) { attendanceHistoryPage -= 1; refreshAttendanceFilters(); }
@@ -2943,16 +3047,27 @@ export function initView() {
     }
   });
 
-  const companySplitModal = document.getElementById('companySplitExportModal');
-  companySplitModal?.addEventListener('click', (event) => {
+  const exportModal = document.getElementById('attendanceExportModal') || document.getElementById('companySplitExportModal');
+  exportModal?.addEventListener('click', (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
-    if (action === 'close-company-split-modal') {
+    if (action === 'close-export-modal' || action === 'close-company-split-modal') {
       event.preventDefault();
-      closeCompanySplitModal();
+      closeAttendanceExportModal();
     }
   });
 
-  document.getElementById('btnExecuteCompanySplit')?.addEventListener('click', executeCompanySplitExport);
+  exportModal?.addEventListener('change', (event) => {
+    if (event.target.name === 'exportTimeMode') {
+      const isMonth = event.target.value === 'month';
+      const mGroup = document.getElementById('exportMonthYearGroup');
+      const rGroup = document.getElementById('exportDateRangeGroup');
+      if (mGroup) mGroup.style.display = isMonth ? 'block' : 'none';
+      if (rGroup) rGroup.style.display = isMonth ? 'none' : 'block';
+    }
+  });
+
+  document.getElementById('btnExecuteUnifiedExport')?.addEventListener('click', executeUnifiedExport);
+  document.getElementById('btnExecuteCompanySplit')?.addEventListener('click', executeUnifiedExport);
 
   // Menu Dropdown Quản trị & Xuất Excel
   const menuBtn = document.getElementById('btnAttendanceActionMenu');

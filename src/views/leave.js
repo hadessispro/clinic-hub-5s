@@ -7,7 +7,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, requestInput } from '../components/app-dialog.js';
 import { store } from '../store.js';
 import { triggerArchive2Months } from '../services/archive-sync.js';
-import { exportLeaveRequestsWorkbook, exportLateCheckinWorkbook, computeLateCheckinList } from '../services/leave-export.js';
+import { exportLeaveRequestsWorkbook } from '../services/leave-export.js';
 import { dataClient } from '../data-client.js';
 
 let cachedEmployees = [];
@@ -15,6 +15,7 @@ let cachedRequests = [];
 let currentSelectedEmpCode = '';
 let requestSearch = '';
 let requestSearchMode = 'near';
+let requestMonthFilter = 'all';
 let requestTypeFilter = 'all';
 let requestStatusFilter = 'all';
 let requestDepartmentFilter = 'all';
@@ -33,6 +34,11 @@ function getFilteredRequests() {
     };
     if (requestTypeFilter !== 'all' && item.type !== requestTypeFilter) return false;
     if (requestStatusFilter !== 'all' && item.status !== requestStatusFilter) return false;
+    if (requestMonthFilter !== 'all') {
+      const fromM = String(item.from || '').slice(0, 7);
+      const toM = String(item.to || '').slice(0, 7);
+      if (fromM !== requestMonthFilter && toM !== requestMonthFilter) return false;
+    }
     if (requestDepartmentFilter !== 'all' && employee?.department && employee.department !== requestDepartmentFilter) return false;
     if (requestBranchFilter !== 'all' && employee?.branchId && employee.branchId !== requestBranchFilter) return false;
     const activeSearch = requestSearch;
@@ -682,9 +688,6 @@ export async function renderView(state) {
           <button class="primary-button" type="button" id="btnExportLeaveExcel" style="white-space:nowrap; background:#0f766e; border-color:#0f766e; display:inline-flex; align-items:center; gap:6px;">
             <i class="ri-file-excel-2-line"></i> Xuất Excel có màu (${filteredRequests.length} đơn)
           </button>
-          <button class="secondary-button" type="button" id="btnExportLateCheckinExcel" style="white-space:nowrap; background:#fff1f2; border-color:#f43f5e; color:#be123c; font-weight:600; display:inline-flex; align-items:center; gap:6px;" title="Xuất riêng file Excel danh sách &amp; thống kê nhân sự check-in vào ca trễ">
-            <i class="ri-alarm-warning-line"></i> Xuất riêng DS Check-in trễ
-          </button>
           ${['admin', 'hr', 'admin_it'].includes(store.getState().role) ? `
             <button class="secondary-button" type="button" id="triggerArchive2MonthsBtn" style="white-space:nowrap;">
               <span>📁</span>Lưu trữ 2 tháng (Excel & Drive)
@@ -696,6 +699,10 @@ export async function renderView(state) {
       <div class="operation-filterbar" id="leaveRequestFilters">
         <label class="is-search">Tìm thông minh<input type="search" id="leaveRequestSearch" value="${escapeHTML(requestSearch)}" placeholder="Gõ gần đúng tên, MNV, lý do hoặc loại đơn" autocomplete="off"></label>
         <label>Kiểu dò<select id="leaveRequestSearchMode"><option value="near" ${requestSearchMode === 'near' ? 'selected' : ''}>Gần đúng, bỏ dấu</option><option value="exact" ${requestSearchMode === 'exact' ? 'selected' : ''}>Đúng cụm từ</option></select></label>
+        <label>Tháng đơn<select id="leaveRequestMonthFilter">
+          <option value="all">Tất cả các tháng</option>
+          ${[...new Set(cachedRequests.map((r) => (r.from || '').slice(0, 7)).filter(Boolean))].sort().reverse().map((m) => `<option value="${m}" ${requestMonthFilter === m ? 'selected' : ''}>Tháng ${m.slice(5, 7)}/${m.slice(0, 4)}</option>`).join('')}
+        </select></label>
         <label>Loại đơn<select id="leaveRequestTypeFilter"><option value="all">Tất cả loại đơn</option>${LEAVE_TYPES.map((type) => `<option value="${escapeHTML(type)}" ${requestTypeFilter === type ? 'selected' : ''}>${escapeHTML(type)}</option>`).join('')}</select></label>
         <label>Trạng thái<select id="leaveRequestStatusFilter"><option value="all">Tất cả trạng thái</option><option value="pending" ${requestStatusFilter === 'pending' ? 'selected' : ''}>Chờ duyệt</option><option value="approved" ${requestStatusFilter === 'approved' ? 'selected' : ''}>Đã duyệt</option><option value="rejected" ${requestStatusFilter === 'rejected' ? 'selected' : ''}>Đã từ chối</option></select></label>
         <label>Phòng ban<select id="leaveRequestDepartmentFilter"><option value="all">Tất cả phòng ban</option>${[...new Set(employees.map((item) => item.department).filter(Boolean))].map((department) => `<option value="${escapeHTML(department)}" ${requestDepartmentFilter === department ? 'selected' : ''}>${escapeHTML(departmentName(department))}</option>`).join('')}</select></label>
@@ -735,6 +742,11 @@ export function initView() {
     requestPage = 1;
     updateLeaveDisplay();
   });
+  document.getElementById('leaveRequestMonthFilter')?.addEventListener('change', (event) => {
+    requestMonthFilter = event.target.value;
+    requestPage = 1;
+    updateLeaveDisplay();
+  });
   document.getElementById('leaveRequestStatusFilter')?.addEventListener('change', (event) => {
     requestStatusFilter = event.target.value;
     requestPage = 1;
@@ -754,6 +766,7 @@ export function initView() {
   document.getElementById('clearLeaveRequestFilters')?.addEventListener('click', () => {
     requestSearch = '';
     requestSearchMode = 'near';
+    requestMonthFilter = 'all';
     requestTypeFilter = 'all';
     requestStatusFilter = 'all';
     requestDepartmentFilter = 'all';
@@ -764,6 +777,8 @@ export function initView() {
     if (s) s.value = '';
     const sm = document.getElementById('leaveRequestSearchMode');
     if (sm) sm.value = 'near';
+    const mf = document.getElementById('leaveRequestMonthFilter');
+    if (mf) mf.value = 'all';
     const tf = document.getElementById('leaveRequestTypeFilter');
     if (tf) tf.value = 'all';
     const sf = document.getElementById('leaveRequestStatusFilter');
@@ -958,73 +973,21 @@ export function initView() {
       if (requestBranchFilter !== 'all') filterParts.push(`Cơ sở: ${requestBranchFilter === 'pham-van-chieu' ? 'Phạm Văn Chiêu' : 'Lê Văn Thọ'}`);
       if (requestSearch && requestSearch.trim()) filterParts.push(`Tìm: "${requestSearch.trim()}"`);
 
+      if (requestMonthFilter !== 'all') filterParts.push(`Tháng: ${requestMonthFilter.slice(5, 7)}/${requestMonthFilter.slice(0, 4)}`);
       const filterSummary = filterParts.join(' | ') || 'Tất cả đơn từ trong hệ thống';
-      const dateSlug = new Date().toISOString().slice(0, 10);
+      const dateSlug = requestMonthFilter !== 'all' ? requestMonthFilter.replace('-', '_') : new Date().toISOString().slice(0, 10);
       const fileName = `Danh_Sach_Don_Tu_Tang_Ca_5S_${dateSlug}.xlsx`;
-
-      // Tải danh sách check-in để đối soát các lượt check-in vào ca trễ (mốc yêu cầu trước ca 5 phút)
-      let lateCheckinRows = [];
-      try {
-        const { data: attData } = await dataClient
-          .from('attendance_records')
-          .select('*')
-          .eq('record_type', 'checkin');
-
-        if (Array.isArray(attData) && attData.length) {
-          lateCheckinRows = computeLateCheckinList(attData, cachedEmployees);
-        }
-      } catch (attErr) {
-        console.warn('[Leave Export] Lỗi nhẹ khi lấy dữ liệu check-in trễ:', attErr);
-      }
 
       await exportLeaveRequestsWorkbook({
         requests: filtered,
         employees: cachedEmployees,
-        lateCheckins: lateCheckinRows,
         filterSummary,
         filename: fileName,
       });
-      showToast(`Đã xuất thành công ${filtered.length} đơn từ & ${lateCheckinRows.length} lượt check-in trễ ra file Excel 5S!`);
+      showToast(`Đã xuất thành công ${filtered.length} đơn từ ra file Excel Nha Khoa 5S!`);
     } catch (err) {
       console.error('[Leave Export] Lỗi xuất file Excel:', err);
       showToast('Lỗi xuất file Excel: ' + (err.message || 'Không xác định'), true);
-    }
-  });
-
-  document.getElementById('btnExportLateCheckinExcel')?.addEventListener('click', async () => {
-    showToast('Đang tổng hợp dữ liệu check-in vào ca trễ...', false, 2500);
-    try {
-      const { data: attData } = await dataClient
-        .from('attendance_records')
-        .select('*')
-        .eq('record_type', 'checkin');
-
-      if (!Array.isArray(attData) || !attData.length) {
-        showToast('Không có dữ liệu check-in trong hệ thống.', true);
-        return;
-      }
-
-      const lateCheckinRows = computeLateCheckinList(attData, cachedEmployees);
-      if (!lateCheckinRows.length) {
-        showToast('Tuyệt vời! Không có lượt check-in trễ nào ghi nhận.', false);
-        return;
-      }
-
-      const activeMonth = '2026-09';
-      const fileName = `Danh_Sach_Checkin_Tre_5S_Thang_09_2026.xlsx`;
-
-      await exportLateCheckinWorkbook({
-        lateCheckins: lateCheckinRows,
-        employees: cachedEmployees,
-        filterSummary: 'Tháng 09/2026 — Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
-        filename: fileName,
-        month: activeMonth,
-      });
-
-      showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);
-    } catch (err) {
-      console.error('[Late Checkin Export] Lỗi xuất file:', err);
-      showToast('Lỗi xuất file Check-in trễ: ' + (err.message || 'Không xác định'), true);
     }
   });
 
