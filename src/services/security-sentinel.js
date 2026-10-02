@@ -1,15 +1,25 @@
 /**
  * Security Sentinel - Giám sát an ninh đầu cuối (Frontend Anti-Tamper)
  *
- * Nhiệm vụ:
- * 1. Bắt phím tắt F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U.
- * 2. Phát hiện cửa sổ Developer Tools / Console được mở.
- * 3. Gửi cảnh báo tức thì về Backend (/api/v2/security/client-tamper) để đẩy về Telegram của Quản trị viên.
+ * Tối ưu hóa theo quy chuẩn Clinic Hub 5S:
+ * 1. KHÔNG can thiệp hoặc làm phiền người dùng trên thiết bị di động (Mobile View).
+ * 2. LOẠI BỎ hoàn toàn cơ chế đo chênh lệch kích thước cửa sổ (window size differential)
+ *    và console getter định kỳ vì gây báo động giả liên tục trên mobile/responsive.
+ * 3. Chỉ ghi nhận sự kiện phím tắt F12 trên máy tính để bàn (Desktop PC) phục vụ nhật ký an ninh,
+ *    không can thiệp, không chặn luồng debug và KHÔNG spam Telegram.
  */
 
 const SESSION_KEY = '5s_vps_session_v1';
-const ALERT_COOLDOWN_MS = 60_000; // Giới hạn gửi cảnh báo tối đa 1 lần/phút cho mỗi loại sự kiện
+const ALERT_COOLDOWN_MS = 300_000; // Giới hạn gửi cảnh báo tối đa 1 lần / 5 phút, tránh hao tài nguyên
 const lastAlertTimes = new Map();
+
+function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches) return true;
+  return false;
+}
 
 function getCurrentUser() {
   try {
@@ -23,10 +33,13 @@ function getCurrentUser() {
 }
 
 function sendTamperAlert(type, details = {}) {
+  // Bỏ qua hoàn toàn nếu là thiết bị di động
+  if (isMobileDevice()) return;
+
   const now = Date.now();
   const lastTime = lastAlertTimes.get(type) || 0;
   if (now - lastTime < ALERT_COOLDOWN_MS) {
-    return; // Đang trong thời gian giãn cách (cooldown), tránh spam
+    return; // Đang trong thời gian giãn cách (cooldown)
   }
   lastAlertTimes.set(type, now);
 
@@ -43,6 +56,7 @@ function sendTamperAlert(type, details = {}) {
       timestamp: new Date().toISOString(),
       screen: `${window.screen.width}x${window.screen.height}`,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
+      device: 'Desktop PC',
       ...details,
     },
   };
@@ -50,52 +64,44 @@ function sendTamperAlert(type, details = {}) {
   const url = '/api/v2/security/client-tamper';
   const body = JSON.stringify(payload);
 
-  // Ưu tiên navigator.sendBeacon để không bị hủy ngay cả khi người dùng tắt trình duyệt
   if (typeof navigator.sendBeacon === 'function') {
     const blob = new Blob([body], { type: 'application/json' });
     const success = navigator.sendBeacon(url, blob);
     if (success) return;
   }
 
-  // Fallback sang fetch API
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body,
     keepalive: true,
   }).catch(() => {
-    // Silent fail on network error
+    // Silent fail
   });
 }
 
 /**
- * 1. Lắng nghe phím tắt mở DevTools
+ * Lắng nghe phím tắt mở DevTools chỉ trên máy tính để bàn (Desktop PC)
  */
 function setupKeyboardListeners() {
+  if (isMobileDevice()) return;
+
   window.addEventListener(
     'keydown',
     (e) => {
-      // F12
+      // F12 vật lý trên bàn phím
       if (e.key === 'F12' || e.keyCode === 123) {
         sendTamperAlert('f12_opened', { trigger: 'keyboard_f12' });
         return;
       }
 
       // Ctrl + Shift + I / Cmd + Opt + I (DevTools)
-      // Ctrl + Shift + J / Cmd + Opt + J (Console)
-      // Ctrl + Shift + C / Cmd + Opt + C (Inspect Element)
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
       const isShift = e.shiftKey;
       const key = String(e.key || '').toUpperCase();
 
       if (isCtrlOrCmd && isShift && (key === 'I' || key === 'J' || key === 'C')) {
         sendTamperAlert('f12_opened', { trigger: `keyboard_shortcut_${key}` });
-        return;
-      }
-
-      // Ctrl + U (View Source)
-      if (isCtrlOrCmd && key === 'U') {
-        sendTamperAlert('f12_opened', { trigger: 'keyboard_view_source' });
       }
     },
     { capture: true },
@@ -103,59 +109,9 @@ function setupKeyboardListeners() {
 }
 
 /**
- * 2. Phát hiện mở DevTools thông qua kích thước chênh lệch màn hình
- */
-function setupWindowSizeDetector() {
-  let devtoolsOpen = false;
-  const threshold = 160;
-
-  setInterval(() => {
-    const widthDiff = window.outerWidth - window.innerWidth;
-    const heightDiff = window.outerHeight - window.innerHeight;
-
-    const isOpen = widthDiff > threshold || heightDiff > threshold;
-    if (isOpen && !devtoolsOpen) {
-      devtoolsOpen = true;
-      sendTamperAlert('devtools_opened', {
-        trigger: 'window_size_differential',
-        widthDiff,
-        heightDiff,
-      });
-    } else if (!isOpen && devtoolsOpen) {
-      devtoolsOpen = false;
-    }
-  }, 2000);
-}
-
-/**
- * 3. Phát hiện Console Getter / Tamper Detection
- */
-function setupConsoleTamperDetector() {
-  try {
-    const sentinel = {
-      get id() {
-        sendTamperAlert('console_tamper', {
-          trigger: 'console_evaluated',
-          action: 'Người dùng đang quan sát hoặc tương tác trực tiếp trên Console',
-        });
-        return '5s_security_guard';
-      },
-    };
-
-    // Định kỳ gửi sentinel vào debug log; khi DevTools mở và tự động render object, getter sẽ kích hoạt
-    setInterval(() => {
-      console.debug(sentinel);
-    }, 4000);
-  } catch {
-    // Ignored
-  }
-}
-
-/**
- * Khởi chạy Sentinel
+ * Khởi chạy Sentinel: Loại bỏ hoàn toàn detector kích thước và console getter
  */
 export function initSecuritySentinel() {
+  if (isMobileDevice()) return;
   setupKeyboardListeners();
-  setupWindowSizeDetector();
-  setupConsoleTamperDetector();
 }

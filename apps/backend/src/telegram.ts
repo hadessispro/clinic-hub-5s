@@ -334,6 +334,10 @@ export class TelegramService {
   }
 
   async sendSecurityAlert(alert: SecurityAlertPayload): Promise<void> {
+    // Không gửi Telegram các sự kiện F12, DevTools, Console hoặc đăng nhập/đăng xuất thông thường để tránh spam
+    if (['f12_opened', 'devtools_opened', 'console_tamper', 'login_success', 'logout'].includes(alert.eventType)) {
+      return;
+    }
     const icon = alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️';
     const severityLabel = alert.severity === 'critical' ? 'NGHIÊM TRỌNG' : alert.severity === 'warning' ? 'CẢNH BÁO' : 'THÔNG TIN';
 
@@ -1061,9 +1065,10 @@ export class TelegramService {
     const titleLower = String(title || '').toLowerCase();
 
     const isDoctor = deptLower === 'bs' || deptLower.includes('chuyên môn') || titleLower.includes('bác sĩ') || codeLower.startsWith('bs');
-    const isFront = deptLower === 'phuta' || deptLower === 'dvkh' || titleLower.includes('phụ tá') || titleLower.includes('lễ tân') || codeLower.startsWith('pt') || codeLower.startsWith('lt');
+    const isFront = deptLower === 'phuta' || deptLower === 'dvkh' || deptLower.includes('lễ tân') || deptLower.includes('khách hàng') || titleLower.includes('phụ tá') || titleLower.includes('lễ tân') || titleLower.includes('dịch vụ khách hàng') || codeLower.startsWith('pt') || codeLower.startsWith('lt') || codeLower.startsWith('pvc') || codeLower.startsWith('lvt');
     const isSecurity = deptLower === 'baove' || titleLower.includes('bảo vệ') || codeLower.startsWith('bv');
     const isCleaning = deptLower === 'laocong' || titleLower.includes('tạp vụ') || titleLower.includes('lao công');
+    const isOffice = deptLower === 'mkt' || deptLower.includes('marketing') || deptLower === 'it' || deptLower === 'ketoan' || deptLower === 'hr' || deptLower === 'nhansu' || titleLower.includes('marketing') || titleLower.includes('kế toán') || titleLower.includes('nhân sự') || titleLower.includes('it');
 
     const s = String(rawShiftOrCode || '').toLowerCase().trim();
 
@@ -1105,7 +1110,18 @@ export class TelegramService {
       return { code: 'cleaning-weekday', name: 'Ngày thường', start: '06:00', end: '16:00', minutes: 540 };
     }
 
-    // 5. Fallback
+    // 5. Khối Văn phòng / Marketing / IT / Kế toán / Nhân sự
+    if (isOffice) {
+      if (s.includes('sáng') || s === 'sang' || s === 's') {
+        return { code: 'office-morning', name: 'Ca sáng', start: '08:00', end: '12:00', minutes: 240 };
+      }
+      if (s.includes('chiều') || s === 'chieu' || s === 'c') {
+        return { code: 'office-afternoon', name: 'Ca chiều', start: '13:00', end: '17:00', minutes: 240 };
+      }
+      return { code: 'office-regular', name: 'Ca hành chính', start: '08:00', end: '17:00', minutes: 480 };
+    }
+
+    // 6. Fallback
     if (s.includes('sáng') || s === 'sang' || s === 's') {
       return { code: 'front-morning', name: 'Ca sáng', start: '07:30', end: '18:00', minutes: 570 };
     }
@@ -1113,6 +1129,137 @@ export class TelegramService {
       return { code: 'doctor-afternoon', name: 'Ca chiều', start: '10:00', end: '20:00', minutes: 540 };
     }
     return { code: 'clinic-0800', name: 'Ca hành chính', start: '08:00', end: '17:00', minutes: 480 };
+  }
+
+  async findEmployeeInText(text: string): Promise<{ code: string; name: string; dept: string; title: string; branch: string } | null> {
+    try {
+      const res = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
+        `select payload from app.records where (entity_type='profiles' or entity_type='employees') and deleted_at is null`,
+      );
+      const textNorm = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      let bestMatch: { code: string; name: string; dept: string; title: string; branch: string } | null = null;
+      let maxNameLength = 0;
+
+      for (const row of res.rows) {
+        const p = row.payload || {};
+        const code = String(p.employee_code || p.code || '').trim();
+        const fullName = String(p.full_name || p.name || '').trim();
+        if (!code && !fullName) continue;
+
+        if (code && new RegExp(`\\b${code}\\b`, 'i').test(text)) {
+          return {
+            code,
+            name: fullName || code,
+            dept: String(p.department || ''),
+            title: String(p.title || ''),
+            branch: String(p.branch_id || p.branch || 'PVC'),
+          };
+        }
+
+        if (fullName.length >= 3) {
+          const nameNorm = fullName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (textNorm.includes(nameNorm) && nameNorm.length > maxNameLength) {
+            maxNameLength = nameNorm.length;
+            bestMatch = {
+              code: code || 'NV_AUTO',
+              name: fullName,
+              dept: String(p.department || ''),
+              title: String(p.title || ''),
+              branch: String(p.branch_id || p.branch || 'PVC'),
+            };
+          }
+        }
+      }
+      return bestMatch;
+    } catch {
+      return null;
+    }
+  }
+
+  extractTimesFromText(
+    text: string,
+    defaultStart: string | null = null,
+    defaultEnd: string | null = null,
+    intent?: string,
+  ): { startTime: string | null; endTime: string | null; overtimeMinutes: number } {
+    const lower = text.toLowerCase();
+    let startTime: string | null = null;
+    let endTime: string | null = null;
+
+    // 1. Dải giờ: "17h -> 17h49", "17h --> 17h49", "17h => 17h49", "17h - 17h49", "17:00 - 17:49", "từ 17h đến 17h49", "17h sang 17h49", "17h tới 17h49"
+    const rangeRegex = /(?:từ\s+|lúc\s+)?(\d{1,2})(?:\s*[:hH]\s*|\s*giờ\s*)(\d{0,2})(?:\s*phút|\s*p)?\s*(?:->|-->|=>|==>|-|–|—|đến|tới|sang)\s*(\d{1,2})(?:\s*[:hH]\s*|\s*giờ\s*)(\d{0,2})(?:\s*phút|\s*p)?/i;
+    const rangeMatch = lower.match(rangeRegex);
+
+    if (rangeMatch) {
+      const sH = rangeMatch[1].padStart(2, '0');
+      const sM = (rangeMatch[2] || '00').padEnd(2, '0');
+      const eH = rangeMatch[3].padStart(2, '0');
+      const eM = (rangeMatch[4] || '00').padEnd(2, '0');
+      startTime = `${sH}:${sM}`;
+      endTime = `${eH}:${eM}`;
+    } else {
+      // 2. Dạng kết thúc: "đến 17h49", "tới 18h", "về lúc 17h49"
+      const untilRegex = /(?:đến|tới|về lúc|về trễ lúc)\s*(\d{1,2})(?:\s*[:hH]\s*|\s*giờ\s*)(\d{0,2})(?:\s*phút|\s*p)?/i;
+      const untilMatch = lower.match(untilRegex);
+      if (untilMatch) {
+        const uH = untilMatch[1].padStart(2, '0');
+        const uM = (untilMatch[2] || '00').padEnd(2, '0');
+        const matchedTime = `${uH}:${uM}`;
+        if (intent === 'tang_ca') {
+          startTime = defaultEnd || '17:00';
+          endTime = matchedTime;
+        } else {
+          startTime = defaultStart || '07:30';
+          endTime = matchedTime;
+        }
+      } else {
+        // 3. Tìm các cụm chỉ giờ có trong câu
+        const allTimesRegex = /(\d{1,2})\s*[:hH]\s*(\d{0,2})/g;
+        const matches: Array<{ h: string; m: string }> = [];
+        let m;
+        while ((m = allTimesRegex.exec(lower)) !== null) {
+          matches.push({ h: m[1].padStart(2, '0'), m: (m[2] || '00').padEnd(2, '0') });
+        }
+        if (matches.length >= 2) {
+          startTime = `${matches[0].h}:${matches[0].m}`;
+          endTime = `${matches[1].h}:${matches[1].m}`;
+        } else if (matches.length === 1) {
+          const singleTime = `${matches[0].h}:${matches[0].m}`;
+          if (intent === 'tang_ca') {
+            startTime = defaultEnd || '17:00';
+            endTime = singleTime;
+          } else {
+            startTime = singleTime;
+            endTime = defaultEnd;
+          }
+        }
+      }
+    }
+
+    if (!startTime) startTime = defaultStart;
+    if (!endTime) endTime = defaultEnd;
+
+    // Tự động hoán vị nếu giờ bắt đầu lớn hơn giờ kết thúc trên cùng ngày (ví dụ người dùng gõ 17h49 - 17h)
+    if (startTime && endTime) {
+      const [sh, sm] = startTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
+      if (Number.isFinite(sh) && Number.isFinite(eh) && (sh * 60 + sm > eh * 60 + em)) {
+        const temp = startTime;
+        startTime = endTime;
+        endTime = temp;
+      }
+    }
+
+    let overtimeMinutes = 0;
+    if (startTime && endTime) {
+      const [sh, sm] = startTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
+      if (Number.isFinite(sh) && Number.isFinite(eh)) {
+        overtimeMinutes = Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
+      }
+    }
+
+    return { startTime, endTime, overtimeMinutes };
   }
 
   extractSlotsFallback(rawText: string, employeeCode?: string, employeeName?: string, empDept?: string, empTitle?: string): JsonMap {
@@ -1202,28 +1349,13 @@ export class TelegramService {
       }
     }
 
-    // 5. Time extraction (hỗ trợ dạng 20h đến 20h12 hoặc 20:00 - 20:12)
-    let startTime: string | null = resolvedShift.start;
-    let endTime: string | null = resolvedShift.end;
-    const rangeTimeMatch = lower.match(/(?:từ\s+|lúc\s+)?(\d{1,2})\s*(?:h|:|giờ)\s*(\d{0,2})\s*(?:phút)?\s*(?:đến|-|–|tới)\s*(\d{1,2})\s*(?:h|:|giờ)\s*(\d{0,2})\s*(?:phút)?/);
-    if (rangeTimeMatch) {
-      startTime = `${rangeTimeMatch[1].padStart(2, '0')}:${(rangeTimeMatch[2] || '00').padEnd(2, '0')}`;
-      endTime = `${rangeTimeMatch[3].padStart(2, '0')}:${(rangeTimeMatch[4] || '00').padEnd(2, '0')}`;
-    } else {
-      const timeMatch = lower.match(/(\d{1,2})\s*(?:h|:|giờ)\s*(\d{2})/);
-      if (timeMatch) {
-        startTime = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
-      }
-    }
-
-    let overtimeMinutes = 0;
-    if (startTime && endTime) {
-      const [sh, sm] = startTime.split(':').map(Number);
-      const [eh, em] = endTime.split(':').map(Number);
-      if (Number.isFinite(sh) && Number.isFinite(eh)) {
-        overtimeMinutes = Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
-      }
-    }
+    // 5. Time extraction (hỗ trợ dạng 17h -> 17h49, 17:00 - 17:49, 17h đến 17h49, tăng ca đến 18h...)
+    const { startTime, endTime, overtimeMinutes } = this.extractTimesFromText(
+      text,
+      resolvedShift.start,
+      resolvedShift.end,
+      intent,
+    );
 
     // 6. Target colleague (chỉ áp dụng cho đổi ca)
     let targetEmployeeName: string | null = null;
@@ -1293,21 +1425,37 @@ export class TelegramService {
     let empTitle = '';
     let empDept = '';
     let resolvedEmployeeName = employeeName;
-    if (employeeCode) {
+    let resolvedEmployeeCode = employeeCode;
+    let resolvedBranch = 'PVC';
+
+    const detectedEmp = await this.findEmployeeInText(rawText);
+    const isManagerRole = ['admin', 'admin_it', 'superadmin', 'leader', 'hr', 'phu_ta_truong', 'manager', 'branch_manager'].includes(userRole || '');
+
+    if (detectedEmp) {
+      const isSelf = !employeeCode || detectedEmp.code.toLowerCase() === String(employeeCode).toLowerCase();
+      if (isSelf || isManagerRole) {
+        resolvedEmployeeCode = detectedEmp.code;
+        resolvedEmployeeName = detectedEmp.name;
+        empDept = detectedEmp.dept;
+        empTitle = detectedEmp.title;
+        resolvedBranch = detectedEmp.branch || 'PVC';
+      }
+    } else if (resolvedEmployeeCode) {
       try {
         const empProfile = await this.infrastructure.postgres.query<{ payload: JsonMap }>(
           `select payload from app.records where (entity_type='profiles' or entity_type='employees') and deleted_at is null and lower(payload->>'employee_code')=lower($1) limit 1`,
-          [employeeCode],
+          [resolvedEmployeeCode],
         );
         const empData = empProfile.rows[0]?.payload || {};
         empTitle = String(empData.title || '');
         empDept = String(empData.department || '');
         if (!resolvedEmployeeName && empData.full_name) resolvedEmployeeName = String(empData.full_name);
+        if (empData.branch_id || empData.branch) resolvedBranch = String(empData.branch_id || empData.branch);
       } catch {}
     }
 
     let apiKey = process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg';
-    let model = 'gemini-3.6-flash';
+    let model = 'gemini-2.0-flash';
     try {
       const cur = await this.infrastructure.postgres.query<{ config_value: string }>(
         `select config_value from app.bot_config where config_key = 'gemini_assistant_config'`,
@@ -1412,14 +1560,31 @@ Trả về JSON đúng cấu trúc sau:
     }
 
     // Đảm bảo shiftCode luôn được map chuẩn xác theo chức danh và cơ sở dữ liệu
-    const finalShift = this.resolveClinicShift(result.shiftCode || result.shift, employeeCode, empDept, empTitle);
+    const finalShift = this.resolveClinicShift(result.shiftCode || result.shift, resolvedEmployeeCode, empDept, empTitle);
     result.shiftCode = finalShift.code;
     result.shift = finalShift.name;
     if (!result.startTime) result.startTime = finalShift.start;
     if (!result.endTime) result.endTime = finalShift.end;
 
-    if (!result.employeeCode) result.employeeCode = employeeCode || 'NV_AUTO';
+    // Chuẩn hóa giờ tăng ca và tự động hoán vị nếu bị đảo ngược
+    if (result.startTime && result.endTime) {
+      const [sh, sm] = String(result.startTime).split(':').map(Number);
+      const [eh, em] = String(result.endTime).split(':').map(Number);
+      if (Number.isFinite(sh) && Number.isFinite(eh) && (sh * 60 + sm > eh * 60 + em)) {
+        const tmp = result.startTime;
+        result.startTime = result.endTime;
+        result.endTime = tmp;
+      }
+      if (result.intent === 'tang_ca') {
+        const [nsh, nsm] = String(result.startTime).split(':').map(Number);
+        const [neh, nem] = String(result.endTime).split(':').map(Number);
+        result.overtimeMinutes = Math.max(0, (neh * 60 + nem) - (nsh * 60 + nsm));
+      }
+    }
+
+    if (!result.employeeCode) result.employeeCode = resolvedEmployeeCode || 'NV_AUTO';
     if (!result.employeeName) result.employeeName = resolvedEmployeeName || 'Nhân sự';
+    if (!result.branch) result.branch = resolvedBranch;
     if (!result.requestId) result.requestId = `req_${Date.now()}`;
     result.processingTimeMs = Date.now() - startTime;
     result.model = usedAi ? model : 'Smart Semantic Fallback';
@@ -1971,13 +2136,14 @@ Trả về JSON đúng cấu trúc sau:
       ? `${payload.overtimeMinutes} phút (${payload.startTime || ''} ➔ ${payload.endTime || ''})`
       : `${payload.shift || ''} ${payload.startTime ? `(${payload.startTime}${payload.endTime ? ` – ${payload.endTime}` : ''})` : ''}`.trim();
 
+    const roleInfo = [payload.department, payload.title].filter(Boolean).join(' | ');
     const lines = [
-      `🤖 <b>[AI GEMINI] YÊU CẦU CẦN SẾP DUYỆT TỪ XA</b>`,
+      `⚡ <b>[ƯU TIÊN DUYỆT] ĐƠN TỪ TỪ AI TRỢ LÝ 5S</b>`,
       `━━━━━━━━━━━━━━━━━━━━`,
       `📋 <b>Loại:</b> ${intentIcon} ${this.escapeHtml(payload.intentLabel || (isOvertime ? 'Đơn tăng ca' : 'Yêu cầu nhân sự'))}`,
-      `👤 <b>Nhân viên:</b> <b>${this.escapeHtml(payload.employeeName || 'Nhân viên')}</b> (<code>${this.escapeHtml(payload.employeeCode || '')}</code>)`,
+      `👤 <b>Nhân sự:</b> <b>${this.escapeHtml(payload.employeeName || 'Nhân sự')}</b> (<code>${this.escapeHtml(payload.employeeCode || '')}</code>)${roleInfo ? ` — <i>${this.escapeHtml(roleInfo)}</i>` : ''}`,
       `📅 <b>Ngày áp dụng:</b> <code>${this.escapeHtml(payload.workDate || '')}</code> ${payload.toDate && payload.toDate !== payload.workDate ? `đến <code>${this.escapeHtml(payload.toDate)}</code>` : ''}`,
-      `⏰ <b>Thời gian:</b> ${this.escapeHtml(timeDetail)}`,
+      `⏰ <b>Thời gian:</b> <b>${this.escapeHtml(timeDetail)}</b>`,
       `🏥 <b>Chi nhánh:</b> ${this.escapeHtml(payload.branch || 'Toàn hệ thống')}`,
       payload.intent === 'doi_ca_truc' && payload.targetEmployeeName ? `👥 <b>Người đổi ca:</b> <b>${this.escapeHtml(payload.targetEmployeeName)}</b>` : '',
       `📝 <b>Lý do:</b> <i>${this.escapeHtml(payload.reason || payload.summary || '')}</i>`,
@@ -2030,13 +2196,52 @@ Trả về JSON đúng cấu trúc sau:
     const keys: string[] = Array.isArray(config.apiKeys) && config.apiKeys.length > 0
       ? config.apiKeys
       : (config.apiKey ? [config.apiKey] : [process.env.GEMINI_API_KEY || 'AQ.Ab8RN6JU5HAeaWt1evBsfpsapqF4cirPgFgPoNHUgijys_jnFg']);
-    const model = (config.model && config.model !== 'gemini-2.5-flash') ? config.model : 'gemini-3.6-flash';
+    let model = config.model || 'gemini-2.0-flash';
+    if (model === 'gemini-3.6-flash' || model === 'gemini-2.5-flash') {
+      model = 'gemini-2.0-flash';
+    }
 
-    const empName = String(user.profile?.full_name || user.employeeCode);
-    const empCode = user.employeeCode;
-    const empDept = user.department || '';
-    const empTitle = String(user.profile?.title || '');
+    let empName = String(user.profile?.full_name || user.employeeCode);
+    let empCode = user.employeeCode;
+    let empDept = user.department || '';
+    let empTitle = String(user.profile?.title || '');
+    let branch = user.branchId || 'pham-van-chieu';
     const startTime = Date.now();
+
+    // Nhận diện nhân sự từ tin nhắn (ví dụ: "Lê Kha Thy tăng ca lúc 17h -> 17h49...")
+    const detectedEmp = await this.findEmployeeInText(rawText);
+    const isManagerRole = ['admin', 'admin_it', 'superadmin', 'leader', 'hr', 'phu_ta_truong', 'manager', 'branch_manager', 'bep_truong', 'dieu_duong_truong'].includes(user.role);
+    let isUnauthorizedProxy = false;
+
+    if (detectedEmp) {
+      const isSelf = detectedEmp.code.toLowerCase() === user.employeeCode.toLowerCase()
+        || detectedEmp.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === empName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+      if (isSelf || isManagerRole) {
+        empCode = detectedEmp.code;
+        empName = detectedEmp.name;
+        empDept = detectedEmp.dept || empDept;
+        empTitle = detectedEmp.title || empTitle;
+        if (detectedEmp.branch) branch = detectedEmp.branch;
+      } else {
+        isUnauthorizedProxy = true;
+      }
+    }
+
+    if (isUnauthorizedProxy && detectedEmp) {
+      return {
+        type: 'qa',
+        intent: 'hoi_dap',
+        intentLabel: 'Từ chối làm hộ',
+        reply: `Dạ theo quy tắc bảo mật và quản trị dữ liệu của hệ thống Nha khoa 5S, mỗi tài khoản chỉ phục vụ ghi nhận dữ liệu cho chính nhân sự đó, không được phép tạo đơn hay can thiệp dữ liệu cho ${detectedEmp.name} ạ. Nhờ anh/chị nhắn đồng nghiệp tự đăng nhập tài khoản của bạn ấy để gửi yêu cầu nhé!`,
+        requestId: `req_${Date.now()}`,
+        processingTimeMs: Date.now() - startTime,
+        model: 'Security Guardrail',
+        usedAi: false,
+        employeeCode: user.employeeCode,
+        employeeName: user.profile?.full_name || user.employeeCode,
+      };
+    }
     const channel = `dm:${[user.id, 'ai_assistant'].sort().join(':')}`;
     let recentContext = '';
     let pendingClarification = false;
@@ -2132,8 +2337,8 @@ Quy tắc phản hồi:
       parsedResult.type = isAction ? 'action' : 'qa';
       parsedResult.reply = isAction
         ? (parsedResult.intent === 'tang_ca'
-          ? `Em đã gửi yêu cầu Đơn tăng ca (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.overtimeMinutes || 0} phút: ${parsedResult.startTime || ''}–${parsedResult.endTime || ''}) đến Sếp duyệt qua Telegram rồi ạ!`
-          : `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) đến Sếp duyệt qua Telegram rồi ạ!`)
+          ? `Em đã gửi yêu cầu Đơn tăng ca (${parsedResult.workDate || 'hôm nay'}, ${parsedResult.overtimeMinutes || 0} phút: ${parsedResult.startTime || ''}–${parsedResult.endTime || ''}) cho nhân sự ${parsedResult.employeeName || empName} đến Sếp duyệt qua Telegram rồi ạ!`
+          : `Em đã gửi yêu cầu ${parsedResult.intentLabel} (${parsedResult.workDate || 'hôm nay'}${parsedResult.shift ? `, ${parsedResult.shift}` : ''}) cho nhân sự ${parsedResult.employeeName || empName} đến Sếp duyệt qua Telegram rồi ạ!`)
         : `Em hỗ trợ hỏi đáp nhân sự, xin nghỉ, đổi ca, bổ sung công và tăng ca. Anh/chị cần hỗ trợ nội dung nào ạ?`;
       usedAi = false;
     }
@@ -2159,8 +2364,16 @@ Quy tắc phản hồi:
         if (explicitTimes.length < 2 || !validTime(parsedResult.startTime) || !validTime(parsedResult.endTime)) {
           missing.push('đầy đủ giờ bắt đầu và kết thúc');
         } else {
-          const [startHour, startMinute] = parsedResult.startTime.split(':').map(Number);
-          const [endHour, endMinute] = parsedResult.endTime.split(':').map(Number);
+          let [startHour, startMinute] = parsedResult.startTime.split(':').map(Number);
+          let [endHour, endMinute] = parsedResult.endTime.split(':').map(Number);
+          // Tự động hoán vị nếu giờ bị đảo ngược
+          if (startHour * 60 + startMinute > endHour * 60 + endMinute) {
+            const temp = parsedResult.startTime;
+            parsedResult.startTime = parsedResult.endTime;
+            parsedResult.endTime = temp;
+            [startHour, startMinute] = parsedResult.startTime.split(':').map(Number);
+            [endHour, endMinute] = parsedResult.endTime.split(':').map(Number);
+          }
           const duration = endHour * 60 + endMinute - startHour * 60 - startMinute;
           if (duration <= 0) missing.push('khoảng giờ bắt đầu và kết thúc hợp lệ');
           else if (parsedResult.intent === 'tang_ca') {
@@ -2242,6 +2455,22 @@ Quy tắc phản hồi:
       if (!parsedResult.endTime) parsedResult.endTime = shiftObj.end;
     }
 
+    // Đảm bảo không bị đảo giờ và thời lượng chuẩn
+    if (parsedResult.startTime && parsedResult.endTime) {
+      const [sh, sm] = String(parsedResult.startTime).split(':').map(Number);
+      const [eh, em] = String(parsedResult.endTime).split(':').map(Number);
+      if (Number.isFinite(sh) && Number.isFinite(eh) && (sh * 60 + sm > eh * 60 + em)) {
+        const tmp = parsedResult.startTime;
+        parsedResult.startTime = parsedResult.endTime;
+        parsedResult.endTime = tmp;
+      }
+      if (parsedResult.intent === 'tang_ca') {
+        const [nsh, nsm] = String(parsedResult.startTime).split(':').map(Number);
+        const [neh, nem] = String(parsedResult.endTime).split(':').map(Number);
+        parsedResult.overtimeMinutes = Math.max(0, (neh * 60 + nem) - (nsh * 60 + nsm));
+      }
+    }
+
     parsedResult.requestId = `req_${Date.now()}`;
     parsedResult.processingTimeMs = Date.now() - startTime;
     parsedResult.model = usedAi ? model : 'Smart Semantic Fallback';
@@ -2249,7 +2478,9 @@ Quy tắc phản hồi:
     parsedResult.keyIndex = usedKeyIndex + 1;
     parsedResult.employeeCode = empCode;
     parsedResult.employeeName = empName;
-    parsedResult.branch = parsedResult.branch || user.branchId || 'pham-van-chieu';
+    parsedResult.department = empDept;
+    parsedResult.title = empTitle;
+    parsedResult.branch = parsedResult.branch || branch;
 
     let telegramSent = false;
     let createdRecordId = '';
@@ -2336,9 +2567,10 @@ Quy tắc phản hồi:
         parsedResult.reply = 'Hệ thống chưa lưu được yêu cầu. Anh/chị vui lòng thử lại sau hoặc báo quản lý.';
       } else {
         const label = parsedResult.intentLabel || 'yêu cầu nhân sự';
+        const otDetail = parsedResult.intent === 'tang_ca' && parsedResult.overtimeMinutes ? ` (${parsedResult.overtimeMinutes} phút: ${parsedResult.startTime}–${parsedResult.endTime})` : '';
         parsedResult.reply = telegramSent
-          ? `Đã ghi nhận ${label.toLowerCase()} và gửi quản lý duyệt.`
-          : `Đã lưu ${label.toLowerCase()}, nhưng chưa gửi được Telegram cho quản lý. Vui lòng báo quản lý kiểm tra.`;
+          ? `Đã ghi nhận ${label.toLowerCase()}${otDetail} cho nhân sự ${parsedResult.employeeName} và gửi quản lý duyệt qua Telegram.`
+          : `Đã lưu ${label.toLowerCase()}${otDetail} cho nhân sự ${parsedResult.employeeName}, nhưng chưa gửi được Telegram cho quản lý. Vui lòng báo quản lý kiểm tra.`;
       }
     }
 

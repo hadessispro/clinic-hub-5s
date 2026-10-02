@@ -45,7 +45,7 @@ export class SecurityService {
     }
 
     // Client DevTools signals are noisy on desktop and mobile; keep the audit row but don't page Telegram.
-    if (!['f12_opened', 'console_tamper'].includes(event.eventType)
+    if (!['f12_opened', 'devtools_opened', 'console_tamper', 'login_success', 'logout'].includes(event.eventType)
       && (event.severity === 'critical' || event.severity === 'warning')) {
       const allowed = await this.telegram.shouldNotify(event.eventType, true);
       if (allowed) {
