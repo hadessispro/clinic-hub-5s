@@ -2017,14 +2017,17 @@ async function exportLateCheckinDirect() {
       return;
     }
 
-    const dateSlug = new Date().toISOString().slice(0, 10);
+    const activeMonth = attendanceWorkMonth || attendanceHistoryMonth || '2026-09';
+    const monthLabel = activeMonth ? `Tháng ${activeMonth.slice(5, 7)}/${activeMonth.slice(0, 4)}` : '';
+    const dateSlug = activeMonth ? activeMonth.replace('-', '_') : new Date().toISOString().slice(0, 10);
     const fileName = `Danh_Sach_Checkin_Tre_5S_${dateSlug}.xlsx`;
 
     await exportLateCheckinWorkbook({
       lateCheckins: lateCheckinRows,
       employees: emps,
-      filterSummary: 'Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
+      filterSummary: `${monthLabel ? monthLabel + ' — ' : ''}Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)`,
       filename: fileName,
+      month: activeMonth,
     });
 
     showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);

@@ -924,10 +924,17 @@ export async function exportLateCheckinWorkbook({
   employees = [],
   filterSummary = '',
   filename = '',
+  month = '',
 }) {
   let allLateRows = Array.isArray(lateCheckins) ? [...lateCheckins] : [];
   if (allLateRows.length && (!allLateRows[0].requiredCheckin || !allLateRows[0].stt)) {
     allLateRows = computeLateCheckinList(allLateRows, employees);
+  }
+
+  if (month) {
+    allLateRows = allLateRows
+      .filter((r) => r.rawDate && r.rawDate.startsWith(month))
+      .map((r, idx) => ({ ...r, stt: idx + 1 }));
   }
 
   const exportDateStr = new Intl.DateTimeFormat('vi-VN', {

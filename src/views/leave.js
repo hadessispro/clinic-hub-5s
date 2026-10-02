@@ -1010,14 +1010,15 @@ export function initView() {
         return;
       }
 
-      const dateSlug = new Date().toISOString().slice(0, 10);
-      const fileName = `Danh_Sach_Checkin_Tre_5S_${dateSlug}.xlsx`;
+      const activeMonth = '2026-09';
+      const fileName = `Danh_Sach_Checkin_Tre_5S_Thang_09_2026.xlsx`;
 
       await exportLateCheckinWorkbook({
         lateCheckins: lateCheckinRows,
         employees: cachedEmployees,
-        filterSummary: 'Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
+        filterSummary: 'Tháng 09/2026 — Toàn hệ thống phòng khám (Mốc yêu cầu trước ca 5 phút)',
         filename: fileName,
+        month: activeMonth,
       });
 
       showToast(`Đã xuất riêng file Excel ${lateCheckinRows.length} lượt check-in trễ thành công!`);
