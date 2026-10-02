@@ -486,7 +486,7 @@ async function buildWordDoc() {
           styledTable(
             ['LOẠI ĐƠN', 'MỤC ĐÍCH SỬ DỤNG', 'THỜI HẠN & ĐIỀU KIỆN NỘP ĐƠN'],
             [
-              ['Nghỉ phép năm', 'Nghỉ giải quyết việc cá nhân, nghỉ dưỡng sức theo chế độ phép năm có lương.', 'Nộp trước ít nhất 48 giờ. Phải có người nhận bàn giao / trực thay.'],
+              ['Đơn nghỉ phép', 'Nghỉ giải quyết việc cá nhân, nghỉ dưỡng sức hoặc việc gia đình có bàn giao ca.', 'Nộp trước ít nhất 48 giờ. Phải có người nhận bàn giao / trực thay.'],
               ['Nghỉ ốm / Việc đột xuất', 'Nghỉ do lý do sức khỏe, việc tang, việc gia đình cấp bách.', 'Thông báo trưởng ca ngay khi phát sinh và gửi đơn trên app trong vòng 12h.'],
               ['Đơn tăng ca (OT)', 'Ghi nhận giờ làm thêm khi ca điều trị kéo dài, cấp cứu nha khoa hoặc trực ngoài giờ.', 'Nộp trong ngày phát sinh tăng ca. Tính hệ số lương 1.5x.'],
               ['Bổ sung công', 'Giải trình quên check-in, quên check-out hoặc lỗi thiết bị không quét được GPS.', 'Nộp trong vòng 24 giờ kể từ ngày xảy ra sự cố công.'],
@@ -497,7 +497,7 @@ async function buildWordDoc() {
 
           heading2('3.2. Quy trình 5 Bước Tạo và Gửi Đơn'),
           bullet('Bước 1 (Truy cập)', 'Tại thanh điều hướng, chọn mục "Đơn từ nghỉ phép". Màn hình chia thành khung "Tạo đơn" bên trái và "Danh sách đơn" bên dưới.'),
-          bullet('Bước 2 (Chọn loại đơn)', 'Tại mục "Loại đơn", bấm vào danh sách thả xuống và chọn đúng loại đơn cần gửi (Nghỉ phép năm, Đơn tăng ca, Bổ sung công, Tạm ứng lương...).'),
+          bullet('Bước 2 (Chọn loại đơn)', 'Tại mục "Loại đơn", bấm vào danh sách thả xuống và chọn đúng loại đơn cần gửi (Đơn nghỉ phép, Đơn tăng ca, Bổ sung công, Tạm ứng lương...).'),
           bullet('Bước 3 (Chọn thời gian)', 'Chọn ngày bắt đầu ("Từ ngày") và ngày kết thúc ("Đến ngày").'),
           subBullet('Đối với Đơn tăng ca: Điền thêm khung giờ làm thêm tại "Bắt đầu tăng ca" (VD: 18:00) và "Kết thúc tăng ca" (VD: 20:30).'),
           subBullet('Đối với Đơn tạm ứng lương: Điền "Số tiền ứng" (VD: 2,000,000đ) và "Tài khoản nhận tiền" (Ngân hàng - Số tài khoản - Tên chủ thẻ).'),

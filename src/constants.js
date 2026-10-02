@@ -135,7 +135,7 @@ export const LEAVE_STATUS = { pending: 'Chờ duyệt', approved: 'Đã duyệt'
 
 /* ── Leave request types ── */
 export const LEAVE_TYPES = [
-  'Nghỉ phép năm', 'Nghỉ ốm', 'Đổi ca', 'Đơn xin đi trễ',
+  'Đơn nghỉ phép', 'Nghỉ ốm', 'Đổi ca', 'Đơn xin đi trễ',
   'Đơn bổ sung công vào/ra', 'Đơn tăng ca', 'Tạm ứng lương',
   'Duyệt tiền mặt', 'Nghỉ việc', 'Nghỉ không lương',
 ];

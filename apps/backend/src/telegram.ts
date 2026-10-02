@@ -1683,7 +1683,7 @@ Trả về JSON đúng cấu trúc sau:
           if (existing.rows[0]?.record_key) leaveRecordKey = existing.rows[0].record_key;
         }
 
-        const requestType = isOvertime ? 'Đơn tăng ca' : (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Nghỉ phép');
+        const requestType = isOvertime ? 'Đơn tăng ca' : (intent === 'bo_sung_cham_cong' ? 'Bổ sung công' : 'Đơn nghỉ phép');
 
         if (leaveRecordKey) {
           await this.infrastructure.postgres.query(
@@ -2497,7 +2497,7 @@ Quy tắc phản hồi:
             [recordId, JSON.stringify({
               id: recordId,
               employee_code: empCode,
-              request_type: isTangCa ? 'Đơn tăng ca' : (parsedResult.intentLabel || 'Nghỉ phép'),
+              request_type: isTangCa ? 'Đơn tăng ca' : (parsedResult.intentLabel === 'Xin nghỉ phép' || parsedResult.intent === 'xin_nghi_phep' ? 'Đơn nghỉ phép' : (parsedResult.intentLabel || 'Đơn nghỉ phép')),
               from_date: parsedResult.workDate || today,
               to_date: parsedResult.toDate || parsedResult.workDate || today,
               request_start_time: parsedResult.startTime ? (parsedResult.startTime.length === 5 ? `${parsedResult.startTime}:00` : parsedResult.startTime) : null,
